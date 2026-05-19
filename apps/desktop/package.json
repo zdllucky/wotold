@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-updater": "^2.0.0",
     "@wotold/contracts": "workspace:*",
     "react": "^18.3.1",
