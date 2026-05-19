@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 import { ContactsPage } from './pages/ContactsPage';
+import { OnboardingPage } from './pages/OnboardingPage';
+import { getSetting, SETTINGS_KEYS } from './api/settings';
 
 type Page = 'home' | 'contacts';
+type Bootstrap = 'loading' | 'onboarding' | 'app';
 
 interface AvailableUpdate {
   version: string;
@@ -13,6 +16,7 @@ interface AvailableUpdate {
 }
 
 export function App() {
+  const [bootstrap, setBootstrap] = useState<Bootstrap>('loading');
   const [page, setPage] = useState<Page>('home');
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +24,15 @@ export function App() {
   const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const done = await getSetting(SETTINGS_KEYS.ONBOARDING_DONE);
+        setBootstrap(done === '1' ? 'app' : 'onboarding');
+      } catch {
+        setBootstrap('app');
+      }
+    })();
+
     invoke<string>('get_device_id')
       .then(setDeviceId)
       .catch((e: unknown) => setError(String(e)));
@@ -30,7 +43,6 @@ export function App() {
         if (u) setUpdate(u);
       })
       .catch((e: unknown) => {
-        // Тихо — отсутствие сети не должно ломать запуск.
         console.warn('updater check failed', e);
       });
   }, []);
@@ -39,12 +51,23 @@ export function App() {
     setInstalling(true);
     try {
       await invoke('apply_update');
-      // apply_update перезапустит процесс, сюда не доберёмся.
     } catch (e) {
       setInstalling(false);
       setError(String(e));
     }
   };
+
+  if (bootstrap === 'loading') {
+    return (
+      <main className="app">
+        <p className="hint">…</p>
+      </main>
+    );
+  }
+
+  if (bootstrap === 'onboarding') {
+    return <OnboardingPage onComplete={() => setBootstrap('app')} />;
+  }
 
   return (
     <>
