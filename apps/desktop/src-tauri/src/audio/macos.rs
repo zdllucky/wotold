@@ -23,10 +23,14 @@ impl Default for MacOsCoreAudioCapture {
 #[async_trait]
 impl AudioCapture for MacOsCoreAudioCapture {
     async fn start(&self) -> Result<(), CaptureError> {
-        Err(CaptureError::Other("macOS audio capture not wired (Этап 2)".into()))
+        Err(CaptureError::Other(
+            "macOS audio capture not wired (Этап 2)".into(),
+        ))
     }
 
     async fn stop(&self) -> Result<CaptureResult, CaptureError> {
-        Err(CaptureError::Other("macOS audio capture not wired (Этап 2)".into()))
+        Err(CaptureError::Other(
+            "macOS audio capture not wired (Этап 2)".into(),
+        ))
     }
 }

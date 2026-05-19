@@ -1,0 +1,88 @@
+name: Release Desktop App
+
+# Раздел 16.3 паспорта: тег vX.Y.Z → собранный подписанный релиз.
+# S1 паспорта: эта джоба видит только Tauri-ключ подписи, не партнёрские ключи.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  version-sync:
+    name: Version sync (M11.5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/check-versions.mjs
+
+  build:
+    needs: version-sync
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14
+            target: aarch64-apple-darwin
+          - platform: macos-13
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Tauri build + GitHub Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          # Tauri minisign подписи (M11.1 + S1 паспорта).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # R6 паспорта: Apple-нотаризация = DEFERRED.
+          # Когда добавим Developer ID — раскомментировать секреты ниже,
+          # tauri-action автоматически подпишет и нотаризует, если они заданы.
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop/src-tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Wotold ${{ github.ref_name }}'
+          releaseBody: |
+            Установка: см. README.md.
+
+            **Внимание (R6):** в MVP-сборке Apple-нотаризация отключена. При
+            первом запуске Gatekeeper потребует «Открыть всё равно» через
+            Системные Настройки → Конфиденциальность и Безопасность.
+          releaseDraft: false
+          prerelease: false
+          # M11.2: latest.json генерируется tauri-action для updater'а.
+          includeUpdaterJson: true
+          args: --target ${{ matrix.target }}

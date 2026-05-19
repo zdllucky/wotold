@@ -1,0 +1,53 @@
+name: Deploy Proxy
+
+# Раздел 16.3 паспорта: push в main с изменениями прокси → деплой в CF.
+# S1 паспорта: эта джоба видит ТОЛЬКО партнёрские/CF секреты,
+# не Tauri-ключ подписи.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/proxy/**'
+      - 'packages/contracts/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-proxy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-proxy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck @wotold/proxy
+        run: pnpm --filter @wotold/proxy typecheck
+
+      - name: Deploy via wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: services/proxy
+          command: deploy
+          # Партнёрские ключи и R2 S3 креды ставятся отдельно через
+          # `wrangler secret put` (one-time), не из CI. См. README прокси.
+          # S1 — здесь не упоминаются, чтобы не утекли в логи.
