@@ -1,0 +1,43 @@
+name = "wotold-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# Free-тир (R7). НЕ закладывать Cron Triggers / Durable Objects /
+# длительные синхронные операции — упрётся в лимиты Free.
+
+[[kv_namespaces]]
+binding = "QUOTA"
+# TODO: `wrangler kv namespace create QUOTA` → подставить id + preview_id
+id = "TODO_KV_NAMESPACE_ID"
+preview_id = "TODO_KV_PREVIEW_ID"
+
+[[r2_buckets]]
+binding = "STT_STAGING"
+# TODO: `wrangler r2 bucket create wotold-stt-staging`
+bucket_name = "wotold-stt-staging"
+preview_bucket_name = "wotold-stt-staging-preview"
+
+[vars]
+TIER = "free"
+QUOTA_STT_SECONDS_PER_DAY = "3600"
+QUOTA_LLM_TOKENS_PER_DAY = "200000"
+STAGING_PRESIGN_TTL_SECONDS = "900"
+STT_STAGING_BUCKET = "wotold-stt-staging"
+ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
+
+# Секреты (S1) — через `wrangler secret put`:
+#   ANTHROPIC_API_KEY        ключ владельца для LLM
+#   SONIOX_API_KEY           primary STT
+#   GLADIA_API_KEY           fallback STT
+#   R2_ACCOUNT_ID            cloudflare account id (R2 S3 endpoint)
+#   R2_ACCESS_KEY_ID         R2 S3 access key
+#   R2_SECRET_ACCESS_KEY     R2 S3 secret
+# Доступны ТОЛЬКО джобе деплоя прокси (не сборке приложения).
+
+[observability]
+enabled = true
+
+# Лайфсайкл стейджинга R2 — настраивается правилами бакета вне wrangler
+# (Cron Triggers на Free недоступны, см. раздел 16.2 паспорта).
