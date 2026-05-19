@@ -10,4 +10,16 @@ export function setSetting(key: string, value: string): Promise<void> {
 
 export const SETTINGS_KEYS = {
   ONBOARDING_DONE: 'onboarding_done',
+  STT_PROVIDER: 'stt_provider',
+  PROVIDER_PATH: 'provider_path',
+  LLM_MODEL: 'llm_model',
 } as const;
+
+export const SETTINGS_DEFAULTS = {
+  STT_PROVIDER: 'auto' as SttProvider,
+  PROVIDER_PATH: 'managed' as ProviderPath,
+  LLM_MODEL: 'claude-sonnet-4-6',
+} as const;
+
+export type SttProvider = 'auto' | 'soniox' | 'gladia';
+export type ProviderPath = 'managed' | 'byo';
