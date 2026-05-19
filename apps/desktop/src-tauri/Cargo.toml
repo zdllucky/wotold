@@ -33,6 +33,7 @@ async-trait = "0.1"
 anyhow = "1"
 thiserror = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+semver = "1"
 
 [features]
 default = []

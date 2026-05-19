@@ -9,6 +9,7 @@ mod error;
 #[allow(dead_code, unused_imports)]
 mod providers;
 mod state;
+mod updater;
 
 pub use error::AppError;
 
@@ -16,7 +17,11 @@ pub use error::AppError;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .default_version_comparator(updater::compare_versions)
+                .build(),
+        )
         .setup(|app| {
             let handle = app.handle().clone();
             let state = tauri::async_runtime::block_on(state::init(handle))?;
@@ -26,6 +31,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_device_id,
             commands::get_owner_contact,
+            commands::check_for_update,
+            commands::apply_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
