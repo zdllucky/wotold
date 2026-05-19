@@ -1,7 +1,9 @@
+use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::{
-    db::{Contact, ContactInput, OwnerContact},
+    audio::macos as audio_macos,
+    db::{Call, Contact, ContactInput, OwnerContact},
     state::AppState,
     updater::AvailableUpdate,
     AppError,
@@ -71,4 +73,71 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<AvailableUpdate>,
 #[tauri::command]
 pub async fn apply_update(app: AppHandle) -> Result<(), AppError> {
     crate::updater::apply(&app).await
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordingState {
+    pub call_id: String,
+    pub started_at: String,
+}
+
+#[tauri::command]
+pub async fn get_recording_state(
+    state: State<'_, AppState>,
+) -> Result<Option<RecordingState>, AppError> {
+    let guard = state.recording.lock().await;
+    Ok(guard.as_ref().map(|s| RecordingState {
+        call_id: s.call_id.clone(),
+        started_at: s.started_at.to_rfc3339(),
+    }))
+}
+
+#[tauri::command]
+pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Result<Call, AppError> {
+    let mut guard = state.recording.lock().await;
+    if guard.is_some() {
+        return Err(AppError::Other("recording already in progress".into()));
+    }
+
+    // M2.3: path_label фиксирует путь доставки на момент создания звонка.
+    // По умолчанию managed; переключаемое значение из settings подключим
+    // в #20/#21 (когда провайдеры реально начнут вызываться).
+    let path_label = "managed";
+    let call = crate::db::insert_recording(&state.db, path_label).await?;
+    let mic_path = state
+        .app_data_dir
+        .join("calls")
+        .join(&call.id)
+        .join("mic.wav");
+
+    match audio_macos::start(&app, call.id.clone(), mic_path).await {
+        Ok(session) => {
+            *guard = Some(session);
+            Ok(call)
+        }
+        Err(e) => {
+            // Откат: помечаем call как failed чтобы он не висел в "recording" навсегда.
+            let _ = crate::db::fail_recording(&state.db, &call.id).await;
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn stop_recording(state: State<'_, AppState>) -> Result<Call, AppError> {
+    let session = {
+        let mut guard = state.recording.lock().await;
+        guard
+            .take()
+            .ok_or_else(|| AppError::Other("not recording".into()))?
+    };
+
+    let call_id = session.call_id.clone();
+    match audio_macos::stop(session).await {
+        Ok(result) => crate::db::finish_recording(&state.db, &call_id, result.duration_sec).await,
+        Err(e) => {
+            let _ = crate::db::fail_recording(&state.db, &call_id).await;
+            Err(e)
+        }
+    }
 }

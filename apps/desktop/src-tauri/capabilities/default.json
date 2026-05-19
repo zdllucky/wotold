@@ -1,11 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set: core + updater (M11.6)",
+  "description": "Default capability set: core + updater (M11.6) + dialog (confirms) + shell (audio sidecar)",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "updater:default",
-    "dialog:default"
+    "dialog:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        { "name": "binaries/wotold-audio", "sidecar": true, "args": false }
+      ]
+    }
   ]
 }
