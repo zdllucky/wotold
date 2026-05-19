@@ -9,7 +9,10 @@ use crate::AppError;
 
 mod contacts;
 
-pub use contacts::{ensure_owner_contact, OwnerContact};
+pub use contacts::{
+    create_contact, delete_contact, ensure_owner_contact, list_contacts, Contact, ContactInput,
+    OwnerContact,
+};
 
 const DB_FILE: &str = "app.db";
 

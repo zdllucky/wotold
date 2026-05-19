@@ -31,6 +31,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_device_id,
             commands::get_owner_contact,
+            commands::list_contacts,
+            commands::create_contact,
+            commands::delete_contact,
             commands::check_for_update,
             commands::apply_update,
         ])

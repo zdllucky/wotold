@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
+import { ContactsPage } from './pages/ContactsPage';
+
+type Page = 'home' | 'contacts';
+
 interface AvailableUpdate {
   version: string;
   current_version: string;
@@ -9,6 +13,7 @@ interface AvailableUpdate {
 }
 
 export function App() {
+  const [page, setPage] = useState<Page>('home');
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
@@ -42,29 +47,53 @@ export function App() {
   };
 
   return (
-    <main className="app">
-      <h1>Wotold</h1>
-      <p className="device-id">device: {deviceId ?? '…'}</p>
-      {error && <p className="error">{error}</p>}
+    <>
+      <nav className="topnav">
+        <button
+          type="button"
+          className={page === 'home' ? 'active' : ''}
+          onClick={() => setPage('home')}
+        >
+          Главная
+        </button>
+        <button
+          type="button"
+          className={page === 'contacts' ? 'active' : ''}
+          onClick={() => setPage('contacts')}
+        >
+          Контакты
+        </button>
+      </nav>
 
-      {update && (
-        <aside className="update-prompt">
-          <p>
-            Доступна версия <strong>{update.version}</strong> (сейчас {update.current_version}).
-          </p>
-          {update.notes && <pre className="update-notes">{update.notes}</pre>}
-          <div className="update-actions">
-            <button type="button" onClick={applyUpdate} disabled={installing}>
-              {installing ? 'Устанавливаем…' : 'Обновить сейчас'}
-            </button>
-            <button type="button" onClick={() => setUpdate(null)} disabled={installing}>
-              Позже
-            </button>
-          </div>
-        </aside>
-      )}
+      <main className="app">
+        {page === 'home' && (
+          <>
+            <h1>Wotold</h1>
+            <p className="device-id">device: {deviceId ?? '…'}</p>
+            {error && <p className="error">{error}</p>}
 
-      <p className="hint">Этап 1 каркас + Этап 11 авто-обновление. Запись — Этап 2.</p>
-    </main>
+            {update && (
+              <aside className="update-prompt">
+                <p>
+                  Доступна версия <strong>{update.version}</strong> (сейчас {update.current_version}).
+                </p>
+                {update.notes && <pre className="update-notes">{update.notes}</pre>}
+                <div className="update-actions">
+                  <button type="button" onClick={applyUpdate} disabled={installing}>
+                    {installing ? 'Устанавливаем…' : 'Обновить сейчас'}
+                  </button>
+                  <button type="button" onClick={() => setUpdate(null)} disabled={installing}>
+                    Позже
+                  </button>
+                </div>
+              </aside>
+            )}
+
+            <p className="hint">Каркас. Запись — Этап 2 (Audio).</p>
+          </>
+        )}
+        {page === 'contacts' && <ContactsPage />}
+      </main>
+    </>
   );
 }
