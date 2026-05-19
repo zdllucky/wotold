@@ -323,6 +323,69 @@ button.primary:hover {
   justify-content: flex-end;
 }
 
+.settings {
+  max-width: 36rem;
+  width: 100%;
+  text-align: left;
+}
+
+.settings h2 {
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+
+.settings fieldset {
+  border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.settings legend {
+  padding: 0 0.5rem;
+  font-size: 0.72rem;
+  opacity: 0.65;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  margin: 0.35rem 0;
+}
+
+.settings label.radio {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.settings label.radio .hint {
+  opacity: 0.5;
+}
+
+.settings select,
+.settings input[type='text'] {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  border-radius: 0.45rem;
+  background: color-mix(in oklch, currentColor 4%, transparent);
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.settings select:focus,
+.settings input[type='text']:focus {
+  outline: none;
+  border-color: oklch(68% 0.18 250);
+}
+
 h1 {
   margin: 0 0 1rem;
   font-weight: 600;

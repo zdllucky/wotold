@@ -3,9 +3,10 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { ContactsPage } from './pages/ContactsPage';
 import { OnboardingPage } from './pages/OnboardingPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, SETTINGS_KEYS } from './api/settings';
 
-type Page = 'home' | 'contacts';
+type Page = 'home' | 'contacts' | 'settings';
 type Bootstrap = 'loading' | 'onboarding' | 'app';
 
 interface AvailableUpdate {
@@ -86,6 +87,13 @@ export function App() {
         >
           Контакты
         </button>
+        <button
+          type="button"
+          className={page === 'settings' ? 'active' : ''}
+          onClick={() => setPage('settings')}
+        >
+          Настройки
+        </button>
       </nav>
 
       <main className="app">
@@ -116,6 +124,7 @@ export function App() {
           </>
         )}
         {page === 'contacts' && <ContactsPage />}
+        {page === 'settings' && <SettingsPage />}
       </main>
     </>
   );
