@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = []
+
+# Members появятся по мере реализации:
+#   - "apps/desktop/src-tauri"   (Этап 1)
+#   - "services/mcp"             (Этап 7, если выносится отдельным Rust-бинарём)
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.77"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

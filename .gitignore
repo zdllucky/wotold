@@ -1,0 +1,70 @@
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+target/
+.next/
+.svelte-kit/
+.turbo/
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# TypeScript
+*.tsbuildinfo
+.tsc-cache/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+# Tauri signing keys MUST NOT be committed (см. M11.9 / R6 паспорта)
+*.minisign
+*tauri-signing-private*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+
+# Runtime / local app data (app_data_dir, см. раздел 6.1 паспорта)
+app_data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Test coverage
+coverage/
+*.lcov
+
+# Cloudflare Wrangler
+.wrangler/
+.dev.vars
+
+# Caches
+.cache/
+.eslintcache
+.stylelintcache
+
+# Claude Code per-developer settings (settings.json остаётся в репо)
+.claude/settings.local.json
