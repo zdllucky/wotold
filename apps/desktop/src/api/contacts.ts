@@ -37,3 +37,12 @@ export function createContact(input: ContactInput): Promise<Contact> {
 export function deleteContact(id: string): Promise<void> {
   return invoke<void>('delete_contact', { id });
 }
+
+export interface OwnerContact {
+  id: string;
+  display_name: string;
+}
+
+export function renameOwnerContact(newName: string): Promise<OwnerContact> {
+  return invoke<OwnerContact>('rename_owner_contact', { newName });
+}

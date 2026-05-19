@@ -186,6 +186,36 @@ pub async fn create_contact(pool: &SqlitePool, input: ContactInput) -> Result<Co
     })
 }
 
+/// Переименовать контакт-владельца (используется в онбординге, M7.6).
+pub async fn rename_owner_contact(
+    pool: &SqlitePool,
+    new_name: &str,
+) -> Result<OwnerContact, AppError> {
+    let trimmed = new_name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Other("display_name required".into()));
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let id: Option<String> =
+        sqlx::query_scalar("SELECT id FROM contacts WHERE is_owner = 1 LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
+    let id = id.ok_or_else(|| AppError::Other("owner contact missing".into()))?;
+
+    sqlx::query("UPDATE contacts SET display_name = ?1, updated_at = ?2 WHERE id = ?3")
+        .bind(trimmed)
+        .bind(&now)
+        .bind(&id)
+        .execute(pool)
+        .await?;
+
+    Ok(OwnerContact {
+        id,
+        display_name: trimmed.to_string(),
+    })
+}
+
 /// Удалить контакт. Контакт-владелец удалить нельзя (M6.2). ON DELETE CASCADE
 /// в схеме автоматически зачистит contact_identifiers и voice_samples (M3.6 + C5).
 pub async fn delete_contact(pool: &SqlitePool, id: &str) -> Result<(), AppError> {

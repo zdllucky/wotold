@@ -8,11 +8,13 @@ use sqlx::{
 use crate::AppError;
 
 mod contacts;
+mod settings;
 
 pub use contacts::{
-    create_contact, delete_contact, ensure_owner_contact, list_contacts, Contact, ContactInput,
-    OwnerContact,
+    create_contact, delete_contact, ensure_owner_contact, list_contacts, rename_owner_contact,
+    Contact, ContactInput, OwnerContact,
 };
+pub use settings::{get_setting, set_setting};
 
 const DB_FILE: &str = "app.db";
 

@@ -35,6 +35,31 @@ pub async fn delete_contact(state: State<'_, AppState>, id: String) -> Result<()
     crate::db::delete_contact(&state.db, &id).await
 }
 
+#[tauri::command]
+pub async fn rename_owner_contact(
+    state: State<'_, AppState>,
+    new_name: String,
+) -> Result<OwnerContact, AppError> {
+    crate::db::rename_owner_contact(&state.db, &new_name).await
+}
+
+#[tauri::command]
+pub async fn get_setting(
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<Option<String>, AppError> {
+    crate::db::get_setting(&state.db, &key).await
+}
+
+#[tauri::command]
+pub async fn set_setting(
+    state: State<'_, AppState>,
+    key: String,
+    value: String,
+) -> Result<(), AppError> {
+    crate::db::set_setting(&state.db, &key, &value).await
+}
+
 /// Неблокирующая проверка обновления (M11.4). UI вызывает при старте,
 /// показывает ненавязчивый промпт если результат — Some.
 #[tauri::command]

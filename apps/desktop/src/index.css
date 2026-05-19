@@ -244,6 +244,85 @@ button.primary:hover {
   font-style: italic;
 }
 
+.onboarding {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.onboarding-card {
+  max-width: 28rem;
+  width: 100%;
+  text-align: left;
+}
+
+.onboarding-card h1 {
+  font-size: 2rem;
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.onboarding-card p {
+  margin: 0.5rem 0;
+  opacity: 0.8;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.onboarding-card .hint {
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+
+.onboarding-features {
+  margin: 1rem 0 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-features li {
+  padding: 0.35rem 0 0.35rem 1.25rem;
+  position: relative;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.onboarding-features li::before {
+  content: '·';
+  position: absolute;
+  left: 0.4rem;
+  top: 0.25rem;
+  font-weight: 700;
+  font-size: 1.2rem;
+  opacity: 0.5;
+}
+
+.onboarding-card input {
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  font-size: 1rem;
+  border: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  border-radius: 0.55rem;
+  background: color-mix(in oklch, currentColor 4%, transparent);
+  color: inherit;
+  margin: 1rem 0 0.25rem;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.onboarding-card input:focus {
+  outline: none;
+  border-color: oklch(68% 0.18 250);
+}
+
+.onboarding-card .form-actions {
+  margin-top: 1.5rem;
+  justify-content: flex-end;
+}
+
 h1 {
   margin: 0 0 1rem;
   font-weight: 600;
