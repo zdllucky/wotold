@@ -6,6 +6,9 @@ mod commands;
 mod db;
 mod device;
 mod error;
+// Providers: AnthropicProvider реализован (#27), Soniox/Gladia ещё в стабе.
+// Конструктор AnthropicProvider::new пока не вызывается из production кода
+// (ждёт #28 recap pipeline) — поэтому allow до тех пор.
 #[allow(dead_code, unused_imports)]
 mod providers;
 mod state;
