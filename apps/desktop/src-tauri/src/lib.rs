@@ -17,6 +17,7 @@ pub use error::AppError;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_updater::Builder::new()
                 .default_version_comparator(updater::compare_versions)

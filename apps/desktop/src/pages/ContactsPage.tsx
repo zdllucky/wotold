@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { ask } from '@tauri-apps/plugin-dialog';
 
 import {
   createContact,
@@ -33,7 +34,13 @@ export function ContactsPage() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Удалить контакт «${name}»?`)) return;
+    const ok = await ask(`Удалить контакт «${name}»?`, {
+      title: 'Wotold',
+      kind: 'warning',
+      okLabel: 'Удалить',
+      cancelLabel: 'Отмена',
+    });
+    if (!ok) return;
     try {
       await deleteContact(id);
       setError(null);
