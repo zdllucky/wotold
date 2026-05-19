@@ -14,6 +14,10 @@
 - [x] **Этап 11** авто-обновление + аварийный downgrade-режим + M11.9 doc — [`6a2aa79`](#)
 - [x] **Этап 12** CI/CD скелет (ci.yml, release-app.yml, deploy-proxy.yml) + version sync M11.5 — [`a361a37`](#)
 - [x] **#32** Contacts directory baseline (list + create + delete + nav) — [`38b310f`](#)
+- [x] dialog-plugin для нативного confirm удаления — [`fa0a68a`](#)
+- [x] **#34** Onboarding (welcome + owner rename + persistent flag) — [`7091672`](#)
+- [x] **#33** Settings page baseline (provider/path/LLM model) — [`a30cd9c`](#)
+- [x] **#27** AnthropicProvider (managed + BYO + 6 httpmock-тестов) — [`b942149`](#)
 
 ---
 
@@ -40,7 +44,7 @@
 
 ## Recap · Этап 5 / M4
 
-- [ ] **#27** M4.1 `AnthropicProvider` (managed via proxy + BYO direct)
+- [x] **#27** M4.1 `AnthropicProvider` baseline (см. «Готово»)
 - [ ] **#28** M4.2-4.5 Pipeline: structured prompt → `RecapJson` → owner_hint mapping → `recap.md`/`transcript.md` + regen из `raw_stt.json` → #27, #22, #25
 
 ## UI · Этап 6 / M7
@@ -51,8 +55,10 @@
 - [x] **#32** M7.4 Contacts baseline — list + create + delete (см. «Готово»)
 - [ ] **#46** M7.4 follow-up: edit + multiple identifiers + extensible attributes
 - [ ] **#45** M7.4 follow-up: voice samples view + manual delete → #26
-- [ ] **#33** M7.5 Settings: providers, BYO keychain, quota indicator
-- [ ] **#34** M7.6 Onboarding: owner contact + permissions
+- [x] **#33** M7.5 Settings baseline — provider/path/LLM model (см. «Готово»)
+- [ ] **#47** M7.5 follow-up: BYO keys в keychain (keyring crate / stronghold)
+- [ ] **#48** M7.5 follow-up: Quota indicator из /v1/usage → #44
+- [x] **#34** M7.6 Onboarding baseline — welcome + owner rename (см. «Готово»)
 
 ## MCP · Этап 7 / M8
 
@@ -82,7 +88,7 @@
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#15` · `#18` · `#24` · `#27` · `#32` · `#33` · `#34` · `#37` · `#42` · `#43` · `#44`
+`#15` · `#18` · `#24` · `#37` · `#42` · `#43` · `#44` · `#46` · `#47`
 
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
