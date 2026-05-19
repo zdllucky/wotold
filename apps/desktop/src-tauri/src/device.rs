@@ -22,7 +22,9 @@ pub async fn ensure_device_id(app_data_dir: &Path) -> Result<String, AppError> {
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let id = uuid::Uuid::new_v4().to_string();
-            let file = DeviceFile { device_id: id.clone() };
+            let file = DeviceFile {
+                device_id: id.clone(),
+            };
             let text = serde_json::to_string_pretty(&file)?;
             tokio::fs::write(&path, text).await?;
             Ok(id)

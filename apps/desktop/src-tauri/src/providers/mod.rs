@@ -6,7 +6,10 @@ pub mod transcription;
 #[derive(Debug, Clone)]
 pub enum ProviderMode {
     /// Через прокси (ключ владельца + квота по device-id).
-    Managed { proxy_base_url: String, device_id: String },
+    Managed {
+        proxy_base_url: String,
+        device_id: String,
+    },
     /// BYO — ключ пользователя из системного keychain. Прокси не задействован.
     Byo { api_key: String },
 }

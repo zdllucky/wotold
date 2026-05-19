@@ -14,11 +14,10 @@ const OWNER_DEFAULT_NAME: &str = "Me";
 /// Создать запись контакта-владельца при первом запуске или вернуть существующего.
 /// См. M6.2 паспорта (`is_owner = 1`).
 pub async fn ensure_owner_contact(pool: &SqlitePool) -> Result<OwnerContact, AppError> {
-    let existing: Option<(String, String)> = sqlx::query_as(
-        "SELECT id, display_name FROM contacts WHERE is_owner = 1 LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await?;
+    let existing: Option<(String, String)> =
+        sqlx::query_as("SELECT id, display_name FROM contacts WHERE is_owner = 1 LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
 
     if let Some((id, display_name)) = existing {
         return Ok(OwnerContact { id, display_name });

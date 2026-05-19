@@ -8,8 +8,6 @@ pub fn get_device_id(state: State<'_, AppState>) -> String {
 }
 
 #[tauri::command]
-pub async fn get_owner_contact(
-    state: State<'_, AppState>,
-) -> Result<OwnerContact, AppError> {
+pub async fn get_owner_contact(state: State<'_, AppState>) -> Result<OwnerContact, AppError> {
     crate::db::ensure_owner_contact(&state.db).await
 }

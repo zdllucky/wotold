@@ -8,6 +8,9 @@
     "node": ">=20.18.0",
     "pnpm": ">=10"
   },
+  "scripts": {
+    "check:versions": "node scripts/check-versions.mjs"
+  },
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
