@@ -46,3 +46,57 @@ h1 {
   font-family: ui-monospace, SF Mono, monospace;
   font-size: 0.85rem;
 }
+
+.update-prompt {
+  margin: 1.5rem auto 0;
+  max-width: 32rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in oklch, currentColor 4%, transparent);
+  text-align: left;
+}
+
+.update-prompt p {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.update-notes {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: color-mix(in oklch, currentColor 6%, transparent);
+  border-radius: 0.5rem;
+  font-family: ui-monospace, SF Mono, monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.update-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.update-actions button {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in oklch, currentColor 25%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.update-actions button:first-child {
+  background: oklch(68% 0.18 250);
+  color: oklch(15% 0 0);
+  border-color: transparent;
+}
+
+.update-actions button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}

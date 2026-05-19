@@ -5944,6 +5944,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "log",
+ "semver",
  "serde",
  "serde_json",
  "sqlx",
