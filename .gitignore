@@ -60,6 +60,7 @@ coverage/
 # Cloudflare Wrangler
 .wrangler/
 .dev.vars
+!.dev.vars.example
 
 # Caches
 .cache/
