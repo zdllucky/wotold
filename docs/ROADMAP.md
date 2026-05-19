@@ -13,6 +13,7 @@
 - [x] **Этап 8** прокси Hono/CF Workers (relay + квота + presigned R2; partner wiring под #18) — [`1bb87b5`](#)
 - [x] **Этап 11** авто-обновление + аварийный downgrade-режим + M11.9 doc — [`6a2aa79`](#)
 - [x] **Этап 12** CI/CD скелет (ci.yml, release-app.yml, deploy-proxy.yml) + version sync M11.5 — [`a361a37`](#)
+- [x] **#32** Contacts directory baseline (list + create + delete + nav) — [`38b310f`](#)
 
 ---
 
@@ -47,7 +48,9 @@
 - [ ] **#29** M7.1 Record screen (start/stop, managed/byo, провайдер) → #17
 - [ ] **#30** M7.2 Calls list + FTS5 search → #28
 - [ ] **#31** M7.3 Call detail tabs (recap/transcript/tasks/participants + speaker bindings) → #28, #26
-- [ ] **#32** M7.4 Contacts directory + samples view
+- [x] **#32** M7.4 Contacts baseline — list + create + delete (см. «Готово»)
+- [ ] **#46** M7.4 follow-up: edit + multiple identifiers + extensible attributes
+- [ ] **#45** M7.4 follow-up: voice samples view + manual delete → #26
 - [ ] **#33** M7.5 Settings: providers, BYO keychain, quota indicator
 - [ ] **#34** M7.6 Onboarding: owner contact + permissions
 
