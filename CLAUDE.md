@@ -61,6 +61,37 @@ docs/                 Паспорт и сопутствующие докуме�
 - **Прокси не видит контент**: только метрики по device-id, аудио через R2, не через память воркера (M9.6, R8)
 - **MCP read-only**: контент звонков — недоверенные данные, защита от инъекций инструкций (M8.3, M8.4)
 
-## ECC харнесс
+## Воркфлоу для фича-тасок (PDCA, W3 паспорта)
 
-При конфликте рекомендаций ECC и паспорта побеждает паспорт. `.claude/` не часть сборки продукта (W6, W7).
+Для каждой нетривиальной фичи из [`docs/ROADMAP.md`](docs/ROADMAP.md):
+
+1. **Plan.** Изложить план (либо `/plan`, либо просто в чате) — какие файлы трогаем, какие модули задеваются, есть ли пересечения с принятыми ограничениями раздела 12.
+2. **Implement.** TDD где разумно: тесты сначала для модулей с чёткой алгоритмической сутью (матчинг, парсинг транскрипта, утилиты). Для UI — визуальная верификация.
+3. **Verify.** Локально перед коммитом:
+   - Rust: `cargo fmt --check`, `cargo check`, `cargo clippy -- -D warnings`, `cargo test`
+   - TS: `pnpm -r typecheck`, тесты соответствующего пакета
+   - Хуки (PostToolUse) делают первые шаги автоматически — но финальная сверка ручная.
+4. **Code review.** Запустить `/code-review` (общий) или язык-специфичный (`/rust-review` для Rust, `code-reviewer` агент для TS) **до** коммита фичи в main. Замечания CRITICAL/HIGH — фиксить.
+5. **Mark done.** Снять чек-бокс в `docs/ROADMAP.md` и TaskList харнесса одновременно.
+
+## Security-review триггеры (W5 паспорта — обязательно)
+
+Эти модули обрабатывают чувствительные данные. Перед merge / mark-done **обязательно** прогнать `/security-scan` (AgentShield) или `/security-review`:
+
+| Модуль | Угрозы |
+|---|---|
+| `services/proxy/**` | Инъекция ключей владельца, обход квоты, утечка контента в логи (M9.6), CORS/CSRF, R2 presign abuse |
+| BYO-ключи (keychain, `M7.5`) | Утечка в БД, логи, телеметрию; небезопасное хранение |
+| `services/mcp/**` | Контент звонков = недоверенные данные; защита от инъекций инструкций через транскрипт (M8.3, M8.4); никаких сетевых вызовов |
+| Auth flow (`M10`) | OIDC callback, CSRF на /v1/auth/callback, токен-handling |
+| Audio sidecar permissions (`M1.3`) | Запись без согласия (C1), повышение привилегий в Swift-процессе |
+| Cascade delete (`C5`) | Утечка остаточных семплов, неполная очистка `voice_samples.source_call` |
+
+## ECC харнесс (W1, W6, W7)
+
+- Используются глобальные правила из `~/.claude/rules/ecc/{common,rust,typescript,web,zh}` (источник: [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code), копия из приватной инсталляции). При апгрейде ECC сверять что R1–R8 паспорта не «улучшены» обратно.
+- Активные хуки и project-allowedTools — в `.claude/settings.json`:
+  - **PreToolUse Write/Edit**: `scripts/hooks/pre-write.mjs` — блокирует запись в Tauri-ключи, `.env*`, `.dev.vars`, `*.key`, `*.pem`, SSH-ключи и файлы >800 строк
+  - **PostToolUse Write/Edit**: `scripts/hooks/post-write.sh` — на `.rs` правках бежит `cargo fmt` + `cargo check --message-format short` (timeout 60s); на `.ts/.tsx` — `tsc --noEmit` соответствующего workspace-пакета
+- Личные настройки разработчика — в `.claude/settings.local.json` (в `.gitignore`).
+- При конфликте рекомендаций ECC и паспорта побеждает паспорт. `.claude/` не часть сборки продукта (W6, W7).
