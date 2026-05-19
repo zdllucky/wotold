@@ -1,13 +1,17 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Manager};
+use tokio::sync::Mutex;
 
-use crate::{db, device, AppError};
+use crate::{audio::macos::RecordingSession, db, device, AppError};
 
 pub struct AppState {
     pub db: SqlitePool,
     pub device_id: Arc<str>,
+    pub app_data_dir: PathBuf,
+    pub recording: Arc<Mutex<Option<RecordingSession>>>,
 }
 
 pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
@@ -27,5 +31,7 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
     Ok(AppState {
         db: pool,
         device_id: Arc::from(device_id.as_str()),
+        app_data_dir,
+        recording: Arc::new(Mutex::new(None)),
     })
 }

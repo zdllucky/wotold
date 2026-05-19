@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 
 import { ContactsPage } from './pages/ContactsPage';
+import { HomePage } from './pages/HomePage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, SETTINGS_KEYS } from './api/settings';
@@ -9,20 +9,9 @@ import { getSetting, SETTINGS_KEYS } from './api/settings';
 type Page = 'home' | 'contacts' | 'settings';
 type Bootstrap = 'loading' | 'onboarding' | 'app';
 
-interface AvailableUpdate {
-  version: string;
-  current_version: string;
-  notes: string | null;
-  pub_date: string | null;
-}
-
 export function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap>('loading');
   const [page, setPage] = useState<Page>('home');
-  const [deviceId, setDeviceId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
-  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -33,30 +22,7 @@ export function App() {
         setBootstrap('app');
       }
     })();
-
-    invoke<string>('get_device_id')
-      .then(setDeviceId)
-      .catch((e: unknown) => setError(String(e)));
-
-    // M11.4: неблокирующая фоновая проверка апдейтов при старте.
-    invoke<AvailableUpdate | null>('check_for_update')
-      .then((u) => {
-        if (u) setUpdate(u);
-      })
-      .catch((e: unknown) => {
-        console.warn('updater check failed', e);
-      });
   }, []);
-
-  const applyUpdate = async () => {
-    setInstalling(true);
-    try {
-      await invoke('apply_update');
-    } catch (e) {
-      setInstalling(false);
-      setError(String(e));
-    }
-  };
 
   if (bootstrap === 'loading') {
     return (
@@ -97,32 +63,7 @@ export function App() {
       </nav>
 
       <main className="app">
-        {page === 'home' && (
-          <>
-            <h1>Wotold</h1>
-            <p className="device-id">device: {deviceId ?? '…'}</p>
-            {error && <p className="error">{error}</p>}
-
-            {update && (
-              <aside className="update-prompt">
-                <p>
-                  Доступна версия <strong>{update.version}</strong> (сейчас {update.current_version}).
-                </p>
-                {update.notes && <pre className="update-notes">{update.notes}</pre>}
-                <div className="update-actions">
-                  <button type="button" onClick={applyUpdate} disabled={installing}>
-                    {installing ? 'Устанавливаем…' : 'Обновить сейчас'}
-                  </button>
-                  <button type="button" onClick={() => setUpdate(null)} disabled={installing}>
-                    Позже
-                  </button>
-                </div>
-              </aside>
-            )}
-
-            <p className="hint">Каркас. Запись — Этап 2 (Audio).</p>
-          </>
-        )}
+        {page === 'home' && <HomePage />}
         {page === 'contacts' && <ContactsPage />}
         {page === 'settings' && <SettingsPage />}
       </main>

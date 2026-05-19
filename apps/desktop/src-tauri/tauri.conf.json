@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build"
+    "beforeDevCommand": "../../scripts/build-audio-sidecar.sh && pnpm dev",
+    "beforeBuildCommand": "../../scripts/build-audio-sidecar.sh && pnpm build"
   },
   "app": {
     "windows": [
@@ -29,6 +29,7 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/wotold-audio"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -20,6 +20,8 @@ target/
 # Tauri
 src-tauri/target/
 src-tauri/gen/
+# Sidecar binaries — собираются скриптом scripts/build-audio-sidecar.sh
+apps/desktop/src-tauri/binaries/wotold-audio-*
 
 # TypeScript
 *.tsbuildinfo

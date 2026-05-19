@@ -403,6 +403,119 @@ h1 {
   font-size: 0.9rem;
 }
 
+.record-area {
+  margin: 1.5rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+button.record-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 1.4rem;
+  font-size: 1rem;
+  font-weight: 500;
+  background: oklch(58% 0.21 25);
+  color: oklch(98% 0 0);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+
+button.record-start:hover:not(:disabled) {
+  transform: translateY(-1px);
+  opacity: 0.95;
+}
+
+button.record-start:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.record-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: oklch(98% 0 0);
+  flex-shrink: 0;
+}
+
+.record-active {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid color-mix(in oklch, oklch(58% 0.21 25) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, oklch(58% 0.21 25) 6%, transparent);
+}
+
+.record-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.record-indicator .record-dot {
+  background: oklch(58% 0.21 25);
+}
+
+.record-dot.pulse {
+  animation: record-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+}
+
+button.record-stop {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  background: transparent;
+  color: inherit;
+  border: 1px solid color-mix(in oklch, currentColor 28%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+button.record-stop:hover:not(:disabled) {
+  background: color-mix(in oklch, currentColor 8%, transparent);
+}
+
+button.record-stop:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.record-saved {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.record-saved code {
+  font-family: ui-monospace, SF Mono, monospace;
+  font-size: 0.85rem;
+  background: color-mix(in oklch, currentColor 8%, transparent);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+}
+
 .error {
   color: oklch(58% 0.21 25);
   font-family: ui-monospace, SF Mono, monospace;
