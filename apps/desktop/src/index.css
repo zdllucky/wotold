@@ -1,0 +1,48 @@
+:root {
+  font-family: -apple-system, system-ui, sans-serif;
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: oklch(98% 0 0);
+  color: oklch(18% 0 0);
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: oklch(14% 0.01 250);
+    color: oklch(94% 0.01 250);
+  }
+}
+
+.app {
+  text-align: center;
+  padding: 2rem;
+}
+
+h1 {
+  margin: 0 0 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.device-id {
+  font-family: ui-monospace, SF Mono, monospace;
+  font-size: 0.85rem;
+  opacity: 0.55;
+}
+
+.hint {
+  opacity: 0.5;
+  font-size: 0.9rem;
+}
+
+.error {
+  color: oklch(58% 0.21 25);
+  font-family: ui-monospace, SF Mono, monospace;
+  font-size: 0.85rem;
+}

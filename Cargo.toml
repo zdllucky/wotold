@@ -1,10 +1,9 @@
 [workspace]
 resolver = "2"
-members = []
+members = ["apps/desktop/src-tauri"]
 
-# Members появятся по мере реализации:
-#   - "apps/desktop/src-tauri"   (Этап 1)
-#   - "services/mcp"             (Этап 7, если выносится отдельным Rust-бинарём)
+# Кандидат на будущего члена: services/mcp (Этап 7),
+# если MCP-сервер выносится отдельным Rust-бинарём.
 
 [workspace.package]
 version = "0.0.1"
