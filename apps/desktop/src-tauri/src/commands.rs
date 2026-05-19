@@ -1,6 +1,11 @@
 use tauri::{AppHandle, State};
 
-use crate::{db::OwnerContact, state::AppState, updater::AvailableUpdate, AppError};
+use crate::{
+    db::{Contact, ContactInput, OwnerContact},
+    state::AppState,
+    updater::AvailableUpdate,
+    AppError,
+};
 
 #[tauri::command]
 pub fn get_device_id(state: State<'_, AppState>) -> String {
@@ -10,6 +15,24 @@ pub fn get_device_id(state: State<'_, AppState>) -> String {
 #[tauri::command]
 pub async fn get_owner_contact(state: State<'_, AppState>) -> Result<OwnerContact, AppError> {
     crate::db::ensure_owner_contact(&state.db).await
+}
+
+#[tauri::command]
+pub async fn list_contacts(state: State<'_, AppState>) -> Result<Vec<Contact>, AppError> {
+    crate::db::list_contacts(&state.db).await
+}
+
+#[tauri::command]
+pub async fn create_contact(
+    state: State<'_, AppState>,
+    input: ContactInput,
+) -> Result<Contact, AppError> {
+    crate::db::create_contact(&state.db, input).await
+}
+
+#[tauri::command]
+pub async fn delete_contact(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    crate::db::delete_contact(&state.db, &id).await
 }
 
 /// Неблокирующая проверка обновления (M11.4). UI вызывает при старте,
