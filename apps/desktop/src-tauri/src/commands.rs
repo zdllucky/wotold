@@ -169,7 +169,7 @@ pub fn open_system_privacy_pane(pane: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-pub async fn stop_recording(state: State<'_, AppState>) -> Result<Call, AppError> {
+pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Result<Call, AppError> {
     let session = {
         let mut guard = state.recording.lock().await;
         guard
@@ -178,11 +178,37 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<Call, AppError
     };
 
     let call_id = session.call_id.clone();
-    match audio_macos::stop(session).await {
-        Ok(result) => crate::db::finish_recording(&state.db, &call_id, result.duration_sec).await,
+    let mic_path = session.mic_path.clone();
+    let system_path = session.system_path.clone();
+    let result = audio_macos::stop(session).await;
+
+    let call = match result {
+        Ok(r) => crate::db::finish_recording(&state.db, &call_id, r.duration_sec).await?,
         Err(e) => {
             let _ = crate::db::fail_recording(&state.db, &call_id).await;
-            Err(e)
+            return Err(e);
         }
-    }
+    };
+
+    // M2.4-2.5: транскрипция в фоне. Возвращаем клиенту calls row сразу
+    // (status=processing), статус подтянется через list_calls когда pipeline
+    // финишнет (status → ready или failed).
+    let pool = state.db.clone();
+    let device_id = state.device_id.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let _handle = app; // зарезервировано на будущий emit(event) когда пайплайн готов
+    tauri::async_runtime::spawn(async move {
+        let ctx = crate::pipeline::PipelineCtx {
+            call_id: call_id.clone(),
+            call_dir: app_data_dir.join("calls").join(&call_id),
+            mic_path,
+            system_path,
+            device_id,
+        };
+        if let Err(e) = crate::pipeline::run(&pool, ctx).await {
+            log::error!("pipeline {call_id} error: {e}");
+        }
+    });
+
+    Ok(call)
 }

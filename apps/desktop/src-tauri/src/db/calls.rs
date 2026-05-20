@@ -79,6 +79,43 @@ pub async fn finish_recording(
         .ok_or_else(|| AppError::Other(format!("call {call_id} disappeared")))
 }
 
+/// Перевести запись в финальный статус `ready` после успешного pipeline'а.
+pub async fn mark_call_ready(pool: &SqlitePool, call_id: &str) -> Result<(), AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query("UPDATE calls SET status = 'ready', updated_at = ?1 WHERE id = ?2")
+        .bind(&now)
+        .bind(call_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Проставить `lang_detected` и `provider` (последний фактически использованный)
+/// после транскрипции. Статус остаётся `processing` — финальный `ready` ставит
+/// `mark_call_ready` после всех артефактов.
+pub async fn set_call_meta(
+    pool: &SqlitePool,
+    call_id: &str,
+    lang_detected: Option<&str>,
+    provider: &str,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "UPDATE calls
+         SET lang_detected = ?1,
+             provider = ?2,
+             updated_at = ?3
+         WHERE id = ?4",
+    )
+    .bind(lang_detected)
+    .bind(provider)
+    .bind(&now)
+    .bind(call_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Пометить запись как failed (sidecar сломался, тайм-аут и т.п.).
 pub async fn fail_recording(pool: &SqlitePool, call_id: &str) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
