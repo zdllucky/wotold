@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 import { humanError } from '../api/errors';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   getRecordingState,
   listCalls,
@@ -37,6 +38,10 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   // #39 (C1): recording consent. Сохраняется один раз — при первом «Начать запись».
   const [consentAt, setConsentAt] = useState<string | null>(null);
   const [showConsent, setShowConsent] = useState(false);
+  const consentRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(consentRef, showConsent, {
+    onClose: () => setShowConsent(false),
+  });
   // [B16] HomePage hero stats — последний звонок, число за неделю, 3 recent для quick-open.
   const [recentCalls, setRecentCalls] = useState<Call[]>([]);
 
@@ -386,6 +391,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
 
       {showConsent && (
         <div
+          ref={consentRef}
           className="modal-backdrop"
           role="dialog"
           aria-modal="true"

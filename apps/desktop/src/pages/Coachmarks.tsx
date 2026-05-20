@@ -5,8 +5,9 @@
 // [B17] Atelier v2 — .modal-backdrop + .index-card per docs/design/atelier-v2.
 // Эмодзи в заголовках убраны (handoff: text carries enough signal).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface CoachStep {
   eyebrow: string;
@@ -40,6 +41,7 @@ const STEPS: CoachStep[] = [
 export function Coachmarks() {
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -64,16 +66,18 @@ export function Coachmarks() {
     }
   };
 
+  // [B17] Focus trap + ESC handled in useFocusTrap. Arrow nav остаётся
+  // отдельным listener — ESC и focus trap идут через хук.
+  useFocusTrap(ref, visible, { onClose: () => void dismiss() });
+
   useEffect(() => {
     if (!visible) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') void dismiss();
       if (e.key === 'ArrowRight' && step < STEPS.length - 1) setStep(step + 1);
       if (e.key === 'ArrowLeft' && step > 0) setStep(step - 1);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, step]);
 
   if (!visible) return null;
@@ -82,6 +86,7 @@ export function Coachmarks() {
 
   return (
     <div
+      ref={ref}
       className="modal-backdrop"
       role="dialog"
       aria-modal="true"
