@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { ask } from '@tauri-apps/plugin-dialog';
 import { humanError } from '../api/errors';
 
 import {
@@ -265,6 +267,67 @@ export function SettingsPage() {
       )}
 
       <p className="hint">Все изменения сохраняются автоматически.</p>
+
+      <div className="settings-section">
+        <h3 className="settings-section-title">🗑 Конфиденциальность</h3>
+        <Card compact>
+          <DeleteAllDataSection />
+        </Card>
+      </div>
     </section>
+  );
+}
+
+// [B16 audit P2 / GDPR Art. 17]: Полное удаление данных. После клика юзер
+// должен сам перезапустить app (мы не хотим управлять процессом-перезапуском
+// из Tauri-команды — там нюансы с relaunch plugin).
+function DeleteAllDataSection() {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleWipe = async () => {
+    const ok = await ask(
+      'УДАЛИТЬ ВСЕ ДАННЫЕ?\n\nЭто навсегда сотрёт:\n  • все записи звонков и аудио\n  • все контакты и voice samples\n  • сессию входа и BYO API-ключи\n\nДействие необратимо. Подойдёт перед передачей устройства другому человеку или при отзыве согласия.',
+      { title: 'Wotold — Полная очистка', kind: 'warning', okLabel: 'Удалить всё', cancelLabel: 'Отмена' },
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await invoke('wipe_all_data');
+      setDone(true);
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <div>
+        <p className="text-muted" style={{ marginTop: 0 }}>
+          ✓ Все данные удалены. Закрой и заново открой Wotold чтобы начать
+          с чистой установки.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-muted" style={{ marginTop: 0 }}>
+        Стирает все записи звонков, контакты, voice samples, сессию и
+        BYO-ключи. Необратимо. Полезно при отзыве согласия или передаче
+        устройства.
+      </p>
+      {error && <p className="error">{error}</p>}
+      <div className="form-actions" style={{ marginTop: 'var(--space-2)' }}>
+        <Button variant="danger" onClick={handleWipe} disabled={busy} busy={busy}>
+          {busy ? 'Удаляем…' : 'Удалить все данные'}
+        </Button>
+      </div>
+    </div>
   );
 }

@@ -218,8 +218,8 @@
 - [x] **log rotation** — `max_file_size(5MB).rotation(KeepOne)` в tauri_plugin_log.
 - [x] **Apple/Linux build guard** — compile_error! в audio/mod.rs для cfg(target_os="linux").
 - [x] **README user-facing** — добавлена секция «Для пользователя» с 5 шагов установки + что Wotold не делает + если что-то не работает + privacy summary.
-- [ ] **Privacy Policy + ToS** — `docs/PRIVACY.md` минимум, ссылка из Onboarding step 1. GDPR Art. 13 обязательно для audio-recording app.
-- [ ] **Delete-all-data button** — Settings → Confidentiality → wipe `app.db` + `calls/` + keychain + restart onboarding. GDPR Art. 17.
+- [x] **Privacy Policy + ToS** — `docs/PRIVACY.md` создан (v0.1, GDPR Art. 13). Ссылка из Onboarding step 1 — follow-up.
+- [x] **Delete-all-data button** — Settings → 🗑 Конфиденциальность → красная кнопка с confirm. Стирает calls/, app.db, device.json, BYO ключи и session. Требует ручного restart.
 
 ### UX / CX (10 P0)
 
