@@ -61,8 +61,8 @@
 ## Идентификация · Этап 4 / M3
 
 - [x] **#24** M3.1 Voice embedding foundation (O3 — выбран `ort` + ONNX WeSpeaker/ECAPA-TDNN, 256-dim). Модуль `embeddings`: Embedder trait, cosine_similarity, BLOB serde. Реальный OnnxEmbedder + per-segment audio decode + sidecar split → #25
-- [ ] **#25** M3.2-3.4 Matching: cosine по `voice_samples` + LLM hint + merge в ranked suggestion → #24
-- [ ] **#26** M3.5-3.7 UI confirmation (R2 — никакой автопривязки) + dynamic sample update (N=5) + mic→owner auto-bind → #25
+- [x] **#25** M3.2-3.4 Matching foundation — `audio_io::extract_segment` (hound WAV slicing), `matching::{list_consenting_samples, rank_candidates}` (cosine + C2 фильтр), `llm_hint::request_speaker_hints` (Anthropic prompt + JSON parse), `merge_signals::merge` (embedding+llm с embedding bias), `identify::identify_speakers` orchestrator → `db::insert_speaker_suggestions` (call_speakers с confirmed=0). Production pipeline wire через #26 + real OnnxEmbedder.
+- [ ] **#26** M3.5-3.7 UI confirmation (R2 — никакой автопривязки) + dynamic sample update (N=5) + mic→owner auto-bind + wire identify_speakers в pipeline::run + real OnnxEmbedder → #25
 
 ## Recap · Этап 5 / M4
 
@@ -114,7 +114,7 @@
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#25` · `#42` · `#44`
+`#26` · `#35` · `#42` · `#44`
 
 ## Backlog (кандидаты на доработку)
 

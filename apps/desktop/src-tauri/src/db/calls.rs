@@ -192,6 +192,42 @@ pub async fn list_calls(pool: &SqlitePool) -> Result<Vec<Call>, AppError> {
     Ok(rows)
 }
 
+/// M3.4 (#25): сохранить предложенные привязки спикеров (suggestion_*).
+/// confirmed=0 — пользователь подтверждает через UI (M3.5 / #26).
+/// Перезаписываем предложения при повторном run (idempotent через DELETE+INSERT).
+pub async fn insert_speaker_suggestions(
+    pool: &SqlitePool,
+    call_id: &str,
+    suggestions: &[crate::merge_signals::MergedSuggestion],
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM call_speakers WHERE call_id = ?1")
+        .bind(call_id)
+        .execute(&mut *tx)
+        .await?;
+    for s in suggestions {
+        let source = match s.source {
+            crate::merge_signals::SuggestionSource::Embedding => "embedding",
+            crate::merge_signals::SuggestionSource::Llm => "llm",
+            crate::merge_signals::SuggestionSource::Both => "both",
+        };
+        sqlx::query(
+            "INSERT INTO call_speakers (id, call_id, speaker_tag, suggestion_contact_id, suggestion_score, suggestion_source, confirmed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(call_id)
+        .bind(&s.speaker_tag)
+        .bind(&s.contact_id)
+        .bind(s.score)
+        .bind(source)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 /// C5 (#41) cascade delete: удаляет calls row + связанные строки
 /// (action_items, call_speakers по CASCADE FK; voice_samples с source_call=id
 /// удаляются явно — FK с ON DELETE SET NULL логически некорректен здесь).

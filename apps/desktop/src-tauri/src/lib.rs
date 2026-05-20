@@ -2,12 +2,22 @@
 // в Этапах 2 (audio), 3 (transcription) и 5 (llm).
 #[allow(dead_code, unused_imports)]
 mod audio;
+#[allow(dead_code)]
+mod audio_io;
 mod commands;
 mod db;
 mod device;
 #[allow(dead_code)]
 mod embeddings;
 mod error;
+#[allow(dead_code)]
+mod identify;
+#[allow(dead_code)]
+mod llm_hint;
+#[allow(dead_code)]
+mod matching;
+#[allow(dead_code)]
+mod merge_signals;
 mod pipeline;
 // AnthropicProvider::new пока не вызывается из production (ждёт #28),
 // Soniox/Gladia подключатся через pipeline. Скоуп allow ещё нужен.
