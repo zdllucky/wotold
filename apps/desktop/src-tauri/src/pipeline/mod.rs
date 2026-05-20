@@ -31,8 +31,11 @@ const SETTING_STT_LANG: &str = "stt_lang";
 const SETTING_LLM_MODEL: &str = "llm_model";
 const SETTING_PROXY_BASE_URL: &str = "proxy_base_url";
 
-/// Default production proxy URL — managed-режим работает out-of-the-box,
-/// user override через Settings → Прокси → Advanced.
+/// Default proxy URL — debug-сборки (cargo run / tauri dev) целятся на staging,
+/// release — на production. User override через Settings → Прокси → Advanced.
+#[cfg(debug_assertions)]
+const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy-staging.animereader.workers.dev";
+#[cfg(not(debug_assertions))]
 const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy.animereader.workers.dev";
 
 /// Контекст одной транскрипции: пути к двум дорожкам, call_dir для артефактов,
