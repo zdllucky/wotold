@@ -237,14 +237,14 @@
 
 ### UX / CX (P1)
 
-- [ ] **Settings auto-name из NSFullUserName** в onboarding (default «Я» + edit).
-- [ ] **Hotkey ⌘⇧R для start/stop** записи.
-- [ ] **Pre-check permissions** перед start_recording — блокировать кнопку с tooltip.
-- [ ] **CallDetailPage auto-name** для звонка без title (например «{first speaker name} · {date}»).
+- [ ] **Settings auto-name из NSFullUserName** в onboarding (default «Я» + edit). Требует Swift bridge — отложен.
+- [x] **Hotkey ⌘⇧R для start/stop** записи. Window-level keydown, обе раскладки, ignore при input focus.
+- [x] **Pre-check permissions** перед start_recording — Rust check перед sidecar start, clear error.
+- [x] **CallDetailPage auto-name** для звонка без title — «{contact name} · 20 мая» если есть confirmed speaker.
 - [ ] **Failed banner с CTA** — кнопка «Попробовать снова» прямо внутри (сейчас reprocess отдельной кнопкой).
 - [ ] **Pipeline progress в topnav** — global indicator пока идёт processing. Сейчас juzер видит «⚙ В работе» без progress.
 - [ ] **BYO ключи validation** при выборе path=byo но пустые ключи — предупреждать перед записью.
-- [ ] **Контакты search** + identifier kind icons + simpler attributes UI.
+- [x] **Контакты search** — фильтр по name/org/role/identifiers/notes когда >5 контактов. Identifier kind icons + attributes UI follow-up.
 - [ ] **Export markdown** для recap/transcript из CallDetailPage.
 - [ ] **CSS responsive breakpoints** — `@media (max-width: 720px)` для узких окон (640x480 ломаются rows).
 - [ ] **Recording level meter (B14 backlog)** — Swift sidecar emits RMS → DS LevelMeter.
@@ -274,7 +274,7 @@
 - [ ] **CallRow depth** — micro-elevation на hover (`box-shadow: var(--shadow-1)`), avatar/speaker-badge слева, chevron `›` справа.
 - [ ] **Failed banner как Alert component** — лента акцент 3px + иконка в круге + action-button «попробовать снова» прямо в банере.
 - [ ] **Settings sections с иконками** — 🔐/🎙/🤖/👤 рядом с h3 + group-clusters (Privacy / Providers / Account) с visual separators.
-- [ ] **Empty states с дефолт-иконками** — `Empty.tsx` дефолтная иконка по контексту.
+- [x] **Empty states с дефолт-иконками** — Empty.tsx fallback на ✨ если caller не передал свой icon.
 - [ ] **Transcript bubble max-width** — `min(75%, 36rem)` вместо просто `75%` (на 980px = нечитаемо длинная строка).
 - [ ] **Permissions section dashed border → solid** (выглядит как недоделанный wireframe).
 - [ ] **Tabs active state visual** — `background: var(--color-surface-sunken)` для active trigger + bolder weight. Сейчас разница тонкая.
@@ -302,7 +302,7 @@
 - [ ] **Split db/calls.rs** (769 строк) на calls_lifecycle.rs + calls_speakers.rs + calls_meta.rs.
 - [ ] **Extract managed_stt_request helper** — duplicated между soniox.rs и gladia.rs (~100 строк).
 - [ ] **audio_io::extract_segment** — открывает WAV file заново для каждого segment. На 100 segments 100x чтение. Open once + slice.
-- [ ] **Soniox text concat без пробелов** — `last.text.push_str(&tok.text)` может склеить слова без пробела для некоторых языков.
+- [x] **Soniox text concat без пробелов** — needsSpaceBefore() вставляет пробел между letter-bordered tokens (anti-склейка ru/kk).
 - [ ] **LIKE wildcards escape в MCP db.ts** — `searchCalls` raw `LIKE '%query%'` не экранирует `%` и `_`.
 - [ ] **PRAGMA busy_timeout** — `db/init` добавить `busy_timeout = 5000` для concurrent writes.
 - [ ] **EMBEDDING_DIM в schema** — добавить `voice_samples.embedding_dim INTEGER` column, reject mismatched.
