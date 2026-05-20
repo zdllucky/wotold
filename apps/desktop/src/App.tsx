@@ -93,7 +93,14 @@ export function App() {
       </nav>
 
       <main className="app">
-        {page === 'home' && <HomePage />}
+        {page === 'home' && (
+          <HomePage
+            onOpenCall={(id) => {
+              setDetailCallId(id);
+              setPage('calls');
+            }}
+          />
+        )}
         {page === 'calls' &&
           ((detailCallId ?? new URLSearchParams(window.location.search).get('detail')) ? (
             <CallDetailPage
