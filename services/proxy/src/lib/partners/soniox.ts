@@ -147,7 +147,11 @@ export function normalizeSoniox(t: SonioxTranscript): DiarizedTranscript {
     const endMs = tok.end_ms ?? startMs;
 
     if (current && current.speakerTag === speakerTag) {
-      current.text += tok.text;
+      // [B16 audit P1]: Soniox для некоторых языков (русский, казахский)
+      // эмиттит токены без leading space, что склеивает слова: 'Привет'
+      // + 'мир' = 'Приветмир'. Защита — добавляем пробел между токенами
+      // если оба граничат с буквой и нет punctuation.
+      current.text += needsSpaceBefore(current.text, tok.text) ? ` ${tok.text}` : tok.text;
       current.end = endMs / 1000;
     } else {
       current = {
@@ -175,4 +179,25 @@ async function safeText(resp: Response): Promise<string> {
   } catch {
     return '<unreadable>';
   }
+}
+
+// [B16] Возвращает true если между left и right нужно вставить пробел.
+// Cases:
+//  - left пуст → нет
+//  - last(left) уже whitespace или dash → нет (токен сам пришёл с разделителем)
+//  - first(right) — whitespace или punctuation .,!?;:)... → нет
+//  - оба граничат буквой/цифрой → да (anti-склейка для ru/kk)
+function needsSpaceBefore(left: string, right: string): boolean {
+  if (!left || !right) return false;
+  const lastChar = left[left.length - 1]!;
+  const firstChar = right[0]!;
+  if (/\s/.test(lastChar)) return false;
+  if (/\s/.test(firstChar)) return false;
+  // Не вставляем пробел перед punctuation (включая русские/казахские варианты).
+  if (/[.,!?;:)\]\}»…]/.test(firstChar)) return false;
+  // Не вставляем после открывающей скобки/кавычки.
+  if (/[([{«]/.test(lastChar)) return false;
+  // Не вставляем между tokens соединёнными дефисом (как в 'кое-как').
+  if (lastChar === '-' || firstChar === '-') return false;
+  return true;
 }

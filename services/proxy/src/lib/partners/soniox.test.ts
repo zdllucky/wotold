@@ -59,6 +59,53 @@ describe('normalizeSoniox', () => {
     });
     expect(t.segments[0]!.speakerTag).toBe('Speaker 0');
   });
+
+  // [B16] anti-склейка для языков где Soniox не эмитит leading space (ru/kk).
+  test('inserts space between letter-bordered tokens (ru)', () => {
+    const t = normalizeSoniox({
+      duration_ms: 2000,
+      tokens: [
+        { text: 'Привет', start_ms: 0, end_ms: 500, speaker: 0 },
+        { text: 'мир', start_ms: 500, end_ms: 1000, speaker: 0 },
+      ],
+    });
+    expect(t.segments[0]!.text).toBe('Привет мир');
+  });
+
+  test('does not insert space when token already prefixed (en)', () => {
+    const t = normalizeSoniox({
+      duration_ms: 2000,
+      tokens: [
+        { text: 'Hello', start_ms: 0, end_ms: 500, speaker: 0 },
+        { text: ' world', start_ms: 500, end_ms: 1000, speaker: 0 },
+      ],
+    });
+    expect(t.segments[0]!.text).toBe('Hello world');
+  });
+
+  test('does not insert space before punctuation', () => {
+    const t = normalizeSoniox({
+      duration_ms: 2000,
+      tokens: [
+        { text: 'Привет', start_ms: 0, end_ms: 500, speaker: 0 },
+        { text: ',', start_ms: 500, end_ms: 600, speaker: 0 },
+        { text: 'друг', start_ms: 600, end_ms: 1000, speaker: 0 },
+      ],
+    });
+    expect(t.segments[0]!.text).toBe('Привет, друг');
+  });
+
+  test('does not insert space inside hyphenated words', () => {
+    const t = normalizeSoniox({
+      duration_ms: 2000,
+      tokens: [
+        { text: 'кое', start_ms: 0, end_ms: 200, speaker: 0 },
+        { text: '-', start_ms: 200, end_ms: 250, speaker: 0 },
+        { text: 'как', start_ms: 250, end_ms: 500, speaker: 0 },
+      ],
+    });
+    expect(t.segments[0]!.text).toBe('кое-как');
+  });
 });
 
 describe('transcribeSoniox', () => {
