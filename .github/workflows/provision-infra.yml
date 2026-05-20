@@ -1,0 +1,106 @@
+name: Provision Cloudflare Infra
+
+# [B8.6]: one-time bootstrap KV namespaces + R2 bucket для указанного env.
+# Печатает выделенные IDs в job summary — user копирует в services/proxy/wrangler.toml
+# вместо TODO_*_KV_NAMESPACE_ID плейсхолдеров и коммитит.
+#
+# Запуск: Actions → Provision Cloudflare Infra → Run workflow → environment.
+# Только manual — никакой авто-провизии при push, чтобы не плодить namespace'ы.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    name: Provision (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Resolve bucket name
+        id: bucket
+        run: |
+          if [ "${{ inputs.environment }}" = "staging" ]; then
+            echo "name=wotold-stt-staging-stg" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=wotold-stt-staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create KV namespace QUOTA
+        id: kv_quota
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: services/proxy
+        run: |
+          set -eo pipefail
+          output=$(pnpm exec wrangler kv namespace create QUOTA --env ${{ inputs.environment }} 2>&1 | tee /dev/stderr || true)
+          # wrangler выводит id в формате: id = "<32hex>"
+          id=$(echo "$output" | grep -E 'id\s*=' | sed -E 's/.*id\s*=\s*"([0-9a-f]+)".*/\1/' | head -1 || true)
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+
+      - name: Create KV namespace AUTH
+        id: kv_auth
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: services/proxy
+        run: |
+          set -eo pipefail
+          output=$(pnpm exec wrangler kv namespace create AUTH --env ${{ inputs.environment }} 2>&1 | tee /dev/stderr || true)
+          id=$(echo "$output" | grep -E 'id\s*=' | sed -E 's/.*id\s*=\s*"([0-9a-f]+)".*/\1/' | head -1 || true)
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+
+      - name: Create R2 bucket
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: services/proxy
+        run: |
+          set -eo pipefail
+          pnpm exec wrangler r2 bucket create "${{ steps.bucket.outputs.name }}" 2>&1 | tee /dev/stderr || \
+            echo "R2 bucket already exists or error (idempotent OK)"
+
+      - name: Job summary
+        run: |
+          {
+            echo "## Provisioned ${{ inputs.environment }}"
+            echo ""
+            echo "Подставить в \`services/proxy/wrangler.toml\` под \`[env.${{ inputs.environment }}]\`:"
+            echo ""
+            echo "\`\`\`toml"
+            echo "[[env.${{ inputs.environment }}.kv_namespaces]]"
+            echo "binding = \"QUOTA\""
+            echo "id = \"${{ steps.kv_quota.outputs.id }}\""
+            echo ""
+            echo "[[env.${{ inputs.environment }}.kv_namespaces]]"
+            echo "binding = \"AUTH\""
+            echo "id = \"${{ steps.kv_auth.outputs.id }}\""
+            echo "\`\`\`"
+            echo ""
+            echo "R2 bucket: \`${{ steps.bucket.outputs.name }}\`"
+            echo ""
+            echo "### Next steps"
+            echo "1. Скопировать ID'ы выше в \`services/proxy/wrangler.toml\` (заменить TODO_*)."
+            echo "2. \`wrangler secret put --env ${{ inputs.environment }}\` для каждого секрета (см. \`docs/DEPLOYMENT.md\` § 0.4)."
+            echo "3. Push в main → авто-deploy staging. Тэг \`v*.*.*\` → production."
+          } >> "$GITHUB_STEP_SUMMARY"
