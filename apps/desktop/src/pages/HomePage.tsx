@@ -346,11 +346,14 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 gridTemplateColumns: '120px 1fr auto',
                 gap: 24,
                 padding: '14px 0',
-                borderTop: idx === 0 ? 'none' : '1px solid var(--line-soft)',
                 width: '100%',
                 background: 'none',
+                // Reset all borders FIRST, then set borderTop — порядок важен:
+                // shorthand `border` сбрасывает borderTopColor/width даже если
+                // borderTop задан выше. (Code-review HIGH fix.)
                 border: 'none',
-                borderTopStyle: idx === 0 ? 'none' : 'solid',
+                borderTop:
+                  idx === 0 ? 'none' : '1px solid var(--line-soft)',
                 textAlign: 'left',
                 cursor: onOpenCall ? 'pointer' : 'default',
               }}
@@ -382,12 +385,21 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       )}
 
       {showConsent && (
-        <div className="modal-backdrop">
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="consent-title"
+        >
           <div className="index-card">
             <div className="eyebrow" style={{ marginBottom: 10 }}>
               Согласие на запись
             </div>
-            <h3 className="title" style={{ marginBottom: 14 }}>
+            <h3
+              id="consent-title"
+              className="title"
+              style={{ marginBottom: 14 }}
+            >
               Перед стартом
             </h3>
             <p style={{ fontFamily: 'var(--font-serif)', fontSize: 16, lineHeight: 1.55 }}>
