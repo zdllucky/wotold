@@ -246,7 +246,7 @@
 - [x] **BYO ключи validation** — Settings → BYO secrets section warn если все ключи пустые (red border-left) или часть (yellow). Юзер видит до попытки записи.
 - [x] **Контакты search** — фильтр по name/org/role/identifiers/notes когда >5 контактов. Identifier kind icons + attributes UI follow-up.
 - [ ] **Export markdown** для recap/transcript из CallDetailPage.
-- [ ] **CSS responsive breakpoints** — `@media (max-width: 720px)` для узких окон (640x480 ломаются rows).
+- [x] **CSS responsive breakpoints** — @media (max-width: 760px) topnav-label hide + call-row 2-row + app padding; (max-width: 560px) home-stats 1col + tabs wrap.
 - [ ] **Recording level meter (B14 backlog)** — Swift sidecar emits RMS → DS LevelMeter.
 
 ### UX / CX (P2)
@@ -297,8 +297,8 @@
 - [x] **Hand-rolled Promise.all → Promise.allSettled** в `CallDetailPage` — критична только call meta, остальные artifacts soft-fail с console.warn.
 - [x] **`as 400 | 502 | 503` type cast в llm.ts** — заменён explicit whitelist.
 - [x] **`.catch(() => {})` silent ignores** в HomePage — заменены на console.warn.
-- [ ] **Wide `#[allow(dead_code, unused_imports)]`** в lib.rs:1-25 — surgical allows только на specific items.
-- [ ] **Cargo.toml `[lints]`** добавить `unsafe_code = "forbid"`, `clippy::unwrap_used = "warn"`.
+- [x] **Wide `#[allow(dead_code, unused_imports)]`** — surgical allows только на #25 voice-matching scaffold (embeddings/matching/identify/etc), точечные allows на NotImplemented variants. Cargo check: 0 warnings.
+- [x] **Cargo.toml `[lints]`** — unsafe_code = forbid, clippy::unwrap_used/expect_used/panic = warn.
 - [ ] **Split db/calls.rs** (769 строк) на calls_lifecycle.rs + calls_speakers.rs + calls_meta.rs.
 - [ ] **Extract managed_stt_request helper** — duplicated между soniox.rs и gladia.rs (~100 строк).
 - [ ] **audio_io::extract_segment** — открывает WAV file заново для каждого segment. На 100 segments 100x чтение. Open once + slice.
