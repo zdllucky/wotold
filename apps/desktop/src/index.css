@@ -804,6 +804,225 @@ button.record-stop:disabled {
   border-radius: 0.3rem;
 }
 
+button.call-open {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+button.call-open:hover {
+  opacity: 0.85;
+}
+
+.call-detail {
+  max-width: 44rem;
+  width: 100%;
+  text-align: left;
+}
+
+button.back {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.3rem 0;
+  margin-bottom: 0.6rem;
+  opacity: 0.7;
+}
+
+button.back:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.call-detail-header {
+  margin-bottom: 1rem;
+}
+
+.call-detail-header h2 {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+}
+
+.call-detail-header .meta {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.status-pill {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-weight: 600;
+  background: color-mix(in oklch, currentColor 10%, transparent);
+}
+
+.status-pill.status-recording {
+  background: color-mix(in oklch, oklch(58% 0.21 25) 16%, transparent);
+  color: oklch(58% 0.21 25);
+}
+
+.status-pill.status-processing {
+  background: color-mix(in oklch, oklch(68% 0.18 250) 18%, transparent);
+  color: oklch(68% 0.18 250);
+}
+
+.status-pill.status-ready {
+  background: color-mix(in oklch, oklch(60% 0.16 145) 20%, transparent);
+  color: oklch(55% 0.18 145);
+}
+
+.status-pill.status-failed {
+  background: color-mix(in oklch, oklch(58% 0.21 25) 14%, transparent);
+  color: oklch(58% 0.21 25);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.3rem;
+  border-bottom: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+  margin-bottom: 0.85rem;
+}
+
+.tabs button {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.92rem;
+  margin-bottom: -1px;
+}
+
+.tabs button:hover {
+  background: color-mix(in oklch, currentColor 6%, transparent);
+}
+
+.tabs button.active {
+  border-bottom-color: oklch(68% 0.18 250);
+  font-weight: 500;
+}
+
+.tabs button .tab-empty {
+  opacity: 0.45;
+  margin-left: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.tab-panel {
+  min-height: 12rem;
+}
+
+.markdown {
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.markdown h1 {
+  font-size: 1.4rem;
+  margin: 0 0 0.85rem;
+  font-weight: 600;
+}
+
+.markdown h2 {
+  font-size: 1.1rem;
+  margin: 1.2rem 0 0.55rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.markdown h3 {
+  font-size: 1rem;
+  margin: 0.9rem 0 0.45rem;
+}
+
+.markdown p {
+  margin: 0.55rem 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.4rem;
+  margin: 0.4rem 0;
+}
+
+.markdown li {
+  margin: 0.2rem 0;
+}
+
+.markdown code {
+  font-family: ui-monospace, SF Mono, monospace;
+  font-size: 0.85em;
+  background: color-mix(in oklch, currentColor 8%, transparent);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.3rem;
+}
+
+.markdown pre {
+  background: color-mix(in oklch, currentColor 6%, transparent);
+  padding: 0.8rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+}
+
+.markdown strong {
+  font-weight: 600;
+}
+
+.task-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.task {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in oklch, currentColor 10%, transparent);
+  border-radius: 0.55rem;
+  margin: 0.35rem 0;
+  font-size: 0.92rem;
+}
+
+.task-check {
+  font-size: 1.1rem;
+  opacity: 0.6;
+}
+
+.task.done {
+  opacity: 0.6;
+}
+
+.task.done .task-text {
+  text-decoration: line-through;
+}
+
+.task-text {
+  flex: 1;
+}
+
+.task-owner,
+.task-due {
+  font-size: 0.82rem;
+  opacity: 0.65;
+}
+
 .error {
   color: oklch(58% 0.21 25);
   font-family: ui-monospace, SF Mono, monospace;

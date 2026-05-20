@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 
 import { listCalls, type Call } from '../api/recording';
 
-export function CallsPage() {
+interface CallsPageProps {
+  onOpen: (callId: string) => void;
+}
+
+export function CallsPage({ onOpen }: CallsPageProps) {
   const [calls, setCalls] = useState<Call[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,29 +28,34 @@ export function CallsPage() {
         <ul>
           {calls.map((c) => (
             <li key={c.id} className={`call call-${c.status}`}>
-              <div
-                className="call-status"
-                aria-label={c.status}
-                title={statusTooltip(c.status)}
+              <button
+                type="button"
+                className="call-open"
+                onClick={() => onOpen(c.id)}
+                title="Открыть детали"
               >
-                {statusIcon(c.status)}
-              </div>
-              <div className="call-meta">
-                <div className="call-when">{formatStarted(c.started_at)}</div>
-                <div className="call-detail">
-                  {formatDuration(c.duration_sec)} · {c.path_label}
-                  {c.provider && ` · ${c.provider}`}
-                  {c.lang_detected && ` · ${c.lang_detected}`}
+                <div
+                  className="call-status"
+                  aria-label={c.status}
+                  title={statusTooltip(c.status)}
+                >
+                  {statusIcon(c.status)}
                 </div>
-              </div>
-              <code className="call-id">{c.id.slice(0, 8)}</code>
+                <div className="call-meta">
+                  <div className="call-when">{formatStarted(c.started_at)}</div>
+                  <div className="call-detail">
+                    {formatDuration(c.duration_sec)} · {c.path_label}
+                    {c.provider && ` · ${c.provider}`}
+                    {c.lang_detected && ` · ${c.lang_detected}`}
+                  </div>
+                </div>
+                <code className="call-id">{c.id.slice(0, 8)}</code>
+              </button>
             </li>
           ))}
         </ul>
       )}
-      <p className="hint">
-        FTS-поиск по транскрипту и детальный экран — после подключения транскрипции (#22, #31).
-      </p>
+      <p className="hint">FTS-поиск по транскрипту — backlog (#30 follow-up).</p>
     </section>
   );
 }
