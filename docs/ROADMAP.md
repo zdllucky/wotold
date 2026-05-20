@@ -217,7 +217,7 @@
 - [x] **single-instance plugin** — `tauri-plugin-single-instance` v2 с feature deep-link, callback поднимает существующее окно.
 - [x] **log rotation** — `max_file_size(5MB).rotation(KeepOne)` в tauri_plugin_log.
 - [x] **Apple/Linux build guard** — compile_error! в audio/mod.rs для cfg(target_os="linux").
-- [ ] **README user-facing** — переписать или добавить INSTALL.md секцию для конечного пользователя (5 шагов: скачать → открыть → разрешить → онбординг → запись).
+- [x] **README user-facing** — добавлена секция «Для пользователя» с 5 шагов установки + что Wotold не делает + если что-то не работает + privacy summary.
 - [ ] **Privacy Policy + ToS** — `docs/PRIVACY.md` минимум, ссылка из Onboarding step 1. GDPR Art. 13 обязательно для audio-recording app.
 - [ ] **Delete-all-data button** — Settings → Confidentiality → wipe `app.db` + `calls/` + keychain + restart onboarding. GDPR Art. 17.
 
@@ -243,7 +243,7 @@
 - [x] **CallDetailPage auto-name** для звонка без title — «{contact name} · 20 мая» если есть confirmed speaker.
 - [ ] **Failed banner с CTA** — кнопка «Попробовать снова» прямо внутри (сейчас reprocess отдельной кнопкой).
 - [ ] **Pipeline progress в topnav** — global indicator пока идёт processing. Сейчас juzер видит «⚙ В работе» без progress.
-- [ ] **BYO ключи validation** при выборе path=byo но пустые ключи — предупреждать перед записью.
+- [x] **BYO ключи validation** — Settings → BYO secrets section warn если все ключи пустые (red border-left) или часть (yellow). Юзер видит до попытки записи.
 - [x] **Контакты search** — фильтр по name/org/role/identifiers/notes когда >5 контактов. Identifier kind icons + attributes UI follow-up.
 - [ ] **Export markdown** для recap/transcript из CallDetailPage.
 - [ ] **CSS responsive breakpoints** — `@media (max-width: 720px)` для узких окон (640x480 ломаются rows).
