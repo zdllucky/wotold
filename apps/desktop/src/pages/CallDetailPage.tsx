@@ -168,7 +168,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       <header className="call-detail-header">
         <div className="call-detail-title-row">
           <h2 className="call-detail-title">
-            {call.title ?? `Звонок ${call.id.slice(0, 8)}`}
+            {call.title ?? deriveAutoTitle(call, speakersLite)}
           </h2>
           <Button
             variant="ghost"
@@ -372,4 +372,32 @@ function formatDuration(sec: number | null): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// [B16] Auto-name для звонка без title — берём имя первого confirmed
+// контакта (не owner) + дату. Так список перестаёт выглядеть как
+// «Звонок a0f3…», «Звонок 5d21…», начинают читаться по существу.
+function deriveAutoTitle(call: Call, speakers: CallSpeakerView[]): string {
+  const dateStr = (() => {
+    try {
+      return new Date(call.started_at).toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: 'short',
+      });
+    } catch {
+      return '';
+    }
+  })();
+
+  const namedSpeakers = speakers
+    .filter((s) => s.confirmed && s.contact_display_name)
+    .map((s) => s.contact_display_name!);
+
+  if (namedSpeakers.length > 0) {
+    const primary = namedSpeakers[0];
+    const suffix = namedSpeakers.length > 1 ? ` +${namedSpeakers.length - 1}` : '';
+    return dateStr ? `${primary}${suffix} · ${dateStr}` : `${primary}${suffix}`;
+  }
+
+  return dateStr ? `Звонок · ${dateStr}` : `Звонок ${call.id.slice(0, 8)}`;
 }
