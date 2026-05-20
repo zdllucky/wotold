@@ -275,7 +275,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 }
 
 function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
-  if (!md) return <Empty description={emptyHint} />;
+  if (!md) return <Empty icon="📝" description={emptyHint} />;
   return (
     <div className="markdown">
       <ReactMarkdown>{md}</ReactMarkdown>
@@ -285,7 +285,7 @@ function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
 
 function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contact[] }) {
   if (tasks.length === 0) {
-    return <Empty description="Здесь будут задачи, упомянутые в звонке. Пока Wotold их не нашёл — попробуй переобработать звонок или дождись пересборки." />;
+    return <Empty icon="✅" description="Здесь будут задачи, упомянутые в звонке. Пока Wotold их не нашёл — попробуй переобработать звонок или дождись пересборки." />;
   }
   const nameById = new Map(contacts.map((c) => [c.id, c.display_name]));
   return (

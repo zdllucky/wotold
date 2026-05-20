@@ -7,6 +7,61 @@ import { Badge, CallRowSkeleton, Empty, InputField, SelectField, Toolbar } from 
 
 type StatusFilter = 'all' | 'recording' | 'processing' | 'ready' | 'failed';
 
+/** [B16] Группировка звонков по логическим date-bucket'ам для sticky headers. */
+type DateBucket = 'today' | 'yesterday' | 'this_week' | 'older';
+
+function bucketFor(call: Call): DateBucket {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const callDate = new Date(call.started_at);
+  if (callDate >= startOfToday) return 'today';
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  if (callDate >= startOfYesterday) return 'yesterday';
+  const startOfWeek = new Date(startOfToday);
+  startOfWeek.setDate(startOfWeek.getDate() - 7);
+  if (callDate >= startOfWeek) return 'this_week';
+  return 'older';
+}
+
+function bucketLabel(b: DateBucket, sample?: Call): string {
+  switch (b) {
+    case 'today':
+      return 'Сегодня';
+    case 'yesterday':
+      return 'Вчера';
+    case 'this_week':
+      return 'На этой неделе';
+    case 'older':
+      // Группа «older» — показываем месяц самого свежего звонка в ней.
+      if (sample) {
+        try {
+          return new Date(sample.started_at).toLocaleDateString('ru-RU', {
+            month: 'long',
+            year: 'numeric',
+          });
+        } catch {
+          /* fallthrough */
+        }
+      }
+      return 'Раньше';
+  }
+}
+
+function groupByBucket(calls: Call[]): Array<{ bucket: DateBucket; calls: Call[] }> {
+  const order: DateBucket[] = ['today', 'yesterday', 'this_week', 'older'];
+  const groups = new Map<DateBucket, Call[]>();
+  for (const c of calls) {
+    const b = bucketFor(c);
+    const arr = groups.get(b) ?? [];
+    arr.push(c);
+    groups.set(b, arr);
+  }
+  return order
+    .filter((b) => groups.has(b))
+    .map((b) => ({ bucket: b, calls: groups.get(b)! }));
+}
+
 function matchesQuery(c: Call, q: string): boolean {
   if (!q) return true;
   const needle = q.toLowerCase();
@@ -99,8 +154,9 @@ export function CallsPage({ onOpen }: CallsPageProps) {
       />
       {calls.length === 0 ? (
         <Empty
+          icon="🎙"
           title="Звонков пока нет"
-          description="Начни запись с главной — сюда подтянется."
+          description="Начни запись на «Главной» — звонок появится здесь сразу после остановки."
         />
       ) : (
         <>
@@ -127,42 +183,53 @@ export function CallsPage({ onOpen }: CallsPageProps) {
           </div>
           {filtered.length === 0 ? (
             <Empty
+              icon="🔍"
               title="Ничего не нашлось"
               description="Сбрось фильтры или измени запрос."
             />
           ) : (
-        <ul className="calls-list">
-          {filtered.map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                className="call-row"
-                data-status={c.status}
-                onClick={() => onOpen(c.id)}
-                title="Открыть детали"
-              >
-                <span
-                  className="call-status-cell"
-                  aria-label={c.status}
-                  title={
-                    c.status === 'failed' && c.failed_reason
-                      ? `${statusTooltip(c.status)}\n\n${c.failed_reason}`
-                      : statusTooltip(c.status)
-                  }
-                >
-                  {statusIcon(c.status)}
-                </span>
-                <span className="call-meta">
-                  <span className="call-when">{formatStarted(c.started_at)}</span>
-                  <span className="call-detail-line">
-                    {formatDuration(c.duration_sec)}
-                    {c.lang_detected && ` · ${c.lang_detected.toUpperCase()}`}
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+            <div className="calls-groups">
+              {groupByBucket(filtered).map(({ bucket, calls: bucketCalls }) => (
+                <section key={bucket} className="calls-group">
+                  <h3 className="calls-group-header">
+                    {bucketLabel(bucket, bucketCalls[0])}
+                    <span className="calls-group-count">{bucketCalls.length}</span>
+                  </h3>
+                  <ul className="calls-list">
+                    {bucketCalls.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          className="call-row"
+                          data-status={c.status}
+                          onClick={() => onOpen(c.id)}
+                          title="Открыть детали"
+                        >
+                          <span
+                            className="call-status-cell"
+                            aria-label={c.status}
+                            title={
+                              c.status === 'failed' && c.failed_reason
+                                ? `${statusTooltip(c.status)}\n\n${c.failed_reason}`
+                                : statusTooltip(c.status)
+                            }
+                          >
+                            {statusIcon(c.status)}
+                          </span>
+                          <span className="call-meta">
+                            <span className="call-when">{formatStarted(c.started_at)}</span>
+                            <span className="call-detail-line">
+                              {formatDuration(c.duration_sec)}
+                              {c.lang_detected && ` · ${c.lang_detected.toUpperCase()}`}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
           )}
         </>
       )}

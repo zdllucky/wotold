@@ -109,7 +109,11 @@ export function ContactsPage() {
       {error && <p className="error">{error}</p>}
 
       {contacts.length === 0 ? (
-        <Empty title="Контактов нет" description="Добавь первый — кнопка справа." />
+        <Empty
+          icon="👥"
+          title="Контактов нет"
+          description="Добавь первый контакт — кнопка «+ Добавить» сверху справа. Контакты помогают Wotold подписывать спикеров в расшифровках."
+        />
       ) : (
         <ul className="contact-list">
           {contacts.map((c) =>
