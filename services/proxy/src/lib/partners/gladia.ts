@@ -78,6 +78,15 @@ export async function transcribeGladia(opts: GladiaOpts): Promise<TranscribeGlad
         languages: [opts.lang],
         code_switching: true,
       };
+    } else {
+      // [Lang-tuning] auto-detect biased к ru/en/kk через code-switching.
+      // Gladia может выбрать любой из списка для каждого сегмента — без strict
+      // ограничения, что покрывает случаи фоновой музыки или невнятного звука
+      // лучше чем full automatic.
+      createBody.language_config = {
+        languages: ['ru', 'en', 'kk'],
+        code_switching: true,
+      };
     }
 
     const createResp = await fetch(`${base}/pre-recorded`, {
