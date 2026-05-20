@@ -125,7 +125,16 @@ async function callGroq(env: Env, body: LlmCallInput): Promise<LlmCallResult> {
       message: 'Groq key not configured',
     };
   }
-  const model = body.model ?? env.GROQ_DEFAULT_MODEL ?? GROQ_DEFAULT_MODEL_FALLBACK;
+  // Игнорируем модель если она явно anthropic/openai-формата (legacy settings),
+  // иначе Groq отдаст 404 "model does not exist". Принимаем только модели,
+  // которые выглядят как Groq (llama, mixtral, deepseek, gemma и т.д.).
+  const userModel = body.model?.trim();
+  const looksLikeGroq =
+    !!userModel &&
+    !/^(claude-|gpt-|o[1-9]-|gemini-)/i.test(userModel);
+  const model = looksLikeGroq
+    ? userModel
+    : env.GROQ_DEFAULT_MODEL || GROQ_DEFAULT_MODEL_FALLBACK;
 
   // Groq OpenAI-compatible chat completions. response_format: json_object форсит
   // model вернуть валидный JSON — но требует "JSON" слово в messages
