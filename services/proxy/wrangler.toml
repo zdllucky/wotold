@@ -13,6 +13,13 @@ binding = "QUOTA"
 id = "TODO_KV_NAMESPACE_ID"
 preview_id = "TODO_KV_PREVIEW_ID"
 
+# M10 auth (#37). Хранит state-токены (TTL 5min), сессии (TTL 30d) и account записи (без TTL).
+[[kv_namespaces]]
+binding = "AUTH"
+# TODO: `wrangler kv namespace create AUTH` → подставить id + preview_id
+id = "TODO_AUTH_KV_NAMESPACE_ID"
+preview_id = "TODO_AUTH_KV_PREVIEW_ID"
+
 [[r2_buckets]]
 binding = "STT_STAGING"
 # TODO: `wrangler r2 bucket create wotold-stt-staging`
@@ -27,6 +34,17 @@ STAGING_PRESIGN_TTL_SECONDS = "900"
 STT_STAGING_BUCKET = "wotold-stt-staging"
 ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
 
+# M10 auth (#37). Длительности — TTL для KV. Менять без миграции существующих ключей.
+AUTH_STATE_TTL_SECONDS = "300"
+AUTH_SESSION_TTL_SECONDS = "2592000"
+# OIDC client IDs — публичные, не secrets. Прокси не делает code-exchange без серверного secret-а.
+GOOGLE_OAUTH_CLIENT_ID = ""
+APPLE_OAUTH_CLIENT_ID = ""
+MICROSOFT_OAUTH_CLIENT_ID = ""
+# Public origin прокси (нужен в redirect_uri OIDC). Прод: из wrangler.toml,
+# dev: из `wrangler dev --local` URL. Пусто = derive из request URL.
+PUBLIC_BASE_URL = ""
+
 # Секреты (S1) — через `wrangler secret put`:
 #   ANTHROPIC_API_KEY        ключ владельца для LLM
 #   SONIOX_API_KEY           primary STT
@@ -34,6 +52,10 @@ ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
 #   R2_ACCOUNT_ID            cloudflare account id (R2 S3 endpoint)
 #   R2_ACCESS_KEY_ID         R2 S3 access key
 #   R2_SECRET_ACCESS_KEY     R2 S3 secret
+#   # M10 auth (#37):
+#   GOOGLE_OAUTH_CLIENT_SECRET    OAuth client secret (Google)
+#   APPLE_OAUTH_CLIENT_SECRET     JWT client secret (Apple, ES256-signed, TTL ≤6 месяцев)
+#   MICROSOFT_OAUTH_CLIENT_SECRET OAuth client secret (Microsoft Azure AD)
 # Доступны ТОЛЬКО джобе деплоя прокси (не сборке приложения).
 
 [observability]
