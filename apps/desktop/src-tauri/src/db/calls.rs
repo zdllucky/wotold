@@ -106,3 +106,16 @@ pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, 
     .await?;
     Ok(row)
 }
+
+/// Все звонки от свежих к старым. FTS-поиск по транскриптам/рекапу
+/// подключится в #30 follow-up когда они начнут писаться (#22, #28).
+pub async fn list_calls(pool: &SqlitePool) -> Result<Vec<Call>, AppError> {
+    let rows: Vec<Call> = sqlx::query_as(
+        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, created_at, updated_at
+         FROM calls
+         ORDER BY started_at DESC",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}

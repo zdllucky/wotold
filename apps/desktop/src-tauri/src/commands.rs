@@ -25,6 +25,11 @@ pub async fn list_contacts(state: State<'_, AppState>) -> Result<Vec<Contact>, A
 }
 
 #[tauri::command]
+pub async fn list_calls(state: State<'_, AppState>) -> Result<Vec<Call>, AppError> {
+    crate::db::list_calls(&state.db).await
+}
+
+#[tauri::command]
 pub async fn create_contact(
     state: State<'_, AppState>,
     input: ContactInput,
