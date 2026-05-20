@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Manager};
+use tauri::async_runtime::JoinHandle;
 use tokio::sync::Mutex;
 
 use crate::{audio::macos::RecordingSession, db, device, AppError};
@@ -12,6 +14,10 @@ pub struct AppState {
     pub device_id: Arc<str>,
     pub app_data_dir: PathBuf,
     pub recording: Arc<Mutex<Option<RecordingSession>>>,
+    // [B16 audit P0]: храним JoinHandle от pipeline tasks per-call_id, чтобы
+    // при shutdown окна можно было ждать завершения (или хотя бы знать какие
+    // pipeline-ы ещё бегут). До этого spawn-handle dropped → race на shutdown.
+    pub pipeline_tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
@@ -42,5 +48,6 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         device_id: Arc::from(device_id.as_str()),
         app_data_dir,
         recording: Arc::new(Mutex::new(None)),
+        pipeline_tasks: Arc::new(Mutex::new(HashMap::new())),
     })
 }
