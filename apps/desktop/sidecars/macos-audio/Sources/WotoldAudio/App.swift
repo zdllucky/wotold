@@ -44,6 +44,19 @@ struct WotoldAudioMain {
             case "ping":
                 emit(["event": "pong"])
 
+            case "check_permissions":
+                emit(permissionsEvent())
+
+            case "request_permissions":
+                let target = (obj["target"] as? String) ?? "all"
+                if target == "microphone" || target == "all" {
+                    _ = await requestMicrophoneAccess()
+                }
+                if target == "screen_recording" || target == "all" {
+                    _ = requestScreenRecordingAccess()
+                }
+                emit(permissionsEvent())
+
             case "start":
                 guard let micPath = obj["mic_path"] as? String,
                       let systemPath = obj["system_path"] as? String,
