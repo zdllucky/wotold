@@ -36,6 +36,22 @@ pub async fn get_call(state: State<'_, AppState>, id: String) -> Result<Option<C
     crate::db::get_call(&state.db, &id).await
 }
 
+/// C5 (#41) cascade delete. Удаляет calls row, связанные action_items/call_speakers
+/// (по CASCADE), voice_samples с source_call=id, и audio-файлы на диске.
+#[tauri::command]
+pub async fn delete_call(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    crate::db::delete_call_and_samples(&state.db, &id).await?;
+
+    let call_dir = state.app_data_dir.join("calls").join(&id);
+    if call_dir.exists() {
+        if let Err(e) = tokio::fs::remove_dir_all(&call_dir).await {
+            // Audio удалили частично или не было — БД уже консистентна, логируем но не fail.
+            log::warn!("delete_call: rm {} failed: {e}", call_dir.display());
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn list_call_action_items(
     state: State<'_, AppState>,

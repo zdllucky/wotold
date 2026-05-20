@@ -240,6 +240,13 @@
   font-size: var(--text-2xl);
 }
 
+.call-detail-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
 .call-detail-meta {
   display: flex;
   flex-wrap: wrap;

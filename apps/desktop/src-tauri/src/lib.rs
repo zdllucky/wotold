@@ -133,6 +133,7 @@ pub fn run() {
             commands::get_recording_state,
             commands::list_calls,
             commands::get_call,
+            commands::delete_call,
             commands::list_call_action_items,
             commands::read_call_artifact,
             commands::get_audio_permissions,

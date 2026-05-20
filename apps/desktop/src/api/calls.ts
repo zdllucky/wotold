@@ -27,3 +27,8 @@ export function readCallArtifact(
 ): Promise<string | null> {
   return invoke<string | null>('read_call_artifact', { callId, kind });
 }
+
+/** C5 (#41): cascade delete — calls row, voice_samples, action_items, audio files. */
+export function deleteCall(id: string): Promise<void> {
+  return invoke('delete_call', { id });
+}

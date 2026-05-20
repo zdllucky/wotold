@@ -96,7 +96,7 @@
 
 - [x] **#39** C1 Recording consent dialog — HomePage показывает Card с предупреждением (статьи РФ/РК о тайне коммуникаций) перед первой записью. consent timestamp в `settings.recording_consent_at` — повторно не показываем.
 - [ ] **#40** C2 Biometric opt-in per contact (флаг «накапливать голосовой профиль») → #32
-- [ ] **#41** C5 Cascade delete (audio + samples от удалённого звонка) → #30
+- [x] **#41** C5 Cascade delete — `db::delete_call_and_samples` (voice_samples + CASCADE FK на action_items/call_speakers), Tauri `delete_call` команда удаляет также audio dir `calls/<id>/`. UI: красная кнопка «Удалить» в CallDetailPage с native confirm dialog.
 
 > C3 (локальность семплов) и C4 (прокси не логирует контент) — отрицательные инварианты, реализуются как тесты/аудит поверх существующих модулей, не отдельные таски.
 

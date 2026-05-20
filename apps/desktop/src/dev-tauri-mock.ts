@@ -118,6 +118,12 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         const id = a.id as string;
         return sampleCalls.find((c) => c.id === id) ?? null;
       }
+      if (cmd === 'delete_call') {
+        const id = a.id as string;
+        const i = sampleCalls.findIndex((c) => c.id === id);
+        if (i !== -1) sampleCalls.splice(i, 1);
+        return null;
+      }
       if (cmd === 'read_call_artifact') {
         const kind = (a.kind ?? a.artifact) as string;
         if (kind === 'recap')
