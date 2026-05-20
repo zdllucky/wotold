@@ -1,20 +1,30 @@
 use async_trait::async_trait;
 
-/// Захват системного и микрофонного звука в раздельные дорожки.
-/// См. M1 паспорта. Конкретная имплементация — Этап 2 (macOS), R4 для Windows.
-#[async_trait]
-pub trait AudioCapture: Send + Sync {
-    async fn start(&self) -> Result<(), CaptureError>;
-    async fn stop(&self) -> Result<CaptureResult, CaptureError>;
+// [B16] Trait + types — это спецификация поверх platform-specific impl
+// (см. macos.rs / windows.rs). Production-код вызывает их через конкретный
+// struct, но trait + CaptureResult+CaptureError полезны для будущего
+// Windows-импл'а (R4) и тестов с mock-impl. allow ограничен этим scope.
+#[allow(dead_code)]
+mod scaffold {
+    use super::*;
+
+    /// Захват системного и микрофонного звука в раздельные дорожки.
+    /// См. M1 паспорта. Конкретная имплементация — Этап 2 (macOS), R4 для Windows.
+    #[async_trait]
+    pub trait AudioCapture: Send + Sync {
+        async fn start(&self) -> Result<(), CaptureError>;
+        async fn stop(&self) -> Result<CaptureResult, CaptureError>;
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct CaptureResult {
+        pub mic_wav: std::path::PathBuf,
+        pub system_wav: std::path::PathBuf,
+        pub duration_sec: f64,
+    }
 }
 
-#[derive(Debug, Clone)]
-pub struct CaptureResult {
-    pub mic_wav: std::path::PathBuf,
-    pub system_wav: std::path::PathBuf,
-    pub duration_sec: f64,
-}
-
+#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum CaptureError {
     #[error("permission denied: {0}")]
@@ -27,17 +37,16 @@ pub enum CaptureError {
     Other(String),
 }
 
+#[allow(unused_imports)]
+pub use scaffold::{AudioCapture, CaptureResult};
+
 #[cfg(target_os = "macos")]
 pub mod macos;
 #[cfg(target_os = "macos")]
 pub mod permissions;
-#[cfg(target_os = "macos")]
-pub use macos::MacOsCoreAudioCapture;
 
 #[cfg(target_os = "windows")]
 pub mod windows;
-#[cfg(target_os = "windows")]
-pub use windows::WindowsWasapiCapture;
 
 // [B16 audit P2] Linux build guard: explicit early fail с понятным сообщением.
 // Без guard сборка падает позже в callsite не linked AudioCapture impl.

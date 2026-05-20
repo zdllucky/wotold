@@ -241,3 +241,56 @@ pre {
 .markdown strong {
   font-weight: 600;
 }
+
+/* [B16] Responsive breakpoints — узкое окно не должно ломать rows.
+   Min window size = 760×560 (см. tauri.conf), но юзер может уменьшить
+   через accessibility zoom либо мы не на 100% контролируем chrome. */
+@media (max-width: 760px) {
+  .app {
+    padding: var(--space-5) var(--space-2);
+  }
+
+  .topnav {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .topnav-brand {
+    font-size: var(--text-xs);
+  }
+
+  .topnav-tab-label {
+    display: none; /* Только иконки. */
+  }
+
+  /* CallRow в узком окне — два ряда вместо трёх колонок. */
+  .call-row {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+  }
+  .call-row .call-meta {
+    grid-column: 1 / -1;
+  }
+
+  /* Topnav убираем underline-after — слишком тонкий шов в wrap-режиме. */
+  .topnav-tab--active::after {
+    display: none;
+  }
+  .topnav-tab--active {
+    border-bottom: 2px solid var(--color-accent);
+  }
+}
+
+@media (max-width: 560px) {
+  .home-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .home-recent {
+    max-width: 100%;
+  }
+
+  .ds-tabs-list {
+    flex-wrap: wrap;
+  }
+}
