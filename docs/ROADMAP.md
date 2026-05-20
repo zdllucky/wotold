@@ -31,6 +31,8 @@
 - [x] **#28** Recap pipeline (M4.2-4.4) — LLM auto-chain → recap.md + action_items — [`3e1246c`](#)
 - [x] **#19** Proxy vitest + миниframe integration tests (STT routes + partner unit tests, 42 теста)
 - [x] **#23** STT robustness: retry/backoff (Network only), auto-fallback Soniox→Gladia, UX-readable `failed_reason`, banner на CallDetail
+- [x] **#43** `tauri.conf.json` updater endpoint → `zdllucky/wotold`
+- [x] **#47** BYO API keys в Keychain (keyring crate, secrets module, Tauri commands, pipeline wire, Settings UI)
 - [x] **#31** Call detail tabs (Рекап/Расшифровка/Задачи, без speaker bindings) — [`195ad91`](#)
 - [x] **[B6]** Design system + dev-only DS showcase — tokens.css, ui/*, refactor пагов на DS
 - [x] **[B7]** Test infra — vitest (desktop+proxy), cargo-llvm-cov, CI tests+coverage, 21 Rust + 31 TS test, TDD hook + ECC enforcement в CLAUDE.md
@@ -72,7 +74,7 @@
 - [ ] **#46** M7.4 follow-up: edit + multiple identifiers + extensible attributes
 - [ ] **#45** M7.4 follow-up: voice samples view + manual delete → #26
 - [x] **#33** M7.5 Settings baseline — provider/path/LLM model (см. «Готово»)
-- [ ] **#47** M7.5 follow-up: BYO keys в keychain (keyring crate / stronghold)
+- [x] **#47** M7.5 follow-up: BYO keys в keychain — `keyring` crate, `secrets::ByoProvider` enum, Tauri commands (set/delete/list_byo_status — без раскрытия значений), pipeline `mode_for` читает ключ per-provider, Settings BYO UI с password input + status badge
 - [ ] **#48** M7.5 follow-up: Quota indicator из /v1/usage → #44
 - [x] **#34** M7.6 Onboarding baseline — welcome + owner rename (см. «Готово»)
 
@@ -97,14 +99,14 @@
 ## Setup · one-time manual
 
 - [ ] **#42** X1 Generate Tauri minisign + публичный ключ в `tauri.conf.json` + приватный в GitHub-секрет + офлайн-бэкап (M11.1, M11.9)
-- [ ] **#43** X2 Заменить placeholder `REPLACE_OWNER/wotold` в `tauri.conf.json` → реальный owner/repo (M11.3)
+- [x] **#43** X2 `REPLACE_OWNER/wotold` → `zdllucky/wotold` в `tauri.conf.json` (updater endpoint)
 - [ ] **#44** X3 Cloudflare provisioning: `wrangler kv namespace create QUOTA`, `wrangler r2 bucket create wotold-stt-staging`, подставить id в `wrangler.toml`, `wrangler secret put` для ANTHROPIC/SONIOX/GLADIA/R2_* (раздел 16.2)
 
 ---
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#24` · `#37` · `#42` · `#43` · `#44` · `#45` · `#47`
+`#24` · `#37` · `#42` · `#44` · `#45`
 
 ## Backlog (кандидаты на доработку)
 

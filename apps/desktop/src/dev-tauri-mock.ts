@@ -85,6 +85,9 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
     get_audio_permissions: { microphone: 'granted', screen_recording: 'not_determined' },
   };
 
+  // #47: in-memory BYO key store (dev only — production использует Keychain).
+  const byoKeys: Record<string, string> = {};
+
   const initialOnboarding =
     new URLSearchParams(window.location.search).get('onboarding') === '1' ? '0' : '1';
   const settings: Record<string, string> = {
@@ -124,6 +127,27 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
           { id: 't1', text: 'Прислать SOW до пятницы', owner_contact_id: sampleContact.id, due: '2026-05-23', done: false },
           { id: 't2', text: 'Подписать NDA', owner_contact_id: null, due: null, done: true },
         ];
+      }
+      if (cmd === 'list_byo_status') {
+        return ['soniox', 'gladia', 'anthropic'].map((p) => ({
+          provider: p,
+          present: !!byoKeys[p],
+        }));
+      }
+      if (cmd === 'set_byo_key') {
+        const p = a.provider as string;
+        const v = (a.value as string)?.trim() ?? '';
+        if (!v) {
+          delete byoKeys[p];
+        } else {
+          byoKeys[p] = v;
+        }
+        return null;
+      }
+      if (cmd === 'delete_byo_key') {
+        const p = a.provider as string;
+        delete byoKeys[p];
+        return null;
       }
       return responses[cmd] ?? null;
     },

@@ -521,6 +521,68 @@
 }
 
 /* ============================================================
+ * BYO API keys section (#47)
+ * ============================================================ */
+.byo-keys {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.byo-keys-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.byo-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.byo-row:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+.byo-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.byo-row-label {
+  font-weight: 500;
+  font-size: var(--text-base);
+}
+
+.byo-row-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+}
+
+.byo-row-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.byo-row-controls .ds-field {
+  margin: 0;
+}
+
+.byo-row-actions {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+/* ============================================================
  * Permissions
  * ============================================================ */
 .perm-row {

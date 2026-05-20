@@ -42,7 +42,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/REPLACE_OWNER/wotold/releases/latest/download/latest.json"
+        "https://github.com/zdllucky/wotold/releases/latest/download/latest.json"
       ],
       "pubkey": "PLACEHOLDER_TAURI_PUBKEY_REPLACE_UNDER_ETAP_11",
       "dialog": false,

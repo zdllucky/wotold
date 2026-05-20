@@ -11,6 +11,7 @@ mod pipeline;
 // Soniox/Gladia подключатся через pipeline. Скоуп allow ещё нужен.
 #[allow(dead_code, unused_imports)]
 mod providers;
+mod secrets;
 mod state;
 mod updater;
 
@@ -55,6 +56,9 @@ pub fn run() {
             commands::open_system_privacy_pane,
             commands::check_for_update,
             commands::apply_update,
+            commands::set_byo_key,
+            commands::delete_byo_key,
+            commands::list_byo_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

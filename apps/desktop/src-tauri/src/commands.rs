@@ -5,6 +5,7 @@ use crate::{
     audio::macos as audio_macos,
     audio::permissions::{self, PermissionsStatus},
     db::{ActionItem, Call, Contact, ContactInput, OwnerContact},
+    secrets::{self, ByoProvider, ByoStatus},
     state::AppState,
     updater::AvailableUpdate,
     AppError,
@@ -247,4 +248,27 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     });
 
     Ok(call)
+}
+
+/// #47: записать BYO API key в системный keychain. Никогда не логируется и
+/// не возвращается обратно. Пустая строка = удаление.
+#[tauri::command]
+pub fn set_byo_key(provider: ByoProvider, value: String) -> Result<(), AppError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        secrets::delete_key(provider)
+    } else {
+        secrets::set_key(provider, trimmed)
+    }
+}
+
+#[tauri::command]
+pub fn delete_byo_key(provider: ByoProvider) -> Result<(), AppError> {
+    secrets::delete_key(provider)
+}
+
+/// Возвращает per-provider status (has key / empty), без раскрытия значений.
+#[tauri::command]
+pub fn list_byo_status() -> Result<Vec<ByoStatus>, AppError> {
+    secrets::status_all()
 }

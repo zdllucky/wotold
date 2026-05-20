@@ -14,6 +14,7 @@ use crate::{
         },
         ProviderMode,
     },
+    secrets::{self, ByoProvider},
     AppError,
 };
 
@@ -70,8 +71,12 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
         .await?
         .unwrap_or_default();
 
-    let mode = build_mode(&provider_path, &proxy_base_url, &ctx.device_id)?;
-    let providers = build_providers(&provider_id, mode);
+    let providers = build_providers(
+        &provider_id,
+        &provider_path,
+        &proxy_base_url,
+        &ctx.device_id,
+    )?;
     let opts = TranscriptionOpts {
         lang: lang.clone(),
         diarization: true,
@@ -127,7 +132,11 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     Ok(())
 }
 
-fn build_mode(
+/// Возвращает ProviderMode для конкретного партнёра с учётом path:
+/// - `managed` — общий прокси (#22), один URL/device-id для всех провайдеров
+/// - `byo` (#47) — индивидуальный ключ партнёра из keychain. Нет ключа → ошибка.
+fn mode_for(
+    provider: ByoProvider,
     path: &str,
     proxy_base_url: &str,
     device_id: &Arc<str>,
@@ -145,28 +154,55 @@ fn build_mode(
             })
         }
         "byo" => {
-            // BYO ключи живут в keychain (#47); пока их не подняли — fail с подсказкой.
-            Err(AppError::Other(
-                "BYO-ключи ещё не подключены. См. #47 в roadmap.".into(),
-            ))
+            let key = secrets::read_key(provider)?;
+            key.map(|api_key| ProviderMode::Byo { api_key })
+                .ok_or_else(|| {
+                    AppError::Other(format!(
+                        "BYO ключ для {:?} не задан. Settings → BYO Keys.",
+                        provider
+                    ))
+                })
         }
         other => Err(AppError::Other(format!("unknown provider_path: {other}"))),
     }
 }
 
-/// M2.2 + #23: возвращает primary + fallback провайдеры в порядке использования.
-/// - `auto` → Soniox primary, Gladia fallback
-/// - `soniox` → только Soniox
-/// - `gladia` → только Gladia
-fn build_providers(id: &str, mode: ProviderMode) -> Vec<Box<dyn TranscriptionProvider>> {
-    match id {
-        "gladia" => vec![Box::new(GladiaProvider::new(mode))],
-        "soniox" => vec![Box::new(SonioxProvider::new(mode))],
-        _ => vec![
-            Box::new(SonioxProvider::new(mode.clone())),
-            Box::new(GladiaProvider::new(mode)),
-        ],
-    }
+/// M2.2 + #23 + #47: список провайдеров в порядке использования.
+/// - `auto` → пробуем оба, у каждого свой ключ (для BYO). Если BYO ключ отсутствует
+///   у одного провайдера — он молча пропускается; в `managed` оба доступны.
+/// - `soniox` / `gladia` → только указанный, требует свой ключ в BYO.
+fn build_providers(
+    id: &str,
+    path: &str,
+    proxy_base_url: &str,
+    device_id: &Arc<str>,
+) -> Result<Vec<Box<dyn TranscriptionProvider>>, AppError> {
+    let providers: Vec<Box<dyn TranscriptionProvider>> = match id {
+        "gladia" => {
+            let m = mode_for(ByoProvider::Gladia, path, proxy_base_url, device_id)?;
+            vec![Box::new(GladiaProvider::new(m))]
+        }
+        "soniox" => {
+            let m = mode_for(ByoProvider::Soniox, path, proxy_base_url, device_id)?;
+            vec![Box::new(SonioxProvider::new(m))]
+        }
+        _ => {
+            let mut out: Vec<Box<dyn TranscriptionProvider>> = vec![];
+            if let Ok(m) = mode_for(ByoProvider::Soniox, path, proxy_base_url, device_id) {
+                out.push(Box::new(SonioxProvider::new(m)));
+            }
+            if let Ok(m) = mode_for(ByoProvider::Gladia, path, proxy_base_url, device_id) {
+                out.push(Box::new(GladiaProvider::new(m)));
+            }
+            if out.is_empty() {
+                return Err(AppError::Other(
+                    "Ни один STT-провайдер не настроен. Добавь BYO-ключ или настрой Proxy URL в Settings.".into(),
+                ));
+            }
+            out
+        }
+    };
+    Ok(providers)
 }
 
 /// Мапит typed STT error на AppError с UX-readable причиной.
