@@ -21,24 +21,38 @@ function isProviderPath(v: string | null): v is ProviderPath {
   return v === 'managed' || v === 'byo';
 }
 
+function isValidProxyUrl(v: string): boolean {
+  if (!v) return true; // пусто допускается — managed-режим тогда упадёт с конкретной ошибкой в pipeline
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' || u.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [sttProvider, setSttProvider] = useState<SttProvider>(SETTINGS_DEFAULTS.STT_PROVIDER);
   const [providerPath, setProviderPath] = useState<ProviderPath>(SETTINGS_DEFAULTS.PROVIDER_PATH);
   const [llmModel, setLlmModel] = useState<string>(SETTINGS_DEFAULTS.LLM_MODEL);
+  const [proxyUrl, setProxyUrl] = useState<string>('');
+  const [proxyUrlError, setProxyUrlError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const [stt, path, model] = await Promise.all([
+        const [stt, path, model, proxy] = await Promise.all([
           getSetting(SETTINGS_KEYS.STT_PROVIDER),
           getSetting(SETTINGS_KEYS.PROVIDER_PATH),
           getSetting(SETTINGS_KEYS.LLM_MODEL),
+          getSetting(SETTINGS_KEYS.PROXY_BASE_URL),
         ]);
         if (isSttProvider(stt)) setSttProvider(stt);
         if (isProviderPath(path)) setProviderPath(path);
         if (model) setLlmModel(model);
+        if (proxy) setProxyUrl(proxy);
       } catch (e) {
         setError(String(e));
       } finally {
@@ -103,6 +117,31 @@ export function SettingsPage() {
               setLlmModel(trimmed);
               void persist(SETTINGS_KEYS.LLM_MODEL, trimmed);
             }}
+          />
+        </Card>
+      </div>
+
+      <div className="settings-section">
+        <h3 className="settings-section-title">Прокси (managed)</h3>
+        <Card compact>
+          <InputField
+            label="Proxy URL"
+            type="text"
+            placeholder="https://wotold-proxy.workers.dev"
+            value={proxyUrl}
+            onChange={(e) => setProxyUrl(e.target.value)}
+            onBlur={() => {
+              const trimmed = proxyUrl.trim();
+              if (!isValidProxyUrl(trimmed)) {
+                setProxyUrlError('URL должен быть http:// или https://');
+                return;
+              }
+              setProxyUrl(trimmed);
+              setProxyUrlError(null);
+              void persist(SETTINGS_KEYS.PROXY_BASE_URL, trimmed);
+            }}
+            hint="Используется в managed-режиме STT/LLM и для SSO callback. Базовый URL без хвостового /."
+            error={proxyUrlError ?? undefined}
           />
         </Card>
       </div>
