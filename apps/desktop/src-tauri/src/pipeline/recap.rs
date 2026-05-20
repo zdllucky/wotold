@@ -161,32 +161,56 @@ fn match_contact_id(contacts: &[db::Contact], hint: &str) -> Option<String> {
 }
 
 fn build_system_prompt(lang_detected: Option<&str>, known_speakers: Option<&str>) -> String {
-    let lang_hint = lang_detected
-        .map(|l| format!(" Output language: {l}."))
-        .unwrap_or_default();
+    let lang = lang_detected.unwrap_or("ru");
     let known_block = known_speakers
-        .map(|s| {
-            format!(
-                "\n\nKnown participants (use their real names in summary/mom/action_items \
-                 instead of raw speaker tags):\n{s}"
-            )
-        })
+        .map(|s| format!("\n\n## Known participants\n{s}"))
         .unwrap_or_default();
+
+    // Промпт ответственно конкретный: запрет на 'Speaker N' в выходном тексте,
+    // структурированный MoM, концентрация на фактах/решениях, без воды.
     format!(
-        "You are a meeting recap assistant. Read the diarized transcript below \
-         and return ONE valid JSON object (no markdown fences, no commentary) \
-         matching this schema exactly:\n\
-         {{\n\
-           \"version\": 1,\n\
-           \"summary\": string,\n\
-           \"key_points\": string[],\n\
-           \"mom\": string (Markdown, minutes of meeting),\n\
-           \"action_items\": [{{ \"text\": string, \"owner_hint\": string|null, \"due\": string|null }}],\n\
-           \"participants\": [{{ \"speaker_tag\": string, \"display_name\": string|null }}]\n\
-         }}\n\
-         Use 'owner_hint' to refer to action item owner by name as mentioned in the transcript. \
-         Use 'speaker_tag' values exactly as they appear in the transcript ('owner', 'Speaker 0' и т.п.).\
-         {lang_hint}{known_block}"
+        "You are a senior meeting recap assistant for business calls. Output language: {lang}.\n\
+\n\
+Read the diarized transcript and produce ONE valid JSON object (NO markdown fences, NO commentary, NO trailing text). Schema (strict):\n\
+{{\n\
+  \"version\": 1,\n\
+  \"summary\": string,                                                      // 1-2 предложения. Бизнес-тон. Конкретика: что обсуждали, кто участвовал, главный итог.\n\
+  \"key_points\": string[],                                                 // 3-7 пунктов. Каждый — самодостаточный факт/решение/блокер. Без общих слов 'обсудили статус'.\n\
+  \"mom\": string (Markdown),                                               // Структурированные минуты. Заголовки см. ниже.\n\
+  \"action_items\": [{{ \"text\": string, \"owner_hint\": string|null, \"due\": string|null }}],\n\
+  \"participants\": [{{ \"speaker_tag\": string, \"display_name\": string|null }}]\n\
+}}\n\
+\n\
+## Rules\n\
+\n\
+1. **NEVER use raw 'Speaker 0', 'Speaker 1', 'owner' tags in `summary`, `key_points`, `mom`, or `action_items.text`.**\n\
+   Resolve each speaker to a name using this priority:\n\
+   (a) Known participants block below — use the exact name there.\n\
+   (b) If the speaker introduces themselves or is addressed by name in the transcript ('это Анель', 'Иван, что думаешь') — extract that name and use it consistently for that speaker_tag.\n\
+   (c) Otherwise use a generic role grounded in context: 'представитель вендора', 'клиент', 'коллега', 'участник со стороны заказчика'. NEVER 'Спикер 1' — bezлично, но человечно.\n\
+   `owner` tag = it's the user himself; refer as 'я' / 'пользователь' / by name if known.\n\
+\n\
+2. **`action_items` must be actionable and concrete.** Skip vague filler like 'подумать', 'обсудить ещё раз'. Format:\n\
+   - `text`: чёткая формулировка задачи в инфинитиве ('Прислать SOW', 'Подписать NDA до пятницы'). Без префикса '<кто> — '.\n\
+   - `owner_hint`: имя ответственного из транскрипта или Known participants. `null` если не упомянут или ambiguous. **Не пиши 'Speaker 0 или Анель' в hint** — выбирай одно, либо null.\n\
+   - `due`: ISO date YYYY-MM-DD если конкретная дата ('к 30 мая' → '2026-05-30' предполагая текущий год); строка 'к {{день недели}}' / 'к концу недели' если относительная; `null` если без дедлайна.\n\
+\n\
+3. **`mom` (Markdown)** — структура с H2-заголовками. Опускай секцию если в транскрипте нет данных по ней (не пиши 'не обсуждалось'):\n\
+   - `## Контекст` — что за встреча, цель (если упомянута).\n\
+   - `## Обсудили` — основные темы списком, по факту.\n\
+   - `## Решения` — что договорились / approved списком.\n\
+   - `## Блокеры` — проблемы/риски/неясности.\n\
+   - `## Дальнейшие шаги` — follow-ups (overlap с action_items это OK, тут короче).\n\
+\n\
+4. **`participants`**:\n\
+   - `speaker_tag`: точное значение из транскрипта без модификаций ('owner', 'Speaker 0', и т.п.).\n\
+   - `display_name`: имя из Known participants → или из контекста транскрипта → или `null`. **НЕ ДУБЛИРУЙ speaker_tag в display_name.**\n\
+\n\
+5. **`key_points`** — 3-7 пунктов. Каждый — конкретный факт с цифрой/датой/именем/решением. Не «обсудили вопрос», а «решили перенести релиз на 2 недели».\n\
+\n\
+6. **`summary`** — TL;DR в 1-2 предложениях. Кто/что/итог. Без длинных списков.\n\
+\n\
+7. **Короткий транскрипт (<5 реплик)** — рекап короткий, не выдумывай содержание. Если транскрипт не несёт смысла (пустой/мусор) — `summary` = 'Запись не содержит обсуждения по существу.' и пустые arrays.{known_block}",
     )
 }
 
@@ -243,7 +267,7 @@ fn render_recap_md(
     action_inputs: &[ActionItemInput],
 ) -> String {
     let mut out = String::new();
-    out.push_str("# Recap\n\n");
+    out.push_str("# Рекап\n\n");
 
     if !recap.summary.is_empty() {
         out.push_str(recap.summary.trim());
@@ -251,7 +275,7 @@ fn render_recap_md(
     }
 
     if !recap.key_points.is_empty() {
-        out.push_str("## Key Points\n\n");
+        out.push_str("## Ключевое\n\n");
         for kp in &recap.key_points {
             out.push_str(&format!("- {}\n", kp.trim()));
         }
@@ -259,13 +283,14 @@ fn render_recap_md(
     }
 
     if !recap.mom.is_empty() {
-        out.push_str("## MoM\n\n");
+        // mom уже содержит ## Контекст / ## Обсудили / ## Решения / ## Блокеры / ## Дальнейшие шаги
+        // от LLM — не оборачиваем в свою секцию, чтобы H2 LLM был верхним уровнем.
         out.push_str(recap.mom.trim());
         out.push_str("\n\n");
     }
 
     if !action_inputs.is_empty() {
-        out.push_str("## Action Items\n\n");
+        out.push_str("## Задачи\n\n");
         for (i, ai) in action_inputs.iter().enumerate() {
             let owner_label = ai
                 .owner_contact_id
@@ -296,15 +321,23 @@ fn render_recap_md(
     }
 
     if !recap.participants.is_empty() {
-        out.push_str("## Participants\n\n");
+        out.push_str("## Участники\n\n");
         for p in &recap.participants {
             let name = p
                 .display_name
                 .as_deref()
-                .filter(|s| !s.trim().is_empty())
                 .map(str::trim)
-                .unwrap_or(&p.speaker_tag);
-            out.push_str(&format!("- {} (`{}`)\n", name, p.speaker_tag));
+                .filter(|s| !s.is_empty());
+            match name {
+                // Если имя есть — основное имя + тех. тег в скобках для следа.
+                Some(n) if n != p.speaker_tag => {
+                    out.push_str(&format!("- {} (`{}`)\n", n, p.speaker_tag));
+                }
+                // Если имя совпадает с тегом или пусто — только тег, без дубля.
+                _ => {
+                    out.push_str(&format!("- `{}`\n", p.speaker_tag));
+                }
+            }
         }
         out.push('\n');
     }
@@ -360,11 +393,11 @@ mod tests {
             participants: vec![],
         };
         let md = render_recap_md(&recap, &[], &[]);
-        assert!(md.contains("# Recap"));
+        assert!(md.contains("# Рекап"));
         assert!(md.contains("Brief"));
-        assert!(!md.contains("## Key Points"));
-        assert!(!md.contains("## MoM"));
-        assert!(!md.contains("## Action Items"));
+        assert!(!md.contains("## Ключевое"));
+        assert!(!md.contains("## "));
+        assert!(!md.contains("## Задачи"));
     }
 
     #[test]
@@ -392,9 +425,9 @@ mod tests {
             due: Some("2026-06-01".into()),
         }];
         let md = render_recap_md(&recap, &contacts, &action_inputs);
-        assert!(md.contains("## Action Items"));
+        assert!(md.contains("## Задачи"));
         assert!(md.contains("**Alice** — send draft — до 2026-06-01"));
-        assert!(md.contains("## Participants"));
+        assert!(md.contains("## Участники"));
         assert!(md.contains("Alice (`Speaker 0`)"));
     }
 }
