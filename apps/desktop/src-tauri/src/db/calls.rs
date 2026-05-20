@@ -201,7 +201,10 @@ pub async fn insert_speaker_suggestions(
     suggestions: &[crate::merge_signals::MergedSuggestion],
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM call_speakers WHERE call_id = ?1")
+    // M3.7: НЕ удаляем owner row (он создан через auto_bind_owner_speaker и
+    // тривиально привязан к пользователю — identify_speakers не работает с
+    // owner_tag, см. identify.rs).
+    sqlx::query("DELETE FROM call_speakers WHERE call_id = ?1 AND speaker_tag != 'owner'")
         .bind(call_id)
         .execute(&mut *tx)
         .await?;
@@ -670,6 +673,44 @@ mod tests {
         assert_eq!(speakers[0].speaker_tag, "owner");
         assert!(speakers[0].confirmed);
         assert_eq!(speakers[0].contact_id.as_deref(), Some(owner.id.as_str()));
+    }
+
+    #[tokio::test]
+    async fn insert_speaker_suggestions_preserves_owner_row() {
+        // M3.7: повторный run identify_speakers НЕ должен сносить owner binding.
+        use crate::merge_signals::{MergedSuggestion, SuggestionSource};
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let owner = crate::db::ensure_owner_contact(&db.pool).await.unwrap();
+        let alice = insert_contact_row(&db.pool, "Alice").await;
+
+        auto_bind_owner_speaker(&db.pool, &call.id, &owner.id, "owner")
+            .await
+            .unwrap();
+
+        let suggestions = vec![MergedSuggestion {
+            speaker_tag: "S1".into(),
+            contact_id: alice.clone(),
+            display_name: "Alice".into(),
+            score: 0.85,
+            source: SuggestionSource::Embedding,
+        }];
+        insert_speaker_suggestions(&db.pool, &call.id, &suggestions)
+            .await
+            .unwrap();
+
+        let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
+        assert_eq!(speakers.len(), 2);
+        assert!(
+            speakers.iter().any(|s| s.speaker_tag == "owner" && s.confirmed),
+            "owner row должен пережить insert_speaker_suggestions"
+        );
+        assert!(
+            speakers
+                .iter()
+                .any(|s| s.speaker_tag == "S1" && s.suggestion_contact_id.as_deref() == Some(&alice)),
+            "новый suggestion должен быть записан"
+        );
     }
 
     #[tokio::test]
