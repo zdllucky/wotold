@@ -13,6 +13,7 @@ import { humanError } from '../api/errors';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { listCalls, type Call } from '../api/recording';
+import { listCallSpeakers } from '../api/speakers';
 import { List, type RowComponentProps } from 'react-window';
 import { CallRowSkeleton, Empty } from '../ui';
 
@@ -110,6 +111,10 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<StatusFilter>('all');
+  // [B17] Aggregate: per-call confirmed speakers initials.
+  const [speakerInitials, setSpeakerInitials] = useState<
+    Map<string, string[]>
+  >(new Map());
 
   const refresh = () => {
     listCalls()
@@ -133,6 +138,31 @@ export function CallsPage({ onOpen }: CallsPageProps) {
       unlisten?.();
     };
   }, []);
+
+  // [B17] Aggregate confirmed speakers per call. One-shot после list, heavy
+  // (N запросов на ready-звонки) — но кэш до full reload.
+  useEffect(() => {
+    if (!calls || calls.length === 0) return;
+    void (async () => {
+      const ready = calls.filter((c) => c.status === 'ready');
+      const results = await Promise.allSettled(
+        ready.map((c) => listCallSpeakers(c.id)),
+      );
+      const next = new Map<string, string[]>();
+      results.forEach((r, i) => {
+        if (r.status !== 'fulfilled') return;
+        const callId = ready[i]!.id;
+        const initialsList: string[] = [];
+        for (const s of r.value) {
+          if (s.confirmed && s.contact_display_name) {
+            initialsList.push(initials(s.contact_display_name));
+          }
+        }
+        next.set(callId, initialsList);
+      });
+      setSpeakerInitials(next);
+    })();
+  }, [calls]);
 
   if (error) {
     return (
@@ -244,7 +274,7 @@ export function CallsPage({ onOpen }: CallsPageProps) {
           rowComponent={VirtualCallRow}
           rowCount={filtered.length}
           rowHeight={ROW_HEIGHT}
-          rowProps={{ calls: filtered, onOpen }}
+          rowProps={{ calls: filtered, onOpen, speakerInitials }}
           defaultHeight={VIRTUAL_LIST_HEIGHT}
         />
       ) : (
@@ -277,6 +307,7 @@ export function CallsPage({ onOpen }: CallsPageProps) {
                       call={c}
                       onOpen={onOpen}
                       hasBorder={idx > 0}
+                      speakers={speakerInitials.get(c.id)}
                     />
                   ))}
                 </div>
@@ -293,10 +324,13 @@ interface CallRowProps {
   call: Call;
   onOpen: (id: string) => void;
   hasBorder: boolean;
+  /** Initials of confirmed speakers (computed parent-side). Falls back
+   *  to deterministic hash placeholder if missing. */
+  speakers?: string[];
 }
 
-function CallRow({ call, onOpen, hasBorder }: CallRowProps) {
-  const speakers = inferSpeakers(call);
+function CallRow({ call, onOpen, hasBorder, speakers }: CallRowProps) {
+  const list = speakers && speakers.length > 0 ? speakers : inferSpeakers(call);
   return (
     <button
       type="button"
@@ -413,7 +447,7 @@ function CallRow({ call, onOpen, hasBorder }: CallRowProps) {
           alignItems: 'center',
         }}
       >
-        {speakers.slice(0, 3).map((s, i) => (
+        {list.slice(0, 3).map((s, i) => (
           <span
             key={i}
             className="sp-avatar"
@@ -429,12 +463,12 @@ function CallRow({ call, onOpen, hasBorder }: CallRowProps) {
             {s}
           </span>
         ))}
-        {speakers.length > 3 && (
+        {list.length > 3 && (
           <span
             className="mono muted"
             style={{ fontSize: 11, marginLeft: 4 }}
           >
-            +{speakers.length - 3}
+            +{list.length - 3}
           </span>
         )}
       </div>
@@ -455,24 +489,35 @@ function CallRow({ call, onOpen, hasBorder }: CallRowProps) {
 interface VirtualRowProps {
   calls: Call[];
   onOpen: (id: string) => void;
+  speakerInitials: Map<string, string[]>;
 }
 
-function VirtualCallRow({ index, style, calls, onOpen }: RowComponentProps<VirtualRowProps>) {
+function VirtualCallRow({
+  index,
+  style,
+  calls,
+  onOpen,
+  speakerInitials,
+}: RowComponentProps<VirtualRowProps>) {
   const c = calls[index]!;
   return (
     <div style={style}>
-      <CallRow call={c} onOpen={onOpen} hasBorder={index > 0} />
+      <CallRow
+        call={c}
+        onOpen={onOpen}
+        hasBorder={index > 0}
+        speakers={speakerInitials.get(c.id)}
+      />
     </div>
   );
 }
 
-// [B17] До интеграции listCallSpeakers per row — стабильный fallback по ID
-// hash чтобы в списке аватары не «прыгали» между перерендерами.
+// [B17] Fallback if speakerInitials map не загружен (pending или failed).
+// Deterministic hash gives stable placeholder per call id — без «прыжков»
+// между перерендерами.
 function inferSpeakers(call: Call): string[] {
-  // Простая эвристика: 1-3 спикера в зависимости от длительности.
   const sec = call.duration_sec ?? 0;
   const guess = sec < 300 ? 1 : sec < 1800 ? 2 : 3;
-  // Initials placeholder per call id.
   const hash = [...call.id].reduce(
     (acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0,
     0,
@@ -485,6 +530,17 @@ function inferSpeakers(call: Call): string[] {
     out.push(`${a}${b}`);
   }
   return out;
+}
+
+function initials(name: string): string {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? '')
+      .join('') || '·'
+  );
 }
 
 function statusTooltip(status: string, failedReason: string | null): string {
