@@ -241,15 +241,35 @@ sttRoutes.post('/', async (c) => {
     return c.json({ ok: true, transcript } satisfies SttResponse);
   } catch (e) {
     // R7 + Workers free: при превышении 30s wall time запрос упадёт.
-    // Клиенту возвращаем provider_error, он может повторить попытку.
-    console.error(`stt ${provider} failed`, (e as Error).message);
+    // [B16 audit P2]: full message в логи (Cloudflare console), юзеру отдаём
+    // scrubbed — без device-id, r2Key, API key fragments. Они могут попасть
+    // в error message от reqwest / fetch error chain.
+    const raw = (e as Error).message;
+    console.error(`stt ${provider} failed`, raw);
     return c.json(
       {
         ok: false,
         code: 'provider_error',
-        message: (e as Error).message,
+        message: scrubProviderError(raw),
       } satisfies SttResponse,
       502,
     );
   }
 });
+
+// [B16 audit P2]: убираем device-id / r2Key / Bearer tokens / URLs с
+// query strings из user-facing error message. Cloudflare observability
+// ловит console.error отдельно — полный raw остаётся в логах.
+function scrubProviderError(raw: string): string {
+  let s = raw.slice(0, 200);
+  // UUIDs (device-id, call-id шаблон)
+  s = s.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>');
+  // r2 keys
+  s = s.replace(/r2-staging\/[^\s"']+/g, '<r2-key>');
+  // Bearer / sk-* / gl_ / sk_ tokens
+  s = s.replace(/Bearer\s+[A-Za-z0-9._\-]+/g, 'Bearer <token>');
+  s = s.replace(/\b(sk-[A-Za-z0-9._\-]+|gl_[A-Za-z0-9._\-]+|sk_[A-Za-z0-9._\-]+)\b/g, '<api-key>');
+  // Query strings after ? — обычно с signatures.
+  s = s.replace(/\?[^\s"']+/g, '?<query>');
+  return s;
+}

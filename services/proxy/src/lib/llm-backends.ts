@@ -98,12 +98,15 @@ async function callAnthropic(env: Env, body: LlmCallInput): Promise<LlmCallResul
 
   if (!upstream.ok) {
     const text = await upstream.text();
+    // [B16 audit P2]: full upstream body — только в логи (Cloudflare console),
+    // юзеру отдаём generic — иначе утечка provider error details может выдать
+    // версии моделей / lim'итов / API key fragments.
     console.error('anthropic upstream error', upstream.status, text.slice(0, 500));
     return {
       ok: false,
       status: 502,
       code: 'provider_error',
-      message: `anthropic ${upstream.status}: ${text.slice(0, 200)}`,
+      message: `LLM upstream error (${upstream.status})`,
     };
   }
 
@@ -158,12 +161,14 @@ async function callGroq(env: Env, body: LlmCallInput): Promise<LlmCallResult> {
 
   if (!upstream.ok) {
     const text = await upstream.text();
+    // [B16 audit P2]: full upstream body — только в логи (Cloudflare console),
+    // юзеру отдаём generic.
     console.error('groq upstream error', upstream.status, text.slice(0, 500));
     return {
       ok: false,
       status: 502,
       code: 'provider_error',
-      message: `groq ${upstream.status}: ${text.slice(0, 200)}`,
+      message: `LLM upstream error (${upstream.status})`,
     };
   }
 
