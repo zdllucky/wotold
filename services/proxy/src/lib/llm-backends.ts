@@ -103,7 +103,7 @@ async function callAnthropic(env: Env, body: LlmCallInput): Promise<LlmCallResul
       ok: false,
       status: 502,
       code: 'provider_error',
-      message: `upstream ${upstream.status}`,
+      message: `anthropic ${upstream.status}: ${text.slice(0, 200)}`,
     };
   }
 
@@ -154,7 +154,7 @@ async function callGroq(env: Env, body: LlmCallInput): Promise<LlmCallResult> {
       ok: false,
       status: 502,
       code: 'provider_error',
-      message: `upstream ${upstream.status}`,
+      message: `groq ${upstream.status}: ${text.slice(0, 200)}`,
     };
   }
 
