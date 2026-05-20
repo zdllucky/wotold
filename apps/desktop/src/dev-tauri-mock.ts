@@ -257,6 +257,10 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         await new Promise((r) => setTimeout(r, 800));
         return null;
       }
+      if (cmd === 'reprocess_call') {
+        await new Promise((r) => setTimeout(r, 1500));
+        return null;
+      }
       // #45: in-memory voice samples preview.
       if (cmd === 'list_voice_samples') {
         const cid = a.contactId as string;

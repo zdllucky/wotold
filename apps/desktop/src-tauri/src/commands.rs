@@ -388,3 +388,22 @@ pub async fn regenerate_recap(state: State<'_, AppState>, call_id: String) -> Re
     crate::pipeline::regenerate_recap(&state.db, &state.app_data_dir, &state.device_id, &call_id)
         .await
 }
+
+/// Перезапустить полный pipeline (STT + recap) для существующего звонка.
+/// Применяется к failed | ready | processing звонкам — берёт mic.wav/system.wav
+/// с диска и прогоняет заново.
+#[tauri::command]
+pub async fn reprocess_call(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<(), AppError> {
+    crate::pipeline::reprocess_call(
+        &state.db,
+        &state.app_data_dir,
+        &state.device_id,
+        &call_id,
+        Some(&app),
+    )
+    .await
+}

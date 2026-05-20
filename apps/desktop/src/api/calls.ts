@@ -37,3 +37,9 @@ export function deleteCall(id: string): Promise<void> {
 export function regenerateRecap(callId: string): Promise<void> {
   return invoke<void>('regenerate_recap', { callId });
 }
+
+/** Перезапустить полный pipeline (STT + recap) для существующего звонка.
+ *  Применяется к failed | ready | processing — берёт mic.wav/system.wav с диска. */
+export function reprocessCall(callId: string): Promise<void> {
+  return invoke<void>('reprocess_call', { callId });
+}
