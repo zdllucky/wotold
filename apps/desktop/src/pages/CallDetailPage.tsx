@@ -197,9 +197,43 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             <span className="call-failed-icon" aria-hidden>
               ⚠
             </span>
-            <span className="call-failed-title">Транскрипция не удалась</span>
+            <span className="call-failed-title">Не удалось распознать речь</span>
           </div>
           <p className="call-failed-reason">{call.failed_reason}</p>
+          <div style={{ marginTop: 'var(--space-2)' }}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void onReprocess()}
+              disabled={reprocessing}
+              busy={reprocessing}
+            >
+              {reprocessing ? 'Перезапускаем…' : 'Попробовать ещё раз'}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {call.recap_failed_reason && call.status !== 'failed' && (
+        <Card className="call-failed-banner" variant="default">
+          <div className="call-failed-head">
+            <span className="call-failed-icon" aria-hidden>
+              ⚠
+            </span>
+            <span className="call-failed-title">Не удалось создать саммари</span>
+          </div>
+          <p className="call-failed-reason">{call.recap_failed_reason}</p>
+          <div style={{ marginTop: 'var(--space-2)' }}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void onRegenerateRecap()}
+              disabled={regenerating}
+              busy={regenerating}
+            >
+              {regenerating ? 'Пересоздаём…' : '↻ Пересоздать саммари'}
+            </Button>
+          </div>
         </Card>
       )}
 

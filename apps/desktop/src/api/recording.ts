@@ -12,6 +12,9 @@ export interface Call {
   lang_detected: string | null;
   /** M2.7 (#23): UX-readable причина если status=failed. */
   failed_reason: string | null;
+  /** [B16]: причина если LLM-recap упал. status может быть 'ready' (транскрипт
+   *  есть), но саммари недоступно. UI banner + кнопка retry. */
+  recap_failed_reason: string | null;
   created_at: string;
   updated_at: string;
 }
