@@ -61,18 +61,56 @@ docs/                 Паспорт и сопутствующие докуме�
 - **Прокси не видит контент**: только метрики по device-id, аудио через R2, не через память воркера (M9.6, R8)
 - **MCP read-only**: контент звонков — недоверенные данные, защита от инъекций инструкций (M8.3, M8.4)
 
+## Design Gate (Atelier v2, [B17] — ОБЯЗАТЕЛЬНО до любой UI работы)
+
+Перед **любой** правкой `.tsx`/`.css`/`*.module.css`, или инлайн-стилей, **до** Plan/Implement:
+
+1. Прочесть [`docs/design/atelier-v2/README.md`](docs/design/atelier-v2/README.md) и соответствующую секцию [`docs/design/atelier-v2/MIGRATION.md`](docs/design/atelier-v2/MIGRATION.md).
+2. Запустить `/design-gate <surface>` или прочесть [`.claude/skills/design-gate/SKILL.md`](.claude/skills/design-gate/SKILL.md).
+3. В чате выдать alignment-блок:
+   ```text
+   [design-gate] Surface: <page/component>
+   Reference: docs/design/atelier-v2/<file>:<section>
+   Tokens used: <list>
+   Classes used: <list>
+   New tokens needed: <none | list>
+   Logic preserved: <yes — list>
+   A11y: <focus, target, ARIA>
+   ```
+4. Только после этого — Plan / Implement.
+
+**Правила (см. design-gate skill для полного списка):**
+
+- Все цвета/spacing/radius/shadow → `var(--*)` из [`apps/desktop/src/styles/tokens.css`](apps/desktop/src/styles/tokens.css). Запрещены сырые hex/oklch в `.tsx`/любом `.css` кроме handoff sources.
+- Компонентные классы из [`apps/desktop/src/styles/wotold.css`](apps/desktop/src/styles/wotold.css): `.btn`, `.card`, `.tabs`, `.transcript-row`, `.field`, `.input`, `.sp`, `.rec-btn`, `.stat`, `.nav-item`, `.app-rail`, `.app-shell`, `.app-main`, `.tab`, `.modal-backdrop`, `.index-card`, `.dot`, `.conf`, `.empty`, `.divider`, `.wave-lane`.
+- `var(--signal)` (красный) — **только** запись и destructive actions. Все остальные акценты — `var(--accent)` (bordeaux / persian / ink, ортогонально к light/dark).
+- Шрифты: Source Serif 4 (display/title/subtitle/transcript), DM Sans (UI/labels), JetBrains Mono (timestamps/IDs).
+- Любая новая страница / модал / форма должна работать корректно во всех 6 комбинациях theme×accent.
+- Логика сохраняется 1-в-1 (хоткеи, consent gates, useEffect, API). Меняется только JSX + className.
+
+**Enforcement:**
+
+- PostToolUse hook [`scripts/hooks/design-gate.mjs`](scripts/hooks/design-gate.mjs) warns при сырых hex/oklch/legacy `--color-*` в новых правках вне whitelisted handoff sources.
+- ECC-skills для проектирования UI (`design-system`, `frontend-design-direction`, `accessibility`, `motion-ui`, `frontend-patterns`) скопированы в `.claude/skills/`.
+- ECC-agent `a11y-architect` (`.claude/agents/a11y-architect.md`) — обязателен для модалов/форм/навигации/диалогов.
+- `/code-review` обязан проверить наличие alignment-блока и token discipline в diff.
+
+При расхождении handoff и паспорта — побеждает паспорт (W6, разделы 12). Но дизайн-токены и компонент-классы — авторитетны.
+
 ## Воркфлоу для фича-тасок (PDCA, W3 паспорта)
 
 Для каждой нетривиальной фичи из [`docs/ROADMAP.md`](docs/ROADMAP.md):
 
-1. **Plan.** Изложить план (либо `/plan`, либо просто в чате) — какие файлы трогаем, какие модули задеваются, есть ли пересечения с принятыми ограничениями раздела 12.
-2. **Implement (TDD).** Для модулей с чёткой алгоритмической сутью (матчинг, парсинг, утилиты, db repository, middleware) тесты пишутся **до** реализации. Для UI — визуальная верификация + smoke RTL. Hook `scripts/hooks/tdd-warn.mjs` (PostToolUse) предупреждает если правишь source без соседнего теста.
-3. **Verify.** Локально перед коммитом:
+1. **Design gate (UI only).** Если фича трогает UI — сначала прогнать design gate (см. секцию выше).
+2. **Plan.** Изложить план (либо `/plan`, либо просто в чате) — какие файлы трогаем, какие модули задеваются, есть ли пересечения с принятыми ограничениями раздела 12.
+3. **Implement (TDD).** Для модулей с чёткой алгоритмической сутью (матчинг, парсинг, утилиты, db repository, middleware) тесты пишутся **до** реализации. Для UI — визуальная верификация + smoke RTL. Hook `scripts/hooks/tdd-warn.mjs` (PostToolUse) предупреждает если правишь source без соседнего теста.
+4. **Verify.** Локально перед коммитом:
    - Rust: `cargo fmt --check`, `cargo check`, `cargo clippy -- -D warnings`, `cargo test`
    - TS: `pnpm -r typecheck`, `pnpm --filter <pkg> test`
+   - UI: live запуск (`pnpm tauri dev`) + проверка всех 6 theme×accent комбинаций для затронутых экранов.
    - Хуки (PostToolUse) делают первые шаги автоматически — но финальная сверка ручная.
-4. **Code review.** Запустить `/code-review` (общий) или язык-специфичный (`/rust-review` для Rust, `code-reviewer` агент для TS) **до** коммита фичи в main. Замечания CRITICAL/HIGH — фиксить.
-5. **Mark done.** Снять чек-бокс в `docs/ROADMAP.md` и TaskList харнесса одновременно.
+5. **Code review.** Запустить `/code-review` (общий) или язык-специфичный (`/rust-review` для Rust, `code-reviewer` агент для TS) **до** коммита фичи в main. Замечания CRITICAL/HIGH — фиксить. UI-PR должен содержать design-gate alignment block.
+6. **Mark done.** Снять чек-бокс в `docs/ROADMAP.md` и TaskList харнесса одновременно.
 
 ### Тестирование ([B7] enforcement)
 
@@ -115,5 +153,6 @@ ECC-агенты для теста:
 - Активные хуки и project-allowedTools — в `.claude/settings.json`:
   - **PreToolUse Write/Edit**: `scripts/hooks/pre-write.mjs` — блокирует запись в Tauri-ключи, `.env*`, `.dev.vars`, `*.key`, `*.pem`, SSH-ключи и файлы >800 строк
   - **PostToolUse Write/Edit**: `scripts/hooks/post-write.sh` — на `.rs` правках бежит `cargo fmt` + `cargo check --message-format short` (timeout 60s); на `.ts/.tsx` — `tsc --noEmit` соответствующего workspace-пакета
+  - **PostToolUse Write/Edit**: `scripts/hooks/design-gate.mjs` ([B17]) — warns на сырых hex/oklch/legacy `--color-*` вне whitelisted handoff sources
 - Личные настройки разработчика — в `.claude/settings.local.json` (в `.gitignore`).
 - При конфликте рекомендаций ECC и паспорта побеждает паспорт. `.claude/` не часть сборки продукта (W6, W7).

@@ -1,32 +1,39 @@
-// [B16] Coachmarks first-run — простой 3-step overlay рассказывающий
+// [B16] Coachmarks first-run — простой 4-step overlay рассказывающий
 // где «Звонки», «Контакты», «Настройки». Не блокирует UI — modal с dim,
 // dismiss через клик/ESC. Стоит на ONBOARDING_DONE=1 + COACHMARKS_SEEN!=1.
+//
+// [B17] Atelier v2 — .modal-backdrop + .index-card per docs/design/atelier-v2.
+// Эмодзи в заголовках убраны (handoff: text carries enough signal).
 
 import { useEffect, useState } from 'react';
-import { Button } from '../ui';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 
 interface CoachStep {
+  eyebrow: string;
   title: string;
   body: string;
 }
 
 const STEPS: CoachStep[] = [
   {
-    title: '🎙 Главная — твоё рабочее место',
-    body: 'Здесь жмёшь «Начать запись» когда созваниваешься. Hotkey ⌘⇧R, если кнопка не на виду. После остановки звонок попадает во вкладку «Звонки».',
+    eyebrow: 'Шаг 01',
+    title: 'Главная',
+    body: 'Жмёшь красный кружок когда созваниваешься. Hotkey ⌘⇧R, если кнопка не на виду. После остановки звонок попадает во вкладку «Звонки».',
   },
   {
-    title: '📞 Звонки — архив с расшифровкой',
-    body: 'Все записи группируются по датам. Внутри каждого звонка — три вкладки: Саммари (что обсудили), Расшифровка (полный текст), Задачи (что делать дальше).',
+    eyebrow: 'Шаг 02',
+    title: 'Звонки',
+    body: 'Все записи группируются по датам. Внутри каждого звонка — четыре вкладки: Саммари, Расшифровка, Задачи, Участники.',
   },
   {
-    title: '👥 Контакты — кто говорит',
-    body: 'Добавляешь людей сюда, потом в звонках подтверждаешь «этот спикер = Иван». Wotold запоминает голос и сам подсказывает в следующий раз. Биометрия — только с твоего opt-in.',
+    eyebrow: 'Шаг 03',
+    title: 'Контакты',
+    body: 'Добавляешь людей сюда, потом в звонках подтверждаешь «этот спикер = Иван». Wotold запоминает голос и подсказывает в следующий раз. Биометрия — только с opt-in.',
   },
   {
-    title: '⚙ Настройки — тонкая регулировка',
-    body: 'Тут переключаешь STT/LLM-провайдеров, привязываешь свои API-ключи, видишь квоты бесплатного тарифа и можешь стереть все данные одной кнопкой.',
+    eyebrow: 'Шаг 04',
+    title: 'Настройки',
+    body: 'Переключаешь STT/LLM-провайдеров, привязываешь свои ключи, видишь квоты тарифа и можешь стереть все данные одной кнопкой. Там же — тема и акцент.',
   },
 ];
 
@@ -75,44 +82,95 @@ export function Coachmarks() {
 
   return (
     <div
-      className="coachmarks-backdrop"
+      className="modal-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby="coach-title"
     >
-      <div className="coachmarks-card">
-        <h3 id="coach-title" className="coachmarks-title">{current.title}</h3>
-        <p className="coachmarks-body">{current.body}</p>
-
-        <div className="coachmarks-progress" aria-label="Прогресс">
-          {STEPS.map((_, i) => (
-            <span
-              key={i}
-              className="coachmarks-dot"
-              data-active={i === step ? 'true' : 'false'}
-              data-done={i < step ? 'true' : 'false'}
-            />
-          ))}
+      <div className="index-card">
+        <div className="small-caps" style={{ marginBottom: 10 }}>
+          {current.eyebrow} из 0{STEPS.length}
         </div>
+        <h3
+          id="coach-title"
+          className="title"
+          style={{ fontSize: 28, marginBottom: 14 }}
+        >
+          {current.title}
+        </h3>
+        <p
+          style={{
+            fontFamily: 'var(--font-serif)',
+            fontSize: 17,
+            lineHeight: 1.55,
+            color: 'var(--ink-2)',
+            marginBottom: 28,
+          }}
+        >
+          {current.body}
+        </p>
 
-        <div className="coachmarks-actions">
-          <Button variant="ghost" size="sm" onClick={() => void dismiss()}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            paddingTop: 20,
+            borderTop: '1px solid var(--line-soft)',
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn--quiet"
+            onClick={() => void dismiss()}
+          >
             Пропустить
-          </Button>
+          </button>
           {step > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setStep(step - 1)}>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => setStep(step - 1)}
+            >
               ← Назад
-            </Button>
+            </button>
           )}
           {!isLast ? (
-            <Button variant="primary" size="sm" onClick={() => setStep(step + 1)}>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => setStep(step + 1)}
+            >
               Дальше →
-            </Button>
+            </button>
           ) : (
-            <Button variant="primary" size="sm" onClick={() => void dismiss()}>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => void dismiss()}
+            >
               Понятно ✓
-            </Button>
+            </button>
           )}
+          <div
+            style={{
+              marginLeft: 'auto',
+              display: 'flex',
+              gap: 6,
+            }}
+            aria-label="Прогресс"
+          >
+            {STEPS.map((_, i) => (
+              <span
+                key={i}
+                className="dot"
+                style={{
+                  background:
+                    i <= step ? 'var(--accent)' : 'var(--line)',
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>

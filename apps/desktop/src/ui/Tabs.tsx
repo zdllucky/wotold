@@ -20,9 +20,12 @@ interface TabsProps {
 }
 
 export function Tabs({ value, onChange, children }: TabsProps) {
+  // [B17] Wrapper-div держим без класса — handoff (`MIGRATION.md` §4)
+  // ставит `.tabs` row + `.tab` items на flat-уровне. Маркируем data-role
+  // для отладки, но без визуальных side-effects.
   return (
     <TabsContext.Provider value={{ value, onChange }}>
-      <div className="ds-tabs">{children}</div>
+      <div data-role="tabs">{children}</div>
     </TabsContext.Provider>
   );
 }
@@ -33,7 +36,7 @@ interface TabsListProps {
 
 function TabsList({ children }: TabsListProps) {
   return (
-    <div className="ds-tabs-list" role="tablist">
+    <div className="tabs" role="tablist">
       {children}
     </div>
   );
@@ -55,13 +58,18 @@ function TabsTrigger({ value, disabled, counter, children }: TabsTriggerProps) {
       role="tab"
       aria-selected={active}
       data-active={active ? 'true' : 'false'}
-      className="ds-tabs-trigger"
+      className={`tab${active ? ' tab--active' : ''}`}
       disabled={disabled}
       onClick={() => ctx.onChange(value)}
     >
       {children}
       {counter !== undefined && counter !== null && (
-        <span className="ds-tabs-counter">{counter}</span>
+        <span
+          className="mono"
+          style={{ marginLeft: 6, color: 'var(--muted)', fontSize: 12 }}
+        >
+          {counter}
+        </span>
       )}
     </button>
   );
@@ -76,7 +84,7 @@ function TabsPanel({ value, children }: TabsPanelProps) {
   const ctx = useTabs();
   if (ctx.value !== value) return null;
   return (
-    <div role="tabpanel" className="ds-tabs-panel">
+    <div role="tabpanel">
       {children}
     </div>
   );

@@ -1,26 +1,30 @@
+// ─────────────────────────────────────────────────────────────
+// Sample · apps/desktop/src/App.tsx — rewritten with Atelier shell
+// Logic preserved; navigation, recording flow, etc. unchanged.
+// What changed: replaces topnav with sidebar rail, wraps in ThemeProvider,
+// switches class names from .topnav-* to .app-rail / .nav-item.
+// ─────────────────────────────────────────────────────────────
+
 import { useEffect, useState } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { CallDetailPage } from './pages/CallDetailPage';
 import { CallsPage } from './pages/CallsPage';
-import { Coachmarks } from './pages/Coachmarks';
 import { ContactsPage } from './pages/ContactsPage';
 import { DesignSystemPage } from './pages/DesignSystemPage';
 import { HomePage } from './pages/HomePage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { Button } from './ui';
 import { getSetting, SETTINGS_KEYS } from './api/settings';
 import { ThemeProvider } from './theme/useTheme';
 
 type Page = 'home' | 'calls' | 'contacts' | 'settings' | 'ds';
 type Bootstrap = 'loading' | 'onboarding' | 'app';
 
-// [B17] Atelier v2: text-only nav rail (handoff §1). Active-indicator bar
-// carries the affordance — see `.nav-item--active::before` in wotold.css.
 const NAV: Array<{ id: Page; label: string }> = [
-  { id: 'home', label: 'Главная' },
-  { id: 'calls', label: 'Звонки' },
-  { id: 'contacts', label: 'Контакты' },
+  { id: 'home',     label: 'Главная'   },
+  { id: 'calls',    label: 'Звонки'    },
+  { id: 'contacts', label: 'Контакты'  },
   { id: 'settings', label: 'Настройки' },
 ];
 
@@ -40,8 +44,6 @@ function AppShell() {
   const [bootstrap, setBootstrap] = useState<Bootstrap>('loading');
   const [page, setPage] = useState<Page>(initialPage);
   const [detailCallId, setDetailCallId] = useState<string | null>(null);
-  // [B16] Counter активных pipeline-задач. Subtle indicator в app-rail foot.
-  const [activePipelines, setActivePipelines] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -52,21 +54,6 @@ function AppShell() {
         setBootstrap('app');
       }
     })();
-  }, []);
-
-  useEffect(() => {
-    let unStart: UnlistenFn | undefined;
-    let unFinish: UnlistenFn | undefined;
-    listen('pipeline:started', () => setActivePipelines((n) => n + 1))
-      .then((fn) => (unStart = fn))
-      .catch((e: unknown) => console.warn('listen pipeline:started failed', e));
-    listen('pipeline:finished', () => setActivePipelines((n) => Math.max(0, n - 1)))
-      .then((fn) => (unFinish = fn))
-      .catch((e: unknown) => console.warn('listen pipeline:finished failed', e));
-    return () => {
-      unStart?.();
-      unFinish?.();
-    };
   }, []);
 
   useEffect(() => {
@@ -89,7 +76,7 @@ function AppShell() {
   return (
     <div className="app-shell">
       <aside className="app-rail" aria-label="Главная навигация">
-        <div className="app-brand" aria-hidden="true">
+        <div className="app-brand">
           Wotold
           <span className="app-brand-dot">.</span>
         </div>
@@ -99,10 +86,8 @@ function AppShell() {
             <button
               key={item.id}
               type="button"
-              role="tab"
               className={`nav-item${active ? ' nav-item--active' : ''}`}
               onClick={() => setPage(item.id)}
-              aria-selected={active}
               aria-current={active ? 'page' : undefined}
             >
               {item.label}
@@ -119,31 +104,6 @@ function AppShell() {
           >
             DS · dev
           </button>
-        )}
-        {activePipelines > 0 && (
-          <div
-            role="status"
-            aria-live="polite"
-            title={`Обработка ${activePipelines} ${activePipelines === 1 ? 'звонка' : 'звонков'}…`}
-            style={{
-              marginTop: 'auto',
-              padding: '10px 6px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontFamily: 'var(--font-sans)',
-              fontSize: 11,
-              color: 'var(--muted)',
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-            }}
-          >
-            <span className="dot dot--accent dot--pulse" aria-hidden />
-            <span>
-              {activePipelines === 1 ? 'обрабатываем' : `обрабатываем · ${activePipelines}`}
-            </span>
-          </div>
         )}
         <div className="app-rail-foot">
           v1.0.0<br />
@@ -176,7 +136,6 @@ function AppShell() {
         {page === 'settings' && <SettingsPage />}
         {page === 'ds' && IS_DEV && <DesignSystemPage />}
       </main>
-      <Coachmarks />
     </div>
   );
 }

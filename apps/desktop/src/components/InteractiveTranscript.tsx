@@ -54,16 +54,8 @@ function parseRawStt(json: string): RawStt | null {
 
 const OWNER_TAG = 'owner';
 
-// Палитра для спикеров — циклится по hash(tag).
-const SPEAKER_COLORS = [
-  'var(--color-accent)',
-  'var(--color-success)',
-  'var(--color-warning)',
-  'var(--color-danger)',
-  'oklch(60% 0.15 280)', // purple
-  'oklch(60% 0.15 30)', // orange
-];
-
+// [B17] Atelier v2 speaker palette — cobalt/emerald/rust/indigo/teal из tokens.css
+// (см. --sp-1..--sp-5). Owner всегда sp-1 (cobalt), остальные — циклом по hash.
 function hashTag(tag: string): number {
   let h = 0;
   for (let i = 0; i < tag.length; i++) {
@@ -72,17 +64,21 @@ function hashTag(tag: string): number {
   return Math.abs(h);
 }
 
-function colorFor(tag: string): string {
-  if (tag === OWNER_TAG) return 'var(--color-accent)';
-  return SPEAKER_COLORS[hashTag(tag) % SPEAKER_COLORS.length] ?? 'var(--color-text-muted)';
+function colorVarFor(tag: string): string {
+  if (tag === OWNER_TAG) return 'var(--sp-1)';
+  const idx = (hashTag(tag) % 4) + 2; // 2..5
+  return `var(--sp-${idx})`;
 }
 
 function formatTimecode(sec: number): string {
-  const mm = Math.floor(sec / 60);
+  const h = Math.floor(sec / 3600);
+  const mm = Math.floor((sec % 3600) / 60)
+    .toString()
+    .padStart(2, '0');
   const ss = Math.floor(sec % 60)
     .toString()
     .padStart(2, '0');
-  return `${mm}:${ss}`;
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
 interface Group {
@@ -145,32 +141,25 @@ export function InteractiveTranscript({ rawSttJson, fallbackMd, speakers }: Prop
   const groups = groupBySpeaker(segments);
 
   return (
-    <div className="transcript-stream">
+    <div className="transcript">
       {groups.map((g, idx) => {
-        const isOwner = g.tag === OWNER_TAG;
         const start = g.segments[0]?.start ?? 0;
-        const color = colorFor(g.tag);
+        const color = colorVarFor(g.tag);
+        const speakerName =
+          labels.get(g.tag) ?? (g.tag === OWNER_TAG ? 'я' : g.tag);
+        const text = g.segments
+          .map((s) => s.text.trim())
+          .filter(Boolean)
+          .join(' ');
         return (
-          <div
-            key={`${g.tag}-${idx}`}
-            className="transcript-bubble"
-            data-owner={isOwner ? 'true' : 'false'}
-          >
-            <div className="transcript-bubble-head" style={{ color }}>
-              <span className="transcript-bubble-tag" style={{ backgroundColor: color }}>
-                {labels.get(g.tag) ?? (g.tag === OWNER_TAG ? 'я' : g.tag)}
-              </span>
-              <span className="transcript-bubble-time text-subtle">
-                {formatTimecode(start)}
-              </span>
+          <div className="transcript-row" key={`${g.tag}-${idx}`}>
+            <div className="transcript-speaker" style={{ color }}>
+              {speakerName}
             </div>
-            <div className="transcript-bubble-body">
-              {g.segments.map((s, i) => (
-                <p key={`${idx}-${i}`} className="transcript-bubble-line">
-                  {s.text.trim() || <span className="text-subtle">…</span>}
-                </p>
-              ))}
+            <div className="transcript-text">
+              {text || <span className="subtle">…</span>}
             </div>
+            <div className="transcript-time">{formatTimecode(start)}</div>
           </div>
         );
       })}
