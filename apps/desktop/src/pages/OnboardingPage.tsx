@@ -60,6 +60,9 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
 
         {step === 1 && (
           <>
+            <div className="onboarding-hero-icon" aria-hidden>
+              <span className="onboarding-hero-emoji">🎙</span>
+            </div>
             <h1>Wotold — твой диктофон со смыслом</h1>
             <p className="text-muted">
               Записывает звонки и встречи на твоём Mac, расшифровывает речь и
