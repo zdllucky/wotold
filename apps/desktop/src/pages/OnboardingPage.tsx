@@ -2,11 +2,12 @@
 // Centred 3-4 step flow поверх `.modal-backdrop`. .display headline + .subtitle
 // lede + .input boxed fields. Прогресс — дотс в правом нижнем углу.
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { humanError } from '../api/errors';
 
 import { renameOwnerContact } from '../api/contacts';
 import { setSetting, SETTINGS_KEYS } from '../api/settings';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { PermissionsSection } from './PermissionsSection';
 
 interface OnboardingPageProps {
@@ -28,6 +29,10 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // [B17] Wizard — без onClose, ESC ничего не делает (нельзя dismiss
+  // onboarding в первый запуск). Focus trap чтобы Tab крутился внутри.
+  useFocusTrap(rootRef, true);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -47,7 +52,13 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   };
 
   return (
-    <div className="modal-backdrop">
+    <div
+      ref={rootRef}
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="onboarding-title"
+    >
       <div
         style={{
           width: 560,
@@ -61,7 +72,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
 
         {step === 1 && (
           <>
-            <h1 className="display" style={{ marginBottom: 14 }}>
+            <h1 id="onboarding-title" className="display" style={{ marginBottom: 14 }}>
               Диктофон со смыслом.
             </h1>
             <p className="subtitle" style={{ marginBottom: 30, maxWidth: 480 }}>
@@ -93,7 +104,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
 
         {step === 2 && (
           <>
-            <h1 className="display" style={{ marginBottom: 14 }}>
+            <h1 id="onboarding-title" className="display" style={{ marginBottom: 14 }}>
               Разрешения системы.
             </h1>
             <p className="subtitle" style={{ marginBottom: 24, maxWidth: 480 }}>
@@ -113,7 +124,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
 
         {step === 3 && (
           <>
-            <h1 className="display" style={{ marginBottom: 14 }}>
+            <h1 id="onboarding-title" className="display" style={{ marginBottom: 14 }}>
               Согласие на запись.
             </h1>
             <p
@@ -144,7 +155,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
 
         {step === 4 && (
           <form onSubmit={submit}>
-            <h1 className="display" style={{ marginBottom: 14 }}>
+            <h1 id="onboarding-title" className="display" style={{ marginBottom: 14 }}>
               Как тебя называть?
             </h1>
             <p className="subtitle" style={{ marginBottom: 24, maxWidth: 480 }}>
