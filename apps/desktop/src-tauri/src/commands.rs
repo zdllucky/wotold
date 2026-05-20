@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 use crate::{
     audio::macos as audio_macos,
     audio::permissions::{self, PermissionsStatus},
-    db::{Call, Contact, ContactInput, OwnerContact},
+    db::{ActionItem, Call, Contact, ContactInput, OwnerContact},
     state::AppState,
     updater::AvailableUpdate,
     AppError,
@@ -28,6 +28,42 @@ pub async fn list_contacts(state: State<'_, AppState>) -> Result<Vec<Contact>, A
 #[tauri::command]
 pub async fn list_calls(state: State<'_, AppState>) -> Result<Vec<Call>, AppError> {
     crate::db::list_calls(&state.db).await
+}
+
+#[tauri::command]
+pub async fn get_call(state: State<'_, AppState>, id: String) -> Result<Option<Call>, AppError> {
+    crate::db::get_call(&state.db, &id).await
+}
+
+#[tauri::command]
+pub async fn list_call_action_items(
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<Vec<ActionItem>, AppError> {
+    crate::db::list_action_items(&state.db, &call_id).await
+}
+
+#[tauri::command]
+pub async fn read_call_artifact(
+    state: State<'_, AppState>,
+    call_id: String,
+    kind: String,
+) -> Result<Option<String>, AppError> {
+    let filename = match kind.as_str() {
+        "recap" => "recap.md",
+        "transcript" => "transcript.md",
+        other => return Err(AppError::Other(format!("unknown artifact kind: {other}"))),
+    };
+    let path = state
+        .app_data_dir
+        .join("calls")
+        .join(&call_id)
+        .join(filename);
+    match tokio::fs::read_to_string(&path).await {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(AppError::Other(format!("read {filename}: {e}"))),
+    }
 }
 
 #[tauri::command]

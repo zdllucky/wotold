@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { CallDetailPage } from './pages/CallDetailPage';
 import { CallsPage } from './pages/CallsPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { HomePage } from './pages/HomePage';
@@ -13,6 +14,7 @@ type Bootstrap = 'loading' | 'onboarding' | 'app';
 export function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap>('loading');
   const [page, setPage] = useState<Page>('home');
+  const [detailCallId, setDetailCallId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -72,7 +74,12 @@ export function App() {
 
       <main className="app">
         {page === 'home' && <HomePage />}
-        {page === 'calls' && <CallsPage />}
+        {page === 'calls' &&
+          (detailCallId ? (
+            <CallDetailPage callId={detailCallId} onBack={() => setDetailCallId(null)} />
+          ) : (
+            <CallsPage onOpen={(id) => setDetailCallId(id)} />
+          ))}
         {page === 'contacts' && <ContactsPage />}
         {page === 'settings' && <SettingsPage />}
       </main>
