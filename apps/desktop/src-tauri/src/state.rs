@@ -28,6 +28,15 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
     let owner = db::ensure_owner_contact(&pool).await?;
     log::info!("owner contact: {}", owner.id);
 
+    // Подметаем зависшие recording/processing с прошлой сессии (краш,
+    // force-quit). Альтернатива была бы попытка резюмировать pipeline,
+    // но raw_stt.json не гарантирован — проще пометить failed чтобы
+    // юзер видел чёткое состояние.
+    let swept = db::sweep_stale_calls(&pool).await?;
+    if swept > 0 {
+        log::warn!("sweep_stale_calls: {swept} зависших звонков → failed");
+    }
+
     Ok(AppState {
         db: pool,
         device_id: Arc::from(device_id.as_str()),

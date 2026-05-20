@@ -24,7 +24,11 @@ export function CallsPage() {
         <ul>
           {calls.map((c) => (
             <li key={c.id} className={`call call-${c.status}`}>
-              <div className="call-status" aria-label={c.status}>
+              <div
+                className="call-status"
+                aria-label={c.status}
+                title={statusTooltip(c.status)}
+              >
                 {statusIcon(c.status)}
               </div>
               <div className="call-meta">
@@ -59,6 +63,21 @@ function statusIcon(status: string): string {
       return '✗';
     default:
       return '·';
+  }
+}
+
+function statusTooltip(status: string): string {
+  switch (status) {
+    case 'recording':
+      return 'Идёт запись прямо сейчас.';
+    case 'processing':
+      return 'Запись завершена, идёт транскрипция через STT.';
+    case 'ready':
+      return 'Готово — есть transcript.md и raw_stt.json.';
+    case 'failed':
+      return 'Звонок не доведён до transcript (краш записи / ошибка STT / зависание из прошлой сессии). Аудио всё ещё на диске.';
+    default:
+      return status;
   }
 }
 

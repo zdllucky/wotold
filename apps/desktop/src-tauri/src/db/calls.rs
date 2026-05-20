@@ -116,6 +116,25 @@ pub async fn set_call_meta(
     Ok(())
 }
 
+/// Stale-sweep: при старте приложения все `recording` и `processing` row'ы
+/// помечаются `failed`. Это означает что в прошлой сессии запись или
+/// пайплайн были прерваны (краш, force-quit, потеря питания). Возвращает
+/// количество затронутых строк — пригодится для лога.
+pub async fn sweep_stale_calls(pool: &SqlitePool) -> Result<u64, AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let res = sqlx::query(
+        "UPDATE calls
+         SET status = 'failed',
+             ended_at = COALESCE(ended_at, ?1),
+             updated_at = ?1
+         WHERE status IN ('recording', 'processing')",
+    )
+    .bind(&now)
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}
+
 /// Пометить запись как failed (sidecar сломался, тайм-аут и т.п.).
 pub async fn fail_recording(pool: &SqlitePool, call_id: &str) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
