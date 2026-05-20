@@ -286,6 +286,39 @@ pub async fn list_call_speakers(
         .collect())
 }
 
+/// M3.7 паспорта: mic-дорожка по определению принадлежит владельцу устройства,
+/// никакой биометрии не требуется. Pipeline вызывает этот метод после
+/// merge_tracks чтобы сразу записать speaker_tag="owner" confirmed=1 с
+/// привязкой к owner контакту. Идемпотент: DELETE+INSERT.
+///
+/// Это НЕ нарушает R2 (никакой автопривязки) — owner это сам пользователь,
+/// привязка к собственному контакту тривиальна и не требует confirm.
+pub async fn auto_bind_owner_speaker(
+    pool: &SqlitePool,
+    call_id: &str,
+    owner_contact_id: &str,
+    owner_tag: &str,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM call_speakers WHERE call_id = ?1 AND speaker_tag = ?2")
+        .bind(call_id)
+        .bind(owner_tag)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO call_speakers (id, call_id, speaker_tag, contact_id, confirmed)
+         VALUES (?1, ?2, ?3, ?4, 1)",
+    )
+    .bind(uuid::Uuid::new_v4().to_string())
+    .bind(call_id)
+    .bind(owner_tag)
+    .bind(owner_contact_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// M3.5 (#26): R2 паспорта — финальная привязка спикер↔контакт ТОЛЬКО через
 /// явное подтверждение пользователя. Этот метод вызывается из Tauri-команды,
 /// никогда из pipeline. confirmed = 1.
@@ -620,5 +653,38 @@ mod tests {
         let alice = insert_contact_row(&db.pool, "Alice").await;
         let err = confirm_call_speaker(&db.pool, "ghost-speaker", &alice).await;
         assert!(err.is_err());
+    }
+
+    #[tokio::test]
+    async fn auto_bind_owner_speaker_writes_confirmed_row() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let owner = crate::db::ensure_owner_contact(&db.pool).await.unwrap();
+
+        auto_bind_owner_speaker(&db.pool, &call.id, &owner.id, "owner")
+            .await
+            .unwrap();
+
+        let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
+        assert_eq!(speakers.len(), 1);
+        assert_eq!(speakers[0].speaker_tag, "owner");
+        assert!(speakers[0].confirmed);
+        assert_eq!(speakers[0].contact_id.as_deref(), Some(owner.id.as_str()));
+    }
+
+    #[tokio::test]
+    async fn auto_bind_owner_speaker_is_idempotent() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let owner = crate::db::ensure_owner_contact(&db.pool).await.unwrap();
+
+        auto_bind_owner_speaker(&db.pool, &call.id, &owner.id, "owner")
+            .await
+            .unwrap();
+        auto_bind_owner_speaker(&db.pool, &call.id, &owner.id, "owner")
+            .await
+            .unwrap();
+        let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
+        assert_eq!(speakers.len(), 1, "повторный вызов не создаёт дубль");
     }
 }
