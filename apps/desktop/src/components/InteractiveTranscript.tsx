@@ -25,6 +25,33 @@ interface RawStt {
   merged?: Segment[];
 }
 
+// [B16] Lightweight runtime validator — без zod dependency. Pipeline пишет
+// raw_stt.json который мы читаем — если shape поменяется (или файл corrupt),
+// component не должен runtime-crash'ить.
+function isSegment(x: unknown): x is Segment {
+  if (!x || typeof x !== 'object') return false;
+  const o = x as Record<string, unknown>;
+  return (
+    typeof o.start === 'number' &&
+    typeof o.end === 'number' &&
+    typeof o.text === 'string' &&
+    typeof o.speakerTag === 'string'
+  );
+}
+
+function parseRawStt(json: string): RawStt | null {
+  try {
+    const raw = JSON.parse(json) as unknown;
+    if (!raw || typeof raw !== 'object') return null;
+    const o = raw as Record<string, unknown>;
+    if (typeof o.version !== 'number') return null;
+    const merged = Array.isArray(o.merged) ? o.merged.filter(isSegment) : undefined;
+    return { version: o.version, merged };
+  } catch {
+    return null;
+  }
+}
+
 const OWNER_TAG = 'owner';
 
 // Палитра для спикеров — циклится по hash(tag).
@@ -100,12 +127,8 @@ export function InteractiveTranscript({ rawSttJson, fallbackMd, speakers }: Prop
   const labels = useMemo(() => buildLabelMap(speakers), [speakers]);
   const segments: Segment[] | null = useMemo(() => {
     if (!rawSttJson) return null;
-    try {
-      const parsed = JSON.parse(rawSttJson) as RawStt;
-      return parsed.merged ?? null;
-    } catch {
-      return null;
-    }
+    const parsed = parseRawStt(rawSttJson);
+    return parsed?.merged ?? null;
   }, [rawSttJson]);
 
   if (!segments || segments.length === 0) {
