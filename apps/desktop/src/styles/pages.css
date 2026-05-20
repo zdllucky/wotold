@@ -1132,3 +1132,31 @@
   flex-direction: column;
   gap: var(--space-1);
 }
+
+/* [B16] Onboarding step dots */
+.onboarding-steps {
+  display: flex;
+  list-style: none;
+  margin: 0 0 var(--space-4) 0;
+  padding: 0;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+.onboarding-step-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--color-surface-sunken);
+  transition: background var(--duration-normal) var(--ease-out-expo),
+    transform var(--duration-fast) var(--ease-out-expo);
+}
+
+.onboarding-step-dot[data-active='true'] {
+  background: var(--color-accent);
+  transform: scale(1.3);
+}
+
+.onboarding-step-dot[data-done='true'] {
+  background: var(--color-success);
+}
