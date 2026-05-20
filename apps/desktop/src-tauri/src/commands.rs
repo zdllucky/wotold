@@ -104,13 +104,11 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     // в #20/#21 (когда провайдеры реально начнут вызываться).
     let path_label = "managed";
     let call = crate::db::insert_recording(&state.db, path_label).await?;
-    let mic_path = state
-        .app_data_dir
-        .join("calls")
-        .join(&call.id)
-        .join("mic.wav");
+    let call_dir = state.app_data_dir.join("calls").join(&call.id);
+    let mic_path = call_dir.join("mic.wav");
+    let system_path = call_dir.join("system.wav");
 
-    match audio_macos::start(&app, call.id.clone(), mic_path).await {
+    match audio_macos::start(&app, call.id.clone(), mic_path, system_path).await {
         Ok(session) => {
             *guard = Some(session);
             Ok(call)
