@@ -163,7 +163,7 @@ export function SettingsPage() {
             className={`nav-item${section === s.id ? ' nav-item--active' : ''}`}
             onClick={() => setSection(s.id)}
             aria-current={section === s.id ? 'page' : undefined}
-            style={{ fontSize: 14, marginBottom: 2 }}
+            style={{ fontSize: 14 }}
           >
             {s.label}
           </button>
