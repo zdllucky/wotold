@@ -201,10 +201,22 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
     recentCalls.reduce((acc, c) => acc + (c.duration_sec ?? 0), 0) / 3600;
   const recentForList = recentCalls.slice(0, 3);
 
-  // ── RECORDING STATE — full-screen recording layout per artboard §3
+  // ── RECORDING STATE — full-screen overlay per artboard §3 (no nav rail)
   if (recording) {
     return (
-      <section style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+      <section
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 50,
+          background: 'var(--paper)',
+          padding: '40px 56px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 32,
+          overflowY: 'auto',
+        }}
+      >
         <div
           style={{
             display: 'flex',
