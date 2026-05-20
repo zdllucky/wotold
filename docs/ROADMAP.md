@@ -263,7 +263,7 @@
 - [ ] **Sidebar или icons в nav** — отложен; segmented topnav пока closes большинство пользы.
 - [ ] **Title bar overlay + traffic lights padding** — `titleBarStyle: "Overlay"` + `hiddenTitle: true` в tauri.conf, интеграция UI с window chrome.
 - [x] **HomePage hero block** — stats cards + recent 3 list.
-- [ ] **Record-button visual weight** — gradient accent→danger + outer glow ring on hover. Сейчас просто красная пилюля.
+- [x] **Record-button visual weight** — accent→danger gradient + inset highlight + 6px outer glow ring на hover.
 - [x] **Onboarding hero**: step-dots indicator реализованы (B16 batch P0). Icon + screenshot preview — follow-up.
 - [x] **App identity в UI** — Brand label «Wotold» слева в topnav. SVG-logo — follow-up.
 
@@ -271,13 +271,13 @@
 
 - [ ] **SVG icon set вместо emoji** — `lucide-react` либо `@phosphor-icons/react` (~40kb tree-shaken). Заменить 20+ мест: status-cell ⏺⚙✓✗, кнопки ↻ ⚠ × ✕, checkbox ☐☑. Закрывает 6 разных P1 пунктов разом.
 - [ ] **Status-cell processing spinner** — `[data-status='processing'] .call-status-cell svg { animation: spin }`.
-- [ ] **CallRow depth** — micro-elevation на hover (`box-shadow: var(--shadow-1)`), avatar/speaker-badge слева, chevron `›` справа.
+- [x] **CallRow depth** — micro-elevation translateY(-1px) + shadow-1 на hover. Avatar/chevron — follow-up.
 - [ ] **Failed banner как Alert component** — лента акцент 3px + иконка в круге + action-button «попробовать снова» прямо в банере.
 - [ ] **Settings sections с иконками** — 🔐/🎙/🤖/👤 рядом с h3 + group-clusters (Privacy / Providers / Account) с visual separators.
 - [x] **Empty states с дефолт-иконками** — Empty.tsx fallback на ✨ если caller не передал свой icon.
-- [ ] **Transcript bubble max-width** — `min(75%, 36rem)` вместо просто `75%` (на 980px = нечитаемо длинная строка).
-- [ ] **Permissions section dashed border → solid** (выглядит как недоделанный wireframe).
-- [ ] **Tabs active state visual** — `background: var(--color-surface-sunken)` для active trigger + bolder weight. Сейчас разница тонкая.
+- [x] **Transcript bubble max-width** — `min(75%, 36rem)` вместо просто `75%`.
+- [x] **Permissions section dashed border → solid**.
+- [x] **Tabs active state visual** — `background: var(--color-surface-sunken)` + `font-weight: 600` для active trigger.
 
 ### Logic / Code Quality (P0)
 
