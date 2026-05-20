@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 use crate::{
     audio::macos as audio_macos,
     audio::permissions::{self, PermissionsStatus},
-    db::{ActionItem, Call, Contact, ContactInput, OwnerContact},
+    db::{ActionItem, Call, CallSpeakerView, Contact, ContactInput, OwnerContact},
     secrets::{self, ByoProvider, ByoStatus},
     state::AppState,
     updater::AvailableUpdate,
@@ -325,4 +325,37 @@ pub fn clear_account_session() -> Result<(), AppError> {
 #[tauri::command]
 pub fn read_account_session_token() -> Result<Option<String>, AppError> {
     secrets::read_account_session()
+}
+
+// ============================================================
+// M3.5 (#26) speaker confirmation flow
+// ============================================================
+
+/// Спикеры звонка + текущая привязка + suggestion. UI рисует на основе этого.
+#[tauri::command]
+pub async fn list_call_speakers(
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<Vec<CallSpeakerView>, AppError> {
+    crate::db::list_call_speakers(&state.db, &call_id).await
+}
+
+/// R2 паспорта: финальная привязка спикер↔контакт ТОЛЬКО через явное действие
+/// пользователя. Используется UI confirmation flow.
+#[tauri::command]
+pub async fn confirm_call_speaker(
+    state: State<'_, AppState>,
+    call_speaker_id: String,
+    contact_id: String,
+) -> Result<(), AppError> {
+    crate::db::confirm_call_speaker(&state.db, &call_speaker_id, &contact_id).await
+}
+
+/// Откатить ранее подтверждённую привязку (юзер передумал).
+#[tauri::command]
+pub async fn unbind_call_speaker(
+    state: State<'_, AppState>,
+    call_speaker_id: String,
+) -> Result<(), AppError> {
+    crate::db::unbind_call_speaker(&state.db, &call_speaker_id).await
 }

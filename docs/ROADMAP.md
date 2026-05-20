@@ -62,7 +62,7 @@
 
 - [x] **#24** M3.1 Voice embedding foundation (O3 — выбран `ort` + ONNX WeSpeaker/ECAPA-TDNN, 256-dim). Модуль `embeddings`: Embedder trait, cosine_similarity, BLOB serde. Реальный OnnxEmbedder + per-segment audio decode + sidecar split → #25
 - [x] **#25** M3.2-3.4 Matching foundation — `audio_io::extract_segment` (hound WAV slicing), `matching::{list_consenting_samples, rank_candidates}` (cosine + C2 фильтр), `llm_hint::request_speaker_hints` (Anthropic prompt + JSON parse), `merge_signals::merge` (embedding+llm с embedding bias), `identify::identify_speakers` orchestrator → `db::insert_speaker_suggestions` (call_speakers с confirmed=0). Production pipeline wire через #26 + real OnnxEmbedder.
-- [ ] **#26** M3.5-3.7 UI confirmation (R2 — никакой автопривязки) + dynamic sample update (N=5) + mic→owner auto-bind + wire identify_speakers в pipeline::run + real OnnxEmbedder → #25
+- [~] **#26** partial M3.5 UI confirmation flow — `db::{list_call_speakers, confirm_call_speaker, unbind_call_speaker}` + view с join'ом display_name по contact_id + 4 unit-теста. Tauri commands `list_call_speakers/confirm_call_speaker/unbind_call_speaker`. UI новая таб «Спикеры» в `CallDetailPage` через `SpeakersSection` (suggestion hint с confidence + источник, контакт-селектор, кнопки Подтвердить/Отвязать; R2 enforced — финальная привязка только через явный confirm). Dev mock с in-memory speakerBindings. **Остаётся (deferred)**: real OnnxEmbedder + wire identify_speakers в pipeline (нет ONNX модели), dynamic sample update (N=5), mic→owner auto-bind в pipeline.
 
 ## Recap · Этап 5 / M4
 

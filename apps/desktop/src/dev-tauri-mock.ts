@@ -101,6 +101,9 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
   // #38: in-memory session store для AccountSection preview.
   let accountSessionToken: string | null = null;
 
+  // #26: in-memory speaker confirmations для preview. ключ "<callId>:<S-tag>".
+  const speakerBindings: Record<string, string> = {};
+
   window.__TAURI_INTERNALS__ = {
     invoke: async (cmd: string, args?: unknown) => {
       const a = (args as Record<string, unknown> | undefined) ?? {};
@@ -173,6 +176,61 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
       if (cmd === 'delete_byo_key') {
         const p = a.provider as string;
         delete byoKeys[p];
+        return null;
+      }
+      // #26: in-memory speakers store для preview confirmation flow.
+      if (cmd === 'list_call_speakers') {
+        const callId = a.callId as string;
+        return [
+          {
+            id: `s-${callId}-1`,
+            call_id: callId,
+            speaker_tag: 'S1',
+            contact_id: speakerBindings[`${callId}:S1`] ?? null,
+            contact_display_name:
+              speakerBindings[`${callId}:S1`] === ownerContact.id
+                ? ownerContact.display_name
+                : speakerBindings[`${callId}:S1`] === sampleContact.id
+                  ? sampleContact.display_name
+                  : null,
+            suggestion_contact_id: ownerContact.id,
+            suggestion_contact_display_name: ownerContact.display_name,
+            suggestion_score: 0.91,
+            suggestion_source: 'embedding',
+            confirmed: !!speakerBindings[`${callId}:S1`],
+          },
+          {
+            id: `s-${callId}-2`,
+            call_id: callId,
+            speaker_tag: 'S2',
+            contact_id: speakerBindings[`${callId}:S2`] ?? null,
+            contact_display_name:
+              speakerBindings[`${callId}:S2`] === sampleContact.id
+                ? sampleContact.display_name
+                : null,
+            suggestion_contact_id: sampleContact.id,
+            suggestion_contact_display_name: sampleContact.display_name,
+            suggestion_score: 0.78,
+            suggestion_source: 'both',
+            confirmed: !!speakerBindings[`${callId}:S2`],
+          },
+        ];
+      }
+      if (cmd === 'confirm_call_speaker') {
+        // dev mock: ID формат 's-<callId>-<n>' → restore tag.
+        const sid = a.callSpeakerId as string;
+        const parts = sid.split('-');
+        const tag = `S${parts[parts.length - 1]}`;
+        const callId = parts.slice(1, -1).join('-');
+        speakerBindings[`${callId}:${tag}`] = a.contactId as string;
+        return null;
+      }
+      if (cmd === 'unbind_call_speaker') {
+        const sid = a.callSpeakerId as string;
+        const parts = sid.split('-');
+        const tag = `S${parts[parts.length - 1]}`;
+        const callId = parts.slice(1, -1).join('-');
+        delete speakerBindings[`${callId}:${tag}`];
         return null;
       }
       return responses[cmd] ?? null;
