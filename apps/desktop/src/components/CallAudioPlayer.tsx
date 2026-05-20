@@ -54,32 +54,50 @@ export function CallAudioPlayer({ callId }: Props) {
   }
 
   return (
-    <div className="audio-player-card">
-      <div className="audio-player-tracks" role="group" aria-label="Дорожка">
+    <div
+      className="card"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        marginBottom: 22,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div
+        role="group"
+        aria-label="Дорожка"
+        style={{ display: 'flex', gap: 6, flexShrink: 0 }}
+      >
         <Button
-          variant={active === 'system' ? 'secondary' : 'ghost'}
+          variant={active === 'system' ? 'primary' : 'ghost'}
           size="sm"
           onClick={() => setActive('system')}
           disabled={missingSystem}
           title="Звук собеседника (системный аудио)"
         >
-          🔊 Собеседник
+          Собеседник
         </Button>
         <Button
-          variant={active === 'mic' ? 'secondary' : 'ghost'}
+          variant={active === 'mic' ? 'primary' : 'ghost'}
           size="sm"
           onClick={() => setActive('mic')}
           disabled={missingMic}
           title="Звук с твоего микрофона"
         >
-          🎤 Я
+          Я
         </Button>
       </div>
       {src ? (
         // eslint-disable-next-line jsx-a11y/media-has-caption
-        <audio src={src} controls preload="metadata" className="audio-player-el" />
+        <audio
+          src={src}
+          controls
+          preload="metadata"
+          style={{ flex: 1, minWidth: 240 }}
+        />
       ) : (
-        <p className="text-muted" style={{ margin: 0 }}>
+        <p className="muted" style={{ margin: 0 }}>
           {error ? `Не удалось загрузить аудио: ${error}` : 'Загружаем…'}
         </p>
       )}

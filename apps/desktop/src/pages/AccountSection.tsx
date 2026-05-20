@@ -158,16 +158,35 @@ export function AccountSection() {
   };
 
   if (state.kind === 'loading') {
-    return <p className="hint">Загрузка…</p>;
+    return <p className="muted">Загрузка…</p>;
   }
 
   return (
-    <div className="account-section">
-      <p className="account-section-hint">
-        Облачная синхронизация скоро. Сейчас вход в аккаунт ничего не разблокирует —
-        Wotold полностью работает локально без логина.
+    <div>
+      <p
+        className="muted"
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 14,
+          marginTop: 0,
+          marginBottom: 14,
+        }}
+      >
+        Облачная синхронизация скоро. Сейчас вход в аккаунт ничего не
+        разблокирует — Wotold полностью работает локально без логина.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <p
+          style={{
+            color: 'var(--signal)',
+            fontFamily: 'var(--font-sans)',
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </p>
+      )}
 
       {state.kind === 'signed_in' && (
         <SignedInView
@@ -209,18 +228,42 @@ function SignedInView({
   onSignOut: () => void;
 }) {
   return (
-    <Card variant="sunken" compact>
-      <div className="account-row-head">
-        <div>
-          <p className="account-name">{identity.displayName ?? identity.email ?? identity.id}</p>
+    <Card variant="sunken">
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 10,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <p
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: 18,
+              color: 'var(--ink)',
+              margin: 0,
+            }}
+          >
+            {identity.displayName ?? identity.email ?? identity.id}
+          </p>
           {identity.email && identity.displayName && (
-            <p className="account-email">{identity.email}</p>
+            <p
+              className="muted"
+              style={{ margin: '2px 0 0', fontSize: 13 }}
+            >
+              {identity.email}
+            </p>
           )}
         </div>
         <Badge tone="success">{identity.provider}</Badge>
       </div>
-      <p className="account-expires">Session действует до {formatDate(expiresAt)}</p>
-      <div className="account-actions">
+      <p className="small-caps" style={{ marginBottom: 14 }}>
+        Session действует до {formatDate(expiresAt)}
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
         <Button variant="danger" size="sm" onClick={onSignOut} disabled={busy} busy={busy}>
           Выйти
         </Button>
@@ -247,14 +290,27 @@ function PendingPasteView({
   busy: boolean;
 }) {
   return (
-    <Card variant="sunken" compact>
-      <p className="account-step">
-        <strong>Шаг 1.</strong> В браузере открылась страница входа{' '}
-        <Badge tone="accent">{provider}</Badge>. Войди и подтверди.
+    <Card variant="sunken">
+      <p
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 15,
+          margin: '0 0 8px',
+        }}
+      >
+        <strong style={{ fontWeight: 500 }}>Шаг 1.</strong> В браузере открылась
+        страница входа <Badge tone="accent">{provider}</Badge>. Войди и подтверди.
       </p>
-      <p className="account-step">
-        <strong>Шаг 2.</strong> После успешного входа прокси покажет JSON с
-        полем <code>sessionId</code>. Скопируй значение sessionId и вставь сюда.
+      <p
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 15,
+          margin: '0 0 12px',
+        }}
+      >
+        <strong style={{ fontWeight: 500 }}>Шаг 2.</strong> После успешного входа
+        прокси покажет JSON с полем <code className="mono">sessionId</code>.
+        Скопируй значение sessionId и вставь сюда.
       </p>
       <InputField
         label="Session ID"
@@ -264,7 +320,7 @@ function PendingPasteView({
         onChange={(e) => onChange(e.target.value)}
         disabled={busy}
       />
-      <div className="account-actions">
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
           Отмена
         </Button>
@@ -278,10 +334,25 @@ function PendingPasteView({
           Подтвердить
         </Button>
       </div>
-      <p className="account-deeplink-hint">
-        Авто-перехват callback (без копи-пасты) — в плане через deep-link (`wotold://`).
+      <p
+        className="muted"
+        style={{
+          fontStyle: 'italic',
+          fontFamily: 'var(--font-serif)',
+          fontSize: 13,
+          marginTop: 14,
+          marginBottom: 4,
+        }}
+      >
+        Авто-перехват callback (без копи-пасты) — в плане через deep-link
+        (<code className="mono">wotold://</code>).
       </p>
-      <p className="text-subtle text-mono">{authorizeUrl}</p>
+      <p
+        className="subtle mono"
+        style={{ fontSize: 11, margin: 0, wordBreak: 'break-all' }}
+      >
+        {authorizeUrl}
+      </p>
     </Card>
   );
 }
@@ -294,9 +365,17 @@ function SignedOutView({
   onStart: (p: OidcProvider) => void;
 }) {
   return (
-    <Card variant="sunken" compact>
-      <p className="account-step">Войти через SSO. Откроется браузер.</p>
-      <div className="account-providers">
+    <Card variant="sunken">
+      <p
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 15,
+          margin: '0 0 12px',
+        }}
+      >
+        Войти через SSO. Откроется браузер.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {PROVIDERS.map((p) => (
           <Button
             key={p.id}

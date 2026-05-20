@@ -13,7 +13,8 @@ import {
   type ProviderPath,
   type SttProvider,
 } from '../api/settings';
-import { Button, Card, InputField, SelectField, Toolbar } from '../ui';
+import type { ReactNode } from 'react';
+import { Button, Card, InputField, SelectField } from '../ui';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
 import { ByoKeysSection } from './ByoKeysSection';
@@ -93,34 +94,43 @@ export function SettingsPage() {
     return () => clearTimeout(t);
   }, [savedTick]);
 
-  if (loading) return <p className="hint">Загрузка…</p>;
+  if (loading) return <p className="muted">Загрузка…</p>;
 
   // UX: эффективный proxy URL = user-override ИЛИ production default.
   const effectiveProxyUrl = proxyUrl.trim() || SETTINGS_DEFAULTS.PROXY_BASE_URL;
 
   return (
-    <section className="settings">
-      <Toolbar title="Настройки" />
+    <section>
+      <h1 className="title" style={{ fontSize: 36, marginBottom: 28 }}>
+        Настройки
+      </h1>
 
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <p
+          style={{
+            color: 'var(--signal)',
+            fontFamily: 'var(--font-sans)',
+            marginBottom: 14,
+          }}
+        >
+          {error}
+        </p>
+      )}
 
-      <div className="settings-section">
-        <h3 className="settings-section-title">Внешний вид</h3>
-        <Card compact>
+      <SettingsSection title="Внешний вид">
+        <Card>
           <AppearanceSection />
         </Card>
-      </div>
+      </SettingsSection>
 
-      <div className="settings-section">
-        <h3 className="settings-section-title">Разрешения системы</h3>
-        <Card compact>
+      <SettingsSection title="Разрешения системы">
+        <Card>
           <PermissionsSection />
         </Card>
-      </div>
+      </SettingsSection>
 
-      <div className="settings-section">
-        <h3 className="settings-section-title">Распознавание речи</h3>
-        <Card compact>
+      <SettingsSection title="Распознавание речи">
+        <Card>
           <SelectField
             label="Провайдер"
             value={sttProvider}
@@ -135,11 +145,10 @@ export function SettingsPage() {
             <option value="gladia">Gladia</option>
           </SelectField>
         </Card>
-      </div>
+      </SettingsSection>
 
-      <div className="settings-section">
-        <h3 className="settings-section-title">Саммари и язык</h3>
-        <Card compact>
+      <SettingsSection title="Саммари и язык">
+        <Card>
           <SelectField
             label="Язык рекапа и задач"
             value={preferredLanguage}
@@ -170,58 +179,41 @@ export function SettingsPage() {
             hint="Пусто = прокси сам выбирает по LLM_BACKEND (сейчас Groq Llama 3.3 70B). Override только если знаешь что делаешь."
           />
         </Card>
-      </div>
+      </SettingsSection>
 
-      <div className="settings-section">
-        <h3 className="settings-section-title">Источник сервисов</h3>
-        <Card compact>
-          <label className="radio-row">
-            <input
-              type="radio"
-              name="path"
-              value="managed"
-              checked={providerPath === 'managed'}
-              onChange={() => {
-                setProviderPath('managed');
-                void persist(SETTINGS_KEYS.PROVIDER_PATH, 'managed');
-              }}
-            />
-            <span className="radio-row-text">
-              <strong>Через Wotold</strong>
-              <span className="radio-row-hint">
-                По умолчанию. Все запросы идут через серверы Wotold —
-                свои API-ключи не нужны. Есть бесплатные лимиты.
-              </span>
-            </span>
-          </label>
-          <label className="radio-row">
-            <input
-              type="radio"
-              name="path"
-              value="byo"
-              checked={providerPath === 'byo'}
-              onChange={() => {
-                setProviderPath('byo');
-                void persist(SETTINGS_KEYS.PROVIDER_PATH, 'byo');
-              }}
-            />
-            <span className="radio-row-text">
-              <strong>Свои API-ключи</strong>
-              <span className="radio-row-hint">
-                Подключи свои ключи Soniox/Gladia/Anthropic — Wotold пойдёт
-                напрямую без посредника. Ключи хранятся в Keychain macOS.
-              </span>
-            </span>
-          </label>
+      <SettingsSection title="Источник сервисов">
+        <Card>
+          <RadioOption
+            name="path"
+            value="managed"
+            checked={providerPath === 'managed'}
+            onSelect={() => {
+              setProviderPath('managed');
+              void persist(SETTINGS_KEYS.PROVIDER_PATH, 'managed');
+            }}
+            title="Через Wotold"
+            hint="По умолчанию. Все запросы идут через серверы Wotold — свои API-ключи не нужны. Есть бесплатные лимиты."
+          />
+          <RadioOption
+            name="path"
+            value="byo"
+            checked={providerPath === 'byo'}
+            onSelect={() => {
+              setProviderPath('byo');
+              void persist(SETTINGS_KEYS.PROVIDER_PATH, 'byo');
+            }}
+            title="Свои API-ключи"
+            hint="Подключи свои ключи Soniox/Gladia/Anthropic — Wotold пойдёт напрямую без посредника. Ключи хранятся в Keychain macOS."
+          />
         </Card>
-      </div>
+      </SettingsSection>
 
       {/* Managed: показываем эффективный URL + advanced collapse для override.
           В BYO режиме прокси не нужен — секция скрыта. */}
       {providerPath === 'managed' && (
-        <div className="settings-section">
-          <div className="settings-row-between">
-            <h3 className="settings-section-title">Сервер Wotold</h3>
+        <SettingsSection
+          title="Сервер Wotold"
+          actions={
             <Button
               variant="ghost"
               size="sm"
@@ -229,11 +221,21 @@ export function SettingsPage() {
             >
               {showAdvancedProxy ? '✕ Закрыть' : 'Advanced'}
             </Button>
-          </div>
-          <Card compact>
-            <p className="text-muted">
-              Endpoint: <code className="text-mono">{effectiveProxyUrl}</code>
-              {!proxyUrl.trim() && <span className="text-subtle"> · default</span>}
+          }
+        >
+          <Card>
+            <p
+              className="muted"
+              style={{
+                marginTop: 0,
+                marginBottom: showAdvancedProxy ? 12 : 0,
+                fontSize: 13,
+              }}
+            >
+              Endpoint: <code className="mono">{effectiveProxyUrl}</code>
+              {!proxyUrl.trim() && (
+                <span className="subtle"> · default</span>
+              )}
             </p>
             {showAdvancedProxy && (
               <InputField
@@ -257,49 +259,145 @@ export function SettingsPage() {
               />
             )}
           </Card>
-        </div>
+        </SettingsSection>
       )}
 
       {/* BYO: показываем ключи только при выборе BYO. В managed-режиме они не нужны. */}
       {providerPath === 'byo' && (
-        <div className="settings-section">
-          <h3 className="settings-section-title">Свои API-ключи</h3>
-          <Card compact>
+        <SettingsSection title="Свои API-ключи">
+          <Card>
             <ByoKeysSection />
           </Card>
-        </div>
+        </SettingsSection>
       )}
 
-      <div className="settings-section">
-        <h3 className="settings-section-title">Аккаунт</h3>
+      <SettingsSection title="Аккаунт">
         <AccountSection />
-      </div>
+      </SettingsSection>
 
       {/* #48: Quota indicator. Показываем только в managed-режиме —
           в BYO пользователь платит партнёрам напрямую, наша квота не действует. */}
       {providerPath === 'managed' && (
-        <div className="settings-section">
-          <h3 className="settings-section-title">Использование</h3>
+        <SettingsSection title="Использование">
           <UsageSection />
-        </div>
+        </SettingsSection>
       )}
 
-      <p className="hint">
+      <p
+        className="muted"
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 13,
+          margin: '24px 0',
+          display: 'flex',
+          gap: 10,
+          alignItems: 'baseline',
+        }}
+      >
         Все изменения сохраняются автоматически.
         {savedTick > 0 && (
-          <span className="settings-saved-toast" role="status" aria-live="polite">
+          <span
+            role="status"
+            aria-live="polite"
+            className="small-caps"
+            style={{ color: 'var(--success)', fontSize: 11 }}
+          >
             ✓ Сохранено
           </span>
         )}
       </p>
 
-      <div className="settings-section">
-        <h3 className="settings-section-title">Конфиденциальность</h3>
-        <Card compact>
+      <SettingsSection title="Конфиденциальность">
+        <Card>
           <DeleteAllDataSection />
         </Card>
-      </div>
+      </SettingsSection>
     </section>
+  );
+}
+
+interface SettingsSectionProps {
+  title: string;
+  actions?: ReactNode;
+  children: ReactNode;
+}
+
+function SettingsSection({ title, actions, children }: SettingsSectionProps) {
+  return (
+    <section style={{ marginBottom: 32 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          marginBottom: 12,
+        }}
+      >
+        <h2 className="small-caps" style={{ margin: 0 }}>
+          {title}
+        </h2>
+        {actions}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+interface RadioOptionProps {
+  name: string;
+  value: string;
+  checked: boolean;
+  onSelect: () => void;
+  title: string;
+  hint: string;
+}
+
+function RadioOption({ name, value, checked, onSelect, title, hint }: RadioOptionProps) {
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12,
+        padding: '12px 0',
+        cursor: 'pointer',
+        borderBottom: '1px solid var(--line-soft)',
+      }}
+    >
+      <input
+        type="radio"
+        name={name}
+        value={value}
+        checked={checked}
+        onChange={onSelect}
+        style={{ marginTop: 4 }}
+      />
+      <span
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+        }}
+      >
+        <strong
+          style={{
+            fontFamily: 'var(--font-serif)',
+            fontSize: 16,
+            color: 'var(--ink)',
+            fontWeight: 500,
+          }}
+        >
+          {title}
+        </strong>
+        <span
+          className="muted"
+          style={{ fontSize: 13, lineHeight: 1.45 }}
+        >
+          {hint}
+        </span>
+      </span>
+    </label>
   );
 }
 
@@ -332,9 +430,9 @@ function DeleteAllDataSection() {
   if (done) {
     return (
       <div>
-        <p className="text-muted" style={{ marginTop: 0 }}>
-          ✓ Все данные удалены. Закрой и заново открой Wotold чтобы начать
-          с чистой установки.
+        <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
+          ✓ Все данные удалены. Закрой и заново открой Wotold чтобы начать с
+          чистой установки.
         </p>
       </div>
     );
@@ -342,13 +440,22 @@ function DeleteAllDataSection() {
 
   return (
     <div>
-      <p className="text-muted" style={{ marginTop: 0 }}>
-        Стирает все записи звонков, контакты, voice samples, сессию и
-        BYO-ключи. Необратимо. Полезно при отзыве согласия или передаче
-        устройства.
+      <p className="muted" style={{ marginTop: 0, fontSize: 14, marginBottom: 12 }}>
+        Стирает все записи звонков, контакты, voice samples, сессию и BYO-ключи.
+        Необратимо. Полезно при отзыве согласия или передаче устройства.
       </p>
-      {error && <p className="error">{error}</p>}
-      <div className="form-actions" style={{ marginTop: 'var(--space-2)' }}>
+      {error && (
+        <p
+          style={{
+            color: 'var(--signal)',
+            fontFamily: 'var(--font-sans)',
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </p>
+      )}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <Button variant="danger" onClick={handleWipe} disabled={busy} busy={busy}>
           {busy ? 'Удаляем…' : 'Удалить все данные'}
         </Button>

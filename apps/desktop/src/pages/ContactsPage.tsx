@@ -82,8 +82,13 @@ export function ContactsPage() {
     }
   };
 
-  if (error && !contacts) return <p className="error">{error}</p>;
-  if (!contacts) return <p className="hint">Загрузка…</p>;
+  if (error && !contacts)
+    return (
+      <p style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+        {error}
+      </p>
+    );
+  if (!contacts) return <p className="muted">Загрузка…</p>;
 
   // [B16] Search фильтр — name / org / role / identifiers / notes.
   const q = search.trim().toLowerCase();

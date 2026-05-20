@@ -226,9 +226,13 @@
 
 ### Cleanup (после migration page-by-page)
 
-- [ ] Аудит `apps/desktop/src/ui/{Button,Card,Badge,Empty,Pill,StatusDot,Field,Tabs,Toolbar}.tsx` — превратить в thin wrappers над новыми `.btn`/`.card`/etc классами.
-- [ ] Сократить / удалить `apps/desktop/src/styles/pages.css` (29 KB → close to 0).
-- [ ] Удалить `apps/desktop/src/styles/legacy-tokens.css` shim когда нет ни одного `--color-*` reference.
+- [x] Аудит `apps/desktop/src/ui/{Button,Card,Badge,Empty,Pill,StatusDot,Field,Tabs,Toolbar,UsageBar}.tsx` — превращены в thin wrappers над `.btn`/`.card`/`.dot`/`.input`/etc + token-driven inline styles.
+- [x] Удалить `apps/desktop/src/styles/pages.css` (29 KB legacy classes больше не используются — все migrated в inline / wotold.css).
+- [x] Удалить `apps/desktop/src/styles/legacy-tokens.css` shim — ноль `--color-*` references в JSX.
+- [x] `global.css` сокращён до markdown + selection + macOS traffic-lights padding (всё через новые токены).
+- [x] `ui/ui.css` сокращён до Skeleton shimmer (единственное что не покрывается wotold.css).
+- [x] Sections migrated: `AccountSection`, `ByoKeysSection`, `PermissionsSection`, `VoiceSamplesSection`, `UsageSection`, `CallAudioPlayer`, `SettingsPage` (SettingsSection + RadioOption helpers).
+- [x] `DesignSystemPage` переписан с inline-styles по новому token set.
 - [ ] Подсолить руками: проверить все 6 theme×accent комбинаций на каждом экране + reduced-motion + WCAG contrast.
 
 ## Production Readiness (B16)
