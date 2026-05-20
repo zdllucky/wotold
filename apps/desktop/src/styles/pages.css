@@ -855,6 +855,87 @@
   gap: var(--space-3);
 }
 
+/* [B16] Coachmarks first-run overlay. */
+.coachmarks-backdrop {
+  position: fixed;
+  inset: 0;
+  background: oklch(0% 0 0 / 0.5);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+  animation: coachmarks-fade-in 200ms var(--ease-out-expo);
+}
+
+.coachmarks-card {
+  max-width: 28rem;
+  width: calc(100% - var(--space-6));
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: 0 24px 60px oklch(0% 0 0 / 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.coachmarks-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.coachmarks-body {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.coachmarks-progress {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: center;
+  margin: var(--space-2) 0;
+}
+
+.coachmarks-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+}
+
+.coachmarks-dot[data-active='true'] {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  transform: scale(1.2);
+}
+
+.coachmarks-dot[data-done='true'] {
+  background: color-mix(in oklch, var(--color-accent) 50%, transparent);
+}
+
+.coachmarks-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@keyframes coachmarks-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coachmarks-backdrop {
+    animation: none;
+  }
+  .coachmarks-dot[data-active='true'] {
+    transform: none;
+  }
+}
+
 /* [B16] Onboarding hero icon — 128px circle с accent gradient. */
 .onboarding-hero-icon {
   align-self: center;

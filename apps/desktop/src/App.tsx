@@ -10,6 +10,7 @@ import {
 
 import { CallDetailPage } from './pages/CallDetailPage';
 import { CallsPage } from './pages/CallsPage';
+import { Coachmarks } from './pages/Coachmarks';
 import { ContactsPage } from './pages/ContactsPage';
 import { DesignSystemPage } from './pages/DesignSystemPage';
 import { HomePage } from './pages/HomePage';
@@ -176,6 +177,7 @@ export function App() {
         {page === 'settings' && <SettingsPage />}
         {page === 'ds' && IS_DEV && <DesignSystemPage />}
       </main>
+      <Coachmarks />
     </>
   );
 }
