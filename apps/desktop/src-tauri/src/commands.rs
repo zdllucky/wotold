@@ -169,6 +169,22 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
         return Err(AppError::Other("recording already in progress".into()));
     }
 
+    // [B16 audit P1]: pre-check разрешений перед попыткой start. Раньше
+    // sidecar просто молча fail-stop'ал — юзер видел загадочный «calls failed»
+    // через 1-2 секунды. Теперь возвращаем clear AppError → frontend
+    // покажет 'Нет разрешения на ...' и направит в Настройки.
+    let perms = permissions::check(&app).await?;
+    if perms.microphone != "granted" {
+        return Err(AppError::Other(
+            "Нет разрешения на микрофон. Открой Настройки → Разрешения.".into(),
+        ));
+    }
+    if perms.screen_recording != "granted" {
+        return Err(AppError::Other(
+            "Нет разрешения на запись экрана (для системного аудио). Открой Настройки → Разрешения.".into(),
+        ));
+    }
+
     // M2.3: path_label фиксирует путь доставки на момент создания звонка.
     // По умолчанию managed; переключаемое значение из settings подключим
     // в #20/#21 (когда провайдеры реально начнут вызываться).
