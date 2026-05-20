@@ -104,6 +104,54 @@ pub fn status_all() -> Result<Vec<ByoStatus>, AppError> {
     .collect())
 }
 
+// =================== Account session token (#38, M10.2) ===================
+//
+// Хранится в keychain отдельной записью, не мешается с BYO ключами.
+// Доступ через ту же keyring абстракцию. UI/JS не получают значение —
+// только status (has session) + identity через /v1/auth/me на прокси.
+
+const ACCOUNT_SESSION_ACCOUNT: &str = "account_session";
+
+fn account_session_entry() -> Result<Entry, AppError> {
+    Entry::new(SERVICE, ACCOUNT_SESSION_ACCOUNT)
+        .map_err(|e| AppError::Other(format!("keychain entry init: {e}")))
+}
+
+pub fn set_account_session(token: &str) -> Result<(), AppError> {
+    if token.is_empty() {
+        return Err(AppError::Other("empty session token".into()));
+    }
+    account_session_entry()?
+        .set_password(token)
+        .map_err(|e| AppError::Other(format!("keychain set: {e}")))?;
+    log::info!("account session token updated (value length withheld)");
+    Ok(())
+}
+
+pub fn read_account_session() -> Result<Option<String>, AppError> {
+    match account_session_entry()?.get_password() {
+        Ok(v) if v.is_empty() => Ok(None),
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(AppError::Other(format!("keychain read: {e}"))),
+    }
+}
+
+pub fn has_account_session() -> Result<bool, AppError> {
+    Ok(read_account_session()?.is_some())
+}
+
+pub fn clear_account_session() -> Result<(), AppError> {
+    match account_session_entry()?.delete_credential() {
+        Ok(()) => {
+            log::info!("account session cleared");
+            Ok(())
+        }
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(AppError::Other(format!("keychain delete: {e}"))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,5 +237,42 @@ mod tests {
         assert!(providers.contains(&ByoProvider::Soniox));
         assert!(providers.contains(&ByoProvider::Gladia));
         assert!(providers.contains(&ByoProvider::Anthropic));
+    }
+
+    #[test]
+    fn account_session_roundtrip() {
+        if skip_if_no_keychain() {
+            return;
+        }
+        let _ = clear_account_session();
+        assert!(!has_account_session().unwrap());
+
+        set_account_session("sess-token-test-3812").unwrap();
+        assert!(has_account_session().unwrap());
+        assert_eq!(
+            read_account_session().unwrap().as_deref(),
+            Some("sess-token-test-3812")
+        );
+
+        clear_account_session().unwrap();
+        assert!(!has_account_session().unwrap());
+    }
+
+    #[test]
+    fn set_account_session_rejects_empty() {
+        if skip_if_no_keychain() {
+            return;
+        }
+        let err = set_account_session("").unwrap_err();
+        assert!(matches!(err, AppError::Other(_)));
+    }
+
+    #[test]
+    fn clear_account_session_idempotent() {
+        if skip_if_no_keychain() {
+            return;
+        }
+        let _ = clear_account_session();
+        clear_account_session().unwrap();
     }
 }

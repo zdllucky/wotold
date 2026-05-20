@@ -61,6 +61,10 @@ pub fn run() {
             commands::set_byo_key,
             commands::delete_byo_key,
             commands::list_byo_status,
+            commands::get_account_session_status,
+            commands::set_account_session,
+            commands::clear_account_session,
+            commands::read_account_session_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

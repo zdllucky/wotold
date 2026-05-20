@@ -272,3 +272,40 @@ pub fn delete_byo_key(provider: ByoProvider) -> Result<(), AppError> {
 pub fn list_byo_status() -> Result<Vec<ByoStatus>, AppError> {
     secrets::status_all()
 }
+
+// =================== Account session (#38, M10.2) ===================
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AccountSessionStatus {
+    pub present: bool,
+}
+
+#[tauri::command]
+pub fn get_account_session_status() -> Result<AccountSessionStatus, AppError> {
+    Ok(AccountSessionStatus {
+        present: secrets::has_account_session()?,
+    })
+}
+
+#[tauri::command]
+pub fn set_account_session(token: String) -> Result<(), AppError> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        secrets::clear_account_session()
+    } else {
+        secrets::set_account_session(trimmed)
+    }
+}
+
+#[tauri::command]
+pub fn clear_account_session() -> Result<(), AppError> {
+    secrets::clear_account_session()
+}
+
+/// Возвращает session token для встраивания в Authorization Bearer при запросах
+/// на прокси (например GET /v1/auth/me). Возвращает только когда фронт инициирует
+/// запрос — токен живёт в JS памяти не дольше HTTP-вызова.
+#[tauri::command]
+pub fn read_account_session_token() -> Result<Option<String>, AppError> {
+    secrets::read_account_session()
+}

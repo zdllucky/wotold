@@ -13,6 +13,7 @@ export const SETTINGS_KEYS = {
   STT_PROVIDER: 'stt_provider',
   PROVIDER_PATH: 'provider_path',
   LLM_MODEL: 'llm_model',
+  PROXY_BASE_URL: 'proxy_base_url',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
