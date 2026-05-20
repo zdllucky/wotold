@@ -30,6 +30,8 @@ pub enum CaptureError {
 #[cfg(target_os = "macos")]
 pub mod macos;
 #[cfg(target_os = "macos")]
+pub mod permissions;
+#[cfg(target_os = "macos")]
 pub use macos::MacOsCoreAudioCapture;
 
 #[cfg(target_os = "windows")]

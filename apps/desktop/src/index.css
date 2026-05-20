@@ -386,6 +386,93 @@ button.primary:hover {
   border-color: oklch(68% 0.18 250);
 }
 
+.perms .perm-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.55rem 0;
+  border-bottom: 1px dashed color-mix(in oklch, currentColor 12%, transparent);
+}
+
+.perms .perm-row:last-child {
+  border-bottom: none;
+}
+
+.perm-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.perm-label {
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.perm-desc {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  opacity: 0.65;
+}
+
+.perm-badge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: help;
+}
+
+.perm-granted {
+  background: color-mix(in oklch, oklch(60% 0.16 145) 18%, transparent);
+  color: oklch(55% 0.18 145);
+}
+
+.perm-denied,
+.perm-restricted {
+  background: color-mix(in oklch, oklch(58% 0.21 25) 16%, transparent);
+  color: oklch(58% 0.21 25);
+}
+
+.perm-not_determined {
+  background: color-mix(in oklch, oklch(70% 0.15 75) 18%, transparent);
+  color: oklch(60% 0.16 75);
+}
+
+.perm-unknown {
+  background: color-mix(in oklch, currentColor 10%, transparent);
+  opacity: 0.7;
+}
+
+.perm-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.perm-actions button {
+  padding: 0.32rem 0.7rem;
+  font-size: 0.8rem;
+  border-radius: 0.4rem;
+  border: 1px solid color-mix(in oklch, currentColor 22%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.perm-actions button:hover:not(:disabled) {
+  background: color-mix(in oklch, currentColor 8%, transparent);
+}
+
+.perm-actions button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
 h1 {
   margin: 0 0 1rem;
   font-weight: 600;
