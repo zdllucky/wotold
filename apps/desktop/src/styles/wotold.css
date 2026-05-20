@@ -86,10 +86,15 @@ textarea:focus-visible,
 
 /* ═══ Top-level app shell ═══════════════════════════════
    Use these classes on your <App> root and <main>.
+   .app-shell — fixed 100vh container с overflow:hidden, чтобы скролл
+   жил только в .app-main. Rail остаётся sticky слева, не уезжает
+   вместе с контентом. Если содержимое рейла когда-нибудь станет
+   выше viewport — у самого рейла отдельный overflow-y:auto.
    ═══════════════════════════════════════════════════════ */
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: var(--bg);
 }
 
@@ -97,12 +102,15 @@ textarea:focus-visible,
 .app-rail {
   width: 192px;
   flex-shrink: 0;
+  height: 100vh;
   padding: 26px 18px;
   border-right: 1px solid var(--line-soft);
   background: var(--paper);
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .app-brand {
@@ -165,8 +173,11 @@ textarea:focus-visible,
 .app-main {
   flex: 1;
   min-width: 0;
+  height: 100vh;
   padding: 34px 44px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   background: var(--bg);
 }
 

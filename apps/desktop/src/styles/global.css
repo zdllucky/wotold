@@ -127,16 +127,33 @@
 }
 
 @media (max-width: 640px) {
+  /* [B17] Column layout — снимаем 100vh / overflow:hidden чтобы шапка не
+   * фиксировалась, и страница скроллится естественно. */
   .app-shell {
     flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
   .app-rail {
     width: 100%;
+    height: auto;
     flex-direction: row;
     flex-wrap: wrap;
     border-right: none;
     border-bottom: 1px solid var(--line-soft);
     padding: 12px 16px;
+    overflow: visible;
+    overscroll-behavior: auto;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--paper);
+  }
+  .app-main {
+    height: auto;
+    overflow: visible;
+    overscroll-behavior: auto;
   }
   .app-rail-foot {
     display: none;
