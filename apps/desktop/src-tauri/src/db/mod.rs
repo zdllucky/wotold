@@ -13,7 +13,7 @@ mod settings;
 
 pub use calls::{
     fail_recording, finish_recording, insert_recording, list_calls, mark_call_ready, set_call_meta,
-    Call,
+    sweep_stale_calls, Call,
 };
 pub use contacts::{
     create_contact, delete_contact, ensure_owner_contact, list_contacts, rename_owner_contact,
