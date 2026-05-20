@@ -1,9 +1,12 @@
+// [B17] Atelier v2 redesign per docs/design/atelier-v2/MIGRATION.md §8.
+// Centred 3-4 step flow поверх `.modal-backdrop`. .display headline + .subtitle
+// lede + .input boxed fields. Прогресс — дотс в правом нижнем углу.
+
 import { useState, type FormEvent } from 'react';
 import { humanError } from '../api/errors';
 
 import { renameOwnerContact } from '../api/contacts';
 import { setSetting, SETTINGS_KEYS } from '../api/settings';
-import { Button, InputField } from '../ui';
 import { PermissionsSection } from './PermissionsSection';
 
 interface OnboardingPageProps {
@@ -12,12 +15,13 @@ interface OnboardingPageProps {
 
 type Step = 1 | 2 | 3 | 4;
 
-const STEPS: Array<{ id: Step; label: string }> = [
-  { id: 1, label: 'Знакомство' },
-  { id: 2, label: 'Разрешения' },
-  { id: 3, label: 'Согласие' },
-  { id: 4, label: 'Имя' },
-];
+const STEP_TOTAL = 4;
+const STEP_LABEL: Record<Step, string> = {
+  1: 'Знакомство',
+  2: 'Разрешения',
+  3: 'Согласие',
+  4: 'Имя',
+};
 
 export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   const [step, setStep] = useState<Step>(1);
@@ -33,7 +37,6 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
     setError(null);
     try {
       await renameOwnerContact(trimmed);
-      // [B16]: consent сохраняется здесь же — show on home flow убираем.
       await setSetting(SETTINGS_KEYS.RECORDING_CONSENT_AT, new Date().toISOString());
       await setSetting(SETTINGS_KEYS.ONBOARDING_DONE, '1');
       onComplete();
@@ -44,115 +47,214 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   };
 
   return (
-    <section className="onboarding">
-      <div className="onboarding-card">
-        <ol className="onboarding-steps" aria-label="Прогресс настройки">
-          {STEPS.map((s) => (
-            <li
-              key={s.id}
-              className="onboarding-step-dot"
-              data-active={s.id === step ? 'true' : 'false'}
-              data-done={s.id < step ? 'true' : 'false'}
-              title={s.label}
-            />
-          ))}
-        </ol>
+    <div className="modal-backdrop">
+      <div
+        style={{
+          width: 560,
+          maxWidth: '90vw',
+          padding: '40px 4px',
+        }}
+      >
+        <div className="small-caps" style={{ marginBottom: 14 }}>
+          Шаг 0{step} из 0{STEP_TOTAL} · {STEP_LABEL[step]}
+        </div>
 
         {step === 1 && (
           <>
-            <div className="onboarding-hero-icon" aria-hidden>
-              <span className="onboarding-hero-emoji">🎙</span>
-            </div>
-            <h1>Wotold — твой диктофон со смыслом</h1>
-            <p className="text-muted">
-              Записывает звонки и встречи на твоём Mac, расшифровывает речь и
-              кратко пересказывает что обсуждалось. Все звонки хранятся
-              локально — в облако ничего не утекает.
+            <h1 className="display" style={{ marginBottom: 14 }}>
+              Диктофон со смыслом.
+            </h1>
+            <p className="subtitle" style={{ marginBottom: 30, maxWidth: 480 }}>
+              Wotold записывает звонки и встречи на Mac, расшифровывает речь и
+              кратко пересказывает что обсуждалось. Всё хранится локально — в
+              облако ничего не утекает.
             </p>
-            <ul className="onboarding-features">
-              <li>Запись микрофона и системного звука раздельно</li>
-              <li>Расшифровка с распознаванием участников</li>
-              <li>Авто-саммари и список задач</li>
-              <li>Поиск по разговорам прямо в Claude через MCP</li>
+            <ul
+              style={{
+                listStyle: 'none',
+                padding: 0,
+                margin: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                fontFamily: 'var(--font-serif)',
+                fontSize: 16,
+                color: 'var(--ink-2)',
+              }}
+            >
+              <li>— Запись микрофона и системного звука раздельно</li>
+              <li>— Расшифровка с распознаванием участников</li>
+              <li>— Авто-саммари и список задач</li>
+              <li>— Поиск по разговорам прямо в Claude через MCP</li>
             </ul>
-            <div className="form-actions">
-              <Button variant="primary" onClick={() => setStep(2)}>
-                Дальше →
-              </Button>
-            </div>
+            <FooterRow step={step} onNext={() => setStep(2)} />
           </>
         )}
 
         {step === 2 && (
           <>
-            <h1>Разрешения системы</h1>
-            <p className="text-muted">
-              Wotold нужны два разрешения macOS, чтобы записывать звонки.
-              Дай доступ — без него запись не пойдёт.
+            <h1 className="display" style={{ marginBottom: 14 }}>
+              Разрешения системы.
+            </h1>
+            <p className="subtitle" style={{ marginBottom: 24, maxWidth: 480 }}>
+              Wotold нужны два разрешения macOS, чтобы записывать звонки. Дай
+              доступ — без него запись не пойдёт.
             </p>
-            <PermissionsSection />
-            <div className="form-actions">
-              <Button variant="ghost" type="button" onClick={() => setStep(1)} disabled={saving}>
-                Назад
-              </Button>
-              <Button variant="primary" onClick={() => setStep(3)}>
-                Готово, дальше →
-              </Button>
+            <div style={{ marginBottom: 8 }}>
+              <PermissionsSection />
             </div>
+            <FooterRow
+              step={step}
+              onBack={() => setStep(1)}
+              onNext={() => setStep(3)}
+            />
           </>
         )}
 
         {step === 3 && (
           <>
-            <h1>Согласие на запись</h1>
-            <p className="text-muted">
+            <h1 className="display" style={{ marginBottom: 14 }}>
+              Согласие на запись.
+            </h1>
+            <p
+              className="subtitle"
+              style={{
+                marginBottom: 16,
+                maxWidth: 480,
+                fontStyle: 'normal',
+              }}
+            >
               Wotold будет записывать твой микрофон и звук собеседника во время
-              звонков. Перед началом убедись, что собеседник предупреждён о записи —
-              по закону РФ/РК запись переговоров без уведомления другой стороны может
-              быть нарушением (статьи о тайне коммуникаций / неприкосновенности
-              частной жизни).
+              звонков. Перед началом убедись, что собеседник предупреждён о
+              записи — по закону РФ/РК запись переговоров без уведомления
+              другой стороны может быть нарушением.
             </p>
-            <p className="text-muted">
+            <p className="muted" style={{ marginBottom: 16, maxWidth: 480 }}>
               Записываешь под свою ответственность. Wotold не модерирует и не
               хранит контент звонков на серверах — всё локально.
             </p>
-            <div className="form-actions">
-              <Button variant="ghost" type="button" onClick={() => setStep(2)} disabled={saving}>
-                Назад
-              </Button>
-              <Button variant="primary" onClick={() => setStep(4)}>
-                Принимаю →
-              </Button>
-            </div>
+            <FooterRow
+              step={step}
+              onBack={() => setStep(2)}
+              onNext={() => setStep(4)}
+              nextLabel="Принимаю →"
+            />
           </>
         )}
 
         {step === 4 && (
           <form onSubmit={submit}>
-            <h1>Как тебя называть?</h1>
-            <p className="hint">
-              Имя владельца. Будет использоваться вместо «Я» в расшифровках и саммари.
+            <h1 className="display" style={{ marginBottom: 14 }}>
+              Как тебя называть?
+            </h1>
+            <p className="subtitle" style={{ marginBottom: 24, maxWidth: 480 }}>
+              Имя владельца. Будет использоваться вместо «Я» в расшифровках и
+              саммари.
             </p>
-            <InputField
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-              required
-              placeholder="Имя"
-            />
-            {error && <p className="error">{error}</p>}
-            <div className="form-actions">
-              <Button variant="ghost" type="button" onClick={() => setStep(3)} disabled={saving}>
-                Назад
-              </Button>
-              <Button variant="primary" type="submit" disabled={saving || !name.trim()} busy={saving}>
-                {saving ? 'Сохраняем…' : 'Готово'}
-              </Button>
+            <div className="field" style={{ marginBottom: 24 }}>
+              <label className="field-label">Имя</label>
+              <input
+                type="text"
+                className="input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+                required
+                placeholder="например, Дамир"
+              />
             </div>
+            {error && (
+              <p
+                style={{
+                  color: 'var(--signal)',
+                  fontFamily: 'var(--font-sans)',
+                  marginBottom: 16,
+                }}
+              >
+                {error}
+              </p>
+            )}
+            <FooterRow
+              step={step}
+              onBack={() => setStep(3)}
+              submitDisabled={saving || !name.trim()}
+              submitLabel={saving ? 'Сохраняем…' : 'Готово'}
+              submit
+            />
           </form>
         )}
       </div>
-    </section>
+    </div>
+  );
+}
+
+interface FooterRowProps {
+  step: Step;
+  onBack?: () => void;
+  onNext?: () => void;
+  nextLabel?: string;
+  submit?: boolean;
+  submitDisabled?: boolean;
+  submitLabel?: string;
+}
+
+function FooterRow({
+  step,
+  onBack,
+  onNext,
+  nextLabel = 'Дальше →',
+  submit,
+  submitDisabled,
+  submitLabel,
+}: FooterRowProps) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        marginTop: 32,
+        paddingTop: 24,
+        borderTop: '1px solid var(--line-soft)',
+      }}
+    >
+      {onBack && (
+        <button type="button" className="btn btn--quiet" onClick={onBack}>
+          ← Назад
+        </button>
+      )}
+      {submit ? (
+        <button
+          type="submit"
+          className="btn btn--primary"
+          disabled={submitDisabled}
+        >
+          {submitLabel ?? 'Готово'}
+        </button>
+      ) : onNext ? (
+        <button type="button" className="btn btn--primary" onClick={onNext}>
+          {nextLabel}
+        </button>
+      ) : null}
+      <div
+        style={{
+          marginLeft: 'auto',
+          display: 'flex',
+          gap: 6,
+        }}
+        aria-label={`Шаг ${step} из ${STEP_TOTAL}`}
+      >
+        {[1, 2, 3, 4].map((i) => (
+          <span
+            key={i}
+            className="dot"
+            style={{
+              background:
+                i <= step ? 'var(--accent)' : 'var(--line)',
+            }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }

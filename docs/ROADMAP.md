@@ -189,6 +189,48 @@
   - При записи на HomePage: показывать meter вместо/рядом с pulse-dot. При остановке — fade out.
   - Acceptance: говорим в микрофон — mic-meter растёт. Включаем YouTube/Zoom — system-meter растёт. Меняем громкость — meter реагирует в реальном времени.
 
+## Atelier v2 Redesign (B17)
+
+> **Контекст**: 2026-05-20 получен полный design handoff — `docs/design/atelier-v2/`. Editorial / transcript-first direction, Bordeaux accent (default), Source Serif 4 + DM Sans + JetBrains Mono. Light + dark × bordeaux/persian/ink (6 комбинаций). PDCA по handoff `README.md` § "Implementation plan". Mandatory design gate активирован — см. CLAUDE.md.
+
+### Foundation (выполнено)
+
+- [x] Скопированы handoff sources в `docs/design/atelier-v2/` + canonical source-of-truth.
+- [x] `apps/desktop/src/styles/tokens.css` заменён на Atelier v2 (color-scheme aware light/dark, accent swatches via `data-accent`).
+- [x] `apps/desktop/src/styles/wotold.css` (component classes) + `fonts.css` (Google Fonts CDN; self-hosting опция в комментарии).
+- [x] `apps/desktop/src/styles/legacy-tokens.css` shim — мост `--color-*` → новые токены, удалить когда вся миграция завершится.
+- [x] `apps/desktop/src/theme/useTheme.tsx` + `<ThemeProvider>` (persist через `api/settings`).
+- [x] `SETTINGS_KEYS.UI_THEME` + `UI_ACCENT` добавлены.
+- [x] `main.tsx` import order: fonts → tokens → legacy-tokens → wotold → global → ui → pages.
+
+### Design gate enforcement (выполнено)
+
+- [x] `.claude/skills/design-gate/SKILL.md` + `.claude/commands/design-gate.md` — mandatory pre-UI checklist.
+- [x] ECC skills адаптированы локально: `design-system`, `frontend-design-direction`, `accessibility`, `motion-ui`, `frontend-patterns`.
+- [x] ECC agent `a11y-architect` подключён в `.claude/agents/`.
+- [x] `scripts/hooks/design-gate.mjs` PostToolUse — warn на сырых hex/oklch/legacy `--color-*` вне whitelist.
+- [x] `CLAUDE.md` § "Design Gate" — обязательный шаг в PDCA для любой UI правки.
+
+### Page migrations
+
+- [x] **App shell** (`apps/desktop/src/App.tsx`) — topnav → app-shell + app-rail, ThemeProvider wrap, pipeline indicator перенесён в rail foot.
+- [x] **HomePage** (`apps/desktop/src/pages/HomePage.tsx`) — `.rec-btn` round (108px), `.display` heading, `.stat-row`, consent в `.modal-backdrop` + `.index-card`. Хоткей ⌘⇧R + consent gate + updater сохранены 1-в-1.
+- [x] **SettingsPage** — добавлена секция "Внешний вид" (`AppearanceSection.tsx`) с theme + accent picker через `useTheme()`. Эмодзи убраны из section titles.
+- [ ] **CallsPage** — переход на date-grouped serif-list per MIGRATION.md §3. Virtualization (200+) сохранить.
+- [ ] **CallDetailPage** — header chrome (back as `.btn--quiet`, `.small-caps` meta, `.display` title, `.sp` participants), `.tabs`/`.tab` классы. InteractiveTranscript внутри — отдельный sweep на `.transcript-row` структуру.
+- [ ] **SpeakersSection** — `.modal-backdrop` + `.index-card` оверлей с `.conf` bar per MIGRATION.md §5.
+- [ ] **ContactsPage** — two-column list + detail с voice samples table per MIGRATION.md §6.
+- [ ] **OnboardingPage** — 3-step (без 4го по handoff?) centred `.display`+`.input` flow per MIGRATION.md §8.
+- [ ] **Coachmarks** — переписать tooltips с новыми токенами.
+- [ ] **DesignSystemPage** (dev-only) — обновить showcase под новые токены/классы.
+
+### Cleanup (после migration page-by-page)
+
+- [ ] Аудит `apps/desktop/src/ui/{Button,Card,Badge,Empty,Pill,StatusDot,Field,Tabs,Toolbar}.tsx` — превратить в thin wrappers над новыми `.btn`/`.card`/etc классами.
+- [ ] Сократить / удалить `apps/desktop/src/styles/pages.css` (29 KB → close to 0).
+- [ ] Удалить `apps/desktop/src/styles/legacy-tokens.css` shim когда нет ни одного `--color-*` reference.
+- [ ] Подсолить руками: проверить все 6 theme×accent комбинаций на каждом экране + reduced-motion + WCAG contrast.
+
 ## Production Readiness (B16)
 
 > **Контекст**: после прохождения MVP-фич — 4 параллельных аудита (UX/CX, Visual/Design, Logic/Code Quality, Build/Deploy/Security) нашли ~260 пунктов разной серьёзности для перехода PoC → consumer-ready. Здесь — сводка с приоритетами. Items закрываются батчами; статус фиксируется галочкой ☑. **P0** = блокер для shipping / data loss / security. **P1** = serious UX / maintenance burden. **P2** = polish.

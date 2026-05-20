@@ -12,16 +12,19 @@ import {
   type ContactIdentifierInput,
   type ContactInput,
 } from '../api/contacts';
-import {
-  Badge,
-  Button,
-  Card,
-  Empty,
-  InputField,
-  TextareaField,
-  Toolbar,
-} from '../ui';
+import { Badge, Button, Empty, InputField, TextareaField } from '../ui';
 import { VoiceSamplesSection } from './VoiceSamplesSection';
+
+function initials(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return '·';
+  const parts = trimmed.split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '·';
+}
+
+function avatarColor(idx: number): string {
+  return `var(--sp-${(idx % 5) + 1})`;
+}
 
 export function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
@@ -100,46 +103,67 @@ export function ContactsPage() {
       });
 
   return (
-    <section className="contacts">
-      <Toolbar
-        title="Контакты"
-        actions={
-          <Button
-            variant={showAddForm ? 'ghost' : 'primary'}
-            size="sm"
-            onClick={() => {
-              setShowAddForm((v) => !v);
-              setEditingId(null);
-            }}
-          >
-            {showAddForm ? 'Отмена' : '+ Добавить'}
-          </Button>
-        }
-      />
+    <section>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: 24,
+          marginBottom: 26,
+          flexWrap: 'wrap',
+        }}
+      >
+        <h1 className="title" style={{ fontSize: 36, margin: 0 }}>
+          Контакты
+        </h1>
+        <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          className={`btn ${showAddForm ? 'btn--ghost' : 'btn--primary'}`}
+          onClick={() => {
+            setShowAddForm((v) => !v);
+            setEditingId(null);
+          }}
+        >
+          {showAddForm ? 'Отмена' : '+ Добавить'}
+        </button>
+      </div>
+
+      {error && (
+        <p
+          style={{
+            color: 'var(--signal)',
+            fontFamily: 'var(--font-sans)',
+            marginBottom: 14,
+          }}
+        >
+          {error}
+        </p>
+      )}
 
       {showAddForm && (
-        <Card>
+        <div className="card" style={{ marginBottom: 24 }}>
           <ContactForm
             submitLabel="Создать"
             onSubmit={handleCreate}
             onCancel={() => setShowAddForm(false)}
           />
-        </Card>
+        </div>
       )}
-      {error && <p className="error">{error}</p>}
 
       {contacts.length > 5 && (
-        <div className="contacts-search">
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'baseline', gap: 16 }}>
           <input
-            className="ds-input"
+            className="input"
             type="search"
             placeholder="Поиск по имени, организации, телефону…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             aria-label="Поиск контактов"
+            style={{ flex: 1 }}
           />
           {q && (
-            <span className="contacts-search-count text-muted">
+            <span className="small-caps">
               {filtered.length} из {contacts.length}
             </span>
           )}
@@ -148,83 +172,158 @@ export function ContactsPage() {
 
       {contacts.length === 0 ? (
         <Empty
-          icon="👥"
           title="Контактов нет"
           description="Добавь первый контакт — кнопка «+ Добавить» сверху справа. Контакты помогают Wotold подписывать спикеров в расшифровках."
         />
       ) : filtered.length === 0 ? (
         <Empty
-          icon="🔍"
           title="Ничего не нашлось"
           description={`По запросу «${search.trim()}» нет контактов.`}
         />
       ) : (
-        <ul className="contact-list">
-          {filtered.map((c) =>
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          {filtered.map((c, idx) =>
             editingId === c.id ? (
-              <li key={c.id}>
-                <Card>
+              <li key={c.id} style={{ marginBottom: 18 }}>
+                <div className="card">
                   <ContactForm
                     submitLabel="Сохранить"
                     initial={c}
                     onSubmit={(input) => handleUpdate(c.id, input)}
                     onCancel={() => setEditingId(null)}
                   />
-                </Card>
+                </div>
               </li>
             ) : (
-              <li key={c.id} className="contact-row">
-                <div className="contact-row-head">
-                  <button
-                    type="button"
-                    className="contact-name-button"
-                    onClick={() => {
-                      setEditingId(c.id);
-                      setShowAddForm(false);
+              <li
+                key={c.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '44px 1fr auto',
+                  gap: 16,
+                  padding: '16px 0',
+                  borderTop: idx === 0 ? 'none' : '1px solid var(--line-soft)',
+                  alignItems: 'start',
+                }}
+              >
+                <button
+                  type="button"
+                  className="sp-avatar"
+                  style={{
+                    background: c.is_owner ? 'var(--sp-1)' : avatarColor(idx),
+                    width: 38,
+                    height: 38,
+                    fontSize: 12,
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => {
+                    setEditingId(c.id);
+                    setShowAddForm(false);
+                  }}
+                  title="Открыть"
+                >
+                  {initials(c.display_name)}
+                </button>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 10,
+                      alignItems: 'baseline',
+                      flexWrap: 'wrap',
                     }}
-                    title="Открыть для редактирования"
                   >
-                    {c.display_name}
-                  </button>
-                  {c.is_owner && <Badge tone="accent">владелец</Badge>}
-                  {!c.is_owner && (
                     <button
                       type="button"
-                      className="contact-delete"
-                      title="Удалить"
-                      aria-label={`Удалить ${c.display_name}`}
-                      onClick={() => handleDelete(c.id, c.display_name)}
+                      onClick={() => {
+                        setEditingId(c.id);
+                        setShowAddForm(false);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        fontFamily: 'var(--font-serif)',
+                        fontSize: 18,
+                        color: 'var(--ink)',
+                        textAlign: 'left',
+                      }}
+                      title="Открыть для редактирования"
                     >
-                      ×
+                      {c.display_name}
                     </button>
+                    {c.is_owner && <Badge tone="accent">владелец</Badge>}
+                  </div>
+                  {(c.org ?? c.role) && (
+                    <div
+                      className="muted"
+                      style={{
+                        fontSize: 13,
+                        marginTop: 2,
+                      }}
+                    >
+                      {c.role}
+                      {c.role && c.org && ' · '}
+                      {c.org}
+                    </div>
+                  )}
+                  {(c.identifiers.length > 0 ||
+                    Object.keys(c.attributes).length > 0) && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 14,
+                        flexWrap: 'wrap',
+                        marginTop: 6,
+                        fontSize: 12,
+                      }}
+                    >
+                      {c.identifiers.map((id) => (
+                        <span key={id.id} className="muted">
+                          <span className="small-caps" style={{ fontSize: 10 }}>
+                            {id.kind}
+                          </span>{' '}
+                          <span className="mono">{id.value}</span>
+                        </span>
+                      ))}
+                      {Object.entries(c.attributes).map(([k, v]) => (
+                        <span key={k} className="muted">
+                          <span className="small-caps" style={{ fontSize: 10 }}>
+                            {k}
+                          </span>{' '}
+                          {String(v)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {c.notes && (
+                    <p
+                      className="muted"
+                      style={{
+                        fontStyle: 'italic',
+                        fontFamily: 'var(--font-serif)',
+                        marginTop: 8,
+                        fontSize: 14,
+                      }}
+                    >
+                      {c.notes}
+                    </p>
                   )}
                 </div>
-                {(c.org ?? c.role) && (
-                  <div className="contact-secondary">
-                    {c.role}
-                    {c.role && c.org && ' · '}
-                    {c.org}
-                  </div>
+                {!c.is_owner && (
+                  <button
+                    type="button"
+                    className="btn btn--quiet"
+                    title="Удалить"
+                    aria-label={`Удалить ${c.display_name}`}
+                    onClick={() => handleDelete(c.id, c.display_name)}
+                    style={{ alignSelf: 'start' }}
+                  >
+                    ×
+                  </button>
                 )}
-                {c.identifiers.length > 0 && (
-                  <ul className="contact-identifiers">
-                    {c.identifiers.map((id) => (
-                      <li key={id.id}>
-                        <span className="kind">{id.kind}:</span> {id.value}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {Object.keys(c.attributes).length > 0 && (
-                  <ul className="contact-attributes">
-                    {Object.entries(c.attributes).map(([k, v]) => (
-                      <li key={k}>
-                        <span className="kind">{k}:</span> {String(v)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {c.notes && <p className="contact-notes">{c.notes}</p>}
               </li>
             ),
           )}

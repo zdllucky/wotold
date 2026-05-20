@@ -42,13 +42,30 @@ export function Skeleton({
 /** Skeleton-строка списка звонков для CallsPage loading state. */
 export function CallRowSkeleton() {
   return (
-    <div className="call-row" style={{ pointerEvents: 'none' }}>
-      <Skeleton width="2rem" height="2rem" radius="var(--radius-pill)" />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-        <Skeleton width="9rem" height="0.95em" />
-        <Skeleton width="14rem" height="0.8em" />
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '110px 1fr 110px 60px',
+        gap: 18,
+        padding: '14px 0',
+        borderTop: '1px solid var(--line-soft)',
+        alignItems: 'baseline',
+        pointerEvents: 'none',
+      }}
+    >
+      <Skeleton width="3.5rem" height="0.9em" />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-1)',
+        }}
+      >
+        <Skeleton width="14rem" height="1em" />
+        <Skeleton width="8rem" height="0.7em" />
       </div>
       <Skeleton width="3rem" height="0.8em" />
+      <Skeleton width="2.5rem" height="0.8em" style={{ marginLeft: 'auto' }} />
     </div>
   );
 }

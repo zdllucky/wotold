@@ -15,7 +15,7 @@ import {
 import { listContacts, type Contact } from '../api/contacts';
 import { listCallSpeakers, type CallSpeakerView } from '../api/speakers';
 import type { Call } from '../api/recording';
-import { Button, Card, Empty, Pill, Tabs } from '../ui';
+import { Empty, Pill, Tabs } from '../ui';
 import { CallAudioPlayer } from '../components/CallAudioPlayer';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakersSection } from './SpeakersSection';
@@ -160,92 +160,121 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   if (!call) return <p className="hint">Звонок не найден.</p>;
 
   return (
-    <section className="call-detail-section">
-      <button type="button" className="call-detail-back" onClick={onBack}>
-        ← к списку
+    <section>
+      <button
+        type="button"
+        className="btn btn--quiet"
+        onClick={onBack}
+        style={{ marginBottom: 18, paddingLeft: 0 }}
+      >
+        ← Все звонки
       </button>
 
-      <header className="call-detail-header">
-        <div className="call-detail-title-row">
-          <h2 className="call-detail-title">
-            {call.title ?? deriveAutoTitle(call, speakersLite)}
-          </h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void onReprocess()}
-            disabled={reprocessing || deleting}
-            busy={reprocessing}
-            title="Заново прогнать STT + recap на существующих аудио"
-          >
-            {reprocessing ? 'Переобработка…' : '↻ Переобработать'}
-          </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={onDelete}
-            disabled={deleting || reprocessing}
-            busy={deleting}
-          >
-            Удалить
-          </Button>
+      <header style={{ marginBottom: 24 }}>
+        <div className="small-caps" style={{ marginBottom: 8 }}>
+          {formatStarted(call.started_at)} · {formatDuration(call.duration_sec)}
+          {call.provider ? ` · ${call.provider}` : ''}
+          {call.lang_detected ? ` · ${call.lang_detected.toUpperCase()}` : ''}
         </div>
-        <div className="call-detail-meta">
-          <span>{formatStarted(call.started_at)}</span>
-          <span>·</span>
-          <span>{formatDuration(call.duration_sec)}</span>
-          <Pill tone={statusTone(call.status)}>{call.status}</Pill>
-          {call.provider && <span>· {call.provider}</span>}
-          {call.lang_detected && <span>· {call.lang_detected}</span>}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 18,
+            flexWrap: 'wrap',
+            marginBottom: 8,
+          }}
+        >
+          <h1 className="title" style={{ fontSize: 36, flex: 1, minWidth: 240 }}>
+            {call.title ?? deriveAutoTitle(call, speakersLite)}
+          </h1>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Pill tone={statusTone(call.status)}>{call.status}</Pill>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => void onReprocess()}
+              disabled={reprocessing || deleting}
+              title="Заново прогнать STT + recap на существующих аудио"
+            >
+              {reprocessing ? 'Переобработка…' : '↻ Переобработать'}
+            </button>
+            <button
+              type="button"
+              className="btn btn--danger btn--sm"
+              onClick={onDelete}
+              disabled={deleting || reprocessing}
+            >
+              {deleting ? 'Удаляем…' : 'Удалить'}
+            </button>
+          </div>
         </div>
       </header>
 
       {call.status !== 'failed' && <CallAudioPlayer callId={callId} />}
 
       {call.status === 'failed' && call.failed_reason && (
-        <Card className="call-failed-banner" variant="default">
-          <div className="call-failed-head">
-            <span className="call-failed-icon" aria-hidden>
-              ⚠
-            </span>
-            <span className="call-failed-title">Не удалось распознать речь</span>
+        <div
+          className="card"
+          style={{
+            marginBottom: 18,
+            borderColor: 'var(--warning)',
+          }}
+        >
+          <div className="small-caps" style={{ color: 'var(--warning)', marginBottom: 6 }}>
+            ⚠ Не удалось распознать речь
           </div>
-          <p className="call-failed-reason">{call.failed_reason}</p>
-          <div style={{ marginTop: 'var(--space-2)' }}>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => void onReprocess()}
-              disabled={reprocessing}
-              busy={reprocessing}
-            >
-              {reprocessing ? 'Перезапускаем…' : 'Попробовать ещё раз'}
-            </Button>
-          </div>
-        </Card>
+          <p
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: 16,
+              margin: '0 0 14px',
+            }}
+          >
+            {call.failed_reason}
+          </p>
+          <button
+            type="button"
+            className="btn btn--primary btn--sm"
+            onClick={() => void onReprocess()}
+            disabled={reprocessing}
+          >
+            {reprocessing ? 'Перезапускаем…' : 'Попробовать ещё раз'}
+          </button>
+        </div>
       )}
 
       {call.recap_failed_reason && call.status !== 'failed' && (
-        <Card className="call-failed-banner" variant="default">
-          <div className="call-failed-head">
-            <span className="call-failed-icon" aria-hidden>
-              ⚠
-            </span>
-            <span className="call-failed-title">Не удалось создать саммари</span>
+        <div
+          className="card"
+          style={{
+            marginBottom: 18,
+            borderColor: 'var(--warning)',
+          }}
+        >
+          <div className="small-caps" style={{ color: 'var(--warning)', marginBottom: 6 }}>
+            ⚠ Не удалось создать саммари
           </div>
-          <p className="call-failed-reason">{call.recap_failed_reason}</p>
-          <div style={{ marginTop: 'var(--space-2)' }}>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => void onRegenerateRecap()}
-              disabled={regenerating}
-              busy={regenerating}
-            >
-              {regenerating ? 'Пересоздаём…' : '↻ Пересоздать саммари'}
-            </Button>
-          </div>
-        </Card>
+          <p
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: 16,
+              margin: '0 0 14px',
+            }}
+          >
+            {call.recap_failed_reason}
+          </p>
+          <button
+            type="button"
+            className="btn btn--primary btn--sm"
+            onClick={() => void onRegenerateRecap()}
+            disabled={regenerating}
+          >
+            {regenerating ? 'Пересоздаём…' : '↻ Пересоздать саммари'}
+          </button>
+        </div>
       )}
 
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
@@ -258,18 +287,22 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         </Tabs.List>
 
         <Tabs.Panel value="recap">
-          <div className="recap-panel-head">
-            <Button
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              marginBottom: 14,
+            }}
+          >
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
+              className="btn btn--ghost btn--sm"
               onClick={() => void onRegenerateRecap()}
               disabled={regenerating || !transcript}
-              busy={regenerating}
               title={!transcript ? 'Нет транскрипта для регенерации' : undefined}
             >
               {regenerating ? 'Пересоздаём…' : '↻ Пересоздать саммари'}
-            </Button>
+            </button>
           </div>
           <MdPanel md={recap} emptyHint="Саммари ещё не сгенерировано." />
         </Tabs.Panel>
@@ -292,9 +325,16 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 }
 
 function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
-  if (!md) return <Empty icon="📝" description={emptyHint} />;
+  if (!md) return <Empty description={emptyHint} />;
   return (
-    <div className="markdown">
+    <div
+      style={{
+        fontFamily: 'var(--font-serif)',
+        fontSize: 17,
+        lineHeight: 1.6,
+        color: 'var(--ink)',
+      }}
+    >
       <ReactMarkdown>{md}</ReactMarkdown>
     </div>
   );
@@ -302,25 +342,70 @@ function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
 
 function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contact[] }) {
   if (tasks.length === 0) {
-    return <Empty icon="✅" description="Здесь будут задачи, упомянутые в звонке. Пока Wotold их не нашёл — попробуй переобработать звонок или дождись пересборки." />;
+    return (
+      <Empty description="Здесь будут задачи, упомянутые в звонке. Пока Wotold их не нашёл — попробуй переобработать звонок или дождись пересборки." />
+    );
   }
   const nameById = new Map(contacts.map((c) => [c.id, c.display_name]));
   return (
-    <ul className="task-list">
-      {tasks.map((t) => {
+    <ol style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+      {tasks.map((t, i) => {
         const owner = t.owner_contact_id ? nameById.get(t.owner_contact_id) : null;
         return (
-          <li key={t.id} className="task-row" data-done={t.done ? 'true' : 'false'}>
-            <span className="task-check" aria-hidden>
-              {t.done ? '☑' : '☐'}
+          <li
+            key={t.id}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '24px 1fr auto',
+              gap: 14,
+              padding: '12px 0',
+              borderTop: i === 0 ? 'none' : '1px solid var(--line-soft)',
+              alignItems: 'baseline',
+              color: t.done ? 'var(--muted)' : 'var(--ink)',
+              textDecoration: t.done ? 'line-through' : 'none',
+            }}
+          >
+            <span
+              className="mono"
+              style={{
+                color: 'var(--accent)',
+                fontSize: 13,
+              }}
+              aria-hidden
+            >
+              {String(i + 1).padStart(2, '0')}
             </span>
-            <span className="task-text">{t.text}</span>
-            {owner && <span className="task-owner">— {owner}</span>}
-            {t.due && <span className="task-due">· до {t.due}</span>}
+            <span
+              style={{
+                fontFamily: 'var(--font-serif)',
+                fontSize: 16,
+              }}
+            >
+              {t.text}
+              {owner && (
+                <span className="muted" style={{ fontSize: 13, marginLeft: 8 }}>
+                  — {owner}
+                </span>
+              )}
+              {t.due && (
+                <span className="muted" style={{ fontSize: 13, marginLeft: 8 }}>
+                  · до {t.due}
+                </span>
+              )}
+            </span>
+            <span
+              className="small-caps"
+              style={{
+                fontSize: 10,
+                color: t.done ? 'var(--success)' : 'var(--muted)',
+              }}
+            >
+              {t.done ? '✓ done' : 'open'}
+            </span>
           </li>
         );
       })}
-    </ul>
+    </ol>
   );
 }
 

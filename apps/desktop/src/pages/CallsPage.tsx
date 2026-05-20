@@ -1,17 +1,20 @@
+// [B17] CallsPage — Atelier v2 редизайн per docs/design/atelier-v2/MIGRATION.md §3.
+// Date-grouped serif list, sticky bucket headers как small-caps gutter.
+// Virtualization выше threshold сохранена — там grouping fallback на flat list.
+
 import { useEffect, useState } from 'react';
 import { humanError } from '../api/errors';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { listCalls, type Call } from '../api/recording';
 import { List, type RowComponentProps } from 'react-window';
-import { CallRowSkeleton, Empty, InputField, SelectField, Toolbar } from '../ui';
+import { CallRowSkeleton, Empty } from '../ui';
 
 // [B16] Virtualization порог. Ниже — grouping headers (UX), выше — flat list.
 const VIRTUALIZATION_THRESHOLD = 200;
-const ROW_HEIGHT = 60;
-const VIRTUAL_LIST_HEIGHT = 540;
+const ROW_HEIGHT = 64;
+const VIRTUAL_LIST_HEIGHT = 600;
 
-// [B16] Простая склонялка для счётчиков ru: ('звонок','звонка','звонков').
 function declinePlural(n: number, forms: [string, string, string]): string {
   const abs = Math.abs(n) % 100;
   const tail = abs % 10;
@@ -23,7 +26,6 @@ function declinePlural(n: number, forms: [string, string, string]): string {
 
 type StatusFilter = 'all' | 'recording' | 'processing' | 'ready' | 'failed';
 
-/** [B16] Группировка звонков по логическим date-bucket'ам для sticky headers. */
 type DateBucket = 'today' | 'yesterday' | 'this_week' | 'older';
 
 function bucketFor(call: Call): DateBucket {
@@ -49,7 +51,6 @@ function bucketLabel(b: DateBucket, sample?: Call): string {
     case 'this_week':
       return 'На этой неделе';
     case 'older':
-      // Группа «older» — показываем месяц самого свежего звонка в ней.
       if (sample) {
         try {
           return new Date(sample.started_at).toLocaleDateString('ru-RU', {
@@ -81,7 +82,6 @@ function groupByBucket(calls: Call[]): Array<{ bucket: DateBucket; calls: Call[]
 function matchesQuery(c: Call, q: string): boolean {
   if (!q) return true;
   const needle = q.toLowerCase();
-  // Поиск по title, провайдеру, lang, failed_reason, и первым 8 символам id.
   const haystack = [
     c.title ?? '',
     c.provider ?? '',
@@ -118,7 +118,6 @@ export function CallsPage({ onOpen }: CallsPageProps) {
 
   useEffect(() => {
     refresh();
-    // [B5]: Tauri pipeline → 'pipeline:finished' → авто-refresh без manual reload.
     let unlisten: UnlistenFn | undefined;
     listen<PipelineFinishedEvent>('pipeline:finished', () => {
       refresh();
@@ -127,7 +126,6 @@ export function CallsPage({ onOpen }: CallsPageProps) {
         unlisten = fn;
       })
       .catch((e: unknown) => {
-        // Listener fail в dev-browser (где @tauri-apps/api/event не работает) — игнор.
         console.warn('pipeline event listener:', e);
       });
     return () => {
@@ -135,12 +133,18 @@ export function CallsPage({ onOpen }: CallsPageProps) {
     };
   }, []);
 
-  if (error) return <p className="error">{error}</p>;
+  if (error) {
+    return (
+      <p style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>{error}</p>
+    );
+  }
   if (!calls) {
     return (
-      <section className="calls">
-        <Toolbar title="Звонки" />
-        <ul className="calls-list" aria-busy="true">
+      <section>
+        <h1 className="title" style={{ fontSize: 36, marginBottom: 20 }}>
+          Звонки
+        </h1>
+        <ul style={{ listStyle: 'none', padding: 0 }} aria-busy="true">
           {Array.from({ length: 5 }, (_, i) => (
             <li key={i}>
               <CallRowSkeleton />
@@ -155,111 +159,171 @@ export function CallsPage({ onOpen }: CallsPageProps) {
     .filter((c) => statusFilter === 'all' || c.status === statusFilter)
     .filter((c) => matchesQuery(c, query.trim()));
 
+  const totalDurationSec = calls.reduce((acc, c) => acc + (c.duration_sec ?? 0), 0);
+  const totalHours = (totalDurationSec / 3600).toFixed(1);
+
+  const filterOptions: Array<{ id: StatusFilter; label: string }> = [
+    { id: 'all', label: 'Все' },
+    { id: 'ready', label: 'Готовые' },
+    { id: 'processing', label: 'В работе' },
+    { id: 'recording', label: 'Идёт' },
+    { id: 'failed', label: 'Ошибки' },
+  ];
+
   return (
-    <section className="calls">
-      <Toolbar
-        title="Звонки"
-        subtitle={
-          calls.length > 0
-            ? filtered.length !== calls.length
-              ? `${filtered.length} из ${calls.length} по запросу`
-              : `${calls.length} ${declinePlural(calls.length, ['звонок', 'звонка', 'звонков'])}`
-            : undefined
-        }
-        sticky
-      />
+    <section>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: 24,
+          marginBottom: 18,
+          flexWrap: 'wrap',
+        }}
+      >
+        <h1 className="title" style={{ fontSize: 36, margin: 0 }}>
+          Звонки
+        </h1>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <input
+            className="input"
+            type="search"
+            placeholder="Найти в звонках…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Поиск звонков"
+          />
+        </div>
+      </div>
+
+      {calls.length > 0 && (
+        <div
+          className="small-caps"
+          style={{
+            marginBottom: 24,
+            display: 'flex',
+            gap: 18,
+            alignItems: 'baseline',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span>
+            {filtered.length !== calls.length
+              ? `${filtered.length} из ${calls.length}`
+              : `${calls.length} ${declinePlural(calls.length, ['звонок', 'звонка', 'звонков'])}`}
+          </span>
+          {totalDurationSec > 0 && <span>· {totalHours} ч</span>}
+          <span style={{ flex: 1, minWidth: 16 }} />
+          {filterOptions.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setStatusFilter(opt.id)}
+              className={`btn btn--sm ${statusFilter === opt.id ? 'btn--primary' : 'btn--quiet'}`}
+              aria-pressed={statusFilter === opt.id}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {calls.length === 0 ? (
         <Empty
-          icon="🎙"
           title="Звонков пока нет"
           description="Начни запись на «Главной» — звонок появится здесь сразу после остановки."
         />
+      ) : filtered.length === 0 ? (
+        <Empty
+          title="Ничего не нашлось"
+          description="Сбрось фильтры или измени запрос."
+        />
+      ) : filtered.length >= VIRTUALIZATION_THRESHOLD ? (
+        <List
+          rowComponent={VirtualCallRow}
+          rowCount={filtered.length}
+          rowHeight={ROW_HEIGHT}
+          rowProps={{ calls: filtered, onOpen }}
+          defaultHeight={VIRTUAL_LIST_HEIGHT}
+        />
       ) : (
-        <>
-          <div className="calls-filters">
-            <InputField
-              label=""
-              type="search"
-              placeholder="Поиск по названию звонка…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label="Поиск звонков"
-            />
-            <SelectField
-              label=""
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            >
-              <option value="all">Все статусы</option>
-              <option value="ready">Готовые</option>
-              <option value="processing">В работе</option>
-              <option value="recording">Идёт запись</option>
-              <option value="failed">Ошибки</option>
-            </SelectField>
-          </div>
-          {filtered.length === 0 ? (
-            <Empty
-              icon="🔍"
-              title="Ничего не нашлось"
-              description="Сбрось фильтры или измени запрос."
-            />
-          ) : filtered.length >= VIRTUALIZATION_THRESHOLD ? (
-            // [B16] Virtualization для 200+ звонков — react-window v2 List.
-            // Группировка не применяется в этом режиме (несовместима с
-            // fixed-row-height virt), зато scrolling не подвисает на 1000+.
-            <List
-              rowComponent={VirtualCallRow}
-              rowCount={filtered.length}
-              rowHeight={ROW_HEIGHT}
-              rowProps={{ calls: filtered, onOpen }}
-              defaultHeight={VIRTUAL_LIST_HEIGHT}
-              className="calls-virtual-list"
-            />
-          ) : (
-            <div className="calls-groups">
-              {groupByBucket(filtered).map(({ bucket, calls: bucketCalls }) => (
-                <section key={bucket} className="calls-group">
-                  <h3 className="calls-group-header">
-                    {bucketLabel(bucket, bucketCalls[0])}
-                    <span className="calls-group-count">{bucketCalls.length}</span>
-                  </h3>
-                  <ul className="calls-list">
-                    {bucketCalls.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          className="call-row"
-                          data-status={c.status}
-                          onClick={() => onOpen(c.id)}
-                          title="Открыть детали"
+        <div>
+          {groupByBucket(filtered).map(({ bucket, calls: bucketCalls }) => (
+            <div key={bucket} style={{ marginBottom: 32 }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '140px 1fr',
+                  gap: 32,
+                }}
+              >
+                <div
+                  className="small-caps"
+                  style={{ paddingTop: 16, alignSelf: 'start' }}
+                >
+                  {bucketLabel(bucket, bucketCalls[0])}
+                </div>
+                <div>
+                  {bucketCalls.map((c, idx) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => onOpen(c.id)}
+                      title={statusTooltip(c.status, c.failed_reason)}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '64px 1fr 110px 60px',
+                        gap: 18,
+                        padding: '14px 0',
+                        borderTop: idx === 0 ? 'none' : '1px solid var(--line-soft)',
+                        alignItems: 'baseline',
+                        width: '100%',
+                        background: 'none',
+                        border: idx === 0 ? 'none' : undefined,
+                        borderTopStyle: idx === 0 ? 'none' : 'solid',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div className="mono muted" style={{ fontSize: 12 }}>
+                        {formatDay(c.started_at)}
+                      </div>
+                      <div>
+                        <div
+                          style={{
+                            fontFamily: 'var(--font-serif)',
+                            fontSize: 17,
+                            color: 'var(--ink)',
+                            marginBottom: 2,
+                          }}
                         >
-                          <span
-                            className="call-status-cell"
-                            aria-label={c.status}
-                            title={
-                              c.status === 'failed' && c.failed_reason
-                                ? `${statusTooltip(c.status)}\n\n${c.failed_reason}`
-                                : statusTooltip(c.status)
-                            }
-                          >
-                            {statusIcon(c.status)}
-                          </span>
-                          <span className="call-meta">
-                            <span className="call-when">{formatStarted(c.started_at)}</span>
-                            <span className="call-detail-line">
-                              {formatDuration(c.duration_sec)}
-                              {c.lang_detected && ` · ${c.lang_detected.toUpperCase()}`}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
+                          {c.title ?? `Звонок ${c.id.slice(0, 8)}`}
+                        </div>
+                        <div
+                          className="small-caps"
+                          style={{ fontSize: 10.5, marginTop: 4 }}
+                        >
+                          {statusBadge(c.status)}
+                          {c.lang_detected ? ` · ${c.lang_detected.toUpperCase()}` : ''}
+                          {c.provider ? ` · ${c.provider}` : ''}
+                        </div>
+                      </div>
+                      <div className="mono muted" style={{ fontSize: 11 }}>
+                        {formatStartedTime(c.started_at)}
+                      </div>
+                      <div
+                        className="mono muted"
+                        style={{ fontSize: 12, textAlign: 'right' }}
+                      >
+                        {formatDuration(c.duration_sec)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
     </section>
   );
@@ -270,78 +334,108 @@ interface VirtualRowProps {
   onOpen: (id: string) => void;
 }
 
-// [B16] react-window v2 row renderer. Item layout совпадает с .call-row выше.
 function VirtualCallRow({ index, style, calls, onOpen }: RowComponentProps<VirtualRowProps>) {
   const c = calls[index]!;
   return (
-    <div style={style} className="calls-virtual-row">
+    <div style={style}>
       <button
         type="button"
-        className="call-row"
-        data-status={c.status}
         onClick={() => onOpen(c.id)}
-        title="Открыть детали"
+        title={statusTooltip(c.status, c.failed_reason)}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '110px 1fr 110px 60px',
+          gap: 18,
+          padding: '14px 0',
+          borderTop: '1px solid var(--line-soft)',
+          alignItems: 'baseline',
+          width: '100%',
+          background: 'none',
+          border: 'none',
+          borderTopStyle: 'solid',
+          textAlign: 'left',
+          cursor: 'pointer',
+        }}
       >
-        <span
-          className="call-status-cell"
-          aria-label={c.status}
-          title={
-            c.status === 'failed' && c.failed_reason
-              ? `${statusTooltip(c.status)}\n\n${c.failed_reason}`
-              : statusTooltip(c.status)
-          }
-        >
-          {statusIcon(c.status)}
-        </span>
-        <span className="call-meta">
-          <span className="call-when">{formatStarted(c.started_at)}</span>
-          <span className="call-detail-line">
-            {formatDuration(c.duration_sec)}
-            {c.lang_detected && ` · ${c.lang_detected.toUpperCase()}`}
-          </span>
-        </span>
+        <div className="mono muted" style={{ fontSize: 12 }}>
+          {formatDay(c.started_at)}
+        </div>
+        <div>
+          <div
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: 16,
+              color: 'var(--ink)',
+              marginBottom: 2,
+            }}
+          >
+            {c.title ?? `Звонок ${c.id.slice(0, 8)}`}
+          </div>
+          <div className="small-caps" style={{ fontSize: 10.5, marginTop: 4 }}>
+            {statusBadge(c.status)}
+            {c.lang_detected ? ` · ${c.lang_detected.toUpperCase()}` : ''}
+          </div>
+        </div>
+        <div className="mono muted" style={{ fontSize: 11 }}>
+          {formatStartedTime(c.started_at)}
+        </div>
+        <div className="mono muted" style={{ fontSize: 12, textAlign: 'right' }}>
+          {formatDuration(c.duration_sec)}
+        </div>
       </button>
     </div>
   );
 }
 
-function statusIcon(status: string): string {
+function statusBadge(status: string): string {
   switch (status) {
     case 'recording':
-      return '⏺';
+      return '● Идёт запись';
     case 'processing':
-      return '⚙';
+      return '~ Обрабатывается';
     case 'ready':
-      return '✓';
+      return 'Готово';
     case 'failed':
-      return '✗';
-    default:
-      return '·';
-  }
-}
-
-function statusTooltip(status: string): string {
-  switch (status) {
-    case 'recording':
-      return 'Идёт запись прямо сейчас.';
-    case 'processing':
-      return 'Запись завершена, идёт транскрипция через STT.';
-    case 'ready':
-      return 'Готово — есть transcript.md и raw_stt.json.';
-    case 'failed':
-      return 'Звонок не доведён до transcript (краш записи / ошибка STT / зависание из прошлой сессии). Аудио всё ещё на диске.';
+      return '⚠ Ошибка';
     default:
       return status;
   }
 }
 
-function formatStarted(iso: string): string {
+function statusTooltip(status: string, failedReason: string | null): string {
+  const base = (() => {
+    switch (status) {
+      case 'recording':
+        return 'Идёт запись прямо сейчас.';
+      case 'processing':
+        return 'Запись завершена, идёт транскрипция через STT.';
+      case 'ready':
+        return 'Готово — есть transcript.md и raw_stt.json.';
+      case 'failed':
+        return 'Звонок не доведён до transcript. Аудио всё ещё на диске.';
+      default:
+        return status;
+    }
+  })();
+  return status === 'failed' && failedReason ? `${base}\n\n${failedReason}` : base;
+}
+
+function formatDay(iso: string): string {
   try {
     const date = new Date(iso);
-    return date.toLocaleString('ru-RU', {
+    return date.toLocaleDateString('ru-RU', {
       day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
+      month: 'short',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function formatStartedTime(iso: string): string {
+  try {
+    const date = new Date(iso);
+    return date.toLocaleTimeString('ru-RU', {
       hour: '2-digit',
       minute: '2-digit',
     });

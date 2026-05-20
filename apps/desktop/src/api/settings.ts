@@ -19,6 +19,10 @@ export const SETTINGS_KEYS = {
   PREFERRED_LANGUAGE: 'preferred_language',
   /** [B16] Coachmarks показаны хотя бы раз — '1' = не показывать снова. */
   COACHMARKS_SEEN: 'coachmarks_seen',
+  /** [B17] Atelier theme — 'light' | 'dark' | 'system'. */
+  UI_THEME: 'ui.theme',
+  /** [B17] Atelier accent — 'bordeaux' | 'persian' | 'ink'. */
+  UI_ACCENT: 'ui.accent',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
