@@ -45,6 +45,10 @@ pub fn read_wav(path: &Path) -> Result<AudioClip, AppError> {
 
 /// Вырезает фрагмент `[start_sec, end_sec)` из WAV. Используется per-speaker
 /// для embedding extraction. Возвращает clip с тем же sample_rate.
+///
+/// Не оптимально для batch-вызова — открывает + декодирует WAV целиком
+/// каждый раз. Для batch (#25 pipeline 50+ сегментов одного звонка)
+/// используй `extract_segments_batch` — один open и slice.
 pub fn extract_segment(path: &Path, start_sec: f64, end_sec: f64) -> Result<AudioClip, AppError> {
     if end_sec <= start_sec {
         return Err(AppError::Other(format!(
@@ -52,12 +56,39 @@ pub fn extract_segment(path: &Path, start_sec: f64, end_sec: f64) -> Result<Audi
         )));
     }
     let clip = read_wav(path)?;
+    Ok(slice_clip(&clip, start_sec, end_sec))
+}
+
+/// [B16 audit P2] Batch slicing — открывает WAV один раз, режет все
+/// требуемые segments. Возвращает Vec в том же порядке что входной.
+/// Для 100 segments экономит 99 декодирований (linear win).
+/// Не вызывается из production до #25 ONNX wire-up — пока scaffold для будущего.
+#[allow(dead_code)]
+pub fn extract_segments_batch(
+    path: &Path,
+    ranges: &[(f64, f64)],
+) -> Result<Vec<AudioClip>, AppError> {
+    for &(s, e) in ranges {
+        if e <= s {
+            return Err(AppError::Other(format!(
+                "extract_segments_batch: end_sec {e} <= start_sec {s}"
+            )));
+        }
+    }
+    let clip = read_wav(path)?;
+    Ok(ranges
+        .iter()
+        .map(|&(s, e)| slice_clip(&clip, s, e))
+        .collect())
+}
+
+fn slice_clip(clip: &AudioClip, start_sec: f64, end_sec: f64) -> AudioClip {
     let start = ((start_sec * clip.sample_rate as f64).max(0.0) as usize).min(clip.samples.len());
     let end = ((end_sec * clip.sample_rate as f64) as usize).min(clip.samples.len());
-    Ok(AudioClip {
+    AudioClip {
         samples: clip.samples[start..end].to_vec(),
         sample_rate: clip.sample_rate,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -145,6 +176,31 @@ mod tests {
         let path = dir.path().join("test.wav");
         write_test_wav(&path, &[0; 100], 16_000);
         let err = extract_segment(&path, 0.5, 0.25).unwrap_err();
+        assert!(matches!(err, AppError::Other(_)));
+    }
+
+    #[test]
+    fn extract_segments_batch_returns_clips_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wav");
+        let samples: Vec<i16> = (0..16_000_i32)
+            .map(|i| (i % i16::MAX as i32) as i16)
+            .collect();
+        write_test_wav(&path, &samples, 16_000);
+
+        let clips = extract_segments_batch(&path, &[(0.0, 0.25), (0.5, 0.75), (0.75, 1.0)]).unwrap();
+        assert_eq!(clips.len(), 3);
+        assert_eq!(clips[0].samples.len(), 4000);
+        assert_eq!(clips[1].samples.len(), 4000);
+        assert_eq!(clips[2].samples.len(), 4000);
+    }
+
+    #[test]
+    fn extract_segments_batch_rejects_any_inverted_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wav");
+        write_test_wav(&path, &[0; 16_000], 16_000);
+        let err = extract_segments_batch(&path, &[(0.0, 0.5), (0.6, 0.4)]).unwrap_err();
         assert!(matches!(err, AppError::Other(_)));
     }
 }
