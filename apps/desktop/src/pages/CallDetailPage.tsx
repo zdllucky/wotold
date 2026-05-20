@@ -8,6 +8,7 @@ import {
   listCallActionItems,
   readCallArtifact,
   regenerateRecap,
+  reprocessCall,
   type ActionItem,
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
@@ -55,6 +56,37 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
   const [deleting, setDeleting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+
+  const onReprocess = async () => {
+    if (!call) return;
+    const ok = await ask(
+      `Перезапустить обработку звонка?\n\nЗаново прогонит STT (Soniox/Gladia) и recap (Groq) на существующих mic.wav + system.wav. Текущий transcript и recap будут перезаписаны.`,
+      { title: 'Wotold', kind: 'warning', okLabel: 'Перезапустить', cancelLabel: 'Отмена' },
+    );
+    if (!ok) return;
+    setReprocessing(true);
+    setError(null);
+    try {
+      await reprocessCall(call.id);
+      // Pipeline:finished event на бекенде сам триггерит refresh где надо;
+      // здесь явно перечитаем артефакты.
+      const [fresh, freshTranscript, freshTasks, freshCall] = await Promise.all([
+        readCallArtifact(call.id, 'recap'),
+        readCallArtifact(call.id, 'transcript'),
+        listCallActionItems(call.id),
+        getCall(call.id),
+      ]);
+      setRecap(fresh);
+      setTranscript(freshTranscript);
+      setTasks(freshTasks);
+      setCall(freshCall);
+    } catch (e) {
+      setError(`Не удалось перезапустить: ${String(e)}`);
+    } finally {
+      setReprocessing(false);
+    }
+  };
 
   const onRegenerateRecap = async () => {
     setRegenerating(true);
@@ -117,10 +149,20 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             {call.title ?? `Звонок ${call.id.slice(0, 8)}`}
           </h2>
           <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void onReprocess()}
+            disabled={reprocessing || deleting}
+            busy={reprocessing}
+            title="Заново прогнать STT + recap на существующих аудио"
+          >
+            {reprocessing ? 'Переобработка…' : '↻ Переобработать'}
+          </Button>
+          <Button
             variant="danger"
             size="sm"
             onClick={onDelete}
-            disabled={deleting}
+            disabled={deleting || reprocessing}
             busy={deleting}
           >
             Удалить

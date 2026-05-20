@@ -106,6 +106,62 @@ pub async fn run(
     result
 }
 
+/// Перезапустить полный pipeline (STT + recap) для существующего звонка.
+/// Используется когда:
+///   - предыдущая попытка зафейлилась по сети / квоте / API
+///   - переключились с BYO на managed или наоборот
+///   - сменили STT провайдера в Settings
+///
+/// Берёт mic.wav и system.wav с диска. Если их нет — Err. Сбрасывает
+/// failed_reason и переводит статус в processing перед стартом.
+pub async fn reprocess_call(
+    pool: &SqlitePool,
+    app_data_dir: &std::path::Path,
+    device_id: &Arc<str>,
+    call_id: &str,
+    app: Option<&AppHandle>,
+) -> Result<(), AppError> {
+    let call = db::get_call(pool, call_id)
+        .await?
+        .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
+
+    let call_dir = app_data_dir.join("calls").join(call_id);
+    let mic_path = call_dir.join("mic.wav");
+    let system_path = call_dir.join("system.wav");
+
+    if !mic_path.exists() && !system_path.exists() {
+        return Err(AppError::Other(
+            "Аудио файлы (mic.wav / system.wav) не найдены на диске — переобработка невозможна.".into(),
+        ));
+    }
+
+    // Reset status: was failed → processing, clear failed_reason.
+    // Если был ready — тоже перетянем в processing, чтобы UI показывал прогресс
+    // и не закешировал старый recap.
+    sqlx::query(
+        "UPDATE calls
+         SET status = 'processing',
+             failed_reason = NULL,
+             updated_at = ?1
+         WHERE id = ?2",
+    )
+    .bind(chrono::Utc::now().to_rfc3339())
+    .bind(call_id)
+    .execute(pool)
+    .await?;
+    let _ = &call; // suppress unused warning — call взят чтобы валидировать что row существует.
+
+    let ctx = PipelineCtx {
+        call_id: call_id.to_string(),
+        call_dir,
+        mic_path,
+        system_path,
+        device_id: Arc::clone(device_id),
+    };
+
+    run(pool, ctx, app).await
+}
+
 /// M4.5 паспорта: ручная регенерация рекапа без повторной транскрипции.
 /// Используется когда:
 ///   - первая попытка LLM упала (квота / network) и пользователь хочет повторить
