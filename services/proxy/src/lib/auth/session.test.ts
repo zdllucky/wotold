@@ -75,6 +75,18 @@ describe('startStateFlow + verifyState', () => {
     }
     expect(ids.size).toBe(5);
   });
+
+  test('startStateFlow defaults redirectMode to json', async () => {
+    const stateId = await startStateFlow(env, 'google', 'http://x', null);
+    const rec = await verifyState(env, stateId, 'google');
+    expect(rec?.redirectMode).toBe('json');
+  });
+
+  test('startStateFlow propagates deeplink mode', async () => {
+    const stateId = await startStateFlow(env, 'google', 'http://x', null, 'deeplink');
+    const rec = await verifyState(env, stateId, 'google');
+    expect(rec?.redirectMode).toBe('deeplink');
+  });
 });
 
 describe('createSession', () => {

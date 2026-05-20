@@ -39,6 +39,11 @@
     ]
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["wotold"]
+      }
+    },
     "updater": {
       "active": true,
       "endpoints": [

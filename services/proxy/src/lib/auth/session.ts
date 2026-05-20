@@ -25,6 +25,7 @@ export async function startStateFlow(
   provider: OidcProvider,
   redirectUri: string,
   deviceId: string | null,
+  redirectMode: 'json' | 'deeplink' = 'json',
 ): Promise<string> {
   const id = uuid();
   const rec: StateRecord = {
@@ -32,6 +33,7 @@ export async function startStateFlow(
     redirectUri,
     deviceId,
     createdAt: new Date().toISOString(),
+    redirectMode,
   };
   await putState(env, id, rec);
   return id;

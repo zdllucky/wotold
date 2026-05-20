@@ -25,6 +25,7 @@ pub fn run() {
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_updater::Builder::new()
                 .default_version_comparator(updater::compare_versions)
@@ -34,6 +35,43 @@ pub fn run() {
             let handle = app.handle().clone();
             let state = tauri::async_runtime::block_on(state::init(handle.clone()))?;
             tauri::Manager::manage(app, state);
+
+            // [B9]: подписка на wotold:// deep-link. Прокси редиректит сюда после OIDC.
+            // Парсим URL → emit 'auth:deep-link' с распакованным session+account.
+            // Никаких side-effects в Rust — frontend в AccountSection сам сохранит
+            // токен в Keychain и обновит /me. Это держит security flow simple
+            // и сосредоточенным в одном TypeScript-месте.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let app_for_dl = handle.clone();
+                handle.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        if url.scheme() != "wotold" {
+                            continue;
+                        }
+                        let mut payload = serde_json::Map::new();
+                        payload.insert(
+                            "path".into(),
+                            serde_json::Value::String(url.path().to_string()),
+                        );
+                        for (k, v) in url.query_pairs() {
+                            // session — sensitive: не логируем значение.
+                            payload.insert(k.to_string(), serde_json::Value::String(v.to_string()));
+                        }
+                        let event_name = match url.host_str() {
+                            Some("auth") => "auth:deep-link",
+                            _ => "deep-link",
+                        };
+                        if let Err(e) = tauri::Emitter::emit(
+                            &app_for_dl,
+                            event_name,
+                            serde_json::Value::Object(payload),
+                        ) {
+                            log::error!("emit {event_name} failed: {e}");
+                        }
+                    }
+                });
+            }
 
             // [B2]: graceful stop при window close. Если идёт запись —
             // префлайт-stop через pipeline, потом exit. Иначе sidecar получает

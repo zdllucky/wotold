@@ -69,20 +69,24 @@ async function readAccountSessionToken(): Promise<string | null> {
 /**
  * Шаг 1: запросить authorize URL у прокси. Клиент открывает URL в external
  * браузере (через @tauri-apps/plugin-shell open()). После OIDC-flow IdP
- * редиректит на /callback прокси, который возвращает session JSON.
- *
- * В этой scaffold-итерации session возвращается клиенту через manual paste
- * (deep-link callback — follow-up).
+ * редиректит на /callback прокси:
+ * - `redirectMode='deeplink'` ([B9]): 302 на `wotold://auth/callback?session=...`,
+ *   Tauri deep-link plugin перехватывает и emit'ит 'auth:deep-link'.
+ * - `redirectMode='json'` (default): прокси возвращает JSON, юзер копирует session
+ *   и вставляет вручную в AccountSection (fallback при недоступности deep-link).
  */
 export async function startSignIn(
   provider: OidcProvider,
   deviceId?: string,
+  redirectMode: 'json' | 'deeplink' = 'json',
 ): Promise<StartSignInResponse> {
   const base = await getProxyBaseUrl();
+  const body: Record<string, string> = { redirectMode };
+  if (deviceId) body.deviceId = deviceId;
   const resp = await fetch(`${base}/v1/auth/${provider}/start`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(deviceId ? { deviceId } : {}),
+    body: JSON.stringify(body),
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
