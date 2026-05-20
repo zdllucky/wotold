@@ -102,6 +102,58 @@ pub async fn run(
     result
 }
 
+/// M4.5 паспорта: ручная регенерация рекапа без повторной транскрипции.
+/// Используется когда:
+///   - первая попытка LLM упала (квота / network) и пользователь хочет повторить
+///   - сменили модель в Settings и хотят пересоздать рекап на ней
+///   - в транскрипт были внесены правки (будущий M4.6)
+///
+/// Читает `transcript.md` с диска, перегенерит `recap.md` + `action_items`.
+/// transcript.md обязателен — иначе AppError. Ошибки LLM пробрасываются
+/// в UI как Err (а не silently skip как в pipeline::run).
+pub async fn regenerate_recap(
+    pool: &SqlitePool,
+    app_data_dir: &std::path::Path,
+    device_id: &Arc<str>,
+    call_id: &str,
+) -> Result<(), AppError> {
+    let call = db::get_call(pool, call_id)
+        .await?
+        .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
+
+    let call_dir = app_data_dir.join("calls").join(call_id);
+    let transcript_path = call_dir.join("transcript.md");
+    let transcript_md = tokio::fs::read_to_string(&transcript_path)
+        .await
+        .map_err(|e| AppError::Other(format!("transcript.md отсутствует: {e}")))?;
+
+    let provider_path = read_setting(pool, SETTING_PROVIDER_PATH, "managed").await?;
+    let llm_model = read_setting(pool, SETTING_LLM_MODEL, "").await?;
+    let proxy_base_url = db::get_setting(pool, SETTING_PROXY_BASE_URL)
+        .await?
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_PROXY_BASE_URL.to_string());
+
+    let model_override = if llm_model.is_empty() {
+        None
+    } else {
+        Some(llm_model.as_str())
+    };
+
+    let recap_ctx = recap::RecapCtx {
+        call_id,
+        call_dir: &call_dir,
+        transcript_md: &transcript_md,
+        lang_detected: call.lang_detected.as_deref(),
+        proxy_base_url: &proxy_base_url,
+        device_id,
+        provider_path: &provider_path,
+        model_override,
+    };
+
+    recap::run(pool, recap_ctx).await
+}
+
 async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError> {
     let provider_id = read_setting(pool, SETTING_STT_PROVIDER, "auto").await?;
     let provider_path = read_setting(pool, SETTING_PROVIDER_PATH, "managed").await?;

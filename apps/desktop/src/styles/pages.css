@@ -1009,3 +1009,12 @@
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
+
+/* ============================================================
+ * Recap panel — regenerate button toolbar (M4.5)
+ * ============================================================ */
+.recap-panel-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+}

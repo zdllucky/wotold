@@ -67,7 +67,8 @@
 ## Recap · Этап 5 / M4
 
 - [x] **#27** M4.1 `AnthropicProvider` baseline (см. «Готово»)
-- [x] **#28** M4.2-4.4 Recap pipeline (см. «Готово»). M4.5 regenerate_recap Tauri-команда — отдельная мини-задача
+- [x] **#28** M4.2-4.4 Recap pipeline (см. «Готово»)
+- [x] **M4.5** regenerate_recap — `pipeline::regenerate_recap` читает transcript.md с диска, читает call meta (lang_detected) и settings (provider_path/llm_model/proxy_base_url), вызывает recap::run заново. Tauri command `regenerate_recap(callId)`. Ошибки LLM пробрасываются в UI (toast) в отличие от pipeline::run где silent-skip. CallDetailPage кнопка «↻ Пересоздать рекап» в табе Рекап (disabled если transcript отсутствует, busy spinner на время).
 
 ## UI · Этап 6 / M7
 

@@ -7,6 +7,7 @@ import {
   getCall,
   listCallActionItems,
   readCallArtifact,
+  regenerateRecap,
   type ActionItem,
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
@@ -53,6 +54,26 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   }, [callId]);
 
   const [deleting, setDeleting] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  const onRegenerateRecap = async () => {
+    setRegenerating(true);
+    setError(null);
+    try {
+      await regenerateRecap(callId);
+      // Перечитываем артефакты + action items.
+      const [fresh, freshTasks] = await Promise.all([
+        readCallArtifact(callId, 'recap'),
+        listCallActionItems(callId),
+      ]);
+      setRecap(fresh);
+      setTasks(freshTasks);
+    } catch (e) {
+      setError(`Не удалось перегенерить рекап: ${String(e)}`);
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
   const onDelete = async () => {
     if (!call) return;
@@ -141,6 +162,19 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         </Tabs.List>
 
         <Tabs.Panel value="recap">
+          <div className="recap-panel-head">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void onRegenerateRecap()}
+              disabled={regenerating || !transcript}
+              busy={regenerating}
+              title={!transcript ? 'Нет транскрипта для регенерации' : undefined}
+            >
+              {regenerating ? 'Пересоздаём…' : '↻ Пересоздать рекап'}
+            </Button>
+          </div>
           <MdPanel md={recap} emptyHint="Рекап ещё не сгенерирован." />
         </Tabs.Panel>
         <Tabs.Panel value="transcript">

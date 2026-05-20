@@ -379,3 +379,12 @@ pub async fn list_voice_samples(
 pub async fn delete_voice_sample(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
     crate::db::delete_voice_sample(&state.db, &id).await
 }
+
+/// M4.5 паспорта: пересоздать рекап + action_items без повторной транскрипции.
+/// Ошибки LLM пробрасываются (UI показывает toast / error), в отличие от
+/// pipeline::run где рекап silent-skip при ошибке (транскрипт важнее).
+#[tauri::command]
+pub async fn regenerate_recap(state: State<'_, AppState>, call_id: String) -> Result<(), AppError> {
+    crate::pipeline::regenerate_recap(&state.db, &state.app_data_dir, &state.device_id, &call_id)
+        .await
+}
