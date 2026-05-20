@@ -98,6 +98,7 @@
 
 - ~~**[B1] Permissions UX в Onboarding + Settings.**~~ Закрыто в #16 — [`f5cb476`](#) + [`4ddaff7`](#) fix.
 - **[B2] Graceful stop при закрытии окна.** Если юзер закрывает окно с активной записью, сидекар получает SIGHUP — последние ≤5 сек могут не успеть на flushHeader, а calls row остаётся «recording» навсегда. Нужен Tauri on_window_close → invoke stop_recording → finish или fail. Связано с #17.
+- **[B3] STT job-resume при retry.** Когда воркер таймаутит на 25-секундном polling-бюджете (длинная запись), клиент теряет partner job_id и при повторе создаёт новый job → двойная оплата у Soniox/Gladia. Решение: кэшировать `r2Key → partner_provider:job_id` в Workers KV с TTL ≈30 мин; на retry — резюмировать polling по существующему id. Связано с #18.
 
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
