@@ -3,7 +3,13 @@ import { humanError } from '../api/errors';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { listCalls, type Call } from '../api/recording';
+import { List, type RowComponentProps } from 'react-window';
 import { CallRowSkeleton, Empty, InputField, SelectField, Toolbar } from '../ui';
+
+// [B16] Virtualization порог. Ниже — grouping headers (UX), выше — flat list.
+const VIRTUALIZATION_THRESHOLD = 200;
+const ROW_HEIGHT = 60;
+const VIRTUAL_LIST_HEIGHT = 540;
 
 // [B16] Простая склонялка для счётчиков ru: ('звонок','звонка','звонков').
 function declinePlural(n: number, forms: [string, string, string]): string {
@@ -197,6 +203,18 @@ export function CallsPage({ onOpen }: CallsPageProps) {
               title="Ничего не нашлось"
               description="Сбрось фильтры или измени запрос."
             />
+          ) : filtered.length >= VIRTUALIZATION_THRESHOLD ? (
+            // [B16] Virtualization для 200+ звонков — react-window v2 List.
+            // Группировка не применяется в этом режиме (несовместима с
+            // fixed-row-height virt), зато scrolling не подвисает на 1000+.
+            <List
+              rowComponent={VirtualCallRow}
+              rowCount={filtered.length}
+              rowHeight={ROW_HEIGHT}
+              rowProps={{ calls: filtered, onOpen }}
+              defaultHeight={VIRTUAL_LIST_HEIGHT}
+              className="calls-virtual-list"
+            />
           ) : (
             <div className="calls-groups">
               {groupByBucket(filtered).map(({ bucket, calls: bucketCalls }) => (
@@ -244,6 +262,46 @@ export function CallsPage({ onOpen }: CallsPageProps) {
         </>
       )}
     </section>
+  );
+}
+
+interface VirtualRowProps {
+  calls: Call[];
+  onOpen: (id: string) => void;
+}
+
+// [B16] react-window v2 row renderer. Item layout совпадает с .call-row выше.
+function VirtualCallRow({ index, style, calls, onOpen }: RowComponentProps<VirtualRowProps>) {
+  const c = calls[index]!;
+  return (
+    <div style={style} className="calls-virtual-row">
+      <button
+        type="button"
+        className="call-row"
+        data-status={c.status}
+        onClick={() => onOpen(c.id)}
+        title="Открыть детали"
+      >
+        <span
+          className="call-status-cell"
+          aria-label={c.status}
+          title={
+            c.status === 'failed' && c.failed_reason
+              ? `${statusTooltip(c.status)}\n\n${c.failed_reason}`
+              : statusTooltip(c.status)
+          }
+        >
+          {statusIcon(c.status)}
+        </span>
+        <span className="call-meta">
+          <span className="call-when">{formatStarted(c.started_at)}</span>
+          <span className="call-detail-line">
+            {formatDuration(c.duration_sec)}
+            {c.lang_detected && ` · ${c.lang_detected.toUpperCase()}`}
+          </span>
+        </span>
+      </button>
+    </div>
   );
 }
 
