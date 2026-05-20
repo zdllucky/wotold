@@ -104,6 +104,11 @@ ECC-агенты для теста:
 | Audio sidecar permissions (`M1.3`) | Запись без согласия (C1), повышение привилегий в Swift-процессе |
 | Cascade delete (`C5`) | Утечка остаточных семплов, неполная очистка `voice_samples.source_call` |
 
+## Терминология взаимодействия
+
+- **«Демо» / «показать»** = полноценный запуск целевой среды (`pnpm tauri dev` для desktop, `wrangler dev` для proxy). НЕ vite-only browser preview, НЕ dev-mock в Safari. Если environment не поднимается — диагностируем причину и чиним, не падаем на упрощённую версию без явного согласования.
+- **«Промежуточный итог»** = живой запуск + summary + git log, не только текст.
+
 ## ECC харнесс (W1, W6, W7)
 
 - Используются глобальные правила из `~/.claude/rules/ecc/{common,rust,typescript,web,zh}` (источник: [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code), копия из приватной инсталляции). При апгрейде ECC сверять что R1–R8 паспорта не «улучшены» обратно.
