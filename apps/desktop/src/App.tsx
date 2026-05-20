@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { CallDetailPage } from './pages/CallDetailPage';
 import { CallsPage } from './pages/CallsPage';
@@ -38,6 +39,9 @@ export function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap>('loading');
   const [page, setPage] = useState<Page>(initialPage);
   const [detailCallId, setDetailCallId] = useState<string | null>(null);
+  // [B16] Counter активных pipeline-задач. Подписки: 'pipeline:started' (++)
+  // и 'pipeline:finished' (--). При >0 показываем subtle indicator в topnav.
+  const [activePipelines, setActivePipelines] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -48,6 +52,21 @@ export function App() {
         setBootstrap('app');
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    let unStart: UnlistenFn | undefined;
+    let unFinish: UnlistenFn | undefined;
+    listen('pipeline:started', () => setActivePipelines((n) => n + 1))
+      .then((fn) => (unStart = fn))
+      .catch((e: unknown) => console.warn('listen pipeline:started failed', e));
+    listen('pipeline:finished', () => setActivePipelines((n) => Math.max(0, n - 1)))
+      .then((fn) => (unFinish = fn))
+      .catch((e: unknown) => console.warn('listen pipeline:finished failed', e));
+    return () => {
+      unStart?.();
+      unFinish?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -91,6 +110,19 @@ export function App() {
           })}
         </div>
         <span className="topnav-spacer" />
+        {activePipelines > 0 && (
+          <span
+            className="topnav-pipeline-indicator"
+            role="status"
+            aria-live="polite"
+            title={`Обработка ${activePipelines} ${activePipelines === 1 ? 'звонка' : 'звонков'}…`}
+          >
+            <span className="topnav-pipeline-spinner" aria-hidden />
+            <span className="topnav-pipeline-label">
+              {activePipelines === 1 ? 'обрабатываем…' : `обрабатываем ${activePipelines}…`}
+            </span>
+          </span>
+        )}
         {IS_DEV && (
           <Button
             size="sm"
