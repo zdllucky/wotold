@@ -2,7 +2,25 @@ import { useEffect, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { listCalls, type Call } from '../api/recording';
-import { Empty, Toolbar } from '../ui';
+import { Badge, Empty, InputField, SelectField, Toolbar } from '../ui';
+
+type StatusFilter = 'all' | 'recording' | 'processing' | 'ready' | 'failed';
+
+function matchesQuery(c: Call, q: string): boolean {
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  // Поиск по title, провайдеру, lang, failed_reason, и первым 8 символам id.
+  const haystack = [
+    c.title ?? '',
+    c.provider ?? '',
+    c.lang_detected ?? '',
+    c.failed_reason ?? '',
+    c.id.slice(0, 8),
+  ]
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(needle);
+}
 
 interface CallsPageProps {
   onOpen: (callId: string) => void;
@@ -17,6 +35,8 @@ interface PipelineFinishedEvent {
 export function CallsPage({ onOpen }: CallsPageProps) {
   const [calls, setCalls] = useState<Call[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const refresh = () => {
     listCalls()
@@ -46,17 +66,58 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   if (error) return <p className="error">{error}</p>;
   if (!calls) return <p className="hint">Загрузка…</p>;
 
+  const filtered = calls
+    .filter((c) => statusFilter === 'all' || c.status === statusFilter)
+    .filter((c) => matchesQuery(c, query.trim()));
+
   return (
     <section className="calls">
-      <Toolbar title="Звонки" />
+      <Toolbar
+        title="Звонки"
+        actions={
+          calls.length > 0 ? (
+            <Badge tone="neutral">
+              {filtered.length}
+              {filtered.length !== calls.length ? ` / ${calls.length}` : ''}
+            </Badge>
+          ) : undefined
+        }
+      />
       {calls.length === 0 ? (
         <Empty
           title="Звонков пока нет"
           description="Начни запись с главной — сюда подтянется."
         />
       ) : (
+        <>
+          <div className="calls-filters">
+            <InputField
+              label=""
+              type="search"
+              placeholder="Поиск: title, провайдер, язык, причина ошибки…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <SelectField
+              label=""
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            >
+              <option value="all">Все статусы</option>
+              <option value="ready">Готовые</option>
+              <option value="processing">В работе</option>
+              <option value="recording">Идёт запись</option>
+              <option value="failed">Ошибки</option>
+            </SelectField>
+          </div>
+          {filtered.length === 0 ? (
+            <Empty
+              title="Ничего не нашлось"
+              description="Сбрось фильтры или измени запрос."
+            />
+          ) : (
         <ul className="calls-list">
-          {calls.map((c) => (
+          {filtered.map((c) => (
             <li key={c.id}>
               <button
                 type="button"
@@ -89,8 +150,12 @@ export function CallsPage({ onOpen }: CallsPageProps) {
             </li>
           ))}
         </ul>
+          )}
+        </>
       )}
-      <p className="hint">FTS-поиск по транскрипту — backlog (#30 follow-up).</p>
+      <p className="hint">
+        Полнотекстовый поиск по транскрипту — backlog (#30 follow-up).
+      </p>
     </section>
   );
 }
