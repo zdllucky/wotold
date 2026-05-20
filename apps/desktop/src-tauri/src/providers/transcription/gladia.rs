@@ -1,12 +1,11 @@
+use std::path::Path;
+
 use async_trait::async_trait;
 
-use super::{
-    DiarizedTranscript, TranscriptionError, TranscriptionInput, TranscriptionOpts,
-    TranscriptionProvider,
-};
+use super::{DiarizedTranscript, TranscriptionError, TranscriptionOpts, TranscriptionProvider};
 use crate::providers::ProviderMode;
 
-/// Gladia — fallback STT (M2.2). Реальная имплементация — Этап 3.
+/// Gladia — fallback STT (M2.2). Реальная имплементация — #21.
 pub struct GladiaProvider {
     pub mode: ProviderMode,
 }
@@ -15,7 +14,7 @@ pub struct GladiaProvider {
 impl TranscriptionProvider for GladiaProvider {
     async fn transcribe(
         &self,
-        _audio: TranscriptionInput,
+        _audio_path: &Path,
         _opts: TranscriptionOpts,
     ) -> Result<DiarizedTranscript, TranscriptionError> {
         Err(TranscriptionError::NotImplemented)

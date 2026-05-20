@@ -1,23 +1,17 @@
+use std::path::Path;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// Единый интерфейс STT с диаризацией. См. M2.1 паспорта.
-/// Реализации: SonioxProvider (primary), GladiaProvider (fallback) — Этап 3.
+/// Реализации: SonioxProvider (primary), GladiaProvider (fallback).
 #[async_trait]
 pub trait TranscriptionProvider: Send + Sync {
     async fn transcribe(
         &self,
-        audio: TranscriptionInput,
+        audio_path: &Path,
         opts: TranscriptionOpts,
     ) -> Result<DiarizedTranscript, TranscriptionError>;
-}
-
-#[derive(Debug, Clone)]
-pub enum TranscriptionInput {
-    /// Локальный файл (BYO-путь).
-    FilePath(std::path::PathBuf),
-    /// R2-ключ для managed-пути через прокси.
-    R2Key(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
