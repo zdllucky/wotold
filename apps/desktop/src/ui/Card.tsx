@@ -1,9 +1,12 @@
+// [B17] Atelier v2 thin wrapper — .card / .card--raised / .card--inset.
+
 import type { HTMLAttributes, ReactNode } from 'react';
 
 type Variant = 'default' | 'sunken' | 'raised';
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   variant?: Variant;
+  /** Legacy compact prop — sub-tle padding reduce через inline style. */
   compact?: boolean;
   children: ReactNode;
 }
@@ -13,19 +16,20 @@ export function Card({
   compact = false,
   className,
   children,
+  style,
   ...rest
 }: CardProps) {
   const classes = [
-    'ds-card',
-    variant === 'sunken' ? 'ds-card--sunken' : '',
-    variant === 'raised' ? 'ds-card--raised' : '',
-    compact ? 'ds-card--compact' : '',
+    'card',
+    variant === 'sunken' ? 'card--inset' : '',
+    variant === 'raised' ? 'card--raised' : '',
     className ?? '',
   ]
     .filter(Boolean)
     .join(' ');
+  const compactStyle = compact ? { padding: 'var(--space-4)' } : undefined;
   return (
-    <div className={classes} {...rest}>
+    <div className={classes} style={{ ...compactStyle, ...style }} {...rest}>
       {children}
     </div>
   );
@@ -35,9 +39,19 @@ interface CardHeaderProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
 }
 
-function CardHeader({ className, children, ...rest }: CardHeaderProps) {
+function CardHeader({ className, children, style, ...rest }: CardHeaderProps) {
   return (
-    <div className={['ds-card-header', className ?? ''].filter(Boolean).join(' ')} {...rest}>
+    <div
+      className={className}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 'var(--space-3)',
+        ...style,
+      }}
+      {...rest}
+    >
       {children}
     </div>
   );
@@ -49,7 +63,11 @@ interface CardTitleProps extends HTMLAttributes<HTMLHeadingElement> {
 
 function CardTitle({ className, children, ...rest }: CardTitleProps) {
   return (
-    <h3 className={['ds-card-title', className ?? ''].filter(Boolean).join(' ')} {...rest}>
+    <h3
+      className={['title', className ?? ''].filter(Boolean).join(' ')}
+      style={{ fontSize: 18, margin: 0 }}
+      {...rest}
+    >
       {children}
     </h3>
   );

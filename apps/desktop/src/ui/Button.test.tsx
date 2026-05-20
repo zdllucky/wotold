@@ -14,6 +14,7 @@ describe('Button', () => {
     expect(screen.getByRole('button')).toHaveAttribute('type', 'button');
   });
 
+  // [B17] Atelier v2 — variant/size mapped to .btn--primary / .btn--lg.
   test('applies variant + size classes', () => {
     render(
       <Button variant="primary" size="lg">
@@ -21,11 +22,13 @@ describe('Button', () => {
       </Button>,
     );
     const btn = screen.getByRole('button');
-    expect(btn.className).toContain('ds-button--variant-primary');
-    expect(btn.className).toContain('ds-button--size-lg');
+    expect(btn.className).toContain('btn--primary');
+    expect(btn.className).toContain('btn--lg');
   });
 
-  test('busy sets data-busy and pill adds modifier', () => {
+  // [B17] `pill` prop is a legacy no-op — Atelier buttons всегда radius-sm.
+  // Сохраняем data-busy assertion.
+  test('busy sets data-busy', () => {
     render(
       <Button busy pill>
         Loading
@@ -33,7 +36,7 @@ describe('Button', () => {
     );
     const btn = screen.getByRole('button');
     expect(btn).toHaveAttribute('data-busy', 'true');
-    expect(btn.className).toContain('ds-button--pill');
+    expect(btn.className).toContain('btn');
   });
 
   test('disabled prop disables click', async () => {
