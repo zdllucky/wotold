@@ -6,6 +6,11 @@ export interface ContactIdentifier {
   value: string;
 }
 
+export interface ContactIdentifierInput {
+  kind: string;
+  value: string;
+}
+
 export interface Contact {
   id: string;
   display_name: string;
@@ -24,6 +29,8 @@ export interface ContactInput {
   org?: string;
   role?: string;
   notes?: string;
+  identifiers?: ContactIdentifierInput[];
+  attributes?: Record<string, unknown>;
 }
 
 export function listContacts(): Promise<Contact[]> {
@@ -32,6 +39,10 @@ export function listContacts(): Promise<Contact[]> {
 
 export function createContact(input: ContactInput): Promise<Contact> {
   return invoke<Contact>('create_contact', { input });
+}
+
+export function updateContact(id: string, input: ContactInput): Promise<Contact> {
+  return invoke<Contact>('update_contact', { id, input });
 }
 
 export function deleteContact(id: string): Promise<void> {
@@ -46,3 +57,13 @@ export interface OwnerContact {
 export function renameOwnerContact(newName: string): Promise<OwnerContact> {
   return invoke<OwnerContact>('rename_owner_contact', { newName });
 }
+
+export const IDENTIFIER_KINDS = [
+  'phone',
+  'email',
+  'telegram',
+  'whatsapp',
+  'signal',
+  'slack',
+  'other',
+] as const;

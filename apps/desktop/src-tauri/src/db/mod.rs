@@ -14,7 +14,7 @@ mod settings;
 pub use calls::{fail_recording, finish_recording, insert_recording, list_calls, Call};
 pub use contacts::{
     create_contact, delete_contact, ensure_owner_contact, list_contacts, rename_owner_contact,
-    Contact, ContactInput, OwnerContact,
+    update_contact, Contact, ContactInput, OwnerContact,
 };
 pub use settings::{get_setting, set_setting};
 

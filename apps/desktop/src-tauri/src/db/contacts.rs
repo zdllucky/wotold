@@ -12,11 +12,21 @@ pub struct OwnerContact {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ContactIdentifierInput {
+    pub kind: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ContactInput {
     pub display_name: String,
     pub org: Option<String>,
     pub role: Option<String>,
     pub notes: Option<String>,
+    #[serde(default)]
+    pub identifiers: Vec<ContactIdentifierInput>,
+    #[serde(default)]
+    pub attributes: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,6 +83,36 @@ pub async fn ensure_owner_contact(pool: &SqlitePool) -> Result<OwnerContact, App
     })
 }
 
+/// Переименовать контакт-владельца (используется в онбординге, M7.6).
+pub async fn rename_owner_contact(
+    pool: &SqlitePool,
+    new_name: &str,
+) -> Result<OwnerContact, AppError> {
+    let trimmed = new_name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Other("display_name required".into()));
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let id: Option<String> =
+        sqlx::query_scalar("SELECT id FROM contacts WHERE is_owner = 1 LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
+    let id = id.ok_or_else(|| AppError::Other("owner contact missing".into()))?;
+
+    sqlx::query("UPDATE contacts SET display_name = ?1, updated_at = ?2 WHERE id = ?3")
+        .bind(trimmed)
+        .bind(&now)
+        .bind(&id)
+        .execute(pool)
+        .await?;
+
+    Ok(OwnerContact {
+        id,
+        display_name: trimmed.to_string(),
+    })
+}
+
 /// Возвращает все контакты с прикреплёнными идентификаторами. owner — первым.
 /// M7.4 паспорта.
 pub async fn list_contacts(pool: &SqlitePool) -> Result<Vec<Contact>, AppError> {
@@ -110,10 +150,7 @@ pub async fn list_contacts(pool: &SqlitePool) -> Result<Vec<Contact>, AppError> 
         .map(|row| {
             let contact_id: String = row.get("id");
             let attrs_raw: Option<String> = row.get("attributes");
-            let attributes = attrs_raw
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+            let attributes = parse_attributes(attrs_raw.as_deref());
             let identifiers = by_contact.remove(&contact_id).unwrap_or_default();
             Contact {
                 display_name: row.get("display_name"),
@@ -133,7 +170,55 @@ pub async fn list_contacts(pool: &SqlitePool) -> Result<Vec<Contact>, AppError> 
     Ok(contacts)
 }
 
-/// Создать контакт. display_name обязателен и не пустой (M7.4).
+/// Один контакт по id, с прикреплёнными identifiers.
+pub async fn get_contact(pool: &SqlitePool, id: &str) -> Result<Option<Contact>, AppError> {
+    let row = sqlx::query(
+        "SELECT id, display_name, is_owner, org, role, attributes, notes, created_at, updated_at
+         FROM contacts WHERE id = ?1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let contact_id: String = row.get("id");
+    let attrs_raw: Option<String> = row.get("attributes");
+    let attributes = parse_attributes(attrs_raw.as_deref());
+
+    let id_rows =
+        sqlx::query("SELECT id, kind, value FROM contact_identifiers WHERE contact_id = ?1")
+            .bind(&contact_id)
+            .fetch_all(pool)
+            .await?;
+
+    let identifiers: Vec<ContactIdentifier> = id_rows
+        .into_iter()
+        .map(|r| ContactIdentifier {
+            id: r.get("id"),
+            kind: r.get("kind"),
+            value: r.get("value"),
+        })
+        .collect();
+
+    Ok(Some(Contact {
+        display_name: row.get("display_name"),
+        is_owner: row.get::<i64, _>("is_owner") == 1,
+        org: row.get("org"),
+        role: row.get("role"),
+        attributes,
+        notes: row.get("notes"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        identifiers,
+        id: contact_id,
+    }))
+}
+
+/// Создать контакт. display_name обязателен. identifiers и attributes —
+/// опциональны (по умолчанию пустой массив / `{}`). M7.4 + M6.1.
 pub async fn create_contact(pool: &SqlitePool, input: ContactInput) -> Result<Contact, AppError> {
     let display_name = input.display_name.trim().to_string();
     if display_name.is_empty() {
@@ -142,6 +227,7 @@ pub async fn create_contact(pool: &SqlitePool, input: ContactInput) -> Result<Co
 
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
+    let attributes_str = serialize_attributes(&input.attributes)?;
 
     let org = input
         .org
@@ -159,61 +245,105 @@ pub async fn create_contact(pool: &SqlitePool, input: ContactInput) -> Result<Co
         .map(str::trim)
         .filter(|s| !s.is_empty());
 
+    let mut tx = pool.begin().await?;
+
     sqlx::query(
         "INSERT INTO contacts (id, display_name, is_owner, org, role, notes, attributes, created_at, updated_at)
-         VALUES (?1, ?2, 0, ?3, ?4, ?5, '{}', ?6, ?6)",
+         VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, ?7)",
     )
     .bind(&id)
     .bind(&display_name)
     .bind(org)
     .bind(role)
     .bind(notes)
+    .bind(&attributes_str)
     .bind(&now)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
-    Ok(Contact {
-        id,
-        display_name,
-        is_owner: false,
-        org: org.map(str::to_string),
-        role: role.map(str::to_string),
-        attributes: serde_json::Value::Object(serde_json::Map::new()),
-        notes: notes.map(str::to_string),
-        created_at: now.clone(),
-        updated_at: now,
-        identifiers: vec![],
-    })
+    insert_identifiers(&mut tx, &id, &input.identifiers).await?;
+
+    tx.commit().await?;
+
+    get_contact(pool, &id)
+        .await?
+        .ok_or_else(|| AppError::Other(format!("contact {id} disappeared after insert")))
 }
 
-/// Переименовать контакт-владельца (используется в онбординге, M7.6).
-pub async fn rename_owner_contact(
+/// Обновить контакт. Identifiers replace-all (удаляем все и вставляем новые
+/// внутри транзакции). owner редактировать можно (display_name; пользователь
+/// сам себе хозяин), но is_owner не меняется.
+pub async fn update_contact(
     pool: &SqlitePool,
-    new_name: &str,
-) -> Result<OwnerContact, AppError> {
-    let trimmed = new_name.trim();
-    if trimmed.is_empty() {
+    id: &str,
+    input: ContactInput,
+) -> Result<Contact, AppError> {
+    let display_name = input.display_name.trim().to_string();
+    if display_name.is_empty() {
         return Err(AppError::Other("display_name required".into()));
     }
+
     let now = chrono::Utc::now().to_rfc3339();
+    let attributes_str = serialize_attributes(&input.attributes)?;
 
-    let id: Option<String> =
-        sqlx::query_scalar("SELECT id FROM contacts WHERE is_owner = 1 LIMIT 1")
-            .fetch_optional(pool)
-            .await?;
-    let id = id.ok_or_else(|| AppError::Other("owner contact missing".into()))?;
+    let org = input
+        .org
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let role = input
+        .role
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let notes = input
+        .notes
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
-    sqlx::query("UPDATE contacts SET display_name = ?1, updated_at = ?2 WHERE id = ?3")
-        .bind(trimmed)
-        .bind(&now)
-        .bind(&id)
-        .execute(pool)
+    let mut tx = pool.begin().await?;
+
+    let exists: Option<String> = sqlx::query_scalar("SELECT id FROM contacts WHERE id = ?1")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::Other(format!("contact {id} not found")));
+    }
+
+    sqlx::query(
+        "UPDATE contacts
+         SET display_name = ?1,
+             org = ?2,
+             role = ?3,
+             notes = ?4,
+             attributes = ?5,
+             updated_at = ?6
+         WHERE id = ?7",
+    )
+    .bind(&display_name)
+    .bind(org)
+    .bind(role)
+    .bind(notes)
+    .bind(&attributes_str)
+    .bind(&now)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM contact_identifiers WHERE contact_id = ?1")
+        .bind(id)
+        .execute(&mut *tx)
         .await?;
 
-    Ok(OwnerContact {
-        id,
-        display_name: trimmed.to_string(),
-    })
+    insert_identifiers(&mut tx, id, &input.identifiers).await?;
+
+    tx.commit().await?;
+
+    get_contact(pool, id)
+        .await?
+        .ok_or_else(|| AppError::Other(format!("contact {id} disappeared after update")))
 }
 
 /// Удалить контакт. Контакт-владелец удалить нельзя (M6.2). ON DELETE CASCADE
@@ -236,4 +366,41 @@ pub async fn delete_contact(pool: &SqlitePool, id: &str) -> Result<(), AppError>
         .await?;
 
     Ok(())
+}
+
+async fn insert_identifiers(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    contact_id: &str,
+    identifiers: &[ContactIdentifierInput],
+) -> Result<(), AppError> {
+    for identifier in identifiers {
+        let kind = identifier.kind.trim();
+        let value = identifier.value.trim();
+        if kind.is_empty() || value.is_empty() {
+            continue;
+        }
+        sqlx::query(
+            "INSERT INTO contact_identifiers (id, contact_id, kind, value)
+             VALUES (?1, ?2, ?3, ?4)",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(contact_id)
+        .bind(kind)
+        .bind(value)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
+}
+
+fn parse_attributes(raw: Option<&str>) -> serde_json::Value {
+    raw.and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()))
+}
+
+fn serialize_attributes(value: &serde_json::Value) -> Result<String, AppError> {
+    if value.is_null() {
+        return Ok("{}".to_string());
+    }
+    Ok(serde_json::to_string(value)?)
 }
