@@ -15,8 +15,8 @@
         "title": "Wotold",
         "width": 980,
         "height": 720,
-        "minWidth": 640,
-        "minHeight": 480,
+        "minWidth": 760,
+        "minHeight": 560,
         "resizable": true,
         "fullscreen": false
       }
