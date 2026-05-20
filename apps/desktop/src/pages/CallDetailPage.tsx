@@ -12,8 +12,9 @@ import {
 import { listContacts, type Contact } from '../api/contacts';
 import type { Call } from '../api/recording';
 import { Button, Card, Empty, Pill, Tabs } from '../ui';
+import { SpeakersSection } from './SpeakersSection';
 
-type Tab = 'recap' | 'transcript' | 'tasks';
+type Tab = 'recap' | 'transcript' | 'tasks' | 'speakers';
 
 interface CallDetailPageProps {
   callId: string;
@@ -78,6 +79,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     recap: !!recap,
     transcript: !!transcript,
     tasks: (tasks?.length ?? 0) > 0,
+    // Спикеры рассчитываются внутри SpeakersSection — counter нет смысла считать
+    // здесь без второго round-trip; пусть всегда показывается без ∅-маркера.
+    speakers: true,
   };
 
   return (
@@ -125,7 +129,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
         <Tabs.List>
-          {(['recap', 'transcript', 'tasks'] as Tab[]).map((t) => (
+          {(['recap', 'transcript', 'tasks', 'speakers'] as Tab[]).map((t) => (
             <Tabs.Trigger
               key={t}
               value={t}
@@ -144,6 +148,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         </Tabs.Panel>
         <Tabs.Panel value="tasks">
           <TasksPanel tasks={tasks ?? []} contacts={contacts} />
+        </Tabs.Panel>
+        <Tabs.Panel value="speakers">
+          <SpeakersSection callId={callId} />
         </Tabs.Panel>
       </Tabs>
     </section>
@@ -206,6 +213,8 @@ function tabLabel(t: Tab): string {
       return 'Расшифровка';
     case 'tasks':
       return 'Задачи';
+    case 'speakers':
+      return 'Спикеры';
   }
 }
 

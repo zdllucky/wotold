@@ -228,6 +228,116 @@ pub async fn insert_speaker_suggestions(
     Ok(())
 }
 
+/// M3.5 (#26): представление call_speaker для UI — speaker_tag + текущая
+/// привязка (contact_id, confirmed) + suggestion если есть. Для рендера
+/// confirmation flow в CallDetailPage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallSpeakerView {
+    pub id: String,
+    pub call_id: String,
+    pub speaker_tag: String,
+    pub contact_id: Option<String>,
+    pub contact_display_name: Option<String>,
+    pub suggestion_contact_id: Option<String>,
+    pub suggestion_contact_display_name: Option<String>,
+    pub suggestion_score: Option<f64>,
+    pub suggestion_source: Option<String>,
+    pub confirmed: bool,
+}
+
+/// Возвращает спикеров звонка с join'ом display_name по contact_id +
+/// suggestion_contact_id (LEFT JOIN — отсутствующий контакт = NULL).
+pub async fn list_call_speakers(
+    pool: &SqlitePool,
+    call_id: &str,
+) -> Result<Vec<CallSpeakerView>, AppError> {
+    let rows = sqlx::query(
+        "SELECT
+            cs.id, cs.call_id, cs.speaker_tag, cs.contact_id,
+            c1.display_name AS contact_display_name,
+            cs.suggestion_contact_id,
+            c2.display_name AS suggestion_contact_display_name,
+            cs.suggestion_score, cs.suggestion_source, cs.confirmed
+         FROM call_speakers cs
+         LEFT JOIN contacts c1 ON c1.id = cs.contact_id
+         LEFT JOIN contacts c2 ON c2.id = cs.suggestion_contact_id
+         WHERE cs.call_id = ?1
+         ORDER BY cs.speaker_tag",
+    )
+    .bind(call_id)
+    .fetch_all(pool)
+    .await?;
+
+    use sqlx::Row;
+    Ok(rows
+        .into_iter()
+        .map(|r| CallSpeakerView {
+            id: r.get("id"),
+            call_id: r.get("call_id"),
+            speaker_tag: r.get("speaker_tag"),
+            contact_id: r.get("contact_id"),
+            contact_display_name: r.get("contact_display_name"),
+            suggestion_contact_id: r.get("suggestion_contact_id"),
+            suggestion_contact_display_name: r.get("suggestion_contact_display_name"),
+            suggestion_score: r.get("suggestion_score"),
+            suggestion_source: r.get("suggestion_source"),
+            confirmed: r.get::<i64, _>("confirmed") == 1,
+        })
+        .collect())
+}
+
+/// M3.5 (#26): R2 паспорта — финальная привязка спикер↔контакт ТОЛЬКО через
+/// явное подтверждение пользователя. Этот метод вызывается из Tauri-команды,
+/// никогда из pipeline. confirmed = 1.
+pub async fn confirm_call_speaker(
+    pool: &SqlitePool,
+    call_speaker_id: &str,
+    contact_id: &str,
+) -> Result<(), AppError> {
+    // Контакт должен существовать. FK contacts(id) уже это гарантирует, но
+    // вернём явный AppError а не SQL-ошибку для UX.
+    let exists: Option<String> = sqlx::query_scalar("SELECT id FROM contacts WHERE id = ?1")
+        .bind(contact_id)
+        .fetch_optional(pool)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::Other(format!("contact {contact_id} not found")));
+    }
+
+    let updated = sqlx::query(
+        "UPDATE call_speakers SET contact_id = ?1, confirmed = 1 WHERE id = ?2",
+    )
+    .bind(contact_id)
+    .bind(call_speaker_id)
+    .execute(pool)
+    .await?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Other(format!(
+            "call_speaker {call_speaker_id} not found"
+        )));
+    }
+    Ok(())
+}
+
+/// Откатить привязку спикера: contact_id = NULL, confirmed = 0. Suggestion
+/// остаётся как был — пользователь может изменить решение позже.
+pub async fn unbind_call_speaker(
+    pool: &SqlitePool,
+    call_speaker_id: &str,
+) -> Result<(), AppError> {
+    let updated =
+        sqlx::query("UPDATE call_speakers SET contact_id = NULL, confirmed = 0 WHERE id = ?1")
+            .bind(call_speaker_id)
+            .execute(pool)
+            .await?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Other(format!(
+            "call_speaker {call_speaker_id} not found"
+        )));
+    }
+    Ok(())
+}
+
 /// C5 (#41) cascade delete: удаляет calls row + связанные строки
 /// (action_items, call_speakers по CASCADE FK; voice_samples с source_call=id
 /// удаляются явно — FK с ON DELETE SET NULL логически некорректен здесь).
@@ -399,5 +509,120 @@ mod tests {
         let db = fresh_db().await;
         // Не должен паниковать при несуществующем id (idempotent semantics).
         delete_call_and_samples(&db.pool, "ghost-id").await.unwrap();
+    }
+
+    // ============================================================
+    // M3.5 (#26) speaker confirmation flow
+    // ============================================================
+
+    async fn insert_speaker_row(
+        pool: &sqlx::SqlitePool,
+        call_id: &str,
+        speaker_tag: &str,
+        suggestion_contact_id: Option<&str>,
+    ) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO call_speakers (id, call_id, speaker_tag, suggestion_contact_id, suggestion_score, suggestion_source, confirmed)
+             VALUES (?1, ?2, ?3, ?4, 0.85, 'embedding', 0)",
+        )
+        .bind(&id)
+        .bind(call_id)
+        .bind(speaker_tag)
+        .bind(suggestion_contact_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn insert_contact_row(pool: &sqlx::SqlitePool, name: &str) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO contacts (id, display_name, is_owner, attributes, created_at, updated_at)
+             VALUES (?1, ?2, 0, '{}', ?3, ?3)",
+        )
+        .bind(&id)
+        .bind(name)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    #[tokio::test]
+    async fn list_call_speakers_joins_contact_names() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = insert_contact_row(&db.pool, "Alice").await;
+        let bob = insert_contact_row(&db.pool, "Bob").await;
+        insert_speaker_row(&db.pool, &call.id, "S1", Some(&alice)).await;
+        let s2_id = insert_speaker_row(&db.pool, &call.id, "S2", Some(&bob)).await;
+
+        // Confirm S2 → contact_display_name заполняется через c1 join.
+        confirm_call_speaker(&db.pool, &s2_id, &bob).await.unwrap();
+
+        let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
+        assert_eq!(speakers.len(), 2);
+        let s1 = speakers.iter().find(|s| s.speaker_tag == "S1").unwrap();
+        let s2 = speakers.iter().find(|s| s.speaker_tag == "S2").unwrap();
+        assert_eq!(s1.suggestion_contact_display_name.as_deref(), Some("Alice"));
+        assert_eq!(s1.contact_id, None);
+        assert!(!s1.confirmed);
+        assert_eq!(s2.contact_display_name.as_deref(), Some("Bob"));
+        assert!(s2.confirmed);
+    }
+
+    #[tokio::test]
+    async fn confirm_then_unbind_clears_binding_but_keeps_suggestion() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = insert_contact_row(&db.pool, "Alice").await;
+        let sid = insert_speaker_row(&db.pool, &call.id, "S1", Some(&alice)).await;
+
+        confirm_call_speaker(&db.pool, &sid, &alice).await.unwrap();
+        let after_confirm = list_call_speakers(&db.pool, &call.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(after_confirm.confirmed);
+        assert_eq!(after_confirm.contact_id.as_deref(), Some(alice.as_str()));
+
+        unbind_call_speaker(&db.pool, &sid).await.unwrap();
+        let after_unbind = list_call_speakers(&db.pool, &call.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(!after_unbind.confirmed);
+        assert_eq!(after_unbind.contact_id, None);
+        // suggestion остаётся — юзер может передумать.
+        assert_eq!(
+            after_unbind.suggestion_contact_id.as_deref(),
+            Some(alice.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn confirm_unknown_contact_errors() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let sid = insert_speaker_row(&db.pool, &call.id, "S1", None).await;
+
+        let err = confirm_call_speaker(&db.pool, &sid, "ghost-contact").await;
+        assert!(err.is_err());
+    }
+
+    #[tokio::test]
+    async fn confirm_unknown_speaker_errors() {
+        let db = fresh_db().await;
+        let alice = insert_contact_row(&db.pool, "Alice").await;
+        let err = confirm_call_speaker(&db.pool, "ghost-speaker", &alice).await;
+        assert!(err.is_err());
     }
 }

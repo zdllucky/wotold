@@ -158,6 +158,9 @@ pub fn run() {
             commands::set_account_session,
             commands::clear_account_session,
             commands::read_account_session_token,
+            commands::list_call_speakers,
+            commands::confirm_call_speaker,
+            commands::unbind_call_speaker,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
