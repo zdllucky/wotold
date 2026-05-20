@@ -202,21 +202,21 @@
 - [ ] **Tauri minisign pubkey** в `tauri.conf.json:52` placeholder. До первого публичного релиза — сгенерировать через `pnpm tauri signer generate`, public в config, private+password в GH Secret. Без этого updater не работает.
 - [ ] **Ad-hoc codesign в release-app.yml** — `codesign --force --deep --sign - Wotold.app` перед DMG. Без этого macOS 14+ quarantine → «damaged, move to trash» вместо «Open anyway». R6 deferred нотаризацию, но ad-hoc даст рабочий UX.
 - [ ] **Universal binary вместо двух DMG** — `--target universal-apple-darwin` (Tauri supports). Сейчас macos-13 x86_64 + macos-14 aarch64 матрица → юзеры путают какой DMG скачать.
-- [ ] **Quota race fix** — `services/proxy/src/middleware/rate-limit.ts` read-then-write без CAS. Парные concurrent /v1/stt дают double-spend. Pre-reserve placeholder или secondary IP-rate-limit (cf-connecting-ip).
-- [ ] **Pipeline JoinHandle leak** — `commands.rs:255-267` spawn без хранения handle. Если приложение exit — pipeline aborted, `calls.status='processing'` навсегда (до sweep). Хранить handles в AppState keyed by call_id.
-- [ ] **SQLite integrity_check + backup** — `db/mod.rs::init` запускает `PRAGMA integrity_check`. При corrupt → rename `app.db.corrupt-{ts}` + restart fresh с modal. Plus nightly `VACUUM INTO app.db.backup`.
+- [x] **Quota race fix** — best-effort CAS-loop через KV (3-attempt re-read+retry, см. rate-limit.ts). Full atomic CAS требует Durable Object — follow-up.
+- [x] **Pipeline JoinHandle leak** — AppState.pipeline_tasks HashMap<call_id, JoinHandle>. Window close handler ждёт каждый task с tokio::timeout(8s) перед exit(0).
+- [x] **SQLite integrity_check + backup** — startup integrity check, при corrupt rename *.corrupt-{ts}, fresh DB. (Nightly VACUUM INTO — отдельный backlog.)
 
 ### Security & Build (P1)
 
-- [ ] **shell:allow-open** в capabilities — `https://accounts.google.com/**` слишком широкий, заузить до `/o/oauth2/**`.
-- [ ] **OIDC ID token signature verification** — `auth/providers.ts:119-149` принимает любой JWT без проверки подписи. Проверить `aud`/`iss` минимум + опционально JWKS verify.
-- [ ] **consumeState CAS race** — `auth/storage.ts:121-126` read-then-delete не атомарен. Двое одновременно используют тот же state — оба проходят.
+- [x] **shell:allow-open** в capabilities — сужено: `accounts.google.com/o/oauth2/**`, `appleid.apple.com/auth/**`, `login.microsoftonline.com/**/oauth2/**`, `{proxy}/v1/auth/**`.
+- [x] **OIDC ID token claims validation** — `decodeIdTokenPayload` теперь проверяет exp/iss/aud (GoogleAdapter передаёт expected). JWKS signature — follow-up.
+- [x] **consumeState CAS race** — best-effort через consumedAt tombstone + re-read verify. Full atomic CAS = DO follow-up.
 - [ ] **CORS для /v1/auth/me** — сейчас `origin:*` + cookie auth. Малиозный сайт может прочитать сессию. Restrict origin до `tauri://localhost`, `http://tauri.localhost`, или вообще убрать cookie auth, оставить только Bearer.
 - [ ] **device-id spoof + IP rate-limit** — UUID regex недостаточно. HMAC-bind device-id с server-side secret при первом контакте + cf-connecting-ip rate-limit /16.
-- [ ] **panic hook** — `std::panic::set_hook` пишет `app_data_dir/panic.log` с timestamp + backtrace. Сейчас panic = silent process kill.
-- [ ] **single-instance plugin** — `tauri-plugin-single-instance` чтобы 2 запуска не плодили race на SQLite WAL + recording mutex.
-- [ ] **log rotation** — `tauri_plugin_log` без cap → может накопить 50MB. `max_file_size(5MB).rotation(KeepOne)`.
-- [ ] **Apple/Linux build guard** — `tauri.conf.json` уже ограничен, но добавить `#[cfg(target_os="linux")] compile_error!` в audio/mod.rs.
+- [x] **panic hook** — backtrace в `~/Library/Logs/app.wotold.desktop/panic.log` + prev_hook chain.
+- [x] **single-instance plugin** — `tauri-plugin-single-instance` v2 с feature deep-link, callback поднимает существующее окно.
+- [x] **log rotation** — `max_file_size(5MB).rotation(KeepOne)` в tauri_plugin_log.
+- [x] **Apple/Linux build guard** — compile_error! в audio/mod.rs для cfg(target_os="linux").
 - [ ] **README user-facing** — переписать или добавить INSTALL.md секцию для конечного пользователя (5 шагов: скачать → открыть → разрешить → онбординг → запись).
 - [ ] **Privacy Policy + ToS** — `docs/PRIVACY.md` минимум, ссылка из Onboarding step 1. GDPR Art. 13 обязательно для audio-recording app.
 - [ ] **Delete-all-data button** — Settings → Confidentiality → wipe `app.db` + `calls/` + keychain + restart onboarding. GDPR Art. 17.
@@ -227,12 +227,12 @@
 - [x] **Post-Stop Open CTA на HomePage** — было `✓ Звонок сохранён: id8…`; стало success-card с большой кнопкой «Открыть» → навигация в CallDetailPage. Закрывает разорванный CJM «запись → стоп → видеть результат».
 - [x] **Skeleton loaders** — DS Skeleton + CallRowSkeleton, заменяет голый `<p>Загрузка…</p>` на shimmer-rows на CallsPage. Применить также на CallDetailPage / SettingsPage / ContactsPage.
 - [x] **Tab labels human-readable**: «Рекап» → «Саммари», «Спикеры» → «Участники», «Action items» → «Задачи»
-- [ ] **Onboarding step Permissions** — добавить между шагами 1 и 2 step «Разрешения» с embed PermissionsSection. Сейчас юзер увидит macOS prompt без контекста при первой записи.
-- [ ] **Onboarding step Consent** — перенести consent-card из HomePage в onboarding step 3. Сейчас появляется after «Начать запись» — психологически зажал кнопку.
-- [ ] **HomePage hero** — заменить `<h1>Wotold</h1> + device:id` на info-cards: «Последний звонок», «Сегодня», 3 recent calls preview. Сейчас main screen = diag.
-- [ ] **Audio player на CallDetailPage** — `<audio>` + waveform + timecode-sync с транскриптом. Для call-recording app это критическое.
-- [ ] **Error mapper** — `src/api/errors.ts` central translation Tauri error strings → human-readable. Заменить `setError(String(e))` везде.
-- [ ] **CallsPage group-by-date** — sticky headers «Сегодня / Вчера / На неделе / Май 2026». На 100+ звонках сейчас стена.
+- [x] **Onboarding step Permissions** — добавлен step 2 с embed PermissionsSection до consent/имени.
+- [x] **Onboarding step Consent** — consent перенесён в step 3 онбординга (плюс остался one-time fallback в HomePage).
+- [x] **HomePage hero** — stats-row (всего / неделя / последний clickable) + recent-list 3 для one-click open. Device-id убран из UI.
+- [x] **Audio player на CallDetailPage** — `<audio preload="metadata">` + track switch mic/system, через tauri assetProtocol.
+- [x] **Error mapper** — `src/api/errors.ts` (humanError + 25 regex). Заменён setError(String(e)) во всех страницах.
+- [x] **CallsPage group-by-date** — sticky headers «Сегодня / Вчера / На неделе / месяц». groupByBucket в CallsPage.
 - [ ] **CallsPage virtualization (react-window)** — при 1000+ звонках UI повиснет.
 
 ### UX / CX (P1)
@@ -253,19 +253,19 @@
 
 - [ ] **Coachmarks на первом запуске** — explain где Звонки/Контакты/Настройки.
 - [ ] **macOS app menu** — File / Edit / View / Window через Tauri 2 Menu API.
-- [ ] **Window min-size 760x560** (currently 640x480 ломает rows).
+- [x] **Window min-size 760x560** — поднят с 640x480 в tauri.conf.json.
 - [ ] **macOS toast при сохранении settings** — subtle saved checkmark.
 - [ ] **Toolbar поддержка subtitle + sticky positioning** — расширить API.
 
 ### Visual / Design (P0)
 
-- [ ] **Top nav rework** — заменить text-only кнопки на segmented control с иконками + underline-active indicator. Сейчас выглядит как debug bar.
-- [ ] **Sidebar или icons в nav** — `App.tsx:70-93`. Десктоп-приложение без sidebar = одностраничный web.
+- [x] **Top nav rework** — segmented topnav-tab с emoji-icon + underline-active indicator. SVG-icon set (lucide-react) — P1 follow-up.
+- [ ] **Sidebar или icons в nav** — отложен; segmented topnav пока closes большинство пользы.
 - [ ] **Title bar overlay + traffic lights padding** — `titleBarStyle: "Overlay"` + `hiddenTitle: true` в tauri.conf, интеграция UI с window chrome.
-- [ ] **HomePage hero block** — last call + week metrics + recent 3 (см. UX P0).
+- [x] **HomePage hero block** — stats cards + recent 3 list.
 - [ ] **Record-button visual weight** — gradient accent→danger + outer glow ring on hover. Сейчас просто красная пилюля.
-- [ ] **Onboarding hero**: app icon 128px + screenshot preview + step dots indicator. Сейчас text-only.
-- [ ] **App identity в UI** — SVG logo в onboarding и top-nav слева.
+- [x] **Onboarding hero**: step-dots indicator реализованы (B16 batch P0). Icon + screenshot preview — follow-up.
+- [x] **App identity в UI** — Brand label «Wotold» слева в topnav. SVG-logo — follow-up.
 
 ### Visual / Design (P1)
 
@@ -281,22 +281,22 @@
 
 ### Logic / Code Quality (P0)
 
-- [ ] **Pipeline JoinHandle storage** — см. Security P0 выше.
-- [ ] **Recap fail persistence** — `pipeline/mod.rs:305-307` сейчас silent log::warn. Запоминать в `failed_reason` или отдельный флаг чтобы UI показывал «recap failed, retry».
-- [ ] **OIDC ID token signature** — см. Security P1.
-- [ ] **consumeState CAS** — см. Security P1.
-- [ ] **Quota race CAS** — см. Security P0.
-- [ ] **Soniox/Gladia poll timeout** — `lib/partners/{soniox,gladia}.ts` правильно бросать "poll timeout" вместо fall-through на 4xx.
-- [ ] **deviceId UUID validation в /v1/auth/start** — сейчас принимает любое из body.
-- [ ] **CSP-related: ReactMarkdown rehypeRaw audit** — подтвердить что raw HTML не разрешён.
-- [ ] **FK ON DELETE для call_speakers.contact_id, action_items.owner_contact_id, voice_samples.source_call** — миграция `0003_fk_on_delete.sql` с `SET NULL`.
+- [x] **Pipeline JoinHandle storage** — реализовано через AppState.pipeline_tasks + graceful await на window close.
+- [x] **Recap fail persistence** — migration 0004 + recap_failed_reason поле, pipeline catches recap error и пишет в БД, UI banner с retry.
+- [x] **OIDC ID token signature** — exp/iss/aud claims validation в decodeIdTokenPayload + GoogleAdapter wired.
+- [x] **consumeState CAS** — best-effort через consumedAt tombstone + re-read.
+- [x] **Quota race CAS** — 3-attempt retry loop в incUsage.
+- [x] **Soniox poll timeout** — явный throw 'soniox poll timeout (job ...)' вместо fall-through.
+- [x] **deviceId UUID validation в /v1/auth/start** — UUID regex, 400 bad_request если не UUID.
+- [x] **ReactMarkdown rehypeRaw audit** — rehypeRaw / dangerouslySetInnerHTML не используется, CSP closes остальное.
+- [x] **FK ON DELETE для call_speakers.contact_id, action_items.owner_contact_id, voice_samples.source_call** — migration 0003 с SET NULL.
 
 ### Logic / Code Quality (P1)
 
 - [ ] **Zod schemas в proxy boundary** — заменить hand-rolled `typeof body.X !== 'string'` validation на `z.object({...}).parse()`. Routes: stt/auth/llm/usage.
-- [ ] **Hand-rolled Promise.all → Promise.allSettled** в `CallDetailPage:43-63` — сейчас один rejection ломает все state setters.
-- [ ] **`as 400 | 502 | 503` type cast в llm.ts** — заменить explicit allow-list.
-- [ ] **`.catch(() => {})` silent ignores** в HomePage:46,50 и других — log хотя бы warn.
+- [x] **Hand-rolled Promise.all → Promise.allSettled** в `CallDetailPage` — критична только call meta, остальные artifacts soft-fail с console.warn.
+- [x] **`as 400 | 502 | 503` type cast в llm.ts** — заменён explicit whitelist.
+- [x] **`.catch(() => {})` silent ignores** в HomePage — заменены на console.warn.
 - [ ] **Wide `#[allow(dead_code, unused_imports)]`** в lib.rs:1-25 — surgical allows только на specific items.
 - [ ] **Cargo.toml `[lints]`** добавить `unsafe_code = "forbid"`, `clippy::unwrap_used = "warn"`.
 - [ ] **Split db/calls.rs** (769 строк) на calls_lifecycle.rs + calls_speakers.rs + calls_meta.rs.
