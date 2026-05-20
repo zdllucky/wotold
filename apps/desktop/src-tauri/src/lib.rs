@@ -38,6 +38,7 @@ pub fn run() {
             commands::get_owner_contact,
             commands::list_contacts,
             commands::create_contact,
+            commands::update_contact,
             commands::delete_contact,
             commands::rename_owner_contact,
             commands::get_setting,

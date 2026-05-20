@@ -129,9 +129,123 @@ button.primary:hover {
 }
 
 .contact-form input:focus,
-.contact-form textarea:focus {
+.contact-form textarea:focus,
+.contact-form select:focus {
   outline: none;
   border-color: oklch(68% 0.18 250);
+}
+
+.contact-form select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  border-radius: 0.45rem;
+  background: color-mix(in oklch, currentColor 4%, transparent);
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.row-group {
+  border: 1px solid color-mix(in oklch, currentColor 12%, transparent);
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.7rem 0.7rem;
+}
+
+.row-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  opacity: 0.65;
+  margin-bottom: 0.4rem;
+}
+
+.row-empty {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  opacity: 0.5;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr auto;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.row input,
+.row select {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.85rem;
+  border-radius: 0.4rem;
+  border: 1px solid color-mix(in oklch, currentColor 18%, transparent);
+  background: color-mix(in oklch, currentColor 4%, transparent);
+  color: inherit;
+  font-family: inherit;
+}
+
+button.row-add,
+button.row-remove {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+  border: 1px solid color-mix(in oklch, currentColor 20%, transparent);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+button.row-add:hover {
+  background: color-mix(in oklch, currentColor 8%, transparent);
+}
+
+button.row-remove {
+  color: oklch(58% 0.21 25);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 0.55rem;
+}
+
+button.row-remove:hover {
+  background: color-mix(in oklch, oklch(58% 0.21 25) 12%, transparent);
+}
+
+button.edit-trigger {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  flex: 1;
+}
+
+button.edit-trigger:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.contact .attributes {
+  margin-top: 0.4rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+}
+
+.contact .attributes li {
+  font-family: ui-monospace, SF Mono, monospace;
+  opacity: 0.7;
+  margin: 0.15rem 0;
+}
+
+.contact .attributes .kind {
+  opacity: 0.55;
+  margin-right: 0.3rem;
 }
 
 .form-actions {

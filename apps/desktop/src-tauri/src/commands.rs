@@ -44,6 +44,15 @@ pub async fn delete_contact(state: State<'_, AppState>, id: String) -> Result<()
 }
 
 #[tauri::command]
+pub async fn update_contact(
+    state: State<'_, AppState>,
+    id: String,
+    input: ContactInput,
+) -> Result<Contact, AppError> {
+    crate::db::update_contact(&state.db, &id, input).await
+}
+
+#[tauri::command]
 pub async fn rename_owner_contact(
     state: State<'_, AppState>,
     new_name: String,
