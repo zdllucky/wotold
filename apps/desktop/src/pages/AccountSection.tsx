@@ -103,6 +103,15 @@ export function AccountSection() {
       // копирует в paste-форму ниже.
       const redirectMode: 'json' | 'deeplink' = import.meta.env.DEV ? 'json' : 'deeplink';
       const { authorizeUrl } = await startSignIn(provider, undefined, redirectMode);
+      // [security-review HIGH]: scheme guard — authorizeUrl приходит от
+      // прокси, openExternal зовёт macOS LaunchServices. Без проверки
+      // компрометированный прокси мог бы вернуть javascript:/file:/custom
+      // scheme и выполнить произвольный URL handler.
+      if (!/^https:\/\//i.test(authorizeUrl)) {
+        throw new Error(
+          `Прокси вернул небезопасный authorize URL (не https://): ${authorizeUrl.slice(0, 64)}…`,
+        );
+      }
       await openExternal(authorizeUrl);
       setState({ kind: 'pending_paste', provider, authorizeUrl });
     } catch (e) {
