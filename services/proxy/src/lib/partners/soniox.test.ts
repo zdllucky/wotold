@@ -94,9 +94,23 @@ describe('transcribeSoniox', () => {
     expect(calls[0]!.init?.method).toBe('POST');
     expect(calls[1]!.url).toBe('https://api.soniox.com/v1/transcriptions/job-123');
     expect(calls[2]!.url).toBe('https://api.soniox.com/v1/transcriptions/job-123/transcript');
-    expect(result.provider).toBe('soniox');
-    expect(result.segments).toHaveLength(1);
-    expect(result.langDetected).toBe('en');
+    expect(result.transcript.provider).toBe('soniox');
+    expect(result.transcript.segments).toHaveLength(1);
+    expect(result.transcript.langDetected).toBe('en');
+    expect(result.jobId).toBe('job-123');
+    expect(result.jobCreated).toBe(true);
+  });
+
+  test('resume with existingJobId skips create step', async () => {
+    const { fetchMock, calls } = mockFetchSequence([
+      { status: 200, json: { status: 'completed' } }, // GET status
+      { status: 200, json: { duration_ms: 1000, tokens: [] } },
+    ]);
+    const result = await transcribeSoniox({ ...opts, existingJobId: 'resumed-99' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(calls[0]!.url).toBe('https://api.soniox.com/v1/transcriptions/resumed-99');
+    expect(result.jobId).toBe('resumed-99');
+    expect(result.jobCreated).toBe(false);
   });
 
   test('passes language_hints when lang is explicit', async () => {

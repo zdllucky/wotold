@@ -122,7 +122,7 @@
 
 - ~~**[B1] Permissions UX в Onboarding + Settings.**~~ Закрыто в #16 — [`f5cb476`](#) + [`4ddaff7`](#) fix.
 - ~~**[B2] Graceful stop при закрытии окна.**~~ Закрыто — `lib.rs` setup hook слушает `WindowEvent::CloseRequested`, при активной recording prevent_close + async stop sidecar + `db::fail_recording_with_reason` при сбое + `app.exit(0)`.
-- **[B3] STT job-resume при retry.** Когда воркер таймаутит на 25-секундном polling-бюджете (длинная запись), клиент теряет partner job_id и при повторе создаёт новый job → двойная оплата у Soniox/Gladia. Решение: кэшировать `r2Key → partner_provider:job_id` в Workers KV с TTL ≈30 мин; на retry — резюмировать polling по существующему id. Связано с #18.
+- ~~**[B3] STT job-resume при retry.**~~ Закрыто — `transcribeSoniox`/`transcribeGladia` принимают `existingJobId` (+`existingResultUrl` для Gladia) и возвращают `{transcript, jobId, jobCreated}`. STT route кэширует `stt_job:{provider}:{r2Key}` в QUOTA KV TTL 30 мин; на retry resume вместо create — двойной оплаты у партнёра нет.
 - ~~**[B4] Proxy URL input в Settings.**~~ Закрыто — `SettingsPage` → секция «Прокси (managed)» с URL input + http/https validation.
 - **[B9] Deep-link `wotold://` для OIDC callback (#38 follow-up).** Сейчас юзер копирует sessionId руками из JSON-ответа прокси. Через `tauri-plugin-deep-link` + proxy callback redirect → авто-перехват session, без копи-пасты. Связано с #38.
 - ~~**[B5] Realtime событие «транскрипция готова».**~~ Закрыто — `pipeline::run` принимает `Option<&AppHandle>` и emit'ит `pipeline:finished {call_id, status, failed_reason?}` в финале. CallsPage слушает через `@tauri-apps/api/event` → auto-refresh без manual reload.

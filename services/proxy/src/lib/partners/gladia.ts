@@ -16,6 +16,19 @@ export interface GladiaOpts {
   pollDeadlineMs: number;
   baseUrl?: string;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * [B3]: resume из KV-кэша. Gladia create отдаёт {id, result_url} —
+   * для resume нужен result_url (id справочный).
+   */
+  existingJobId?: string;
+  existingResultUrl?: string;
+}
+
+export interface TranscribeGladiaResult {
+  transcript: DiarizedTranscript;
+  jobId: string;
+  resultUrl: string;
+  jobCreated: boolean;
 }
 
 interface GladiaUtterance {
@@ -41,7 +54,7 @@ interface GladiaResponse {
   error_code?: string;
 }
 
-export async function transcribeGladia(opts: GladiaOpts): Promise<DiarizedTranscript> {
+export async function transcribeGladia(opts: GladiaOpts): Promise<TranscribeGladiaResult> {
   const base = opts.baseUrl ?? GLADIA_BASE_URL;
   const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const headers = {
@@ -49,29 +62,38 @@ export async function transcribeGladia(opts: GladiaOpts): Promise<DiarizedTransc
     'content-type': 'application/json',
   } as const;
 
-  const createBody: Record<string, unknown> = {
-    audio_url: opts.audioUrl,
-    diarization: true,
-  };
-  if (opts.lang !== 'auto') {
-    createBody.language_config = {
-      languages: [opts.lang],
-      code_switching: true,
+  let id: string;
+  let result_url: string;
+  let jobCreated = false;
+  if (opts.existingJobId && opts.existingResultUrl) {
+    id = opts.existingJobId;
+    result_url = opts.existingResultUrl;
+  } else {
+    const createBody: Record<string, unknown> = {
+      audio_url: opts.audioUrl,
+      diarization: true,
     };
-  }
+    if (opts.lang !== 'auto') {
+      createBody.language_config = {
+        languages: [opts.lang],
+        code_switching: true,
+      };
+    }
 
-  const createResp = await fetch(`${base}/pre-recorded`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(createBody),
-  });
-  if (!createResp.ok) {
-    throw new Error(`gladia create ${createResp.status}: ${await safeText(createResp)}`);
+    const createResp = await fetch(`${base}/pre-recorded`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(createBody),
+    });
+    if (!createResp.ok) {
+      throw new Error(`gladia create ${createResp.status}: ${await safeText(createResp)}`);
+    }
+    ({ id, result_url } = (await createResp.json()) as {
+      id: string;
+      result_url: string;
+    });
+    jobCreated = true;
   }
-  const { id, result_url } = (await createResp.json()) as {
-    id: string;
-    result_url: string;
-  };
 
   while (Date.now() < opts.pollDeadlineMs) {
     await sleep(POLL_INTERVAL_MS);
@@ -82,7 +104,14 @@ export async function transcribeGladia(opts: GladiaOpts): Promise<DiarizedTransc
       throw new Error(`gladia poll ${resp.status}: ${await safeText(resp)}`);
     }
     const data = (await resp.json()) as GladiaResponse;
-    if (data.status === 'done') return normalizeGladia(data);
+    if (data.status === 'done') {
+      return {
+        transcript: normalizeGladia(data),
+        jobId: id,
+        resultUrl: result_url,
+        jobCreated,
+      };
+    }
     if (data.status === 'error') {
       throw new Error(`gladia error_code: ${data.error_code ?? 'unknown'}`);
     }

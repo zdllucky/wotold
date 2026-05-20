@@ -97,9 +97,33 @@ describe('transcribeGladia', () => {
     const result = await transcribeGladia(opts);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(calls[0]!.url).toBe('https://api.gladia.io/v2/pre-recorded');
-    expect(result.provider).toBe('gladia');
-    expect(result.durationSec).toBe(3);
-    expect(result.segments).toHaveLength(1);
+    expect(result.transcript.provider).toBe('gladia');
+    expect(result.transcript.durationSec).toBe(3);
+    expect(result.transcript.segments).toHaveLength(1);
+    expect(result.jobId).toBe('g-1');
+    expect(result.resultUrl).toBe('https://api.gladia.io/v2/result/g-1');
+    expect(result.jobCreated).toBe(true);
+  });
+
+  test('resume with existingJobId+resultUrl skips create step', async () => {
+    const { fetchMock, calls } = mockFetchSequence([
+      {
+        status: 200,
+        json: {
+          status: 'done',
+          result: { transcription: { utterances: [] } },
+        },
+      },
+    ]);
+    const result = await transcribeGladia({
+      ...opts,
+      existingJobId: 'g-2',
+      existingResultUrl: 'https://x.example/r/g-2',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(calls[0]!.url).toBe('https://x.example/r/g-2');
+    expect(result.jobId).toBe('g-2');
+    expect(result.jobCreated).toBe(false);
   });
 
   test('throws on create non-2xx', async () => {
