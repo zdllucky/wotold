@@ -8,6 +8,7 @@ import {
   type Call,
   type RecordingState,
 } from '../api/recording';
+import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import { Button, Card, StatusDot } from '../ui';
 
 interface AvailableUpdate {
@@ -27,6 +28,9 @@ export function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [lastCall, setLastCall] = useState<Call | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  // #39 (C1): recording consent. Сохраняется один раз — при первом «Начать запись».
+  const [consentAt, setConsentAt] = useState<string | null>(null);
+  const [showConsent, setShowConsent] = useState(false);
 
   useEffect(() => {
     invoke<string>('get_device_id')
@@ -42,6 +46,10 @@ export function HomePage() {
     getRecordingState()
       .then(setRecording)
       .catch(() => {});
+
+    getSetting(SETTINGS_KEYS.RECORDING_CONSENT_AT)
+      .then(setConsentAt)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -56,7 +64,7 @@ export function HomePage() {
     return () => window.clearInterval(id);
   }, [recording]);
 
-  const onStart = async () => {
+  const startRecordingFlow = async () => {
     setBusy(true);
     setError(null);
     setLastCall(null);
@@ -67,6 +75,26 @@ export function HomePage() {
       setError(String(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const onStart = async () => {
+    if (!consentAt) {
+      setShowConsent(true);
+      return;
+    }
+    await startRecordingFlow();
+  };
+
+  const onAcceptConsent = async () => {
+    const ts = new Date().toISOString();
+    try {
+      await setSetting(SETTINGS_KEYS.RECORDING_CONSENT_AT, ts);
+      setConsentAt(ts);
+      setShowConsent(false);
+      await startRecordingFlow();
+    } catch (e) {
+      setError(String(e));
     }
   };
 
@@ -139,6 +167,29 @@ export function HomePage() {
           </p>
         )}
       </div>
+
+      {showConsent && (
+        <Card variant="raised" className="consent-card">
+          <h3 className="consent-title">Согласие на запись</h3>
+          <p>
+            Wotold будет записывать звук с микрофона и системный аудиовыход. Перед началом
+            убедись, что собеседник предупреждён и согласен на запись. По закону РФ/РК запись
+            переговоров без уведомления другой стороны может быть нарушением (статьи о
+            неприкосновенности частной жизни / тайне коммуникаций).
+          </p>
+          <p className="text-muted">
+            Это окно появляется один раз. В дальнейшем будем доверять твоему решению.
+          </p>
+          <div className="form-actions">
+            <Button variant="ghost" onClick={() => setShowConsent(false)} disabled={busy}>
+              Отмена
+            </Button>
+            <Button variant="primary" onClick={onAcceptConsent} disabled={busy} busy={busy}>
+              Согласен, начать
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {update && (
         <Card className="update-prompt" variant="raised">
