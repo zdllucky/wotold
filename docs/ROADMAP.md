@@ -75,7 +75,7 @@
 - [x] **#30** M7.2 Calls list baseline — без FTS (см. «Готово»); FTS-поиск ждёт #22
 - [x] **#31** M7.3 Call detail tabs — Recap/Transcript/Tasks (см. «Готово»). Speaker bindings — в #26.
 - [x] **#32** M7.4 Contacts baseline — list + create + delete (см. «Готово»)
-- [ ] **#46** M7.4 follow-up: edit + multiple identifiers + extensible attributes
+- [x] **#46** M7.4 follow-up: edit + multiple identifiers + extensible attributes — `ContactsPage` имеет click-to-edit на имени контакта → ContactForm с initial state, addIdentifier/removeIdentifier с выбором kind из IDENTIFIER_KINDS, addAttribute/removeAttribute для свободных ключ/значение, C2 consent_voice toggle отдельно от attributes. Backend `update_contact` replace-all identifiers внутри транзакции. Owner редактируется (display_name), но `is_owner` не меняется.
 - [ ] **#45** M7.4 follow-up: voice samples view + manual delete → #26
 - [x] **#33** M7.5 Settings baseline — provider/path/LLM model (см. «Готово»)
 - [x] **#47** M7.5 follow-up: BYO keys в keychain — `keyring` crate, `secrets::ByoProvider` enum, Tauri commands (set/delete/list_byo_status — без раскрытия значений), pipeline `mode_for` читает ключ per-provider, Settings BYO UI с password input + status badge
