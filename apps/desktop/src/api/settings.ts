@@ -23,9 +23,11 @@ export const SETTINGS_DEFAULTS = {
   /** Пусто → прокси использует свой default (LLM_BACKEND-зависимый).
    *  Override на конкретную модель через Settings → LLM section. */
   LLM_MODEL: '',
-  /** Production proxy URL — managed-режим работает out-of-the-box без настроек.
-   *  User может переопределить через advanced секцию в Settings. */
-  PROXY_BASE_URL: 'https://wotold-proxy.animereader.workers.dev',
+  /** Default proxy URL — dev-сборка целится на staging, prod на production.
+   *  User override через Settings → Прокси → Advanced. */
+  PROXY_BASE_URL: import.meta.env.DEV
+    ? 'https://wotold-proxy-staging.animereader.workers.dev'
+    : 'https://wotold-proxy.animereader.workers.dev',
 } as const;
 
 export type SttProvider = 'auto' | 'soniox' | 'gladia';
