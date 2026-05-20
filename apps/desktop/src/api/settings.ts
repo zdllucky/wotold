@@ -17,6 +17,8 @@ export const SETTINGS_KEYS = {
   RECORDING_CONSENT_AT: 'recording_consent_at',
   /** [B13] BCP47 язык override для LLM-output. 'auto' = язык STT detection. */
   PREFERRED_LANGUAGE: 'preferred_language',
+  /** [B16] Coachmarks показаны хотя бы раз — '1' = не показывать снова. */
+  COACHMARKS_SEEN: 'coachmarks_seen',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
