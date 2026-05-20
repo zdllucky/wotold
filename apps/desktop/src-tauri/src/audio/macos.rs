@@ -29,7 +29,12 @@ pub struct RecordingSession {
 #[derive(Debug, Clone, Copy)]
 pub struct StopResult {
     pub duration_sec: f64,
+    // [B16] Сохраняем размеры файлов для будущей quota-аналитики
+    // и диагностики неполной записи. Сейчас not read — но это legitimate
+    // metadata, не реактивный mutable state.
+    #[allow(dead_code)]
     pub mic_bytes: u64,
+    #[allow(dead_code)]
     pub system_bytes: u64,
 }
 

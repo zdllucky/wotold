@@ -1,8 +1,11 @@
 // Скаффолд модулей: типы/трейты определены, конкретные имплементации подключатся
 // в Этапах 2 (audio), 3 (transcription) и 5 (llm).
-#[allow(dead_code, unused_imports)]
+//
+// [B16 audit P2] module-level `#[allow(dead_code)]` оставлен ТОЛЬКО на модулях
+// #25 voice-matching pipeline (embeddings/identify/llm_hint/matching/merge_signals).
+// Эти модули будут wire-up после ONNX runtime интеграции (см. ROADMAP M3.x).
+// `audio` и `providers` теперь без wide-allow — там реально вызываемый код.
 mod audio;
-#[allow(dead_code)]
 mod audio_io;
 mod commands;
 mod db;
@@ -19,9 +22,6 @@ mod matching;
 #[allow(dead_code)]
 mod merge_signals;
 mod pipeline;
-// AnthropicProvider::new пока не вызывается из production (ждёт #28),
-// Soniox/Gladia подключатся через pipeline. Скоуп allow ещё нужен.
-#[allow(dead_code, unused_imports)]
 mod providers;
 mod secrets;
 mod state;

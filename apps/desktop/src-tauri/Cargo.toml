@@ -55,3 +55,14 @@ default = []
 audio-macos = []
 # Windows-захват = unimplemented (R4). Фича-флаг для будущего.
 audio-windows = []
+
+# [B16 audit P1]: жёстче политика на unsafe code и common pitfalls.
+# unsafe_code forbid — у нас pure-Rust core, нет нужды в unsafe.
+# unwrap_used / expect_used — warn (не deny чтобы не блочить tests).
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"

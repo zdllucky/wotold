@@ -55,6 +55,8 @@ pub enum TranscriptionError {
     QuotaExceeded,
     #[error("provider: {0}")]
     Provider(String),
+    // [B16] Зарезервировано для R4 Windows-impl и stub-провайдеров.
+    #[allow(dead_code)]
     #[error("not implemented")]
     NotImplemented,
 }
@@ -64,5 +66,5 @@ mod retry;
 mod soniox;
 
 pub use gladia::GladiaProvider;
-pub use retry::{failure_reason, transcribe_with_fallback, with_backoff, RetryConfig};
+pub use retry::{failure_reason, transcribe_with_fallback, RetryConfig};
 pub use soniox::SonioxProvider;

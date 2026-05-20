@@ -84,6 +84,19 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
+        // [B16] После migration 0003 voice_samples.source_call → FK на calls.id.
+        // Тест должен сидить calls-row если source_call задан.
+        if let Some(call_id) = source_call {
+            sqlx::query(
+                "INSERT INTO calls (id, started_at, status, provider, path_label, created_at, updated_at)
+                 VALUES (?1, ?2, 'ready', 'soniox', 'managed', ?2, ?2)",
+            )
+            .bind(call_id)
+            .bind(now)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
         let blob = vec![0u8; 32];
         sqlx::query(
             "INSERT INTO voice_samples (id, contact_id, embedding, source_call, quality, created_at)
@@ -111,6 +124,14 @@ mod tests {
     async fn list_returns_samples_ordered_desc_with_embedding_bytes() {
         let db = fresh_db().await;
         seed_contact_and_sample(&db.pool, "c1", "vs1", Some("call-1"), 0.9).await;
+        // Сидим call-2 (FK после 0003).
+        sqlx::query(
+            "INSERT INTO calls (id, started_at, status, provider, path_label, created_at, updated_at)
+             VALUES ('call-2', '2026-05-20T00:00:00Z', 'ready', 'soniox', 'managed', '2026-05-20T00:00:00Z', '2026-05-20T00:00:00Z')",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
         // Второй семпл — создадим через прямой INSERT с поздней датой.
         sqlx::query(
             "INSERT INTO voice_samples (id, contact_id, embedding, source_call, quality, created_at)

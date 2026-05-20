@@ -25,6 +25,8 @@ pub enum LlmError {
     QuotaExceeded,
     #[error("provider: {0}")]
     Provider(String),
+    // [B16] Зарезервировано для будущих stub-провайдеров.
+    #[allow(dead_code)]
     #[error("not implemented")]
     NotImplemented,
 }
