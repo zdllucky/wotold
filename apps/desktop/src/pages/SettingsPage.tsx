@@ -9,6 +9,7 @@ import {
   type SttProvider,
 } from '../api/settings';
 import { Card, InputField, SelectField, Toolbar } from '../ui';
+import { AccountSection } from './AccountSection';
 import { ByoKeysSection } from './ByoKeysSection';
 import { PermissionsSection } from './PermissionsSection';
 
@@ -149,6 +150,11 @@ export function SettingsPage() {
         <Card compact>
           <ByoKeysSection />
         </Card>
+      </div>
+
+      <div className="settings-section">
+        <h3 className="settings-section-title">Аккаунт (SSO)</h3>
+        <AccountSection />
       </div>
 
       <p className="hint">Все изменения сохраняются автоматически.</p>

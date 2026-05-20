@@ -36,6 +36,7 @@
 - [x] **#24** Voice embedding foundation (M3.1) — Embedder trait + cosine + BLOB serde, lib decision = ort + ONNX WeSpeaker
 - [x] **#37** OIDC backend в прокси (M10.1 SCAFFOLD) — Google real + Apple/MS stubs, KV AUTH namespace, state CSRF, session с TTL
 - [x] **[B8]** Backend deployment pipeline — wrangler envs (staging + production), GH Actions split (preflight → staging on main / production on tag), `scripts/cf-bootstrap.sh`, `docs/DEPLOYMENT.md`, `.dev.vars.example` обновлён под OIDC. Бесплатность сохранена (R7). Manual setup → #44.
+- [x] **#38** Frontend SSO + session в Keychain — Auth API client, AccountSection UI, manual paste flow (deep-link `wotold://` follow-up)
 - [x] **#31** Call detail tabs (Рекап/Расшифровка/Задачи, без speaker bindings) — [`195ad91`](#)
 - [x] **[B6]** Design system + dev-only DS showcase — tokens.css, ui/*, refactor пагов на DS
 - [x] **[B7]** Test infra — vitest (desktop+proxy), cargo-llvm-cov, CI tests+coverage, 21 Rust + 31 TS test, TDD hook + ECC enforcement в CLAUDE.md
@@ -89,7 +90,7 @@
 ## Auth · Этап 9 / M10 (SCAFFOLD — ничего не разблокирует в MVP)
 
 - [x] **#37** M10.1 OIDC backend в прокси — start/callback/me/signout, KV AUTH (state TTL 5min, session TTL 30d, accounts permanent), GoogleAdapter (реальный) + Apple/Microsoft stubs (X4 manual setup deferred), 44 теста (storage+session+providers+routes integration)
-- [ ] **#38** M10.2 + M10.4 Frontend SSO flow + device-id linking + sign-out → #37
+- [x] **#38** M10.2 + M10.4 Frontend SSO flow — auth API client, session token в Keychain (расширение secrets module), AccountSection UI с Sign in/Sign out, manual paste flow для callback. **Auto-перехват через deep-link `wotold://` — отдельный follow-up.**
 
 ## Constraints · Этап 10 / раздел 9
 
@@ -113,7 +114,7 @@
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#25` · `#38` · `#42` · `#44`
+`#25` · `#42` · `#44`
 
 ## Backlog (кандидаты на доработку)
 
@@ -123,6 +124,7 @@
 - **[B2] Graceful stop при закрытии окна.** Если юзер закрывает окно с активной записью, сидекар получает SIGHUP — последние ≤5 сек могут не успеть на flushHeader, а calls row остаётся «recording» навсегда. Нужен Tauri on_window_close → invoke stop_recording → finish или fail. Связано с #17.
 - **[B3] STT job-resume при retry.** Когда воркер таймаутит на 25-секундном polling-бюджете (длинная запись), клиент теряет partner job_id и при повторе создаёт новый job → двойная оплата у Soniox/Gladia. Решение: кэшировать `r2Key → partner_provider:job_id` в Workers KV с TTL ≈30 мин; на retry — резюмировать polling по существующему id. Связано с #18.
 - **[B4] Proxy URL input в Settings.** Pipeline managed-режима требует непустой `proxy_base_url`, но в UI его ввести нельзя — только через прямую правку settings table. Добавить field в SettingsPage после X3 (когда задеплоенный URL прокси будет известен).
+- **[B9] Deep-link `wotold://` для OIDC callback (#38 follow-up).** Сейчас юзер копирует sessionId руками из JSON-ответа прокси. Через `tauri-plugin-deep-link` + proxy callback redirect → авто-перехват session, без копи-пасты. Связано с #38.
 - **[B5] Realtime событие «транскрипция готова».** Сейчас клиент узнаёт о статусе ready/failed только через ручной refresh Calls list. Поднять Tauri event `pipeline:finished {call_id, status}` из `pipeline::run` финала, во фронте слушать через `listen()` и обновлять список без перезагрузки.
 - ~~**[B6] Design system + dev-only Components showcase.**~~ Закрыто — `apps/desktop/src/styles/tokens.css` + `ui/*` (Button/Badge/Pill/StatusDot/Field/Tabs/Card/Empty/Toolbar) + рефакторинг всех экранов + `pages/DesignSystemPage.tsx` (гейт `import.meta.env.DEV`, таб «🛠 DS» в навбаре только в dev).
 

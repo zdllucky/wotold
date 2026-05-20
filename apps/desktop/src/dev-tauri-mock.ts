@@ -95,7 +95,11 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
     stt_provider: 'auto',
     provider_path: 'managed',
     llm_model: 'claude-sonnet-4-6',
+    proxy_base_url: 'http://dev-proxy.local',
   };
+
+  // #38: in-memory session store для AccountSection preview.
+  let accountSessionToken: string | null = null;
 
   window.__TAURI_INTERNALS__ = {
     invoke: async (cmd: string, args?: unknown) => {
@@ -127,6 +131,22 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
           { id: 't1', text: 'Прислать SOW до пятницы', owner_contact_id: sampleContact.id, due: '2026-05-23', done: false },
           { id: 't2', text: 'Подписать NDA', owner_contact_id: null, due: null, done: true },
         ];
+      }
+      // #38 account session
+      if (cmd === 'get_account_session_status') {
+        return { present: accountSessionToken !== null };
+      }
+      if (cmd === 'set_account_session') {
+        const v = (a.token as string)?.trim() ?? '';
+        accountSessionToken = v || null;
+        return null;
+      }
+      if (cmd === 'clear_account_session') {
+        accountSessionToken = null;
+        return null;
+      }
+      if (cmd === 'read_account_session_token') {
+        return accountSessionToken;
       }
       if (cmd === 'list_byo_status') {
         return ['soniox', 'gladia', 'anthropic'].map((p) => ({
