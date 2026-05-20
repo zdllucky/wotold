@@ -1,8 +1,8 @@
 name: Deploy Proxy
 
-# Раздел 16.3 паспорта: push в main с изменениями прокси → деплой в CF.
-# S1 паспорта: эта джоба видит ТОЛЬКО партнёрские/CF секреты,
-# не Tauri-ключ подписи.
+# [B8.2]: split на staging (auto on main) и production (on tag v*.*.*).
+# S1 паспорта: эта джоба видит ТОЛЬКО партнёрские/CF секреты, не Tauri-ключ подписи.
+# GitHub Environments → отдельные secrets для staging и production.
 
 on:
   push:
@@ -12,42 +12,102 @@ on:
       - 'packages/contracts/**'
       - 'pnpm-lock.yaml'
       - '.github/workflows/deploy-proxy.yml'
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-proxy
+  group: deploy-proxy-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  preflight:
+    name: Preflight (typecheck + tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-
       - name: Typecheck @wotold/proxy
         run: pnpm --filter @wotold/proxy typecheck
+      - name: Vitest unit @wotold/proxy
+        run: pnpm --filter @wotold/proxy test:coverage
+      - name: Vitest integration (миниframe) @wotold/proxy
+        run: pnpm --filter @wotold/proxy test:integration
 
-      - name: Deploy via wrangler
+  deploy-staging:
+    name: Deploy staging
+    needs: preflight
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    # GitHub Environment "staging" — protection rules + scoped secrets настраиваются в Settings.
+    environment:
+      name: staging
+      url: https://wotold-proxy-staging.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Deploy via wrangler (staging)
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: services/proxy
-          command: deploy
-          # Партнёрские ключи и R2 S3 креды ставятся отдельно через
-          # `wrangler secret put` (one-time), не из CI. См. README прокси.
-          # S1 — здесь не упоминаются, чтобы не утекли в логи.
+          command: deploy --env staging
+          # Партнёрские/OAuth ключи и R2 S3 креды ставятся отдельно через
+          # `wrangler secret put --env staging` (one-time). См. docs/DEPLOYMENT.md.
+
+  deploy-production:
+    name: Deploy production
+    needs: preflight
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    # GitHub Environment "production" — required reviewers / wait timer / protection rules.
+    environment:
+      name: production
+      url: https://wotold-proxy.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Deploy via wrangler (production)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: services/proxy
+          command: deploy --env production

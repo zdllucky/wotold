@@ -1,9 +1,31 @@
-# Скопировать в .dev.vars (не коммитится, см. .gitignore).
-# Используется только wrangler dev; production-секреты — через `wrangler secret put`.
+# Local dev secrets для wrangler dev (миниframe).
+# Скопировать в `.dev.vars` (gitignored) и заполнить.
+#
+# В production эти значения ставятся через `wrangler secret put --env staging|production`
+# (см. docs/DEPLOYMENT.md), НЕ через .dev.vars.
 
+# ----- Partner API keys (managed-режим прокси) -----
 ANTHROPIC_API_KEY=
 SONIOX_API_KEY=
 GLADIA_API_KEY=
+
+# ----- R2 S3-compat (для presigned URLs) -----
 R2_ACCOUNT_ID=
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
+
+# ----- OIDC providers (#37 / M10) -----
+# Client IDs — публичные (в production wrangler.toml [vars]), здесь дублируем для удобства.
+GOOGLE_OAUTH_CLIENT_ID=
+APPLE_OAUTH_CLIENT_ID=
+MICROSOFT_OAUTH_CLIENT_ID=
+
+# Client secrets — настоящие секреты.
+GOOGLE_OAUTH_CLIENT_SECRET=
+# APPLE_OAUTH_CLIENT_SECRET — JWT ES256, требует Apple key infrastructure (X4 deferred).
+# APPLE_OAUTH_CLIENT_SECRET=
+# MICROSOFT_OAUTH_CLIENT_SECRET — Azure AD app secret (X4 deferred).
+# MICROSOFT_OAUTH_CLIENT_SECRET=
+
+# Public origin прокси для OIDC redirect_uri. Локально:
+PUBLIC_BASE_URL=http://localhost:8787
