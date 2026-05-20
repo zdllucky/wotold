@@ -305,17 +305,17 @@
 - [x] **Soniox text concat без пробелов** — needsSpaceBefore() вставляет пробел между letter-bordered tokens (anti-склейка ru/kk).
 - [x] **LIKE wildcards escape в MCP db.ts** — escapeLikePattern() + `ESCAPE '\\'` в SQL.
 - [x] **PRAGMA busy_timeout** — `busy_timeout(5s)` в db/mod.rs `init()` connect options.
-- [ ] **EMBEDDING_DIM в schema** — добавить `voice_samples.embedding_dim INTEGER` column, reject mismatched.
-- [ ] **partner stderr no leak в proxy logs** — Cloudflare observability ловит `console.error`. Соскрести device-id/r2Key из 200-char message.
-- [ ] **LLM upstream error generic для клиента** — сейчас `groq 400: detail...` уходит юзеру. Логировать в console.error full, возвращать `'upstream error'` обобщённо.
+- [x] **EMBEDDING_DIM в schema** — migration 0005 + backfill из length(embedding)/4. Insert-time validation в Rust — follow-up.
+- [x] **partner stderr no leak в proxy logs** — scrubProviderError() в routes/stt.ts: UUID/r2-key/Bearer/sk-/gl_ tokens замаскированы.
+- [x] **LLM upstream error generic для клиента** — anthropic/groq возвращают 'LLM upstream error (status)' без upstream body.
 - [ ] **call_fts virtual table** — создана в 0001_initial.sql, никогда не populated. Либо implement #30, либо drop.
 
 ### Logic / Code Quality (P2)
 
 - [ ] **CallsPage listen pipeline:finished** — только когда CallsPage mounted, не глобально.
-- [ ] **Wrap JSON.parse(rawSttJson) в zod** в InteractiveTranscript.
+- [x] **Wrap JSON.parse(rawSttJson) в runtime validator** — parseRawStt() в InteractiveTranscript filter'ит невалидные segments (без zod dep).
 - [ ] **`let _ = &call` comment** в pipeline/mod.rs — discarding result чище.
-- [ ] **NaN guard в merge_tracks sort** — фильтровать NaN start times.
+- [x] **NaN guard в merge_tracks sort** — segments с NaN start dropped + log::warn.
 - [ ] **chunk.try_into() → manual array** в embeddings.rs.
 
 ### Tests (P1)

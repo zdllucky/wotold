@@ -15,13 +15,25 @@ pub fn merge_tracks(
     let mut combined: Vec<TranscriptSegment> =
         Vec::with_capacity(mic.segments.len() + system.segments.len());
 
+    // [B16 audit P2] Filter NaN start times — STT-провайдер может вернуть
+    // NaN для broken-segment edge cases (например ZeroDivision на end-of-stream).
+    // partial_cmp возвращает None и default Equal → нестабильная сортировка.
+    // Лучше дропнуть такие segments чем рисковать undefined order.
     for seg in &mic.segments {
+        if seg.start.is_nan() {
+            log::warn!("merge_tracks: drop mic segment with NaN start");
+            continue;
+        }
         combined.push(TranscriptSegment {
             speaker_tag: OWNER_TAG.to_string(),
             ..seg.clone()
         });
     }
     for seg in &system.segments {
+        if seg.start.is_nan() {
+            log::warn!("merge_tracks: drop system segment with NaN start");
+            continue;
+        }
         combined.push(seg.clone());
     }
 
