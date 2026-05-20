@@ -409,3 +409,31 @@ pub async fn reprocess_call(
     )
     .await
 }
+
+/// [B16 UX P0] Возвращает абсолютный путь к WAV-файлу звонка для аудиоплеера.
+/// Frontend использует convertFileSrc(path) → asset:// URL → `<audio src>`.
+/// kind: 'mic' | 'system' | 'mixed'. Если файл не существует — Err.
+#[tauri::command]
+pub async fn get_call_audio_path(
+    state: State<'_, AppState>,
+    call_id: String,
+    kind: String,
+) -> Result<String, AppError> {
+    let filename = match kind.as_str() {
+        "mic" => "mic.wav",
+        "system" => "system.wav",
+        // mixed — для будущего, если будем сводить дорожки в одну.
+        other => return Err(AppError::Other(format!("unknown audio kind: {other}"))),
+    };
+    let path = state
+        .app_data_dir
+        .join("calls")
+        .join(&call_id)
+        .join(filename);
+    if !path.exists() {
+        return Err(AppError::Other(format!(
+            "audio file {filename} не найден для звонка {call_id}"
+        )));
+    }
+    Ok(path.to_string_lossy().to_string())
+}

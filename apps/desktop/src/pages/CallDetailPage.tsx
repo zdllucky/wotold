@@ -16,6 +16,7 @@ import { listContacts, type Contact } from '../api/contacts';
 import { listCallSpeakers, type CallSpeakerView } from '../api/speakers';
 import type { Call } from '../api/recording';
 import { Button, Card, Empty, Pill, Tabs } from '../ui';
+import { CallAudioPlayer } from '../components/CallAudioPlayer';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakersSection } from './SpeakersSection';
 
@@ -181,6 +182,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           {call.lang_detected && <span>· {call.lang_detected}</span>}
         </div>
       </header>
+
+      {call.status !== 'failed' && <CallAudioPlayer callId={callId} />}
 
       {call.status === 'failed' && call.failed_reason && (
         <Card className="call-failed-banner" variant="default">
