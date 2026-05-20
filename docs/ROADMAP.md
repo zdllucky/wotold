@@ -34,6 +34,7 @@
 - [x] **#43** `tauri.conf.json` updater endpoint → `zdllucky/wotold`
 - [x] **#47** BYO API keys в Keychain (keyring crate, secrets module, Tauri commands, pipeline wire, Settings UI)
 - [x] **#24** Voice embedding foundation (M3.1) — Embedder trait + cosine + BLOB serde, lib decision = ort + ONNX WeSpeaker
+- [x] **#37** OIDC backend в прокси (M10.1 SCAFFOLD) — Google real + Apple/MS stubs, KV AUTH namespace, state CSRF, session с TTL
 - [x] **#31** Call detail tabs (Рекап/Расшифровка/Задачи, без speaker bindings) — [`195ad91`](#)
 - [x] **[B6]** Design system + dev-only DS showcase — tokens.css, ui/*, refactor пагов на DS
 - [x] **[B7]** Test infra — vitest (desktop+proxy), cargo-llvm-cov, CI tests+coverage, 21 Rust + 31 TS test, TDD hook + ECC enforcement в CLAUDE.md
@@ -86,7 +87,7 @@
 
 ## Auth · Этап 9 / M10 (SCAFFOLD — ничего не разблокирует в MVP)
 
-- [ ] **#37** M10.1 OIDC backend в прокси (Apple/Google/Microsoft)
+- [x] **#37** M10.1 OIDC backend в прокси — start/callback/me/signout, KV AUTH (state TTL 5min, session TTL 30d, accounts permanent), GoogleAdapter (реальный) + Apple/Microsoft stubs (X4 manual setup deferred), 44 теста (storage+session+providers+routes integration)
 - [ ] **#38** M10.2 + M10.4 Frontend SSO flow + device-id linking + sign-out → #37
 
 ## Constraints · Этап 10 / раздел 9
@@ -107,7 +108,7 @@
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#25` · `#37` · `#42` · `#44`
+`#25` · `#38` · `#42` · `#44`
 
 ## Backlog (кандидаты на доработку)
 

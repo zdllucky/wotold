@@ -10,6 +10,10 @@ compatibility_flags = ["nodejs_compat"]
 binding = "QUOTA"
 id = "test-quota"
 
+[[kv_namespaces]]
+binding = "AUTH"
+id = "test-auth"
+
 [[r2_buckets]]
 binding = "STT_STAGING"
 bucket_name = "wotold-stt-staging-test"
@@ -21,3 +25,10 @@ QUOTA_LLM_TOKENS_PER_DAY = "5000"
 STAGING_PRESIGN_TTL_SECONDS = "900"
 STT_STAGING_BUCKET = "wotold-stt-staging-test"
 ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
+AUTH_STATE_TTL_SECONDS = "60"
+AUTH_SESSION_TTL_SECONDS = "3600"
+GOOGLE_OAUTH_CLIENT_ID = "test-google-client-id"
+GOOGLE_OAUTH_CLIENT_SECRET = "test-google-secret"
+APPLE_OAUTH_CLIENT_ID = ""
+MICROSOFT_OAUTH_CLIENT_ID = ""
+PUBLIC_BASE_URL = "http://test.wotold.local"
