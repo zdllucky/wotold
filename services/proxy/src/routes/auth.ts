@@ -55,7 +55,15 @@ authRoutes.post('/:provider/start', async (c) => {
     deviceId?: string;
     redirectMode?: string;
   };
-  const deviceId = body.deviceId ?? null;
+  // [B16 audit P1]: deviceId должен быть UUID (либо null), иначе мусор в KV.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let deviceId: string | null = null;
+  if (typeof body.deviceId === 'string' && body.deviceId.length > 0) {
+    if (!UUID_RE.test(body.deviceId)) {
+      return jsonError(c, 'bad_request', 'deviceId must be UUID', 400);
+    }
+    deviceId = body.deviceId;
+  }
   // [B9]: deep-link mode для Tauri-клиента → callback вернёт HTTP 302 на wotold://.
   const redirectMode: 'json' | 'deeplink' =
     body.redirectMode === 'deeplink' ? 'deeplink' : 'json';

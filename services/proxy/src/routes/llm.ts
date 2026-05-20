@@ -29,9 +29,12 @@ llmRoutes.post('/', async (c) => {
   });
 
   if (!result.ok) {
+    // [B16 audit P1]: явный whitelist вместо unsafe cast.
+    const status: 400 | 502 | 503 =
+      result.status === 400 ? 400 : result.status === 503 ? 503 : 502;
     return c.json(
       { ok: false, code: result.code, message: result.message } satisfies LlmResponse,
-      result.status as 400 | 502 | 503,
+      status,
     );
   }
 
