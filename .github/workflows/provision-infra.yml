@@ -25,8 +25,9 @@ jobs:
   provision:
     name: Provision (${{ inputs.environment }})
     runs-on: ubuntu-latest
-    environment:
-      name: ${{ inputs.environment }}
+    # NB: НЕ привязываем job к GitHub Environment — protection rules production env
+    # (tag-only) блокировали бы manual provision. CF API token и Account ID
+    # доступны через repo-level Secrets для обоих окружений.
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
