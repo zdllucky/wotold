@@ -120,8 +120,8 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
   if (speakers.length === 0) {
     return (
       <Empty
-        title="Спикеры не определены"
-        description="STT не выделил отдельных спикеров в этом звонке, либо identify_speakers ещё не отработал."
+        title="Участники не распознаны"
+        description="В этом звонке не обнаружено отдельных голосов, либо обработка ещё идёт."
       />
     );
   }
@@ -130,8 +130,8 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
     <div className="speakers-section">
       {error && <p className="error">{error}</p>}
       <p className="text-muted" style={{ marginBottom: 'var(--space-3)' }}>
-        Подсказки от системы — только ориентир. Финальная привязка спикера к
-        контакту требует твоего явного действия (R2 паспорта).
+        Подсказки — только ориентир. Привязка спикера к контакту
+        сохраняется только когда ты подтвердишь её явно.
       </p>
       <ul className="speakers-list">
         {speakers.map((s) => (
@@ -207,7 +207,7 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
                           checked={newConsent}
                           onChange={(e) => setNewConsent(e.target.checked)}
                         />
-                        <span>Накапливать голосовой профиль (C2)</span>
+                        <span>Запоминать голос для авто-определения</span>
                       </label>
                       <div className="form-actions" style={{ marginTop: 'var(--space-1)' }}>
                         <Button

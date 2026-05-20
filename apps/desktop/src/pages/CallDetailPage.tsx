@@ -69,7 +69,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const onReprocess = async () => {
     if (!call) return;
     const ok = await ask(
-      `Перезапустить обработку звонка?\n\nЗаново прогонит STT (Soniox/Gladia) и recap (Groq) на существующих mic.wav + system.wav. Текущий transcript и recap будут перезаписаны.`,
+      `Перезапустить обработку звонка?\n\nЗапись будет заново распознана и пересоздана саммари. Текущая расшифровка и рекап перезапишутся.`,
       { title: 'Wotold', kind: 'warning', okLabel: 'Перезапустить', cancelLabel: 'Отмена' },
     );
     if (!ok) return;
@@ -113,7 +113,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       setRecap(fresh);
       setTasks(freshTasks);
     } catch (e) {
-      setError(`Не удалось перегенерить рекап: ${String(e)}`);
+      setError(`Не удалось пересоздать саммари: ${String(e)}`);
     } finally {
       setRegenerating(false);
     }
@@ -122,7 +122,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const onDelete = async () => {
     if (!call) return;
     const ok = await ask(
-      `Удалить звонок «${call.title ?? call.id.slice(0, 8)}»?\n\nЭто навсегда удалит аудио, транскрипт, рекап, задачи и связанные voice samples.`,
+      `Удалить звонок «${call.title ?? call.id.slice(0, 8)}»?\n\nЭто навсегда удалит запись, расшифровку, саммари, задачи и образцы голоса этого звонка.`,
       { title: 'Wotold', kind: 'warning', okLabel: 'Удалить', cancelLabel: 'Отмена' },
     );
     if (!ok) return;
@@ -226,10 +226,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
               busy={regenerating}
               title={!transcript ? 'Нет транскрипта для регенерации' : undefined}
             >
-              {regenerating ? 'Пересоздаём…' : '↻ Пересоздать рекап'}
+              {regenerating ? 'Пересоздаём…' : '↻ Пересоздать саммари'}
             </Button>
           </div>
-          <MdPanel md={recap} emptyHint="Рекап ещё не сгенерирован." />
+          <MdPanel md={recap} emptyHint="Саммари ещё не сгенерировано." />
         </Tabs.Panel>
         <Tabs.Panel value="transcript">
           <InteractiveTranscript
@@ -260,7 +260,7 @@ function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
 
 function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contact[] }) {
   if (tasks.length === 0) {
-    return <Empty description="Action items пусты." />;
+    return <Empty description="Здесь будут задачи, упомянутые в звонке. Пока Wotold их не нашёл — попробуй переобработать звонок или дождись пересборки." />;
   }
   const nameById = new Map(contacts.map((c) => [c.id, c.display_name]));
   return (
@@ -300,13 +300,13 @@ function statusTone(status: string): 'accent' | 'success' | 'warning' | 'danger'
 function tabLabel(t: Tab): string {
   switch (t) {
     case 'recap':
-      return 'Рекап';
+      return 'Саммари';
     case 'transcript':
       return 'Расшифровка';
     case 'tasks':
       return 'Задачи';
     case 'speakers':
-      return 'Спикеры';
+      return 'Участники';
   }
 }
 
