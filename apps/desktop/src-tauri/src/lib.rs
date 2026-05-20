@@ -64,6 +64,19 @@ pub fn run() {
     }));
 
     tauri::Builder::default()
+        // [B16 audit P0]: single-instance ДОЛЖЕН быть зарегистрирован первым,
+        // чтобы при попытке запустить второй процесс (например через
+        // wotold:// из браузера) он передал argv в уже запущенное окно
+        // и тихо завершился. Иначе две копии гоняются за app.db (corruption).
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            log::info!("single-instance: re-attach, argv={argv:?}");
+            // Поднять окно на передний план если есть.
+            if let Some(window) = tauri::Manager::get_webview_window(app, "main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(
             tauri_plugin_log::Builder::default()
                 // [B16 audit P2] log rotation: иначе один долгоиграющий user

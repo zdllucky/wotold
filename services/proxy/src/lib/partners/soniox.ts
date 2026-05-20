@@ -97,6 +97,7 @@ export async function transcribeSoniox(opts: SonioxOpts): Promise<TranscribeSoni
   }
 
   // 2. Polling до completed/failed/deadline.
+  let completed = false;
   while (Date.now() < opts.pollDeadlineMs) {
     await sleep(POLL_INTERVAL_MS);
     const statusResp = await fetch(`${base}/transcriptions/${id}`, {
@@ -106,10 +107,18 @@ export async function transcribeSoniox(opts: SonioxOpts): Promise<TranscribeSoni
       throw new Error(`soniox status ${statusResp.status}: ${await safeText(statusResp)}`);
     }
     const status = (await statusResp.json()) as { status: string };
-    if (status.status === 'completed') break;
+    if (status.status === 'completed') {
+      completed = true;
+      break;
+    }
     if (status.status === 'failed') {
       throw new Error('soniox transcription failed');
     }
+  }
+  // [B16 audit P1]: явный poll timeout вместо silent fall-through на fetch transcript
+  // (который вернул бы partial/4xx и юзер видел бы непонятную ошибку).
+  if (!completed) {
+    throw new Error(`soniox poll timeout (job ${id})`);
   }
 
   // 3. Забираем результат.
