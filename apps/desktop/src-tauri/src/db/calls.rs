@@ -304,13 +304,12 @@ pub async fn confirm_call_speaker(
         return Err(AppError::Other(format!("contact {contact_id} not found")));
     }
 
-    let updated = sqlx::query(
-        "UPDATE call_speakers SET contact_id = ?1, confirmed = 1 WHERE id = ?2",
-    )
-    .bind(contact_id)
-    .bind(call_speaker_id)
-    .execute(pool)
-    .await?;
+    let updated =
+        sqlx::query("UPDATE call_speakers SET contact_id = ?1, confirmed = 1 WHERE id = ?2")
+            .bind(contact_id)
+            .bind(call_speaker_id)
+            .execute(pool)
+            .await?;
     if updated.rows_affected() == 0 {
         return Err(AppError::Other(format!(
             "call_speaker {call_speaker_id} not found"
@@ -321,10 +320,7 @@ pub async fn confirm_call_speaker(
 
 /// Откатить привязку спикера: contact_id = NULL, confirmed = 0. Suggestion
 /// остаётся как был — пользователь может изменить решение позже.
-pub async fn unbind_call_speaker(
-    pool: &SqlitePool,
-    call_speaker_id: &str,
-) -> Result<(), AppError> {
+pub async fn unbind_call_speaker(pool: &SqlitePool, call_speaker_id: &str) -> Result<(), AppError> {
     let updated =
         sqlx::query("UPDATE call_speakers SET contact_id = NULL, confirmed = 0 WHERE id = ?1")
             .bind(call_speaker_id)

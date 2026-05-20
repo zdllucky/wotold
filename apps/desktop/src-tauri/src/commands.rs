@@ -376,9 +376,6 @@ pub async fn list_voice_samples(
 /// ошибочно подтвердил спикера или хочет очистить устаревший биометрический
 /// слепок.
 #[tauri::command]
-pub async fn delete_voice_sample(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), AppError> {
+pub async fn delete_voice_sample(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
     crate::db::delete_voice_sample(&state.db, &id).await
 }
