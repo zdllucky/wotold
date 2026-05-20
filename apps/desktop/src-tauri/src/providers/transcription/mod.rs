@@ -62,6 +62,7 @@ pub enum TranscriptionError {
 }
 
 mod gladia;
+mod proxy_managed;
 mod retry;
 mod soniox;
 
