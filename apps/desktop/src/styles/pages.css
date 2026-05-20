@@ -1160,3 +1160,17 @@
 .onboarding-step-dot[data-done='true'] {
   background: var(--color-success);
 }
+
+/* [B16] HomePage hero (взамен голого title + device-id) */
+.home-hero {
+  text-align: center;
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) 0;
+}
+
+.home-subtitle {
+  max-width: 36rem;
+  margin: var(--space-2) auto 0 auto;
+  font-size: var(--text-base);
+  line-height: 1.5;
+}

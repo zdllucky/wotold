@@ -108,9 +108,10 @@ export function CallsPage({ onOpen }: CallsPageProps) {
             <InputField
               label=""
               type="search"
-              placeholder="Поиск: title, провайдер, язык, причина ошибки…"
+              placeholder="Поиск по названию звонка…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              aria-label="Поиск звонков"
             />
             <SelectField
               label=""
@@ -154,12 +155,10 @@ export function CallsPage({ onOpen }: CallsPageProps) {
                 <span className="call-meta">
                   <span className="call-when">{formatStarted(c.started_at)}</span>
                   <span className="call-detail-line">
-                    {formatDuration(c.duration_sec)} · {c.path_label}
-                    {c.provider && ` · ${c.provider}`}
-                    {c.lang_detected && ` · ${c.lang_detected}`}
+                    {formatDuration(c.duration_sec)}
+                    {c.lang_detected && ` · ${c.lang_detected.toUpperCase()}`}
                   </span>
                 </span>
-                <code className="call-id">{c.id.slice(0, 8)}</code>
               </button>
             </li>
           ))}
@@ -167,9 +166,6 @@ export function CallsPage({ onOpen }: CallsPageProps) {
           )}
         </>
       )}
-      <p className="hint">
-        Полнотекстовый поиск по транскрипту — backlog (#30 follow-up).
-      </p>
     </section>
   );
 }
