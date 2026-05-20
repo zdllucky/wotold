@@ -17,12 +17,14 @@ use crate::{
 };
 
 pub mod merge;
+pub mod recap;
 
 pub use merge::{merge_tracks, render_transcript_md};
 
 const SETTING_STT_PROVIDER: &str = "stt_provider";
 const SETTING_PROVIDER_PATH: &str = "provider_path";
 const SETTING_STT_LANG: &str = "stt_lang";
+const SETTING_LLM_MODEL: &str = "llm_model";
 const SETTING_PROXY_BASE_URL: &str = "proxy_base_url";
 
 /// Контекст одной транскрипции: пути к двум дорожкам, call_dir для артефактов,
@@ -59,6 +61,7 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     let provider_id = read_setting(pool, SETTING_STT_PROVIDER, "auto").await?;
     let provider_path = read_setting(pool, SETTING_PROVIDER_PATH, "managed").await?;
     let lang = read_setting(pool, SETTING_STT_LANG, "auto").await?;
+    let llm_model = read_setting(pool, SETTING_LLM_MODEL, "").await?;
     let proxy_base_url = db::get_setting(pool, SETTING_PROXY_BASE_URL)
         .await?
         .unwrap_or_default();
@@ -83,7 +86,7 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     let mic_t = mic_res.map_err(|e| AppError::Other(format!("mic stt: {e}")))?;
     let sys_t = sys_res.map_err(|e| AppError::Other(format!("system stt: {e}")))?;
 
-    persist_artifacts(&ctx.call_dir, &mic_t, &sys_t).await?;
+    let merged = persist_artifacts(&ctx.call_dir, &mic_t, &sys_t).await?;
 
     let lang_detected = mic_t
         .lang_detected
@@ -92,6 +95,28 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     let provider_used = sys_t.provider.clone();
 
     db::set_call_meta(pool, &ctx.call_id, lang_detected.as_deref(), &provider_used).await?;
+
+    // M4 chain: транскрипт → LLM рекап. Ошибки рекапа НЕ роняют пайплайн —
+    // транскрипт сохранён, рекап можно регенерировать вручную (M4.5).
+    let transcript_md = render_transcript_md(&merged);
+    let model_override = if llm_model.is_empty() {
+        None
+    } else {
+        Some(llm_model.as_str())
+    };
+    let recap_ctx = recap::RecapCtx {
+        call_id: &ctx.call_id,
+        call_dir: &ctx.call_dir,
+        transcript_md: &transcript_md,
+        lang_detected: lang_detected.as_deref(),
+        proxy_base_url: &proxy_base_url,
+        device_id: &ctx.device_id,
+        provider_path: &provider_path,
+        model_override,
+    };
+    if let Err(e) = recap::run(pool, recap_ctx).await {
+        log::warn!("recap {} skipped: {e}", ctx.call_id);
+    }
 
     Ok(())
 }
@@ -136,7 +161,7 @@ async fn persist_artifacts(
     call_dir: &PathBuf,
     mic: &DiarizedTranscript,
     system: &DiarizedTranscript,
-) -> Result<(), AppError> {
+) -> Result<Vec<crate::providers::transcription::TranscriptSegment>, AppError> {
     tokio::fs::create_dir_all(call_dir).await?;
 
     let merged = merge_tracks(mic, system);
@@ -157,7 +182,7 @@ async fn persist_artifacts(
     let md = render_transcript_md(&merged);
     tokio::fs::write(call_dir.join("transcript.md"), md).await?;
 
-    Ok(())
+    Ok(merged)
 }
 
 async fn read_setting(
