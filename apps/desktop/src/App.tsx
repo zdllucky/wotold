@@ -13,11 +13,13 @@ import { getSetting, SETTINGS_KEYS } from './api/settings';
 type Page = 'home' | 'calls' | 'contacts' | 'settings' | 'ds';
 type Bootstrap = 'loading' | 'onboarding' | 'app';
 
-const NAV: Array<{ id: Page; label: string }> = [
-  { id: 'home', label: 'Главная' },
-  { id: 'calls', label: 'Звонки' },
-  { id: 'contacts', label: 'Контакты' },
-  { id: 'settings', label: 'Настройки' },
+// [B16] Topnav rework: эмодзи как stopgap до SVG-icon set (lucide-react).
+// Эмодзи + текст-метка дают visual anchor каждой вкладки, юзер быстрее ориентируется.
+const NAV: Array<{ id: Page; label: string; icon: string }> = [
+  { id: 'home', label: 'Главная', icon: '🎙' },
+  { id: 'calls', label: 'Звонки', icon: '📞' },
+  { id: 'contacts', label: 'Контакты', icon: '👥' },
+  { id: 'settings', label: 'Настройки', icon: '⚙' },
 ];
 
 const IS_DEV = import.meta.env.DEV;
@@ -68,17 +70,26 @@ export function App() {
   return (
     <>
       <nav className="topnav" aria-label="Главная навигация">
-        {NAV.map((item) => (
-          <Button
-            key={item.id}
-            size="sm"
-            variant={page === item.id ? 'secondary' : 'ghost'}
-            onClick={() => setPage(item.id)}
-            aria-current={page === item.id ? 'page' : undefined}
-          >
-            {item.label}
-          </Button>
-        ))}
+        <span className="topnav-brand" aria-hidden="true">Wotold</span>
+        <div className="topnav-tabs" role="tablist">
+          {NAV.map((item) => {
+            const active = page === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                className={`topnav-tab${active ? ' topnav-tab--active' : ''}`}
+                onClick={() => setPage(item.id)}
+                aria-selected={active}
+                aria-current={active ? 'page' : undefined}
+              >
+                <span className="topnav-tab-icon" aria-hidden="true">{item.icon}</span>
+                <span className="topnav-tab-label">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
         <span className="topnav-spacer" />
         {IS_DEV && (
           <Button
