@@ -255,7 +255,7 @@
 - [x] **macOS app menu** — Tauri 2 MenuBuilder с Wotold/Edit/View/Window submenus. Native Cut/Copy/Paste теперь работают в webview.
 - [x] **Window min-size 760x560** — поднят с 640x480 в tauri.conf.json.
 - [x] **macOS toast при сохранении settings** — pill «✓ Сохранено» 1.5s, fade-in/out, reduced-motion respect.
-- [ ] **Toolbar поддержка subtitle + sticky positioning** — расширить API.
+- [x] **Toolbar subtitle + sticky** — props добавлены, CallsPage использует с правильным склонением ru ('12 звонков').
 
 ### Visual / Design (P0)
 
