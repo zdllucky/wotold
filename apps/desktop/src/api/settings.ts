@@ -20,7 +20,9 @@ export const SETTINGS_KEYS = {
 export const SETTINGS_DEFAULTS = {
   STT_PROVIDER: 'auto' as SttProvider,
   PROVIDER_PATH: 'managed' as ProviderPath,
-  LLM_MODEL: 'claude-sonnet-4-6',
+  /** Пусто → прокси использует свой default (LLM_BACKEND-зависимый).
+   *  Override на конкретную модель через Settings → LLM section. */
+  LLM_MODEL: '',
   /** Production proxy URL — managed-режим работает out-of-the-box без настроек.
    *  User может переопределить через advanced секцию в Settings. */
   PROXY_BASE_URL: 'https://wotold-proxy.animereader.workers.dev',
