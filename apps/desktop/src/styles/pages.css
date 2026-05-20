@@ -573,6 +573,34 @@
   gap: var(--space-2);
 }
 
+/* [B16] Subtle saved indicator — отображается ~1.5s после persist. */
+.settings-saved-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  padding: 0.1rem var(--space-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
+  color: var(--color-success);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  animation: settings-saved-fade 1500ms var(--ease-out-expo);
+}
+
+@keyframes settings-saved-fade {
+  0% { opacity: 0; transform: translateY(2px); }
+  15% { opacity: 1; transform: translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-saved-toast {
+    animation: none;
+  }
+}
+
 .settings-section-title {
   font-size: var(--text-xs);
   text-transform: uppercase;

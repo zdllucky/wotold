@@ -98,6 +98,50 @@ pub fn run() {
             let state = tauri::async_runtime::block_on(state::init(handle.clone()))?;
             tauri::Manager::manage(app, state);
 
+            // [B16 audit P2] macOS app menu — без явного menu Tauri даёт только
+            // basic App/Quit. Native Cut/Copy/Paste/SelectAll на webview без menu
+            // не работают (стандартные ⌘C/⌘V). Add File/Edit/View/Window submenus.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{MenuBuilder, SubmenuBuilder};
+
+                let app_menu = SubmenuBuilder::new(&handle, "Wotold")
+                    .about(None)
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .show_all()
+                    .separator()
+                    .quit()
+                    .build()?;
+
+                let edit_menu = SubmenuBuilder::new(&handle, "Edit")
+                    .undo()
+                    .redo()
+                    .separator()
+                    .cut()
+                    .copy()
+                    .paste()
+                    .select_all()
+                    .build()?;
+
+                let view_menu = SubmenuBuilder::new(&handle, "View")
+                    .fullscreen()
+                    .build()?;
+
+                let window_menu = SubmenuBuilder::new(&handle, "Window")
+                    .minimize()
+                    .maximize()
+                    .separator()
+                    .close_window()
+                    .build()?;
+
+                let menu = MenuBuilder::new(&handle)
+                    .items(&[&app_menu, &edit_menu, &view_menu, &window_menu])
+                    .build()?;
+                app.set_menu(menu)?;
+            }
+
             // [B9]: подписка на wotold:// deep-link. Прокси редиректит сюда после OIDC.
             // Парсим URL → emit 'auth:deep-link' с распакованным session+account.
             // Никаких side-effects в Rust — frontend в AccountSection сам сохранит

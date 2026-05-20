@@ -8,15 +8,32 @@ import { usageRoutes } from './routes/usage.js';
 
 const app = new Hono<{ Bindings: Env }>();
 
-// CORS: Tauri webview шлёт fetch с origin 'tauri://localhost' (macOS/Linux),
-// 'http://tauri.localhost' (Windows), либо 'http://localhost:5173' (vite dev).
-// Без cookies/credentials → '*' безопасен: каждый запрос требует валидный
-// x-device-id UUID или Bearer session, contentу не доверяем по origin'у.
-// M9.5 паспорта (auth по device-id, не по cookie).
+// [B16 audit P1]: CORS — раньше origin: '*', теперь allowlist.
+// Tauri webview шлёт fetch с одним из:
+//   - 'tauri://localhost'    macOS / Linux production
+//   - 'http://tauri.localhost' Windows production
+//   - 'http://localhost:5173' / 'http://127.0.0.1:5173' vite dev
+// Auth — Bearer token либо x-device-id UUID, не cookie. Но даже без
+// credentials явный allowlist предотвращает scenarios где malicious site
+// сможет читать /v1/auth/me responses (через XSS на trusted domain).
+//
+// '/health' и '/' оставляем открытыми (smoke checks из CI/Cloudflare).
+const ALLOWED_ORIGINS = new Set([
+  'tauri://localhost',
+  'http://tauri.localhost',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+]);
+
+function originAllowlist(origin: string | undefined): string | null {
+  if (!origin) return null;
+  return ALLOWED_ORIGINS.has(origin) ? origin : null;
+}
+
 app.use(
-  '*',
+  '/v1/*',
   cors({
-    origin: '*',
+    origin: originAllowlist,
     allowMethods: ['GET', 'POST', 'OPTIONS'],
     allowHeaders: ['content-type', 'authorization', 'x-device-id'],
     maxAge: 86400,

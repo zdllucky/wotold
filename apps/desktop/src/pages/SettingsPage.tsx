@@ -73,14 +73,24 @@ export function SettingsPage() {
     })();
   }, []);
 
+  // [B16] Subtle saved indicator — после persist показываем 'Сохранено ✓'
+  // на ~1.5s. Раньше изменение настройки молча уходило, юзер не знал что
+  // оно применилось.
+  const [savedTick, setSavedTick] = useState(0);
   const persist = async (key: string, value: string) => {
     try {
       await setSetting(key, value);
       setError(null);
+      setSavedTick((n) => n + 1);
     } catch (e) {
       setError(humanError(e));
     }
   };
+  useEffect(() => {
+    if (savedTick === 0) return;
+    const t = setTimeout(() => setSavedTick(0), 1500);
+    return () => clearTimeout(t);
+  }, [savedTick]);
 
   if (loading) return <p className="hint">Загрузка…</p>;
 
@@ -266,7 +276,14 @@ export function SettingsPage() {
         </div>
       )}
 
-      <p className="hint">Все изменения сохраняются автоматически.</p>
+      <p className="hint">
+        Все изменения сохраняются автоматически.
+        {savedTick > 0 && (
+          <span className="settings-saved-toast" role="status" aria-live="polite">
+            ✓ Сохранено
+          </span>
+        )}
+      </p>
 
       <div className="settings-section">
         <h3 className="settings-section-title">🗑 Конфиденциальность</h3>
