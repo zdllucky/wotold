@@ -20,6 +20,7 @@ import {
   TextareaField,
   Toolbar,
 } from '../ui';
+import { VoiceSamplesSection } from './VoiceSamplesSection';
 
 export function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
@@ -384,6 +385,11 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
           </div>
         ))}
       </div>
+
+      {/* #45 (M3.6): voice samples view + manual delete — только в режиме
+          редактирования существующего контакта. У нового контакта семплов
+          ещё нет. */}
+      {initial && <VoiceSamplesSection contactId={initial.id} alwaysShow={consentVoice} />}
 
       <div className="form-actions">
         <Button type="button" variant="ghost" onClick={onCancel}>

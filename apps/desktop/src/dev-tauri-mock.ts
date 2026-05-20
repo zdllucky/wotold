@@ -104,6 +104,33 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
   // #26: in-memory speaker confirmations для preview. ключ "<callId>:<S-tag>".
   const speakerBindings: Record<string, string> = {};
 
+  // #45: in-memory voice samples preview.
+  const voiceSamples: Array<{
+    id: string;
+    contact_id: string;
+    source_call: string | null;
+    quality: number | null;
+    created_at: string;
+    embedding_bytes: number;
+  }> = [
+    {
+      id: 'vs-mock-1',
+      contact_id: sampleContact.id,
+      source_call: sampleCalls[0]?.id ?? null,
+      quality: 0.87,
+      created_at: '2026-05-10T14:30:00Z',
+      embedding_bytes: 1024,
+    },
+    {
+      id: 'vs-mock-2',
+      contact_id: sampleContact.id,
+      source_call: sampleCalls[1]?.id ?? null,
+      quality: 0.92,
+      created_at: '2026-05-15T09:12:00Z',
+      embedding_bytes: 1024,
+    },
+  ];
+
   window.__TAURI_INTERNALS__ = {
     invoke: async (cmd: string, args?: unknown) => {
       const a = (args as Record<string, unknown> | undefined) ?? {};
@@ -223,6 +250,17 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         const tag = `S${parts[parts.length - 1]}`;
         const callId = parts.slice(1, -1).join('-');
         speakerBindings[`${callId}:${tag}`] = a.contactId as string;
+        return null;
+      }
+      // #45: in-memory voice samples preview.
+      if (cmd === 'list_voice_samples') {
+        const cid = a.contactId as string;
+        return voiceSamples.filter((v) => v.contact_id === cid);
+      }
+      if (cmd === 'delete_voice_sample') {
+        const sid = a.id as string;
+        const i = voiceSamples.findIndex((v) => v.id === sid);
+        if (i !== -1) voiceSamples.splice(i, 1);
         return null;
       }
       if (cmd === 'unbind_call_speaker') {

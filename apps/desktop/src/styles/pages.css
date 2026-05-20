@@ -967,3 +967,45 @@
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
+
+/* ============================================================
+ * Voice Samples Section (M3.6 / #45)
+ * ============================================================ */
+.voice-samples-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.voice-sample-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.voice-sample-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-md);
+}
+
+.voice-sample-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+}
+
+.voice-sample-date {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
