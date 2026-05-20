@@ -75,6 +75,38 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  check-migrations:
+    name: SQLx migrations verification
+    runs-on: ubuntu-latest
+    # Отдельная джоба: не зависит от audio sidecar (macOS-only),
+    # проверяет что migrations 0001..N последовательны и применяются
+    # к чистой SQLite. Падает при разрыве нумерации, дубликатах или
+    # ошибках SQL — гарантия что миграции forward-only и не reorder'нуты.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify migration filename ordering
+        run: node scripts/check-migrations.mjs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+          shared-key: check-migrations
+      - name: Stub audio sidecar (Linux CI — tauri-build ожидает externalBin)
+        run: |
+          mkdir -p apps/desktop/src-tauri/binaries
+          # tauri-build резолвит externalBin по host-triple. На ubuntu-latest = x86_64-unknown-linux-gnu.
+          touch apps/desktop/src-tauri/binaries/wotold-audio-x86_64-unknown-linux-gnu
+          chmod +x apps/desktop/src-tauri/binaries/wotold-audio-x86_64-unknown-linux-gnu
+      - name: cargo test db migrations
+        working-directory: apps/desktop/src-tauri
+        # Прогоняем только модуль db::tests — он применяет миграции к свежей
+        # SQLite через sqlx::migrate!() и проверяет схему. Compile-time проверка
+        # самого макроса гарантирует что SQL валиден.
+        run: cargo test --lib db::tests --no-fail-fast
+
   rust:
     name: Rust check + clippy + fmt
     runs-on: macos-latest
