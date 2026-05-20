@@ -76,6 +76,12 @@ export async function transcribeSoniox(opts: SonioxOpts): Promise<TranscribeSoni
     if (opts.lang !== 'auto') {
       createBody.language_hints = [opts.lang];
       createBody.language_hints_strict = true;
+    } else {
+      // [Lang-tuning] auto-detect biased toward common languages — не strict,
+      // Soniox всё ещё может выбрать что-то другое если уверен. Спасает от
+      // ошибочного выбора JP/CN на коротких/тихих русских фразах из mic-канала.
+      createBody.language_hints = ['ru', 'en', 'kk'];
+      createBody.language_hints_strict = false;
     }
 
     const createResp = await fetch(`${base}/transcriptions`, {
