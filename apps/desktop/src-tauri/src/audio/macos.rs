@@ -20,6 +20,7 @@ const STOP_TIMEOUT_SECS: u64 = 10;
 pub struct RecordingSession {
     pub call_id: String,
     pub mic_path: PathBuf,
+    pub system_path: PathBuf,
     pub started_at: chrono::DateTime<chrono::Utc>,
     child: CommandChild,
     rx: Receiver<CommandEvent>,
@@ -29,6 +30,7 @@ pub struct RecordingSession {
 pub struct StopResult {
     pub duration_sec: f64,
     pub mic_bytes: u64,
+    pub system_bytes: u64,
 }
 
 /// Спавнит wotold-audio sidecar, шлёт start-команду, ждёт `started` с таймаутом.
@@ -36,8 +38,12 @@ pub async fn start(
     app: &AppHandle,
     call_id: String,
     mic_path: PathBuf,
+    system_path: PathBuf,
 ) -> Result<RecordingSession, AppError> {
     if let Some(parent) = mic_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    if let Some(parent) = system_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
 
@@ -53,6 +59,7 @@ pub async fn start(
     let cmd = serde_json::json!({
         "cmd": "start",
         "mic_path": mic_path.to_string_lossy(),
+        "system_path": system_path.to_string_lossy(),
     });
     let mut line = cmd.to_string();
     line.push('\n');
@@ -73,6 +80,7 @@ pub async fn start(
         Some("started") => Ok(RecordingSession {
             call_id,
             mic_path,
+            system_path,
             started_at: chrono::Utc::now(),
             child,
             rx,
@@ -112,13 +120,22 @@ pub async fn stop(mut session: RecordingSession) -> Result<StopResult, AppError>
     let event = result
         .ok_or_else(|| AppError::Other("audio sidecar exited without stopped event".into()))?;
     match event.get("event").and_then(Value::as_str) {
-        Some("stopped") => Ok(StopResult {
-            duration_sec: event
-                .get("duration_sec")
-                .and_then(Value::as_f64)
-                .unwrap_or(0.0),
-            mic_bytes: event.get("mic_bytes").and_then(Value::as_u64).unwrap_or(0),
-        }),
+        Some("stopped") => {
+            if let Some(warning) = event.get("warning").and_then(Value::as_str) {
+                log::warn!("audio stop warning: {warning}");
+            }
+            Ok(StopResult {
+                duration_sec: event
+                    .get("duration_sec")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(0.0),
+                mic_bytes: event.get("mic_bytes").and_then(Value::as_u64).unwrap_or(0),
+                system_bytes: event
+                    .get("system_bytes")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+            })
+        }
         Some("error") => {
             let msg = event
                 .get("message")
