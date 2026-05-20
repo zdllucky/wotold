@@ -252,6 +252,11 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         speakerBindings[`${callId}:${tag}`] = a.contactId as string;
         return null;
       }
+      if (cmd === 'regenerate_recap') {
+        // Dev mock: симулируем задержку, чтобы button spinner был видим.
+        await new Promise((r) => setTimeout(r, 800));
+        return null;
+      }
       // #45: in-memory voice samples preview.
       if (cmd === 'list_voice_samples') {
         const cid = a.contactId as string;

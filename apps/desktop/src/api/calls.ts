@@ -32,3 +32,8 @@ export function readCallArtifact(
 export function deleteCall(id: string): Promise<void> {
   return invoke('delete_call', { id });
 }
+
+/** M4.5: пересоздать recap.md + action_items без re-STT. */
+export function regenerateRecap(callId: string): Promise<void> {
+  return invoke<void>('regenerate_recap', { callId });
+}
