@@ -30,3 +30,7 @@ export function stopRecording(): Promise<Call> {
 export function getRecordingState(): Promise<RecordingState | null> {
   return invoke<RecordingState | null>('get_recording_state');
 }
+
+export function listCalls(): Promise<Call[]> {
+  return invoke<Call[]>('list_calls');
+}

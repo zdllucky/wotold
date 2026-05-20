@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 
+import { CallsPage } from './pages/CallsPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { HomePage } from './pages/HomePage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, SETTINGS_KEYS } from './api/settings';
 
-type Page = 'home' | 'contacts' | 'settings';
+type Page = 'home' | 'calls' | 'contacts' | 'settings';
 type Bootstrap = 'loading' | 'onboarding' | 'app';
 
 export function App() {
@@ -48,6 +49,13 @@ export function App() {
         </button>
         <button
           type="button"
+          className={page === 'calls' ? 'active' : ''}
+          onClick={() => setPage('calls')}
+        >
+          Звонки
+        </button>
+        <button
+          type="button"
           className={page === 'contacts' ? 'active' : ''}
           onClick={() => setPage('contacts')}
         >
@@ -64,6 +72,7 @@ export function App() {
 
       <main className="app">
         {page === 'home' && <HomePage />}
+        {page === 'calls' && <CallsPage />}
         {page === 'contacts' && <ContactsPage />}
         {page === 'settings' && <SettingsPage />}
       </main>

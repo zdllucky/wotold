@@ -45,6 +45,7 @@ pub fn run() {
             commands::start_recording,
             commands::stop_recording,
             commands::get_recording_state,
+            commands::list_calls,
             commands::check_for_update,
             commands::apply_update,
         ])
