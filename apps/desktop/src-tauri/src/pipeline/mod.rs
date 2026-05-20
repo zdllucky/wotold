@@ -7,6 +7,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::{
     db,
+    pipeline::merge::OWNER_TAG,
     providers::{
         transcription::{
             failure_reason, transcribe_with_fallback, DiarizedTranscript, GladiaProvider,
@@ -199,6 +200,14 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     let provider_used = sys_t.provider.clone();
 
     db::set_call_meta(pool, &ctx.call_id, lang_detected.as_deref(), &provider_used).await?;
+
+    // M3.7: mic-дорожка по определению принадлежит владельцу устройства.
+    // Создаём confirmed=1 row сразу — пользователю не нужно подтверждать
+    // самого себя. Не нарушает R2 (никакой автопривязки): owner == юзер.
+    let owner = db::ensure_owner_contact(pool).await?;
+    if let Err(e) = db::auto_bind_owner_speaker(pool, &ctx.call_id, &owner.id, OWNER_TAG).await {
+        log::warn!("auto_bind_owner_speaker {} failed: {e}", ctx.call_id);
+    }
 
     // M4 chain: транскрипт → LLM рекап. Ошибки рекапа НЕ роняют пайплайн —
     // транскрипт сохранён, рекап можно регенерировать вручную (M4.5).
