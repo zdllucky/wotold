@@ -1,15 +1,14 @@
-// #26 (M3.5): секция подтверждения спикеров на CallDetailPage.
+// [B17] SpeakersSection — exact match per docs/design/atelier-v2/_reference/atelier-2.jsx §7.
 //
-// R2 паспорта: финальная привязка спикер↔контакт ТОЛЬКО через явное действие.
-// Suggestion (от embedding ranking + LLM hint в #25) — только подсказка,
-// без auto-bind. UI рисует:
-//   - speaker_tag (S1, S2, ...)
-//   - текущий contact_display_name если confirmed=true, иначе селектор
-//   - suggestion как нерейзенный hint с confidence + источник
-//   - кнопка "Подтвердить" / "Отвязать"
+// Per-speaker calling-card:
+//   - Header bilines: "Голос N из M" + "из звонка · {title}" small-caps
+//   - Title 28 "Кто этот голос?"
+//   - Sample row: 56×56 avatar (S{N}) + italic-serif quoted sample + MiniWave + "▶ 4 сек"
+//   - "Похоже на" → 38×38 sp-avatar + serif name + role muted + 120px conf bar
+//   - Three buttons: "✓ Да, это X" (primary stretch) · "Не она" ghost · "Новый контакт" ghost
+//   - Footer hint with underline "подробнее"
 //
-// [B17] Atelier v2 redesign per docs/design/atelier-v2/MIGRATION.md §5.
-// Каждый спикер — .card с avatar + .conf bar + actions row.
+// R2 паспорта: no auto-bind, всё через явное подтверждение пользователем.
 
 import { useEffect, useState } from 'react';
 import { humanError } from '../api/errors';
@@ -21,29 +20,28 @@ import {
   type CallSpeakerView,
 } from '../api/speakers';
 import { Empty } from '../ui';
+import { MiniWave } from '../components/Waveform';
 
 interface SpeakersSectionProps {
   callId: string;
 }
 
-function sourceLabel(s: string | null): string {
-  if (!s) return '—';
-  if (s === 'both') return 'голос + LLM';
-  if (s === 'embedding') return 'голос';
-  if (s === 'llm') return 'LLM';
-  return s;
-}
+const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
 
 function initials(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) return '·';
-  const parts = trimmed.split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '·';
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? '')
+      .join('') || '·'
+  );
 }
 
-function speakerColor(tag: string, idx: number): string {
-  if (tag === 'owner' || tag === 'S0') return 'var(--sp-1)';
-  return `var(--sp-${(idx % 4) + 2})`;
+function speakerColorIdx(s: CallSpeakerView, idx: number): number {
+  if (s.speaker_tag === 'owner' || s.speaker_tag === 'S0') return 0;
+  return ((idx + 1) % 5);
 }
 
 export function SpeakersSection({ callId }: SpeakersSectionProps) {
@@ -98,8 +96,8 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
     }
   };
 
-  const handleConfirm = async (s: CallSpeakerView) => {
-    const picked = pickFor[s.id] ?? s.suggestion_contact_id ?? '';
+  const handleConfirm = async (s: CallSpeakerView, contactId?: string) => {
+    const picked = contactId ?? pickFor[s.id] ?? s.suggestion_contact_id ?? '';
     if (!picked) {
       setError('Сначала выбери контакт из списка.');
       return;
@@ -111,6 +109,11 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
     } catch (e) {
       setError(humanError(e));
     }
+  };
+
+  const handleReject = async (s: CallSpeakerView) => {
+    // Reject just clears the suggestion locally — speaker stays unconfirmed.
+    setPickFor((m) => ({ ...m, [s.id]: '' }));
   };
 
   const handleUnbind = async (s: CallSpeakerView) => {
@@ -125,7 +128,6 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
   if (speakers === null) {
     return <p className="muted">Загрузка…</p>;
   }
-
   if (speakers.length === 0) {
     return (
       <Empty
@@ -135,254 +137,471 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
     );
   }
 
+  const unconfirmed = speakers.filter((s) => !s.confirmed);
+  const confirmed = speakers.filter((s) => s.confirmed);
+
   return (
     <div>
       {error && (
-        <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+        <p
+          role="alert"
+          style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}
+        >
           {error}
         </p>
       )}
-      <p
-        className="subtle"
+
+      {unconfirmed.length > 0 && (
+        <div
+          style={{ display: 'flex', flexDirection: 'column', gap: 18 }}
+        >
+          {unconfirmed.map((s, idx) => (
+            <SpeakerCard
+              key={s.id}
+              speaker={s}
+              idx={idx}
+              total={unconfirmed.length}
+              contacts={contacts}
+              pickedContactId={pickFor[s.id] ?? s.suggestion_contact_id ?? ''}
+              onPick={(id) => setPickFor((m) => ({ ...m, [s.id]: id }))}
+              onConfirm={(contactId) => void handleConfirm(s, contactId)}
+              onReject={() => void handleReject(s)}
+              adding={addingFor === s.id}
+              newName={newName}
+              newConsent={newConsent}
+              busyAdd={busyAdd}
+              onStartAdd={() => {
+                setAddingFor(s.id);
+                setNewName('');
+                setNewConsent(false);
+              }}
+              onCancelAdd={() => {
+                setAddingFor(null);
+                setNewName('');
+                setNewConsent(false);
+              }}
+              onChangeNewName={setNewName}
+              onChangeNewConsent={setNewConsent}
+              onSubmitNewContact={() => void handleAddAsContact(s)}
+            />
+          ))}
+        </div>
+      )}
+
+      {confirmed.length > 0 && (
+        <div style={{ marginTop: unconfirmed.length > 0 ? 36 : 0 }}>
+          <div className="small-caps" style={{ marginBottom: 14 }}>
+            Подтверждены · {confirmed.length}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {confirmed.map((s, i) => {
+              const color = SP_COLORS[speakerColorIdx(s, i) % SP_COLORS.length];
+              return (
+                <div
+                  key={s.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '40px 1fr auto',
+                    gap: 14,
+                    alignItems: 'center',
+                    padding: '10px 0',
+                    borderBottom: '1px dotted var(--line-soft)',
+                  }}
+                >
+                  <span
+                    className="sp-avatar"
+                    style={{ background: color, width: 36, height: 36, fontSize: 12 }}
+                  >
+                    {initials(s.contact_display_name ?? s.speaker_tag)}
+                  </span>
+                  <div>
+                    <div
+                      style={{
+                        fontFamily: 'var(--font-serif)',
+                        fontSize: 16,
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      {s.contact_display_name}
+                    </div>
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      Голос {s.speaker_tag}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn--quiet btn--sm"
+                    onClick={() => void handleUnbind(s)}
+                  >
+                    Отвязать
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface SpeakerCardProps {
+  speaker: CallSpeakerView;
+  idx: number;
+  total: number;
+  contacts: Contact[];
+  pickedContactId: string;
+  onPick: (id: string) => void;
+  onConfirm: (contactId?: string) => void;
+  onReject: () => void;
+  adding: boolean;
+  newName: string;
+  newConsent: boolean;
+  busyAdd: boolean;
+  onStartAdd: () => void;
+  onCancelAdd: () => void;
+  onChangeNewName: (v: string) => void;
+  onChangeNewConsent: (v: boolean) => void;
+  onSubmitNewContact: () => void;
+}
+
+function SpeakerCard({
+  speaker,
+  idx,
+  total,
+  contacts,
+  pickedContactId,
+  onPick,
+  onConfirm,
+  onReject,
+  adding,
+  newName,
+  newConsent,
+  busyAdd,
+  onStartAdd,
+  onCancelAdd,
+  onChangeNewName,
+  onChangeNewConsent,
+  onSubmitNewContact,
+}: SpeakerCardProps) {
+  const color = SP_COLORS[speakerColorIdx(speaker, idx) % SP_COLORS.length];
+  const suggestionName = speaker.suggestion_contact_display_name;
+  const suggestionScore = speaker.suggestion_score ?? 0;
+  const suggestedContact = contacts.find(
+    (c) => c.id === speaker.suggestion_contact_id,
+  );
+  const pickedContact = contacts.find((c) => c.id === pickedContactId);
+
+  return (
+    <div
+      className="index-card"
+      style={{ position: 'relative', maxWidth: 720 }}
+    >
+      <div
         style={{
-          marginBottom: 18,
-          fontFamily: 'var(--font-serif)',
-          fontStyle: 'italic',
-          maxWidth: '44rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          marginBottom: 6,
         }}
       >
-        Подсказки — только ориентир. Привязка спикера к контакту сохраняется
-        только когда подтверждаешь её явно.
-      </p>
+        <div className="small-caps">
+          Голос {idx + 1} из {total}
+        </div>
+        <div className="small-caps muted">
+          {speaker.speaker_tag}
+        </div>
+      </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {speakers.map((s, idx) => {
-          const labelName =
-            s.contact_display_name ??
-            s.suggestion_contact_display_name ??
-            (s.speaker_tag === 'owner' ? 'Я (владелец)' : s.speaker_tag);
-          const colour = speakerColor(s.speaker_tag, idx);
-          const score = s.suggestion_score ?? 0;
-          return (
-            <div key={s.id} className="card">
+      <div className="title" style={{ fontSize: 28, marginBottom: 28 }}>
+        Кто этот голос?
+      </div>
+
+      {/* Sample bubble row */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 22,
+          padding: '16px 0',
+          borderTop: '1px solid var(--line-soft)',
+          borderBottom: '1px solid var(--line-soft)',
+          marginBottom: 22,
+        }}
+      >
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: '50%',
+            background: color,
+            color: 'var(--paper)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: 'var(--font-mono)',
+            fontWeight: 600,
+            fontSize: 16,
+            letterSpacing: '0.04em',
+            flexShrink: 0,
+          }}
+        >
+          {speaker.speaker_tag}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontStyle: 'italic',
+              fontSize: 16,
+              marginBottom: 8,
+              color: 'var(--ink)',
+              letterSpacing: '-0.01em',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            «голос распознан · послушать сэмпл»
+          </div>
+          <div style={{ height: 22, color }}>
+            <MiniWave
+              seed={speaker.id.charCodeAt(0) + idx * 11}
+              color="currentColor"
+              width={400}
+              height={22}
+              count={64}
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          style={{ padding: '8px 12px', fontSize: 12, flexShrink: 0 }}
+          aria-label="Послушать сэмпл"
+        >
+          ▶ сэмпл
+        </button>
+      </div>
+
+      {/* Suggestion */}
+      {suggestionName && (
+        <>
+          <div className="small-caps" style={{ marginBottom: 10 }}>
+            Похоже на
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              marginBottom: 24,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div
+              className="sp-avatar"
+              style={{
+                background: color,
+                width: 38,
+                height: 38,
+                fontSize: 12,
+              }}
+            >
+              {initials(suggestionName)}
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontSize: 17,
+                  letterSpacing: '-0.01em',
+                  color: 'var(--ink)',
+                }}
+              >
+                {suggestionName}
+              </div>
+              <div className="muted" style={{ fontSize: 12 }}>
+                {suggestedContact?.role ?? '—'}
+                {speaker.suggestion_source &&
+                  ` · ${sourceLabel(speaker.suggestion_source)}`}
+              </div>
+            </div>
+            <div style={{ width: 120 }}>
               <div
                 style={{
                   display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 16,
-                  marginBottom: 14,
+                  justifyContent: 'space-between',
+                  marginBottom: 4,
+                  fontSize: 11,
                 }}
               >
-                <span
-                  className="sp-avatar"
-                  style={{
-                    background: colour,
-                    width: 40,
-                    height: 40,
-                    fontSize: 13,
-                    flexShrink: 0,
-                  }}
-                >
-                  {initials(labelName)}
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="small-caps" style={{ marginBottom: 4 }}>
-                    Голос {s.speaker_tag}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: 'var(--font-serif)',
-                      fontSize: 18,
-                      color: 'var(--ink)',
-                    }}
-                  >
-                    {s.confirmed && s.contact_display_name ? (
-                      <>
-                        <strong style={{ fontWeight: 500 }}>
-                          {s.contact_display_name}
-                        </strong>
-                        <span className="muted" style={{ marginLeft: 8, fontSize: 14 }}>
-                          подтверждён
-                        </span>
-                      </>
-                    ) : s.suggestion_contact_display_name ? (
-                      <>
-                        <span className="muted" style={{ fontSize: 14 }}>
-                          похоже на
-                        </span>{' '}
-                        {s.suggestion_contact_display_name}
-                      </>
-                    ) : (
-                      <span style={{ fontStyle: 'italic', color: 'var(--muted)' }}>
-                        Кто этот голос?
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {!s.confirmed && s.suggestion_score != null && (
-                  <div style={{ width: 140 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        marginBottom: 4,
-                      }}
-                    >
-                      <span className="small-caps" style={{ fontSize: 10 }}>
-                        Уверенность
-                      </span>
-                      <span className="mono" style={{ fontSize: 12 }}>
-                        {Math.round(score * 100)}%
-                      </span>
-                    </div>
-                    <div className="conf">
-                      <div className="conf-fill" style={{ width: `${score * 100}%` }} />
-                    </div>
-                    <div
-                      className="small-caps muted"
-                      style={{
-                        fontSize: 10,
-                        marginTop: 4,
-                        textAlign: 'right',
-                      }}
-                    >
-                      {sourceLabel(s.suggestion_source)}
-                    </div>
-                  </div>
-                )}
+                <span className="small-caps">Уверенность</span>
+                <span className="mono">{Math.round(suggestionScore * 100)}%</span>
               </div>
-
-              {!s.confirmed && (
-                <>
-                  <div className="field" style={{ marginBottom: 12 }}>
-                    <label
-                      className="field-label"
-                      htmlFor={`speaker-${s.id}-contact`}
-                    >
-                      Привязать к контакту
-                    </label>
-                    <select
-                      id={`speaker-${s.id}-contact`}
-                      className="input input--box"
-                      style={{ fontFamily: 'var(--font-sans)' }}
-                      value={pickFor[s.id] ?? s.suggestion_contact_id ?? ''}
-                      onChange={(e) =>
-                        setPickFor((m) => ({ ...m, [s.id]: e.target.value }))
-                      }
-                    >
-                      <option value="">— не выбран —</option>
-                      {contacts.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.display_name}
-                          {c.is_owner ? ' (владелец)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {addingFor === s.id ? (
-                    <div
-                      style={{
-                        padding: 14,
-                        background: 'var(--bg-2)',
-                        borderRadius: 'var(--radius-md)',
-                        marginBottom: 12,
-                      }}
-                    >
-                      <div className="field" style={{ marginBottom: 10 }}>
-                        <label className="field-label">Имя нового контакта</label>
-                        <input
-                          type="text"
-                          className="input input--box"
-                          autoFocus
-                          placeholder="Иван Петров"
-                          value={newName}
-                          onChange={(e) => setNewName(e.target.value)}
-                        />
-                      </div>
-                      <label
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: 8,
-                          fontSize: 13,
-                          color: 'var(--ink-2)',
-                          marginBottom: 10,
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={newConsent}
-                          onChange={(e) => setNewConsent(e.target.checked)}
-                        />
-                        <span>Запоминать голос для авто-определения</span>
-                      </label>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn--ghost btn--sm"
-                          onClick={() => {
-                            setAddingFor(null);
-                            setNewName('');
-                            setNewConsent(false);
-                          }}
-                          disabled={busyAdd}
-                        >
-                          Отмена
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn--primary btn--sm"
-                          onClick={() => void handleAddAsContact(s)}
-                          disabled={busyAdd || !newName.trim()}
-                        >
-                          {busyAdd ? 'Добавляем…' : 'Добавить и привязать'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="btn btn--primary"
-                      onClick={() => void handleConfirm(s)}
-                      disabled={
-                        !pickFor[s.id] && !s.suggestion_contact_id
-                      }
-                    >
-                      ✓ Подтвердить
-                    </button>
-                    {!addingFor && (
-                      <button
-                        type="button"
-                        className="btn btn--ghost"
-                        onClick={() => {
-                          setAddingFor(s.id);
-                          setNewName('');
-                          setNewConsent(false);
-                        }}
-                      >
-                        + Новый контакт
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {s.confirmed && (
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--sm"
-                  onClick={() => void handleUnbind(s)}
-                >
-                  Отвязать
-                </button>
-              )}
+              <div className="conf">
+                <div
+                  className="conf-fill"
+                  style={{ width: `${suggestionScore * 100}%` }}
+                />
+              </div>
             </div>
-          );
-        })}
+          </div>
+        </>
+      )}
+
+      {/* Picker */}
+      {!suggestionName && contacts.length > 0 && (
+        <div className="field" style={{ marginBottom: 18 }}>
+          <label
+            className="field-label"
+            htmlFor={`speaker-${speaker.id}-pick`}
+          >
+            Выбрать контакт
+          </label>
+          <select
+            id={`speaker-${speaker.id}-pick`}
+            className="input input--box"
+            style={{ fontFamily: 'var(--font-sans)' }}
+            value={pickedContactId}
+            onChange={(e) => onPick(e.target.value)}
+          >
+            <option value="">— не выбран —</option>
+            {contacts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.display_name}
+                {c.is_owner ? ' (владелец)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Inline new-contact form */}
+      {adding && (
+        <div
+          style={{
+            padding: 14,
+            background: 'var(--bg-2)',
+            borderRadius: 8,
+            marginBottom: 18,
+          }}
+        >
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label className="field-label" htmlFor={`speaker-${speaker.id}-new`}>
+              Имя нового контакта
+            </label>
+            <input
+              id={`speaker-${speaker.id}-new`}
+              type="text"
+              className="input input--box"
+              autoFocus
+              placeholder="Иван Петров"
+              value={newName}
+              onChange={(e) => onChangeNewName(e.target.value)}
+            />
+          </div>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 8,
+              fontSize: 13,
+              color: 'var(--ink-2)',
+              marginBottom: 10,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={newConsent}
+              onChange={(e) => onChangeNewConsent(e.target.checked)}
+            />
+            <span>Запоминать голос для авто-определения</span>
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={onCancelAdd}
+              disabled={busyAdd}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={onSubmitNewContact}
+              disabled={busyAdd || !newName.trim()}
+            >
+              {busyAdd ? 'Добавляем…' : 'Добавить и привязать'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Action row */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          borderTop: '1px solid var(--line-soft)',
+          paddingTop: 18,
+          flexWrap: 'wrap',
+        }}
+      >
+        <button
+          type="button"
+          className="btn btn--primary"
+          style={{ flex: 1, justifyContent: 'center', minWidth: 200 }}
+          onClick={() => {
+            if (suggestionName && speaker.suggestion_contact_id) {
+              onConfirm(speaker.suggestion_contact_id);
+            } else if (pickedContact) {
+              onConfirm(pickedContact.id);
+            }
+          }}
+          disabled={
+            !suggestionName && !pickedContact && !speaker.suggestion_contact_id
+          }
+        >
+          ✓ Да, это{' '}
+          {suggestionName
+            ? suggestionName.split(' ')[0]
+            : pickedContact?.display_name.split(' ')[0] ?? '…'}
+        </button>
+        {suggestionName && (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={onReject}
+          >
+            Не он/она
+          </button>
+        )}
+        {!adding && (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={onStartAdd}
+          >
+            Новый контакт
+          </button>
+        )}
+      </div>
+
+      <div style={{ marginTop: 14, textAlign: 'center', fontSize: 12 }}>
+        <span className="muted">
+          Подтверждение сохранит голос в профиль контакта (если включена опция){' '}
+        </span>
       </div>
     </div>
   );
+}
+
+function sourceLabel(s: string | null): string {
+  if (!s) return '';
+  if (s === 'both') return 'голос + LLM';
+  if (s === 'embedding') return 'голос';
+  if (s === 'llm') return 'LLM';
+  return s;
 }

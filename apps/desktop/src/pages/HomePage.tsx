@@ -1,8 +1,11 @@
+// [B17] HomePage — Atelier v2 exact match per docs/design/atelier-v2/_reference/
+// atelier.jsx §2 (Home idle) + §3 (Recording active). Логика recording flow,
+// consent, hotkey, updater сохранена 1-в-1 с предыдущей версии.
+
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 import { humanError } from '../api/errors';
-import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   getRecordingState,
   listCalls,
@@ -12,6 +15,9 @@ import {
   type RecordingState,
 } from '../api/recording';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
+import { listCallSpeakers } from '../api/speakers';
+import { Waveform } from '../components/Waveform';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface AvailableUpdate {
   version: string;
@@ -21,8 +27,7 @@ interface AvailableUpdate {
 }
 
 interface HomePageProps {
-  /** Опциональный колбэк навигации в детали звонка. Используется при
-   *  «Open» после остановки записи + auto-redirect через 5 сек. */
+  /** Опциональный колбэк навигации в детали звонка. */
   onOpenCall?: (callId: string) => void;
 }
 
@@ -35,15 +40,16 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   const [error, setError] = useState<string | null>(null);
   const [lastCall, setLastCall] = useState<Call | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  // #39 (C1): recording consent. Сохраняется один раз — при первом «Начать запись».
+  // #39 (C1): recording consent — сохраняется один раз при первом «Начать запись».
   const [consentAt, setConsentAt] = useState<string | null>(null);
   const [showConsent, setShowConsent] = useState(false);
   const consentRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(consentRef, showConsent, {
-    onClose: () => setShowConsent(false),
-  });
-  // [B16] HomePage hero stats — последний звонок, число за неделю, 3 recent для quick-open.
+  useFocusTrap(consentRef, showConsent, { onClose: () => setShowConsent(false) });
+  // [B16] Hero stats.
   const [recentCalls, setRecentCalls] = useState<Call[]>([]);
+  // [B17] «Ждут подтверждения» — сумма неподтверждённых спикеров по всем
+  // ready-звонкам. Делается one-shot после listCalls; дёшево на N≤50.
+  const [pendingSpeakers, setPendingSpeakers] = useState(0);
 
   useEffect(() => {
     invoke<AvailableUpdate | null>('check_for_update')
@@ -65,13 +71,35 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       .catch((e: unknown) => console.warn('listCalls (home) failed', e));
   }, []);
 
+  // [B17] Aggregate unconfirmed speakers across ready calls.
+  useEffect(() => {
+    const ready = recentCalls.filter((c) => c.status === 'ready').slice(0, 50);
+    if (ready.length === 0) {
+      setPendingSpeakers(0);
+      return;
+    }
+    void (async () => {
+      const results = await Promise.allSettled(
+        ready.map((c) => listCallSpeakers(c.id)),
+      );
+      let count = 0;
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          count += r.value.filter((s) => !s.confirmed).length;
+        }
+      }
+      setPendingSpeakers(count);
+    })();
+  }, [recentCalls]);
+
   useEffect(() => {
     if (!recording) {
       setElapsed(0);
       return;
     }
     const startMs = new Date(recording.started_at).getTime();
-    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+    const tick = () =>
+      setElapsed(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
     tick();
     const id = window.setInterval(tick, 250);
     return () => window.clearInterval(id);
@@ -136,9 +164,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
     }
   };
 
-  // [B16 audit P1] Hotkey ⌘⇧R: start / stop запись без клика. Слушаем
-  // на window — главный экран всегда в focus при desktop-app. Игнорируем
-  // если activeElement — input/textarea (юзер пишет где-то).
+  // [B16] Hotkey ⌘⇧R: start/stop без клика.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const isCmd = e.metaKey || e.ctrlKey;
@@ -163,90 +189,218 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording, busy, consentAt]);
 
-  // [B16] Stats для hero — derived из recentCalls.
+  // Stats derivation
   const now = Date.now();
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-  const callsThisWeek = recentCalls.filter((c) => {
+  const totalCount = recentCalls.length;
+  const weekCount = recentCalls.filter((c) => {
     const t = new Date(c.started_at).getTime();
     return Number.isFinite(t) && t >= weekAgo;
   }).length;
-  const lastReady = recentCalls.find((c) => c.status === 'ready') ?? recentCalls[0] ?? null;
+  const totalHours =
+    recentCalls.reduce((acc, c) => acc + (c.duration_sec ?? 0), 0) / 3600;
   const recentForList = recentCalls.slice(0, 3);
 
+  // ── RECORDING STATE — full-screen recording layout per artboard §3
+  if (recording) {
+    return (
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div>
+            <div
+              className="eyebrow"
+              style={{ marginBottom: 10, color: 'var(--signal)' }}
+            >
+              ● Идёт запись · Локально
+            </div>
+            <div
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 92,
+                fontWeight: 400,
+                letterSpacing: '0.02em',
+                color: 'var(--ink)',
+                lineHeight: 1,
+              }}
+            >
+              {formatHMS(elapsed, true)}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="rec-btn rec-btn--stop"
+            onClick={onStop}
+            disabled={busy}
+            aria-label="Остановить запись"
+          />
+        </div>
+
+        {error && (
+          <p role="alert" style={{ color: 'var(--signal)' }}>
+            {error}
+          </p>
+        )}
+
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 18,
+            justifyContent: 'center',
+            minHeight: 280,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: 8,
+              }}
+            >
+              <span className="small-caps">Вы · микрофон</span>
+              <span
+                className="mono muted"
+                style={{ fontSize: 11, letterSpacing: '0.04em' }}
+              >
+                запись
+              </span>
+            </div>
+            <div className="wave-lane" style={{ height: 110 }}>
+              <Waveform
+                seed={42 + (elapsed % 7)}
+                color="var(--ink)"
+                count={140}
+                gap={2.5}
+                width={1100}
+                height={110}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              height: 1,
+              background: 'var(--line-soft)',
+              margin: '0 12px',
+            }}
+          />
+
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: 8,
+              }}
+            >
+              <span className="small-caps" style={{ color: 'var(--accent)' }}>
+                Собеседник · системный звук
+              </span>
+              <span
+                className="mono muted"
+                style={{ fontSize: 11, letterSpacing: '0.04em' }}
+              >
+                запись
+              </span>
+            </div>
+            <div className="wave-lane" style={{ height: 110 }}>
+              <Waveform
+                seed={73 + (elapsed % 5)}
+                color="var(--accent)"
+                count={140}
+                gap={2.5}
+                width={1100}
+                height={110}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            borderTop: '1px solid var(--line-soft)',
+            paddingTop: 16,
+          }}
+        >
+          <div
+            className="mono muted"
+            style={{ fontSize: 11, letterSpacing: '0.06em' }}
+          >
+            16 кГц моно · WAV · {formatHMS(elapsed, true)}
+          </div>
+          <div
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontStyle: 'italic',
+              color: 'var(--muted)',
+              fontSize: 13,
+            }}
+          >
+            Расшифровка начнётся автоматически
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // ── IDLE STATE — home per artboard §2
   return (
     <section>
-      <header style={{ marginBottom: 38 }}>
-        <div className="eyebrow" style={{ marginBottom: 16 }}>
-          {new Date().toLocaleDateString('ru-RU', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-          })}
-        </div>
-        <h1 className="display" style={{ marginBottom: 12 }}>
-          {recording ? 'Записываю…' : 'Готов записывать.'}
-        </h1>
-        <p className="subtitle" style={{ maxWidth: 540 }}>
-          Нажмите красный кружок когда начнёте звонок. Wotold расшифрует речь и пришлёт
-          саммари — обычно через 10–30 секунд после остановки.
-        </p>
-      </header>
+      <div className="eyebrow" style={{ marginBottom: 18 }}>
+        {formatRuDate(new Date())}
+      </div>
+      <div className="display" style={{ marginBottom: 12 }}>
+        Готов записывать.
+      </div>
+      <p className="subtitle" style={{ maxWidth: 540, marginBottom: 38 }}>
+        Нажмите красный кружок когда начнёте звонок. Расшифровка приходит через
+        10–30 секунд.
+      </p>
 
-      <div style={{ display: 'flex', gap: 36, alignItems: 'center', marginBottom: 44 }}>
-        {!recording && (
-          <>
-            <button
-              type="button"
-              className="rec-btn"
-              onClick={onStart}
-              disabled={busy}
-              aria-label={busy ? 'Запускаем' : 'Начать запись'}
-              title="Горячая клавиша: ⌘⇧R"
-            />
-            <div>
-              <div className="small-caps" style={{ marginBottom: 4 }}>
-                ⌘ ⇧ R
-              </div>
-              <div
-                style={{
-                  fontFamily: 'var(--font-serif)',
-                  fontSize: 19,
-                  fontStyle: 'italic',
-                  color: 'var(--muted)',
-                  maxWidth: 260,
-                  lineHeight: 1.45,
-                }}
-              >
-                {busy ? 'Запускаем…' : 'Или просто нажмите горячую клавишу'}
-              </div>
-            </div>
-          </>
-        )}
-        {recording && (
-          <>
-            <button
-              type="button"
-              className="rec-btn rec-btn--stop"
-              onClick={onStop}
-              disabled={busy}
-              aria-label="Остановить запись"
-            />
-            <div>
-              <div
-                className="small-caps"
-                style={{ color: 'var(--signal)', marginBottom: 4 }}
-              >
-                ● Идёт запись
-              </div>
-              <div
-                className="mono"
-                style={{ fontSize: 36, fontWeight: 500, color: 'var(--ink)' }}
-              >
-                {formatElapsed(elapsed)}
-              </div>
-            </div>
-          </>
-        )}
+      <div
+        style={{
+          display: 'flex',
+          gap: 36,
+          alignItems: 'center',
+          marginBottom: 44,
+        }}
+      >
+        <button
+          type="button"
+          className="rec-btn"
+          onClick={onStart}
+          disabled={busy}
+          aria-label={busy ? 'Запускаем' : 'Начать запись'}
+          title="Горячая клавиша: ⌘⇧R"
+        />
+        <div>
+          <div className="small-caps" style={{ marginBottom: 4 }}>
+            ⌘ ⇧ R
+          </div>
+          <div
+            style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: 19,
+              fontStyle: 'italic',
+              color: 'var(--muted)',
+              maxWidth: 260,
+              lineHeight: 1.45,
+            }}
+          >
+            {busy ? 'Запускаем…' : 'Или просто нажмите горячую клавишу'}
+          </div>
+        </div>
       </div>
 
       {error && (
@@ -262,7 +416,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
         </p>
       )}
 
-      {lastCall && !recording && (
+      {lastCall && (
         <div
           className="card"
           style={{ marginBottom: 28, display: 'flex', gap: 16, alignItems: 'center' }}
@@ -287,40 +441,35 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       )}
 
       {recentCalls.length > 0 && (
-        <div className="stat-row" style={{ marginBottom: 36 }}>
+        <div style={{ display: 'flex', marginBottom: 36 }}>
           <div className="stat">
-            <span className="stat-value">{recentCalls.length}</span>
+            <span className="stat-value">{totalCount}</span>
             <span className="stat-label">Звонков · всего</span>
           </div>
           <div className="stat">
-            <span className="stat-value">{callsThisWeek}</span>
+            <span className="stat-value">{weekCount}</span>
             <span className="stat-label">За неделю</span>
           </div>
-          {lastReady && onOpenCall && (
-            <button
-              type="button"
-              className="stat"
-              onClick={() => onOpenCall(lastReady.id)}
-              style={{
-                background: 'none',
-                border: 'none',
-                borderLeft: '1px solid var(--line)',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-              title="Открыть последний звонок"
-            >
-              <span className="stat-value" style={{ fontSize: 19 }}>
-                {formatRelative(lastReady.started_at)}
+          <div className="stat">
+            <span className="stat-value">
+              {totalHours.toFixed(0)}
+              <span style={{ fontSize: 18, marginLeft: 4 }}>ч</span>
+            </span>
+            <span className="stat-label">В архиве</span>
+          </div>
+          {pendingSpeakers > 0 && (
+            <div className="stat">
+              <span className="stat-value" style={{ color: 'var(--accent)' }}>
+                {pendingSpeakers}
               </span>
-              <span className="stat-label">Последний</span>
-            </button>
+              <span className="stat-label">Ждут подтверждения</span>
+            </div>
           )}
         </div>
       )}
 
-      {recentForList.length > 0 && !recording && (
-        <section>
+      {recentForList.length > 0 && (
+        <div>
           <div
             style={{
               display: 'flex',
@@ -329,13 +478,15 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
               marginBottom: 14,
             }}
           >
-            <span className="small-caps">Недавние</span>
-            <div style={{ flex: 1, height: 1, background: 'var(--line-soft)' }} />
+            <span className="small-caps">Недавно</span>
+            <div
+              style={{ flex: 1, height: 1, background: 'var(--line-soft)' }}
+            />
             {onOpenCall && recentCalls.length > 3 && (
               <button
                 type="button"
                 className="btn btn--quiet"
-                style={{ fontSize: 13 }}
+                style={{ padding: 0, fontSize: 13 }}
                 onClick={() => onOpenCall(recentCalls[0]!.id)}
               >
                 Все звонки →
@@ -349,45 +500,58 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
               onClick={() => onOpenCall?.(c.id)}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '120px 1fr auto',
+                gridTemplateColumns: '100px 1fr auto',
                 gap: 24,
                 padding: '14px 0',
                 width: '100%',
                 background: 'none',
-                // Reset all borders FIRST, then set borderTop — порядок важен:
-                // shorthand `border` сбрасывает borderTopColor/width даже если
-                // borderTop задан выше. (Code-review HIGH fix.)
                 border: 'none',
-                borderTop:
-                  idx === 0 ? 'none' : '1px solid var(--line-soft)',
+                borderTop: idx === 0 ? 'none' : '1px dotted var(--line)',
                 textAlign: 'left',
                 cursor: onOpenCall ? 'pointer' : 'default',
+                color: 'inherit',
               }}
             >
-              <div className="mono muted" style={{ fontSize: 12 }}>
-                {formatRelative(c.started_at)}
+              <div
+                className="mono muted"
+                style={{ fontSize: 12, letterSpacing: '0.04em' }}
+              >
+                {formatWhen(c.started_at)}
               </div>
               <div>
                 <div
                   style={{
                     fontFamily: 'var(--font-serif)',
                     fontSize: 16,
+                    marginBottom: 4,
+                    letterSpacing: '-0.01em',
                     color: 'var(--ink)',
-                    marginBottom: 2,
                   }}
                 >
-                  {c.title ?? 'Без названия'}
+                  {c.title ?? `Звонок ${c.id.slice(0, 8)}`}
                 </div>
+                {c.failed_reason && (
+                  <div
+                    className="muted"
+                    style={{
+                      fontFamily: 'var(--font-serif)',
+                      fontStyle: 'italic',
+                      fontSize: 13,
+                    }}
+                  >
+                    «{c.failed_reason}»
+                  </div>
+                )}
               </div>
               <div
                 className="mono muted"
                 style={{ fontSize: 12, alignSelf: 'center' }}
               >
-                {c.duration_sec ?? 0}c
+                {formatDurationShort(c.duration_sec)}
               </div>
             </button>
           ))}
-        </section>
+        </div>
       )}
 
       {showConsent && (
@@ -411,9 +575,9 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
             </h3>
             <p style={{ fontFamily: 'var(--font-serif)', fontSize: 16, lineHeight: 1.55 }}>
               Wotold будет записывать звук с микрофона и системный аудиовыход. Перед
-              началом убедись, что собеседник предупреждён и согласен на запись. По закону
-              РФ/РК запись переговоров без уведомления другой стороны может быть
-              нарушением (статьи о неприкосновенности частной жизни / тайне коммуникаций).
+              началом убедись, что собеседник предупреждён и согласен на запись. По
+              закону РФ/РК запись переговоров без уведомления другой стороны может
+              быть нарушением.
             </p>
             <p className="muted" style={{ marginTop: 8 }}>
               Это окно появляется один раз. В дальнейшем будем доверять твоему решению.
@@ -488,22 +652,52 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   );
 }
 
-function formatElapsed(sec: number): string {
+function formatHMS(sec: number, padHours = false): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const mm = m.toString().padStart(2, '0');
+  const ss = s.toString().padStart(2, '0');
+  if (h > 0 || padHours) return `${h.toString().padStart(2, '0')}:${mm}:${ss}`;
+  return `${m}:${ss}`;
+}
+
+function formatRuDate(d: Date): string {
+  try {
+    return d.toLocaleDateString('ru-RU', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    });
+  } catch {
+    return d.toString();
+  }
+}
+
+// "Сегодня · 11:24" / "Вчера · 16:02" / "15 мая · 10:00"
+function formatWhen(iso: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return iso;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  const time = date.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  if (date >= startOfToday) return `Сегодня · ${time}`;
+  if (date >= startOfYesterday) return `Вчера · ${time}`;
+  const day = date.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+  });
+  return `${day} · ${time}`;
+}
+
+function formatDurationShort(sec: number | null): string {
+  if (sec == null) return '—';
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return iso;
-  const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (diffSec < 60) return 'только что';
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} мин назад`;
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} ч назад`;
-  if (diffSec < 7 * 86400) return `${Math.floor(diffSec / 86400)} д назад`;
-  return new Date(iso).toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: 'short',
-  });
 }

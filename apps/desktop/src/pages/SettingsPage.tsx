@@ -1,4 +1,15 @@
-import { useEffect, useState } from 'react';
+// [B17] SettingsPage — exact match per docs/design/atelier-v2/_reference/atelier-2.jsx §9.
+//
+// Inner 220px rail (Настройки nav) + flex content with per-section layout:
+//   - Eyebrow "Настройки · {section.label}"
+//   - .display 40 headline
+//   - .subtitle lede
+//   - Section content
+//
+// "Источник сервисов" — rounded-pill 2-button path toggle с italic right hint.
+// "Ключи" — field-label + ●подключён/●пусто mono caps right + .input + italic hint.
+
+import { useEffect, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { humanError } from '../api/errors';
@@ -13,13 +24,29 @@ import {
   type ProviderPath,
   type SttProvider,
 } from '../api/settings';
-import type { ReactNode } from 'react';
-import { Button, Card, InputField, SelectField } from '../ui';
+import { InputField, SelectField } from '../ui';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
 import { ByoKeysSection } from './ByoKeysSection';
 import { PermissionsSection } from './PermissionsSection';
 import { UsageSection } from './UsageSection';
+
+type SectionId =
+  | 'account'
+  | 'appearance'
+  | 'permissions'
+  | 'stt'
+  | 'path'
+  | 'keys'
+  | 'proxy'
+  | 'usage'
+  | 'privacy';
+
+interface SectionMeta {
+  id: SectionId;
+  label: string;
+  hidden?: boolean;
+}
 
 function isSttProvider(v: string | null): v is SttProvider {
   return v === 'auto' || v === 'soniox' || v === 'gladia';
@@ -41,6 +68,7 @@ function isValidProxyUrl(v: string): boolean {
 
 export function SettingsPage() {
   const [loading, setLoading] = useState(true);
+  const [section, setSection] = useState<SectionId>('appearance');
   const [sttProvider, setSttProvider] = useState<SttProvider>(SETTINGS_DEFAULTS.STT_PROVIDER);
   const [providerPath, setProviderPath] = useState<ProviderPath>(SETTINGS_DEFAULTS.PROVIDER_PATH);
   const [llmModel, setLlmModel] = useState<string>(SETTINGS_DEFAULTS.LLM_MODEL);
@@ -49,7 +77,6 @@ export function SettingsPage() {
   );
   const [proxyUrl, setProxyUrl] = useState<string>('');
   const [proxyUrlError, setProxyUrlError] = useState<string | null>(null);
-  const [showAdvancedProxy, setShowAdvancedProxy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,9 +102,6 @@ export function SettingsPage() {
     })();
   }, []);
 
-  // [B16] Subtle saved indicator — после persist показываем 'Сохранено ✓'
-  // на ~1.5s. Раньше изменение настройки молча уходило, юзер не знал что
-  // оно применилось.
   const [savedTick, setSavedTick] = useState(0);
   const persist = async (key: string, value: string) => {
     try {
@@ -96,141 +120,255 @@ export function SettingsPage() {
 
   if (loading) return <p className="muted">Загрузка…</p>;
 
-  // UX: эффективный proxy URL = user-override ИЛИ production default.
   const effectiveProxyUrl = proxyUrl.trim() || SETTINGS_DEFAULTS.PROXY_BASE_URL;
 
+  const NAV: SectionMeta[] = [
+    { id: 'appearance', label: 'Внешний вид' },
+    { id: 'account', label: 'Учётная запись' },
+    { id: 'permissions', label: 'Разрешения' },
+    { id: 'stt', label: 'Распознавание речи' },
+    { id: 'path', label: 'Источник сервисов' },
+    { id: 'keys', label: 'Ключи (BYO)', hidden: providerPath !== 'byo' },
+    { id: 'proxy', label: 'Сервер Wotold', hidden: providerPath !== 'managed' },
+    { id: 'usage', label: 'Использование', hidden: providerPath !== 'managed' },
+    { id: 'privacy', label: 'Конфиденциальность' },
+  ];
+
+  const activeMeta = NAV.find((s) => s.id === section) ?? NAV[0]!;
+
   return (
-    <section>
-      <h1 className="title" style={{ fontSize: 36, marginBottom: 28 }}>
-        Настройки
-      </h1>
+    <div
+      style={{
+        margin: '-34px -44px',
+        display: 'flex',
+        minHeight: '100%',
+      }}
+    >
+      {/* Inner settings rail */}
+      <div
+        style={{
+          width: 220,
+          padding: '32px 22px',
+          borderRight: '1px solid var(--line-soft)',
+          flexShrink: 0,
+        }}
+      >
+        <div className="small-caps" style={{ marginBottom: 14 }}>
+          Настройки
+        </div>
+        {NAV.filter((s) => !s.hidden).map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className={`nav-item${section === s.id ? ' nav-item--active' : ''}`}
+            onClick={() => setSection(s.id)}
+            aria-current={section === s.id ? 'page' : undefined}
+            style={{ fontSize: 14, marginBottom: 2 }}
+          >
+            {s.label}
+          </button>
+        ))}
+        {savedTick > 0 && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="small-caps"
+            style={{ marginTop: 18, color: 'var(--success)', fontSize: 11 }}
+          >
+            ✓ Сохранено
+          </div>
+        )}
+      </div>
 
-      {error && (
-        <p
-          role="alert"
-          style={{
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-sans)',
-            marginBottom: 14,
-          }}
-        >
-          {error}
-        </p>
-      )}
-
-      <SettingsSection title="Внешний вид">
-        <Card>
-          <AppearanceSection />
-        </Card>
-      </SettingsSection>
-
-      <SettingsSection title="Разрешения системы">
-        <Card>
-          <PermissionsSection />
-        </Card>
-      </SettingsSection>
-
-      <SettingsSection title="Распознавание речи">
-        <Card>
-          <SelectField
-            label="Провайдер"
-            value={sttProvider}
-            onChange={(e) => {
-              const v = e.target.value as SttProvider;
-              setSttProvider(v);
-              void persist(SETTINGS_KEYS.STT_PROVIDER, v);
+      {/* Content */}
+      <div style={{ flex: 1, padding: '32px 44px', overflowY: 'auto' }}>
+        <div className="small-caps" style={{ marginBottom: 8 }}>
+          Настройки · {activeMeta.label}
+        </div>
+        {error && (
+          <p
+            role="alert"
+            style={{
+              color: 'var(--signal)',
+              fontFamily: 'var(--font-sans)',
+              marginBottom: 14,
             }}
           >
-            <option value="auto">Auto (Soniox → Gladia)</option>
-            <option value="soniox">Soniox</option>
-            <option value="gladia">Gladia</option>
-          </SelectField>
-        </Card>
-      </SettingsSection>
+            {error}
+          </p>
+        )}
 
-      <SettingsSection title="Саммари и язык">
-        <Card>
-          <SelectField
-            label="Язык рекапа и задач"
-            value={preferredLanguage}
-            onChange={(e) => {
-              const v = e.target.value as PreferredLanguage;
-              setPreferredLanguage(v);
-              void persist(SETTINGS_KEYS.PREFERRED_LANGUAGE, v);
-            }}
-            hint="На каком языке писать рекап и задачи. 'Авто' = язык распознанной речи. Не влияет на сам STT — звонок на любом языке распознаётся как есть."
+        {section === 'appearance' && (
+          <SectionShell
+            title="Внешний вид."
+            lede="Тема и акцент применяются мгновенно — переключи и сравни. Все экраны реагируют одновременно."
           >
-            {PREFERRED_LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.label}
-              </option>
-            ))}
-          </SelectField>
-          <InputField
-            label="Модель (опционально)"
-            type="text"
-            value={llmModel}
-            onChange={(e) => setLlmModel(e.target.value)}
-            onBlur={() => {
-              const trimmed = llmModel.trim();
-              setLlmModel(trimmed);
-              void persist(SETTINGS_KEYS.LLM_MODEL, trimmed);
-            }}
-            placeholder="auto (определяется бэкендом прокси)"
-            hint="Пусто = прокси сам выбирает по LLM_BACKEND (сейчас Groq Llama 3.3 70B). Override только если знаешь что делаешь."
-          />
-        </Card>
-      </SettingsSection>
+            <AppearanceSection />
+          </SectionShell>
+        )}
 
-      <SettingsSection title="Источник сервисов">
-        <Card>
-          <RadioOption
-            name="path"
-            value="managed"
-            checked={providerPath === 'managed'}
-            onSelect={() => {
-              setProviderPath('managed');
-              void persist(SETTINGS_KEYS.PROVIDER_PATH, 'managed');
-            }}
-            title="Через Wotold"
-            hint="По умолчанию. Все запросы идут через серверы Wotold — свои API-ключи не нужны. Есть бесплатные лимиты."
-          />
-          <RadioOption
-            name="path"
-            value="byo"
-            checked={providerPath === 'byo'}
-            onSelect={() => {
-              setProviderPath('byo');
-              void persist(SETTINGS_KEYS.PROVIDER_PATH, 'byo');
-            }}
-            title="Свои API-ключи"
-            hint="Подключи свои ключи Soniox/Gladia/Anthropic — Wotold пойдёт напрямую без посредника. Ключи хранятся в Keychain macOS."
-          />
-        </Card>
-      </SettingsSection>
+        {section === 'account' && (
+          <SectionShell
+            title="Аккаунт."
+            lede="Облачная синхронизация скоро. Сейчас вход ничего не разблокирует — Wotold полностью работает локально без логина."
+          >
+            <AccountSection />
+          </SectionShell>
+        )}
 
-      {/* Managed: показываем эффективный URL + advanced collapse для override.
-          В BYO режиме прокси не нужен — секция скрыта. */}
-      {providerPath === 'managed' && (
-        <SettingsSection
-          title="Сервер Wotold"
-          actions={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAdvancedProxy((v) => !v)}
+        {section === 'permissions' && (
+          <SectionShell
+            title="Разрешения системы."
+            lede="Wotold нужны два разрешения macOS: микрофон и запись экрана для системного звука. Без них запись не начнётся."
+          >
+            <PermissionsSection />
+          </SectionShell>
+        )}
+
+        {section === 'stt' && (
+          <SectionShell
+            title="Распознавание речи."
+            lede="Поставщик STT и язык вывода для рекапа. Auto переключается между Soniox и Gladia при сбоях."
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 540 }}>
+              <SelectField
+                label="Провайдер"
+                value={sttProvider}
+                onChange={(e) => {
+                  const v = e.target.value as SttProvider;
+                  setSttProvider(v);
+                  void persist(SETTINGS_KEYS.STT_PROVIDER, v);
+                }}
+              >
+                <option value="auto">Auto (Soniox → Gladia)</option>
+                <option value="soniox">Soniox</option>
+                <option value="gladia">Gladia</option>
+              </SelectField>
+              <SelectField
+                label="Язык рекапа и задач"
+                value={preferredLanguage}
+                onChange={(e) => {
+                  const v = e.target.value as PreferredLanguage;
+                  setPreferredLanguage(v);
+                  void persist(SETTINGS_KEYS.PREFERRED_LANGUAGE, v);
+                }}
+                hint="На каком языке писать рекап и задачи. 'Авто' = язык распознанной речи. Не влияет на сам STT."
+              >
+                {PREFERRED_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </SelectField>
+              <InputField
+                label="LLM-модель (опционально)"
+                type="text"
+                value={llmModel}
+                onChange={(e) => setLlmModel(e.target.value)}
+                onBlur={() => {
+                  const trimmed = llmModel.trim();
+                  setLlmModel(trimmed);
+                  void persist(SETTINGS_KEYS.LLM_MODEL, trimmed);
+                }}
+                placeholder="auto (определяется бэкендом)"
+                hint="Пусто = прокси сам выбирает по LLM_BACKEND. Override только если знаешь что делаешь."
+              />
+            </div>
+          </SectionShell>
+        )}
+
+        {section === 'path' && (
+          <SectionShell
+            title="Источник сервисов."
+            lede="По умолчанию Wotold ходит через прокси с дневной бесплатной квотой. Подключи свои ключи — и запросы пойдут напрямую, без лимитов."
+          >
+            <PathToggle
+              value={providerPath}
+              onChange={(v) => {
+                setProviderPath(v);
+                void persist(SETTINGS_KEYS.PROVIDER_PATH, v);
+                if (v === 'byo') setSection('keys');
+                if (v === 'managed') setSection('proxy');
+              }}
+            />
+            <div
+              style={{
+                marginTop: 24,
+                padding: '14px 16px',
+                background: 'var(--bg-2)',
+                borderRadius: 8,
+                fontFamily: 'var(--font-serif)',
+                fontSize: 14,
+                color: 'var(--ink-2)',
+                fontStyle: 'italic',
+                lineHeight: 1.55,
+                maxWidth: 560,
+              }}
             >
-              {showAdvancedProxy ? '✕ Закрыть' : 'Advanced'}
-            </Button>
-          }
-        >
-          <Card>
+              {providerPath === 'managed'
+                ? 'Через Wotold — managed-режим. Все запросы STT/LLM идут через наш прокси. Бесплатный тир: 60 минут STT и 50 тыс. токенов LLM в день. Превышение — мягкий отказ, без списаний.'
+                : 'Свои ключи — BYO-режим. Wotold ходит напрямую к Soniox/Gladia/Anthropic с твоими ключами. Ключи хранятся в системном Keychain, не в БД и не в логах.'}
+            </div>
+          </SectionShell>
+        )}
+
+        {section === 'keys' && providerPath === 'byo' && (
+          <SectionShell
+            title="Свои ключи API."
+            lede="Подключи ключи Soniox · Gladia · Anthropic — Wotold пойдёт напрямую, мимо нашего прокси. Ключи живут в Keychain macOS."
+          >
+            <div
+              style={{
+                background: 'var(--paper)',
+                border: '1px solid var(--line)',
+                borderRadius: 8,
+                padding: 18,
+                marginBottom: 36,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 18,
+                maxWidth: 700,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span className="small-caps">Путь</span>
+              <PathToggle
+                value={providerPath}
+                onChange={(v) => {
+                  setProviderPath(v);
+                  void persist(SETTINGS_KEYS.PROVIDER_PATH, v);
+                  if (v === 'managed') setSection('proxy');
+                }}
+                compact
+              />
+              <span
+                className="muted"
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontStyle: 'italic',
+                  fontSize: 13,
+                  marginLeft: 'auto',
+                }}
+              >
+                Ключи хранятся в системном Keychain
+              </span>
+            </div>
+            <ByoKeysSection />
+          </SectionShell>
+        )}
+
+        {section === 'proxy' && providerPath === 'managed' && (
+          <SectionShell
+            title="Сервер Wotold."
+            lede="Managed-прокси — общий endpoint для STT/LLM. Можно подменить URL на staging или self-hosted, если знаешь что делаешь."
+          >
             <p
               className="muted"
               style={{
-                marginTop: 0,
-                marginBottom: showAdvancedProxy ? 12 : 0,
                 fontSize: 13,
+                marginTop: 0,
+                marginBottom: 14,
+                maxWidth: 560,
               }}
             >
               Endpoint: <code className="mono">{effectiveProxyUrl}</code>
@@ -238,7 +376,7 @@ export function SettingsPage() {
                 <span className="subtle"> · default</span>
               )}
             </p>
-            {showAdvancedProxy && (
+            <div style={{ maxWidth: 560 }}>
               <InputField
                 label="Custom Proxy URL"
                 type="text"
@@ -258,153 +396,105 @@ export function SettingsPage() {
                 hint="Override для staging или self-hosted прокси. Оставь пустым для default."
                 error={proxyUrlError ?? undefined}
               />
-            )}
-          </Card>
-        </SettingsSection>
-      )}
-
-      {/* BYO: показываем ключи только при выборе BYO. В managed-режиме они не нужны. */}
-      {providerPath === 'byo' && (
-        <SettingsSection title="Свои API-ключи">
-          <Card>
-            <ByoKeysSection />
-          </Card>
-        </SettingsSection>
-      )}
-
-      <SettingsSection title="Аккаунт">
-        <AccountSection />
-      </SettingsSection>
-
-      {/* #48: Quota indicator. Показываем только в managed-режиме —
-          в BYO пользователь платит партнёрам напрямую, наша квота не действует. */}
-      {providerPath === 'managed' && (
-        <SettingsSection title="Использование">
-          <UsageSection />
-        </SettingsSection>
-      )}
-
-      <p
-        className="muted"
-        style={{
-          fontFamily: 'var(--font-serif)',
-          fontStyle: 'italic',
-          fontSize: 13,
-          margin: '24px 0',
-          display: 'flex',
-          gap: 10,
-          alignItems: 'baseline',
-        }}
-      >
-        Все изменения сохраняются автоматически.
-        {savedTick > 0 && (
-          <span
-            role="status"
-            aria-live="polite"
-            className="small-caps"
-            style={{ color: 'var(--success)', fontSize: 11 }}
-          >
-            ✓ Сохранено
-          </span>
+            </div>
+          </SectionShell>
         )}
-      </p>
 
-      <SettingsSection title="Конфиденциальность">
-        <Card>
-          <DeleteAllDataSection />
-        </Card>
-      </SettingsSection>
-    </section>
+        {section === 'usage' && providerPath === 'managed' && (
+          <SectionShell
+            title="Использование."
+            lede="Дневная квота managed-режима — STT-минуты и LLM-токены. Сбрасывается каждые 24 часа. В BYO-режиме счётчик не действует."
+          >
+            <UsageSection />
+          </SectionShell>
+        )}
+
+        {section === 'privacy' && (
+          <SectionShell
+            title="Конфиденциальность."
+            lede="Полная очистка локальных данных. Полезно перед передачей устройства другому человеку или при отзыве согласия."
+          >
+            <DeleteAllDataSection />
+          </SectionShell>
+        )}
+      </div>
+    </div>
   );
 }
 
-interface SettingsSectionProps {
+interface SectionShellProps {
   title: string;
-  actions?: ReactNode;
+  lede: string;
   children: ReactNode;
 }
 
-function SettingsSection({ title, actions, children }: SettingsSectionProps) {
+function SectionShell({ title, lede, children }: SectionShellProps) {
   return (
-    <section style={{ marginBottom: 32 }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-          marginBottom: 12,
-        }}
-      >
-        <h2 className="small-caps" style={{ margin: 0 }}>
-          {title}
-        </h2>
-        {actions}
+    <>
+      <div className="display" style={{ fontSize: 40, marginBottom: 10, marginTop: 0 }}>
+        {title}
       </div>
+      <p className="subtitle" style={{ maxWidth: 560, marginBottom: 32 }}>
+        {lede}
+      </p>
       {children}
-    </section>
+    </>
   );
 }
 
-interface RadioOptionProps {
-  name: string;
-  value: string;
-  checked: boolean;
-  onSelect: () => void;
-  title: string;
-  hint: string;
+// ── Path toggle — rounded-pill 2-button per artboard §9 path toggle card
+interface PathToggleProps {
+  value: ProviderPath;
+  onChange: (v: ProviderPath) => void;
+  compact?: boolean;
 }
 
-function RadioOption({ name, value, checked, onSelect, title, hint }: RadioOptionProps) {
+function PathToggle({ value, onChange, compact }: PathToggleProps) {
+  const inner: Array<[ProviderPath, string]> = [
+    ['byo', 'Свои ключи'],
+    ['managed', 'Через прокси'],
+  ];
   return (
-    <label
+    <div
       style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 12,
-        padding: '12px 0',
-        cursor: 'pointer',
-        borderBottom: '1px solid var(--line-soft)',
+        display: 'inline-flex',
+        border: '1px solid var(--line)',
+        borderRadius: 999,
+        padding: 3,
+        background: 'var(--bg)',
       }}
     >
-      <input
-        type="radio"
-        name={name}
-        value={value}
-        checked={checked}
-        onChange={onSelect}
-        style={{ marginTop: 4 }}
-      />
-      <span
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-        }}
-      >
-        <strong
-          style={{
-            fontFamily: 'var(--font-serif)',
-            fontSize: 16,
-            color: 'var(--ink)',
-            fontWeight: 500,
-          }}
-        >
-          {title}
-        </strong>
-        <span
-          className="muted"
-          style={{ fontSize: 13, lineHeight: 1.45 }}
-        >
-          {hint}
-        </span>
-      </span>
-    </label>
+      {inner.map(([key, label]) => {
+        const active = value === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            className={`mono${active ? '' : ' muted'}`}
+            onClick={() => onChange(key)}
+            aria-pressed={active}
+            style={{
+              fontSize: 11,
+              padding: compact ? '5px 12px' : '6px 14px',
+              border: 'none',
+              borderRadius: 999,
+              background: active ? 'var(--accent)' : 'transparent',
+              color: active ? 'var(--accent-fg)' : undefined,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
-// [B16 audit P2 / GDPR Art. 17]: Полное удаление данных. После клика юзер
-// должен сам перезапустить app (мы не хотим управлять процессом-перезапуском
-// из Tauri-команды — там нюансы с relaunch plugin).
+// [B16 audit P2 / GDPR Art. 17] Полное удаление данных.
 function DeleteAllDataSection() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -412,8 +502,13 @@ function DeleteAllDataSection() {
 
   const handleWipe = async () => {
     const ok = await ask(
-      'УДАЛИТЬ ВСЕ ДАННЫЕ?\n\nЭто навсегда сотрёт:\n  • все записи звонков и аудио\n  • все контакты и voice samples\n  • сессию входа и BYO API-ключи\n\nДействие необратимо. Подойдёт перед передачей устройства другому человеку или при отзыве согласия.',
-      { title: 'Wotold — Полная очистка', kind: 'warning', okLabel: 'Удалить всё', cancelLabel: 'Отмена' },
+      'УДАЛИТЬ ВСЕ ДАННЫЕ?\n\nЭто навсегда сотрёт:\n  • все записи звонков и аудио\n  • все контакты и voice samples\n  • сессию входа и BYO API-ключи\n\nДействие необратимо.',
+      {
+        title: 'Wotold — Полная очистка',
+        kind: 'warning',
+        okLabel: 'Удалить всё',
+        cancelLabel: 'Отмена',
+      },
     );
     if (!ok) return;
     setBusy(true);
@@ -430,21 +525,23 @@ function DeleteAllDataSection() {
 
   if (done) {
     return (
-      <div>
-        <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-          ✓ Все данные удалены. Закрой и заново открой Wotold чтобы начать с
-          чистой установки.
-        </p>
-      </div>
+      <p
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 16,
+          color: 'var(--ink)',
+          margin: 0,
+          maxWidth: 560,
+        }}
+      >
+        ✓ Все данные удалены. Закрой и заново открой Wotold чтобы начать с
+        чистой установки.
+      </p>
     );
   }
 
   return (
-    <div>
-      <p className="muted" style={{ marginTop: 0, fontSize: 14, marginBottom: 12 }}>
-        Стирает все записи звонков, контакты, voice samples, сессию и BYO-ключи.
-        Необратимо. Полезно при отзыве согласия или передаче устройства.
-      </p>
+    <div style={{ maxWidth: 560 }}>
       {error && (
         <p
           role="alert"
@@ -457,11 +554,15 @@ function DeleteAllDataSection() {
           {error}
         </p>
       )}
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <Button variant="danger" onClick={handleWipe} disabled={busy} busy={busy}>
-          {busy ? 'Удаляем…' : 'Удалить все данные'}
-        </Button>
-      </div>
+      <button
+        type="button"
+        className="btn btn--ghost"
+        onClick={handleWipe}
+        disabled={busy}
+        style={{ color: 'var(--signal)', borderColor: 'var(--signal)' }}
+      >
+        {busy ? 'Удаляем…' : 'Удалить все данные'}
+      </button>
     </div>
   );
 }
