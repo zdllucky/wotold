@@ -89,14 +89,33 @@
 }
 
 .ds-button--variant-record {
-  background: var(--color-danger);
+  /* [B16] Visual weight: subtle gradient + outer glow ring чтобы record
+     был визуальным якорем на главной странице. */
+  background:
+    linear-gradient(
+      135deg,
+      var(--color-accent) 0%,
+      var(--color-danger) 100%
+    );
   color: var(--color-accent-fg);
   border-radius: var(--radius-pill);
+  box-shadow: 0 1px 0 oklch(100% 0 0 / 0.18) inset,
+    0 0 0 6px transparent;
+  transition: box-shadow var(--duration-fast) var(--ease-out-expo),
+    transform var(--duration-fast) var(--ease-out-expo),
+    background var(--duration-fast) var(--ease-out-expo);
 }
 
 .ds-button--variant-record:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--color-danger) 88%, oklch(0% 0 0));
+  background:
+    linear-gradient(
+      135deg,
+      var(--color-accent) 0%,
+      color-mix(in oklch, var(--color-danger) 88%, oklch(0% 0 0)) 100%
+    );
   transform: translateY(-1px);
+  box-shadow: 0 1px 0 oklch(100% 0 0 / 0.22) inset,
+    0 0 0 6px color-mix(in oklch, var(--color-danger) 16%, transparent);
 }
 
 .ds-button--pill {
@@ -421,7 +440,9 @@
 .ds-tabs-trigger[data-active='true'] {
   color: var(--color-text);
   border-bottom-color: var(--color-accent);
-  font-weight: 500;
+  /* [B16] было `font-weight: 500` — разница слишком тонкая. */
+  font-weight: 600;
+  background: var(--color-surface-sunken);
 }
 
 .ds-tabs-trigger:disabled {
