@@ -433,12 +433,12 @@ mod tests {
                     "ok": true,
                     "transcript": {
                         "version": 1,
-                        "lang_detected": "en",
-                        "duration_sec": 12.5,
+                        "langDetected": "en",
+                        "durationSec": 12.5,
                         "provider": "soniox",
                         "segments": [
-                            {"start": 0.0, "end": 5.0, "text": "Hello", "speaker_tag": "Speaker 0"},
-                            {"start": 5.0, "end": 12.5, "text": "Hi", "speaker_tag": "Speaker 1"}
+                            {"start": 0.0, "end": 5.0, "text": "Hello", "speakerTag": "Speaker 0"},
+                            {"start": 5.0, "end": 12.5, "text": "Hi", "speakerTag": "Speaker 1"}
                         ]
                     }
                 }));
