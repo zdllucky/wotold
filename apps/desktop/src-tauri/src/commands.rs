@@ -233,7 +233,7 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     let pool = state.db.clone();
     let device_id = state.device_id.clone();
     let app_data_dir = state.app_data_dir.clone();
-    let _handle = app; // зарезервировано на будущий emit(event) когда пайплайн готов
+    let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let ctx = crate::pipeline::PipelineCtx {
             call_id: call_id.clone(),
@@ -242,7 +242,8 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
             system_path,
             device_id,
         };
-        if let Err(e) = crate::pipeline::run(&pool, ctx).await {
+        // [B5]: передаём AppHandle чтобы pipeline emit 'pipeline:finished'.
+        if let Err(e) = crate::pipeline::run(&pool, ctx, Some(&app_handle)).await {
             log::error!("pipeline {call_id} error: {e}");
         }
     });

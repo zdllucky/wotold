@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { listCalls, type Call } from '../api/recording';
 import { Empty, Toolbar } from '../ui';
@@ -7,14 +8,39 @@ interface CallsPageProps {
   onOpen: (callId: string) => void;
 }
 
+interface PipelineFinishedEvent {
+  call_id: string;
+  status: 'ready' | 'failed';
+  failed_reason: string | null;
+}
+
 export function CallsPage({ onOpen }: CallsPageProps) {
   const [calls, setCalls] = useState<Call[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refresh = () => {
     listCalls()
       .then(setCalls)
       .catch((e: unknown) => setError(String(e)));
+  };
+
+  useEffect(() => {
+    refresh();
+    // [B5]: Tauri pipeline → 'pipeline:finished' → авто-refresh без manual reload.
+    let unlisten: UnlistenFn | undefined;
+    listen<PipelineFinishedEvent>('pipeline:finished', () => {
+      refresh();
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((e: unknown) => {
+        // Listener fail в dev-browser (где @tauri-apps/api/event не работает) — игнор.
+        console.warn('pipeline event listener:', e);
+      });
+    return () => {
+      unlisten?.();
+    };
   }, []);
 
   if (error) return <p className="error">{error}</p>;

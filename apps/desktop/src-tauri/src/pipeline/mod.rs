@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 use sqlx::SqlitePool;
+use tauri::{AppHandle, Emitter};
 
 use crate::{
     db,
@@ -40,14 +41,36 @@ pub struct PipelineCtx {
     pub device_id: Arc<str>,
 }
 
+/// Событие [B5]: фронтенд слушает `pipeline:finished` чтобы обновить Calls list
+/// без manual refresh.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PipelineFinishedEvent {
+    pub call_id: String,
+    /// `ready` | `failed`
+    pub status: &'static str,
+    pub failed_reason: Option<String>,
+}
+
 /// Запуск STT после остановки записи (M2.4-2.5 паспорта). Транскрибирует
 /// mic и system параллельно, сливает таймлайн, сохраняет `raw_stt.json` и
 /// `transcript.md`, проставляет `calls.status = ready/failed`.
-pub async fn run(pool: &SqlitePool, ctx: PipelineCtx) -> Result<(), AppError> {
+///
+/// `app` — optional Tauri handle для emit события «pipeline finished». Если None
+/// (тесты / headless), событие не отправляется.
+pub async fn run(
+    pool: &SqlitePool,
+    ctx: PipelineCtx,
+    app: Option<&AppHandle>,
+) -> Result<(), AppError> {
     let result = run_inner(pool, &ctx).await;
-    match &result {
+    let event = match &result {
         Ok(()) => {
             db::mark_call_ready(pool, &ctx.call_id).await?;
+            PipelineFinishedEvent {
+                call_id: ctx.call_id.clone(),
+                status: "ready",
+                failed_reason: None,
+            }
         }
         Err(e) => {
             log::error!("pipeline {} failed: {e}", ctx.call_id);
@@ -57,8 +80,21 @@ pub async fn run(pool: &SqlitePool, ctx: PipelineCtx) -> Result<(), AppError> {
                 other => other.to_string(),
             };
             let _ = db::fail_recording_with_reason(pool, &ctx.call_id, Some(&reason)).await;
+            PipelineFinishedEvent {
+                call_id: ctx.call_id.clone(),
+                status: "failed",
+                failed_reason: Some(reason),
+            }
+        }
+    };
+
+    // [B5]: фронт слушает 'pipeline:finished' для realtime-обновления Calls list.
+    if let Some(handle) = app {
+        if let Err(e) = handle.emit("pipeline:finished", &event) {
+            log::warn!("emit pipeline:finished failed: {e}");
         }
     }
+
     result
 }
 
