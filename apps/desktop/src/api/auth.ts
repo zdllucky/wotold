@@ -5,7 +5,7 @@
 // HTTP-запросом и переменная сразу уходит из scope.
 
 import { invoke } from '@tauri-apps/api/core';
-import { getSetting, SETTINGS_KEYS } from './settings';
+import { getSetting, SETTINGS_DEFAULTS, SETTINGS_KEYS } from './settings';
 
 export type OidcProvider = 'google' | 'apple' | 'microsoft';
 
@@ -33,17 +33,12 @@ export interface AccountSessionStatus {
 // ---------- proxy URL ----------
 
 /**
- * Базовый URL прокси из settings.proxy_base_url. Без него ни /auth/start,
- * ни /me не выйдет.
+ * Базовый URL прокси: user-override из settings.proxy_base_url ИЛИ production default.
+ * Managed-режим работает out-of-the-box без явной настройки.
  */
 async function getProxyBaseUrl(): Promise<string> {
-  const v = await getSetting(SETTINGS_KEYS.PROXY_BASE_URL);
-  if (!v) {
-    throw new Error(
-      'Proxy URL не настроен. Settings → Proxy URL (после развёртывания CF Workers).',
-    );
-  }
-  return v.replace(/\/+$/, '');
+  const v = (await getSetting(SETTINGS_KEYS.PROXY_BASE_URL))?.trim();
+  return (v && v.length > 0 ? v : SETTINGS_DEFAULTS.PROXY_BASE_URL).replace(/\/+$/, '');
 }
 
 // ---------- keychain session ----------

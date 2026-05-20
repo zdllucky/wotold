@@ -8,7 +8,7 @@ import {
   type ProviderPath,
   type SttProvider,
 } from '../api/settings';
-import { Card, InputField, SelectField, Toolbar } from '../ui';
+import { Button, Card, InputField, SelectField, Toolbar } from '../ui';
 import { AccountSection } from './AccountSection';
 import { ByoKeysSection } from './ByoKeysSection';
 import { PermissionsSection } from './PermissionsSection';
@@ -22,7 +22,7 @@ function isProviderPath(v: string | null): v is ProviderPath {
 }
 
 function isValidProxyUrl(v: string): boolean {
-  if (!v) return true; // пусто допускается — managed-режим тогда упадёт с конкретной ошибкой в pipeline
+  if (!v) return true;
   try {
     const u = new URL(v);
     return u.protocol === 'https:' || u.protocol === 'http:';
@@ -38,6 +38,7 @@ export function SettingsPage() {
   const [llmModel, setLlmModel] = useState<string>(SETTINGS_DEFAULTS.LLM_MODEL);
   const [proxyUrl, setProxyUrl] = useState<string>('');
   const [proxyUrlError, setProxyUrlError] = useState<string | null>(null);
+  const [showAdvancedProxy, setShowAdvancedProxy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,6 +72,9 @@ export function SettingsPage() {
   };
 
   if (loading) return <p className="hint">Загрузка…</p>;
+
+  // UX: эффективный proxy URL = user-override ИЛИ production default.
+  const effectiveProxyUrl = proxyUrl.trim() || SETTINGS_DEFAULTS.PROXY_BASE_URL;
 
   return (
     <section className="settings">
@@ -122,31 +126,6 @@ export function SettingsPage() {
       </div>
 
       <div className="settings-section">
-        <h3 className="settings-section-title">Прокси (managed)</h3>
-        <Card compact>
-          <InputField
-            label="Proxy URL"
-            type="text"
-            placeholder="https://wotold-proxy.workers.dev"
-            value={proxyUrl}
-            onChange={(e) => setProxyUrl(e.target.value)}
-            onBlur={() => {
-              const trimmed = proxyUrl.trim();
-              if (!isValidProxyUrl(trimmed)) {
-                setProxyUrlError('URL должен быть http:// или https://');
-                return;
-              }
-              setProxyUrl(trimmed);
-              setProxyUrlError(null);
-              void persist(SETTINGS_KEYS.PROXY_BASE_URL, trimmed);
-            }}
-            hint="Используется в managed-режиме STT/LLM и для SSO callback. Базовый URL без хвостового /."
-            error={proxyUrlError ?? undefined}
-          />
-        </Card>
-      </div>
-
-      <div className="settings-section">
         <h3 className="settings-section-title">Доставка партнёрских вызовов</h3>
         <Card compact>
           <label className="radio-row">
@@ -162,7 +141,10 @@ export function SettingsPage() {
             />
             <span className="radio-row-text">
               <strong>Managed</strong>
-              <span className="radio-row-hint">через прокси с квотой Free-тира</span>
+              <span className="radio-row-hint">
+                Out-of-the-box: запросы идут через прокси Wotold с квотой Free-тира.
+                Свой ключ не нужен.
+              </span>
             </span>
           </label>
           <label className="radio-row">
@@ -178,18 +160,67 @@ export function SettingsPage() {
             />
             <span className="radio-row-text">
               <strong>BYO</strong>
-              <span className="radio-row-hint">свои ключи напрямую (хранятся в Keychain)</span>
+              <span className="radio-row-hint">
+                Свои ключи Soniox/Gladia/Anthropic. Хранятся в системном Keychain.
+              </span>
             </span>
           </label>
         </Card>
       </div>
 
-      <div className="settings-section">
-        <h3 className="settings-section-title">BYO API ключи</h3>
-        <Card compact>
-          <ByoKeysSection />
-        </Card>
-      </div>
+      {/* Managed: показываем эффективный URL + advanced collapse для override.
+          В BYO режиме прокси не нужен — секция скрыта. */}
+      {providerPath === 'managed' && (
+        <div className="settings-section">
+          <div className="settings-row-between">
+            <h3 className="settings-section-title">Прокси</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAdvancedProxy((v) => !v)}
+            >
+              {showAdvancedProxy ? '✕ Закрыть' : 'Advanced'}
+            </Button>
+          </div>
+          <Card compact>
+            <p className="text-muted">
+              Endpoint: <code className="text-mono">{effectiveProxyUrl}</code>
+              {!proxyUrl.trim() && <span className="text-subtle"> · default</span>}
+            </p>
+            {showAdvancedProxy && (
+              <InputField
+                label="Custom Proxy URL"
+                type="text"
+                placeholder={SETTINGS_DEFAULTS.PROXY_BASE_URL}
+                value={proxyUrl}
+                onChange={(e) => setProxyUrl(e.target.value)}
+                onBlur={() => {
+                  const trimmed = proxyUrl.trim();
+                  if (!isValidProxyUrl(trimmed)) {
+                    setProxyUrlError('URL должен быть http:// или https://');
+                    return;
+                  }
+                  setProxyUrl(trimmed);
+                  setProxyUrlError(null);
+                  void persist(SETTINGS_KEYS.PROXY_BASE_URL, trimmed);
+                }}
+                hint="Override для staging или self-hosted прокси. Оставь пустым для default."
+                error={proxyUrlError ?? undefined}
+              />
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* BYO: показываем ключи только при выборе BYO. В managed-режиме они не нужны. */}
+      {providerPath === 'byo' && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">BYO API ключи</h3>
+          <Card compact>
+            <ByoKeysSection />
+          </Card>
+        </div>
+      )}
 
       <div className="settings-section">
         <h3 className="settings-section-title">Аккаунт (SSO)</h3>
