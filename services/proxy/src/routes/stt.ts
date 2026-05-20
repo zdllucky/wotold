@@ -16,6 +16,22 @@ import { transcribeGladia } from '../lib/partners/gladia.js';
 const POLL_BUDGET_MS = 25_000;
 // Presigned GET URL для партнёра — TTL под async-окно (30 минут хватит).
 const PARTNER_AUDIO_TTL_SECONDS = 1800;
+// [B3]: KV TTL для resumable partner jobs. Partner sessions у Soniox/Gladia
+// живут дольше — берём 30 минут как safe upper bound для retry окна.
+const JOB_CACHE_TTL_SECONDS = 1800;
+
+interface SonioxJobCache {
+  jobId: string;
+}
+
+interface GladiaJobCache {
+  jobId: string;
+  resultUrl: string;
+}
+
+function sttJobKey(provider: 'soniox' | 'gladia', r2Key: string): string {
+  return `stt_job:${provider}:${r2Key}`;
+}
 
 export const sttRoutes = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
 
@@ -107,12 +123,33 @@ sttRoutes.post('/', async (c) => {
           503,
         );
       }
-      transcript = await transcribeSoniox({
+      // [B3]: попытка resume по KV-кэшу для этого r2Key.
+      const cacheKey = sttJobKey('soniox', body.r2Key);
+      const cachedRaw = await c.env.QUOTA.get(cacheKey);
+      const cached: SonioxJobCache | null = cachedRaw
+        ? (JSON.parse(cachedRaw) as SonioxJobCache)
+        : null;
+
+      const result = await transcribeSoniox({
         apiKey: c.env.SONIOX_API_KEY,
         audioUrl,
         lang,
         pollDeadlineMs: deadline,
+        existingJobId: cached?.jobId,
       });
+      // Кэшируем jobId только если job создан в этом вызове ИЛИ был resume но ещё активен —
+      // в обоих случаях TTL обновится. На completion удалим.
+      if (result.jobCreated) {
+        await c.env.QUOTA.put(
+          cacheKey,
+          JSON.stringify({ jobId: result.jobId } satisfies SonioxJobCache),
+          { expirationTtl: JOB_CACHE_TTL_SECONDS },
+        );
+      } else {
+        // Resume + completed → cleanup кэша
+        await c.env.QUOTA.delete(cacheKey);
+      }
+      transcript = result.transcript;
     } else if (provider === 'gladia') {
       if (!c.env.GLADIA_API_KEY) {
         return c.json(
@@ -124,12 +161,33 @@ sttRoutes.post('/', async (c) => {
           503,
         );
       }
-      transcript = await transcribeGladia({
+      const cacheKey = sttJobKey('gladia', body.r2Key);
+      const cachedRaw = await c.env.QUOTA.get(cacheKey);
+      const cached: GladiaJobCache | null = cachedRaw
+        ? (JSON.parse(cachedRaw) as GladiaJobCache)
+        : null;
+
+      const result = await transcribeGladia({
         apiKey: c.env.GLADIA_API_KEY,
         audioUrl,
         lang,
         pollDeadlineMs: deadline,
+        existingJobId: cached?.jobId,
+        existingResultUrl: cached?.resultUrl,
       });
+      if (result.jobCreated) {
+        await c.env.QUOTA.put(
+          cacheKey,
+          JSON.stringify({
+            jobId: result.jobId,
+            resultUrl: result.resultUrl,
+          } satisfies GladiaJobCache),
+          { expirationTtl: JOB_CACHE_TTL_SECONDS },
+        );
+      } else {
+        await c.env.QUOTA.delete(cacheKey);
+      }
+      transcript = result.transcript;
     } else {
       return c.json(
         {

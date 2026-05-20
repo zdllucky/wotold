@@ -22,6 +22,11 @@ export interface SonioxOpts {
   model?: string;
   /** Test injection of polling delay. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * [B3]: при resume из KV-кэша — пропускаем create step и сразу идём в polling
+   * по существующему job id. Защита от двойной оплаты при client retry.
+   */
+  existingJobId?: string;
 }
 
 interface SonioxToken {
@@ -40,7 +45,15 @@ interface SonioxTranscript {
   tokens?: SonioxToken[];
 }
 
-export async function transcribeSoniox(opts: SonioxOpts): Promise<DiarizedTranscript> {
+export interface TranscribeSonioxResult {
+  transcript: DiarizedTranscript;
+  /** Soniox job id — клиент-сторона прокси кэширует в KV для resume на retry. */
+  jobId: string;
+  /** true если job создан в этом вызове (не resumed). */
+  jobCreated: boolean;
+}
+
+export async function transcribeSoniox(opts: SonioxOpts): Promise<TranscribeSonioxResult> {
   const base = opts.baseUrl ?? SONIOX_BASE_URL;
   const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const headers = {
@@ -48,27 +61,34 @@ export async function transcribeSoniox(opts: SonioxOpts): Promise<DiarizedTransc
     'content-type': 'application/json',
   } as const;
 
-  // 1. Создаём transcription job.
-  const createBody: Record<string, unknown> = {
-    audio_url: opts.audioUrl,
-    model: opts.model ?? DEFAULT_MODEL,
-    enable_speaker_diarization: true,
-    enable_language_identification: opts.lang === 'auto',
-  };
-  if (opts.lang !== 'auto') {
-    createBody.language_hints = [opts.lang];
-    createBody.language_hints_strict = true;
-  }
+  // 1. Resume или create transcription job.
+  let id: string;
+  let jobCreated = false;
+  if (opts.existingJobId) {
+    id = opts.existingJobId;
+  } else {
+    const createBody: Record<string, unknown> = {
+      audio_url: opts.audioUrl,
+      model: opts.model ?? DEFAULT_MODEL,
+      enable_speaker_diarization: true,
+      enable_language_identification: opts.lang === 'auto',
+    };
+    if (opts.lang !== 'auto') {
+      createBody.language_hints = [opts.lang];
+      createBody.language_hints_strict = true;
+    }
 
-  const createResp = await fetch(`${base}/transcriptions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(createBody),
-  });
-  if (!createResp.ok) {
-    throw new Error(`soniox create ${createResp.status}: ${await safeText(createResp)}`);
+    const createResp = await fetch(`${base}/transcriptions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(createBody),
+    });
+    if (!createResp.ok) {
+      throw new Error(`soniox create ${createResp.status}: ${await safeText(createResp)}`);
+    }
+    ({ id } = (await createResp.json()) as { id: string });
+    jobCreated = true;
   }
-  const { id } = (await createResp.json()) as { id: string };
 
   // 2. Polling до completed/failed/deadline.
   while (Date.now() < opts.pollDeadlineMs) {
@@ -95,7 +115,7 @@ export async function transcribeSoniox(opts: SonioxOpts): Promise<DiarizedTransc
   }
   const transcript = (await transcriptResp.json()) as SonioxTranscript;
 
-  return normalizeSoniox(transcript);
+  return { transcript: normalizeSoniox(transcript), jobId: id, jobCreated };
 }
 
 /**
