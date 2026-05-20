@@ -1,6 +1,11 @@
+// [B17] Atelier v2 — .field + .field-label + .input/.input--box per wotold.css.
+// Boxed-вариант (.input--box) — для multi-row settings форм; bare (.input)
+// — для одиночных editorial-инпутов (search / hero).
+
 import {
   forwardRef,
   useId,
+  type CSSProperties,
   type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
@@ -17,17 +22,40 @@ interface FieldShellProps {
 }
 
 function FieldShell({ label, hint, error, inline, htmlFor, children }: FieldShellProps) {
-  const classes = ['ds-field', inline ? 'ds-field--inline' : ''].filter(Boolean).join(' ');
+  const containerStyle: CSSProperties = inline
+    ? {
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        margin: 'var(--space-2) 0',
+      }
+    : { display: 'flex', flexDirection: 'column', gap: 6, margin: 'var(--space-2) 0' };
   return (
-    <div className={classes}>
+    <div className="field" style={containerStyle}>
       {label && (
-        <label className="ds-field-label" htmlFor={htmlFor}>
+        <label className="field-label" htmlFor={htmlFor}>
           {label}
         </label>
       )}
       {children}
-      {hint && !error && <span className="ds-field-hint">{hint}</span>}
-      {error && <span className="ds-field-error">{error}</span>}
+      {hint && !error && (
+        <span style={{ fontSize: 12, color: 'var(--subtle)', marginTop: 2 }}>
+          {hint}
+        </span>
+      )}
+      {error && (
+        <span
+          style={{
+            fontSize: 12,
+            color: 'var(--signal)',
+            fontFamily: 'var(--font-mono)',
+            marginTop: 2,
+          }}
+        >
+          {error}
+        </span>
+      )}
     </div>
   );
 }
@@ -49,7 +77,7 @@ export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(function
       <input
         ref={ref}
         id={fieldId}
-        className={['ds-input', className ?? ''].filter(Boolean).join(' ')}
+        className={['input', 'input--box', className ?? ''].filter(Boolean).join(' ')}
         {...rest}
       />
     </FieldShell>
@@ -73,7 +101,8 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(funct
       <select
         ref={ref}
         id={fieldId}
-        className={['ds-select', className ?? ''].filter(Boolean).join(' ')}
+        className={['input', 'input--box', className ?? ''].filter(Boolean).join(' ')}
+        style={{ fontFamily: 'var(--font-sans)' }}
         {...rest}
       >
         {children}
@@ -97,7 +126,12 @@ export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>
         <textarea
           ref={ref}
           id={fieldId}
-          className={['ds-textarea', className ?? ''].filter(Boolean).join(' ')}
+          className={['input', 'input--box', className ?? ''].filter(Boolean).join(' ')}
+          style={{
+            resize: 'vertical',
+            minHeight: '4rem',
+            fontFamily: 'var(--font-sans)',
+          }}
           {...rest}
         />
       </FieldShell>

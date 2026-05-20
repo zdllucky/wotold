@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
 
@@ -12,7 +12,7 @@ import {
   type ContactIdentifierInput,
   type ContactInput,
 } from '../api/contacts';
-import { Badge, Button, Empty, InputField, TextareaField } from '../ui';
+import { Badge, Empty, InputField, TextareaField } from '../ui';
 import { VoiceSamplesSection } from './VoiceSamplesSection';
 
 function initials(name: string): string {
@@ -406,7 +406,10 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
     setAttributes((arr) => arr.map((it, i) => (i === idx ? { ...it, value } : it)));
 
   return (
-    <form className="contact-form" onSubmit={submit}>
+    <form
+      onSubmit={submit}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+    >
       <InputField
         label="Имя"
         type="text"
@@ -436,36 +439,54 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
 
       {/* C2 (#40): био-opt-in. Без этого флага matching pipeline (#25/#26) не пишет
           voice_samples даже после ручного подтверждения спикера. */}
-      <label className="consent-row">
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 10,
+          padding: '10px 0',
+          margin: '6px 0',
+        }}
+      >
         <input
           type="checkbox"
           checked={consentVoice}
           onChange={(e) => setConsentVoice(e.target.checked)}
+          style={{ marginTop: 4 }}
         />
-        <span className="consent-row-text">
-          <strong>Запоминать голос для авто-определения</strong>
-          <span className="consent-row-hint">
-            При подтверждении этого человека в звонке Wotold сохранит
-            короткий образец голоса — чтобы в будущем определять его
-            автоматически. Сними галку, чтобы отключить.
+        <span
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            fontSize: 14,
+            color: 'var(--ink)',
+          }}
+        >
+          <strong style={{ fontWeight: 500 }}>
+            Запоминать голос для авто-определения
+          </strong>
+          <span className="muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
+            При подтверждении этого человека в звонке Wotold сохранит короткий
+            образец голоса — чтобы в будущем определять его автоматически. Сними
+            галку, чтобы отключить.
           </span>
         </span>
       </label>
 
-      <div className="row-group">
-        <div className="row-group-head">
-          <span className="row-group-title">Идентификаторы</span>
-          <Button type="button" size="sm" variant="ghost" onClick={addIdentifier}>
-            + строку
-          </Button>
-        </div>
-        {identifiers.length === 0 && (
-          <p className="row-empty">Телефоны, мейлы, мессенджеры.</p>
-        )}
-        {identifiers.map((it, idx) => (
-          <div key={idx} className="row">
+      <RowGroup
+        title="Идентификаторы"
+        emptyHint="Телефоны, мейлы, мессенджеры."
+        items={identifiers}
+        onAdd={addIdentifier}
+        renderItem={(it, idx) => (
+          <>
             <select
-              className="ds-select"
+              className="input input--box"
+              style={{
+                fontFamily: 'var(--font-sans)',
+                flex: '0 0 140px',
+              }}
               value={it.kind}
               onChange={(e) => setIdentifierKind(idx, e.target.value)}
             >
@@ -476,77 +497,142 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
               ))}
             </select>
             <input
-              className="ds-input"
+              className="input input--box"
+              style={{ flex: 1 }}
               type="text"
               placeholder="значение"
               value={it.value}
               onChange={(e) => setIdentifierValue(idx, e.target.value)}
             />
-            <Button
+            <button
               type="button"
-              variant="danger"
-              size="sm"
+              className="btn btn--quiet"
               onClick={() => removeIdentifier(idx)}
               aria-label="Удалить строку"
+              title="Удалить"
             >
               ×
-            </Button>
-          </div>
-        ))}
-      </div>
-
-      <div className="row-group">
-        <div className="row-group-head">
-          <span className="row-group-title">Расширяемые поля</span>
-          <Button type="button" size="sm" variant="ghost" onClick={addAttribute}>
-            + строку
-          </Button>
-        </div>
-        {attributes.length === 0 && (
-          <p className="row-empty">Любые ключ/значение — birthday, linkedin, любые.</p>
+            </button>
+          </>
         )}
-        {attributes.map((it, idx) => (
-          <div key={idx} className="row">
+      />
+
+      <RowGroup
+        title="Расширяемые поля"
+        emptyHint="Любые ключ/значение — birthday, linkedin, любые."
+        items={attributes}
+        onAdd={addAttribute}
+        renderItem={(it, idx) => (
+          <>
             <input
-              className="ds-input"
+              className="input input--box"
+              style={{ flex: '0 0 140px' }}
               type="text"
               placeholder="ключ"
               value={it.key}
               onChange={(e) => setAttrKey(idx, e.target.value)}
             />
             <input
-              className="ds-input"
+              className="input input--box"
+              style={{ flex: 1 }}
               type="text"
               placeholder="значение"
               value={it.value}
               onChange={(e) => setAttrValue(idx, e.target.value)}
             />
-            <Button
+            <button
               type="button"
-              variant="danger"
-              size="sm"
+              className="btn btn--quiet"
               onClick={() => removeAttribute(idx)}
               aria-label="Удалить строку"
+              title="Удалить"
             >
               ×
-            </Button>
-          </div>
-        ))}
-      </div>
+            </button>
+          </>
+        )}
+      />
 
       {/* #45 (M3.6): voice samples view + manual delete — только в режиме
           редактирования существующего контакта. У нового контакта семплов
           ещё нет. */}
       {initial && <VoiceSamplesSection contactId={initial.id} alwaysShow={consentVoice} />}
 
-      <div className="form-actions">
-        <Button type="button" variant="ghost" onClick={onCancel}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          marginTop: 18,
+          paddingTop: 14,
+          borderTop: '1px solid var(--line-soft)',
+        }}
+      >
+        <button type="button" className="btn btn--ghost" onClick={onCancel}>
           Отмена
-        </Button>
-        <Button type="submit" variant="primary">
+        </button>
+        <button type="submit" className="btn btn--primary">
           {submitLabel}
-        </Button>
+        </button>
       </div>
     </form>
+  );
+}
+
+interface RowGroupProps<T> {
+  title: string;
+  emptyHint: string;
+  items: T[];
+  onAdd: () => void;
+  renderItem: (it: T, idx: number) => ReactNode;
+}
+
+function RowGroup<T>({ title, emptyHint, items, onAdd, renderItem }: RowGroupProps<T>) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          marginBottom: 8,
+        }}
+      >
+        <span className="small-caps">{title}</span>
+        <button
+          type="button"
+          className="btn btn--quiet btn--sm"
+          onClick={onAdd}
+          style={{ padding: '4px 8px' }}
+        >
+          + строку
+        </button>
+      </div>
+      {items.length === 0 && (
+        <p
+          className="muted"
+          style={{
+            fontStyle: 'italic',
+            fontFamily: 'var(--font-serif)',
+            fontSize: 14,
+            margin: 0,
+          }}
+        >
+          {emptyHint}
+        </p>
+      )}
+      {items.map((it, idx) => (
+        <div
+          key={idx}
+          style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            marginTop: 8,
+          }}
+        >
+          {renderItem(it, idx)}
+        </div>
+      ))}
+    </div>
   );
 }

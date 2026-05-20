@@ -19,19 +19,19 @@ describe('UsageBar', () => {
 
   test('tone=danger при >=95%', () => {
     const { container } = render(<UsageBar label="STT" used={3500} limit={3600} />);
-    const root = container.querySelector('.ds-usagebar');
+    const root = container.querySelector('[data-tone]');
     expect(root?.getAttribute('data-tone')).toBe('danger');
   });
 
   test('tone=warning при 75-94%', () => {
     const { container } = render(<UsageBar label="STT" used={2700} limit={3600} />);
-    const root = container.querySelector('.ds-usagebar');
+    const root = container.querySelector('[data-tone]');
     expect(root?.getAttribute('data-tone')).toBe('warning');
   });
 
   test('tone=ok при <75%', () => {
     const { container } = render(<UsageBar label="STT" used={100} limit={3600} />);
-    const root = container.querySelector('.ds-usagebar');
+    const root = container.querySelector('[data-tone]');
     expect(root?.getAttribute('data-tone')).toBe('ok');
   });
 

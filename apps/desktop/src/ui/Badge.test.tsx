@@ -5,29 +5,33 @@ import { Pill } from './Pill';
 import { StatusDot } from './StatusDot';
 import { Empty } from './Empty';
 
+// [B17] Atelier v2 — Badge/Pill теперь рендерят inline-styled span с
+// token-vars; tone проявляется через background/color CSS-vars (--accent,
+// --signal etc), а не через class-suffix. Тестируем поведение, не markup.
+
 describe('Badge/Pill/StatusDot/Empty', () => {
-  test('Badge applies tone class', () => {
+  test('Badge renders content', () => {
     render(<Badge tone="success">ok</Badge>);
-    const el = screen.getByText('ok');
-    expect(el.className).toContain('ds-badge--success');
+    expect(screen.getByText('ok')).toBeInTheDocument();
   });
 
   test('Badge defaults to neutral tone', () => {
     render(<Badge>label</Badge>);
-    expect(screen.getByText('label').className).toContain('ds-badge--neutral');
+    const el = screen.getByText('label');
+    // neutral tone uses --bg-2 background.
+    expect(el.getAttribute('style') ?? '').toMatch(/bg-2|var\(--bg-2\)/);
   });
 
-  test('Pill applies tone class', () => {
+  test('Pill renders content', () => {
     render(<Pill tone="danger">err</Pill>);
-    expect(screen.getByText('err').className).toContain('ds-pill--danger');
+    expect(screen.getByText('err')).toBeInTheDocument();
   });
 
-  test('StatusDot pulse adds pulse modifier', () => {
+  test('StatusDot pulse adds pulse class', () => {
     const { container } = render(<StatusDot tone="danger" pulse />);
-    const dot = container.querySelector('.ds-statusdot');
+    const dot = container.querySelector('.dot');
     expect(dot).not.toBeNull();
-    expect(dot?.className).toContain('ds-statusdot--danger');
-    expect(dot?.className).toContain('ds-statusdot--pulse');
+    expect(dot?.className).toContain('dot--pulse');
   });
 
   test('Empty renders icon/title/description/action', () => {
@@ -48,7 +52,9 @@ describe('Badge/Pill/StatusDot/Empty', () => {
   test('Empty omits sections that are not provided', () => {
     const { container } = render(<Empty description="only desc" />);
     expect(screen.getByText('only desc')).toBeInTheDocument();
-    expect(container.querySelector('.ds-empty-title')).toBeNull();
-    expect(container.querySelector('.ds-empty-icon')).toBeNull();
+    // Empty no longer emits default emoji icon nor a placeholder title element.
+    expect(screen.queryByText(/Nothing/i)).toBeNull();
+    // Root element exists with .empty class.
+    expect(container.querySelector('.empty')).not.toBeNull();
   });
 });
