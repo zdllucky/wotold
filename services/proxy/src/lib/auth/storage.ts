@@ -45,6 +45,12 @@ export interface StateRecord {
   /** device-id (если клиент его прислал в start) — линкуется в Account при первом auth. */
   deviceId: string | null;
   createdAt: string;
+  /**
+   * [B9]: режим ответа callback'а.
+   * - 'json' (default) — возвращает JSON с sessionId (manual paste flow #38)
+   * - 'deeplink' — HTTP 302 redirect на `wotold://auth/callback?session=...` (Tauri auto-перехват)
+   */
+  redirectMode?: 'json' | 'deeplink';
 }
 
 // ----- key prefixes -----

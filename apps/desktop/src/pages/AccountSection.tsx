@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { open as openExternal } from '@tauri-apps/plugin-shell';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import {
   clearAccountSession,
@@ -11,6 +12,14 @@ import {
   type OidcProvider,
 } from '../api/auth';
 import { Badge, Button, Card, InputField } from '../ui';
+
+interface AuthDeepLinkPayload {
+  path: string;
+  session?: string;
+  provider?: string;
+  email?: string;
+  name?: string;
+}
 
 interface ProviderMeta {
   id: OidcProvider;
@@ -58,13 +67,36 @@ export function AccountSection() {
 
   useEffect(() => {
     void refresh();
+
+    // [B9]: Tauri deep-link → wotold://auth/callback?session=... — авто-перехват session.
+    let unlisten: UnlistenFn | undefined;
+    listen<AuthDeepLinkPayload>('auth:deep-link', async (ev) => {
+      const session = ev.payload?.session?.trim();
+      if (!session) return;
+      try {
+        await setAccountSession(session);
+        await refresh();
+      } catch (e) {
+        setError(String(e));
+      }
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((e: unknown) => {
+        console.warn('auth:deep-link listener:', e);
+      });
+    return () => {
+      unlisten?.();
+    };
   }, []);
 
   const onStart = async (provider: OidcProvider) => {
     setBusy(true);
     setError(null);
     try {
-      const { authorizeUrl } = await startSignIn(provider);
+      // [B9]: попросим прокси редиректить на wotold:// — Tauri перехватит через deep-link plugin.
+      const { authorizeUrl } = await startSignIn(provider, undefined, 'deeplink');
       await openExternal(authorizeUrl);
       setState({ kind: 'pending_paste', provider, authorizeUrl });
     } catch (e) {

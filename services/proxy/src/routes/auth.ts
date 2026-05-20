@@ -51,11 +51,17 @@ authRoutes.post('/:provider/start', async (c) => {
   const provider = parseProvider(c.req.param('provider'));
   if (!provider) return jsonError(c, 'unknown_provider', 'Unknown provider', 404);
 
-  const body = (await c.req.json().catch(() => ({}))) as { deviceId?: string };
+  const body = (await c.req.json().catch(() => ({}))) as {
+    deviceId?: string;
+    redirectMode?: string;
+  };
   const deviceId = body.deviceId ?? null;
+  // [B9]: deep-link mode для Tauri-клиента → callback вернёт HTTP 302 на wotold://.
+  const redirectMode: 'json' | 'deeplink' =
+    body.redirectMode === 'deeplink' ? 'deeplink' : 'json';
 
   const redirectUri = buildRedirectUri(c, provider);
-  const state = await startStateFlow(c.env, provider, redirectUri, deviceId);
+  const state = await startStateFlow(c.env, provider, redirectUri, deviceId, redirectMode);
 
   try {
     const url = getAdapter(provider).buildAuthorizeUrl(c.env, { state, redirectUri });
@@ -115,6 +121,17 @@ authRoutes.get('/:provider/callback', async (c) => {
   }
 
   const session = await createSession(c.env, account.id);
+
+  // [B9]: при redirectMode='deeplink' возвращаем 302 на wotold://auth/callback?session=...
+  // Tauri слушает scheme и автоматически извлекает session — без копи-пасты.
+  if (stateRec.redirectMode === 'deeplink') {
+    const target = new URL('wotold://auth/callback');
+    target.searchParams.set('session', session.id);
+    target.searchParams.set('provider', account.provider);
+    if (account.email) target.searchParams.set('email', account.email);
+    if (account.displayName) target.searchParams.set('name', account.displayName);
+    return c.redirect(target.toString(), 302);
+  }
 
   return c.json({
     sessionId: session.id,

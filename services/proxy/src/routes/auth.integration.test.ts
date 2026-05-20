@@ -196,3 +196,67 @@ describe('POST /v1/auth/signout', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('[B9] deep-link callback redirect', () => {
+  test('callback returns 302 to wotold:// when start used redirectMode=deeplink', async () => {
+    const startRes = await SELF.fetch('http://proxy/v1/auth/google/start', {
+      method: 'POST',
+      body: JSON.stringify({ deviceId: 'dl-1', redirectMode: 'deeplink' }),
+      headers: { 'content-type': 'application/json' },
+    });
+    const { state } = (await startRes.json()) as { state: string };
+
+    const idToken = buildIdToken({
+      sub: 'google-dl',
+      email: 'dl@example.com',
+      name: 'Damir',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id_token: idToken }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    const cbRes = await SELF.fetch(
+      `http://proxy/v1/auth/google/callback?code=authcode&state=${state}`,
+      { redirect: 'manual' },
+    );
+    expect(cbRes.status).toBe(302);
+    const location = cbRes.headers.get('location');
+    expect(location).toBeTruthy();
+    const parsed = new URL(location!);
+    expect(parsed.protocol).toBe('wotold:');
+    expect(parsed.host).toBe('auth');
+    expect(parsed.pathname).toBe('/callback');
+    expect(parsed.searchParams.get('session')).toMatch(/^[0-9a-f-]{36}$/);
+    expect(parsed.searchParams.get('provider')).toBe('google');
+    expect(parsed.searchParams.get('email')).toBe('dl@example.com');
+  });
+
+  test('callback still returns JSON when redirectMode=json (default)', async () => {
+    const startRes = await SELF.fetch('http://proxy/v1/auth/google/start', {
+      method: 'POST',
+      body: '{}',
+      headers: { 'content-type': 'application/json' },
+    });
+    const { state } = (await startRes.json()) as { state: string };
+
+    const idToken = buildIdToken({ sub: 'g-json' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id_token: idToken }), { status: 200 }),
+      ),
+    );
+
+    const cbRes = await SELF.fetch(
+      `http://proxy/v1/auth/google/callback?code=x&state=${state}`,
+    );
+    expect(cbRes.status).toBe(200);
+    expect(cbRes.headers.get('content-type')).toMatch(/json/);
+  });
+});
