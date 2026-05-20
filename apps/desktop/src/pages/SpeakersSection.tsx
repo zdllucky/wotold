@@ -255,8 +255,14 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
               {!s.confirmed && (
                 <>
                   <div className="field" style={{ marginBottom: 12 }}>
-                    <label className="field-label">Привязать к контакту</label>
+                    <label
+                      className="field-label"
+                      htmlFor={`speaker-${s.id}-contact`}
+                    >
+                      Привязать к контакту
+                    </label>
                     <select
+                      id={`speaker-${s.id}-contact`}
                       className="input input--box"
                       style={{ fontFamily: 'var(--font-sans)' }}
                       value={pickFor[s.id] ?? s.suggestion_contact_id ?? ''}

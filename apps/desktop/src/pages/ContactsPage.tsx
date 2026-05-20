@@ -249,10 +249,14 @@ export function ContactsPage() {
                       style={{
                         background: 'none',
                         border: 'none',
-                        padding: 0,
+                        // [B17 a11y] WCAG SC 2.5.8: target ≥24×24 CSS px.
+                        // padding 6/0 + line-height 1.4 на 18px = ~37px hit area.
+                        padding: '6px 0',
+                        margin: '-6px 0',
                         cursor: 'pointer',
                         fontFamily: 'var(--font-serif)',
                         fontSize: 18,
+                        lineHeight: 1.4,
                         color: 'var(--ink)',
                         textAlign: 'left',
                       }}
