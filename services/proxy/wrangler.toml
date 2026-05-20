@@ -56,10 +56,10 @@ STT_STAGING_BUCKET = "wotold-stt-staging-stg"
 ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
 AUTH_STATE_TTL_SECONDS = "300"
 AUTH_SESSION_TTL_SECONDS = "2592000"
-GOOGLE_OAUTH_CLIENT_ID = ""
+GOOGLE_OAUTH_CLIENT_ID = "819882374666-bvn6nmae4bmiogiia9jb859k4fmbr9ea.apps.googleusercontent.com"
 APPLE_OAUTH_CLIENT_ID = ""
 MICROSOFT_OAUTH_CLIENT_ID = ""
-PUBLIC_BASE_URL = ""
+PUBLIC_BASE_URL = "https://wotold-proxy-staging.animereader.workers.dev"
 
 # ============================================================
 # PRODUCTION
@@ -96,10 +96,13 @@ STT_STAGING_BUCKET = "wotold-stt-staging"
 ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
 AUTH_STATE_TTL_SECONDS = "300"
 AUTH_SESSION_TTL_SECONDS = "2592000"
-GOOGLE_OAUTH_CLIENT_ID = ""
+# TODO(production): подставить отдельный Google OAuth Client ID для продового
+# callback URL. Сейчас используем staging-ID — будет работать только если
+# в Google OAuth Authorized redirect URIs добавлен и production callback.
+GOOGLE_OAUTH_CLIENT_ID = "819882374666-bvn6nmae4bmiogiia9jb859k4fmbr9ea.apps.googleusercontent.com"
 APPLE_OAUTH_CLIENT_ID = ""
 MICROSOFT_OAUTH_CLIENT_ID = ""
-PUBLIC_BASE_URL = ""
+PUBLIC_BASE_URL = "https://wotold-proxy.animereader.workers.dev"
 
 # ============================================================
 # Секреты (S1) — через `wrangler secret put --env <staging|production>`:
