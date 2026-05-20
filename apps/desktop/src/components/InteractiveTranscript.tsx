@@ -10,6 +10,7 @@
 
 import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import type { CallSpeakerView } from '../api/speakers';
 import { Empty } from '../ui';
 
 interface Segment {
@@ -78,9 +79,25 @@ function groupBySpeaker(segments: Segment[]): Group[] {
 interface Props {
   rawSttJson: string | null;
   fallbackMd: string | null;
+  /** Список call_speakers — для display_name override на бейджах. Опционально. */
+  speakers?: CallSpeakerView[];
 }
 
-export function InteractiveTranscript({ rawSttJson, fallbackMd }: Props) {
+/** speaker_tag → label для бейджа. Confirmed-contact → display_name,
+ *  иначе — fallback на tag ('owner' → 'я', прочее как есть). */
+function buildLabelMap(speakers?: CallSpeakerView[]): Map<string, string> {
+  const m = new Map<string, string>();
+  if (!speakers) return m;
+  for (const s of speakers) {
+    if (s.confirmed && s.contact_display_name) {
+      m.set(s.speaker_tag, s.contact_display_name);
+    }
+  }
+  return m;
+}
+
+export function InteractiveTranscript({ rawSttJson, fallbackMd, speakers }: Props) {
+  const labels = useMemo(() => buildLabelMap(speakers), [speakers]);
   const segments: Segment[] | null = useMemo(() => {
     if (!rawSttJson) return null;
     try {
@@ -118,7 +135,7 @@ export function InteractiveTranscript({ rawSttJson, fallbackMd }: Props) {
           >
             <div className="transcript-bubble-head" style={{ color }}>
               <span className="transcript-bubble-tag" style={{ backgroundColor: color }}>
-                {g.tag === OWNER_TAG ? 'я' : g.tag}
+                {labels.get(g.tag) ?? (g.tag === OWNER_TAG ? 'я' : g.tag)}
               </span>
               <span className="transcript-bubble-time text-subtle">
                 {formatTimecode(start)}
