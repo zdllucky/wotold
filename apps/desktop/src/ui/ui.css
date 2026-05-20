@@ -470,16 +470,42 @@
   margin-bottom: var(--space-4);
 }
 
+/* [B16] Sticky variant — для длинных страниц чтобы header не скроллился. */
+.ds-toolbar--sticky {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: var(--space-2) 0;
+  background: color-mix(in oklch, var(--color-surface) 80%, transparent);
+  backdrop-filter: blur(var(--blur-overlay));
+  margin-bottom: var(--space-3);
+}
+
+.ds-toolbar-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .ds-toolbar-title {
   margin: 0;
   font-size: var(--text-xl);
   font-weight: 600;
 }
 
+/* [B16] Subtitle — small muted line под title, например count или дата. */
+.ds-toolbar-subtitle {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
 .ds-toolbar-actions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 /* ============================================================

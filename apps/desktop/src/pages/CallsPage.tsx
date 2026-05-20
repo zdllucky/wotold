@@ -3,7 +3,17 @@ import { humanError } from '../api/errors';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { listCalls, type Call } from '../api/recording';
-import { Badge, CallRowSkeleton, Empty, InputField, SelectField, Toolbar } from '../ui';
+import { CallRowSkeleton, Empty, InputField, SelectField, Toolbar } from '../ui';
+
+// [B16] Простая склонялка для счётчиков ru: ('звонок','звонка','звонков').
+function declinePlural(n: number, forms: [string, string, string]): string {
+  const abs = Math.abs(n) % 100;
+  const tail = abs % 10;
+  if (abs >= 11 && abs <= 14) return forms[2];
+  if (tail === 1) return forms[0];
+  if (tail >= 2 && tail <= 4) return forms[1];
+  return forms[2];
+}
 
 type StatusFilter = 'all' | 'recording' | 'processing' | 'ready' | 'failed';
 
@@ -143,14 +153,14 @@ export function CallsPage({ onOpen }: CallsPageProps) {
     <section className="calls">
       <Toolbar
         title="Звонки"
-        actions={
-          calls.length > 0 ? (
-            <Badge tone="neutral">
-              {filtered.length}
-              {filtered.length !== calls.length ? ` / ${calls.length}` : ''}
-            </Badge>
-          ) : undefined
+        subtitle={
+          calls.length > 0
+            ? filtered.length !== calls.length
+              ? `${filtered.length} из ${calls.length} по запросу`
+              : `${calls.length} ${declinePlural(calls.length, ['звонок', 'звонка', 'звонков'])}`
+            : undefined
         }
+        sticky
       />
       {calls.length === 0 ? (
         <Empty
