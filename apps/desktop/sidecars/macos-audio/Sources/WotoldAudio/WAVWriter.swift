@@ -2,8 +2,10 @@ import AVFoundation
 import Foundation
 
 // Минимальный RIFF/WAV writer для PCM16. Пишет placeholder-заголовок
-// при init, обновляет размеры в close(). Не thread-safe — вызывается
-// из последовательной очереди AudioRecorder.
+// при init, периодически (через AudioRecorder) обновляет размеры в
+// flushHeader() — M1.5: краш не уничтожает уже записанное. Окончательное
+// закрытие — в close(). Не thread-safe — вызывается из последовательной
+// очереди AudioRecorder/SystemAudioRecorder.
 
 final class WAVWriter {
     private let handle: FileHandle
@@ -75,11 +77,22 @@ final class WAVWriter {
         return byteCount
     }
 
-    func close() throws {
+    /// Перезаписывает RIFF/data размеры под текущее `dataBytes` без закрытия файла.
+    /// Курсор возвращается на конец, синхронизация на диск через synchronize().
+    /// M1.5 паспорта: краш между периодическими flush'ами оставляет валидный
+    /// WAV до последнего успешного flush'а.
+    func flushHeader() throws {
+        let endOffset = try handle.offset()
         try handle.seek(toOffset: 4)
         try handle.write(contentsOf: u32(dataBytes &+ 36))
         try handle.seek(toOffset: 40)
         try handle.write(contentsOf: u32(dataBytes))
+        try handle.seek(toOffset: endOffset)
+        try handle.synchronize()
+    }
+
+    func close() throws {
+        try flushHeader()
         try handle.close()
     }
 

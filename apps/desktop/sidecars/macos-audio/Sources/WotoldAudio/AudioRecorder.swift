@@ -13,7 +13,9 @@ final class AudioRecorder {
     private var inputFormat: AVAudioFormat?
     private var startTime: Date?
     private var bytesWritten: UInt64 = 0
+    private var flushTimer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "app.wotold.macos-audio.recorder")
+    private let flushInterval: TimeInterval = 5.0
 
     func start(micURL: URL) throws {
         // Если уже пишем — стопаем предыдущий чтобы не потерять состояние.
@@ -67,6 +69,17 @@ final class AudioRecorder {
         self.inputFormat = inputFormat
         self.startTime = Date()
         self.bytesWritten = 0
+
+        // M1.5: периодический flush WAV-заголовка на диск — если процесс
+        // упадёт, файл остаётся валидным до последнего успешного flush'а.
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + flushInterval, repeating: flushInterval)
+        timer.setEventHandler { [weak self] in
+            guard let writer = self?.wavWriter else { return }
+            try? writer.flushHeader()
+        }
+        timer.resume()
+        flushTimer = timer
     }
 
     private func processBuffer(
@@ -115,6 +128,9 @@ final class AudioRecorder {
     }
 
     func stop() throws -> (durationSec: Double, micBytes: UInt64) {
+        flushTimer?.cancel()
+        flushTimer = nil
+
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         try wavWriter?.close()

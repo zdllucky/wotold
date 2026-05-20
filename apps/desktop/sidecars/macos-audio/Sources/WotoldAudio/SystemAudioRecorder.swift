@@ -19,7 +19,9 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private var wavWriter: WAVWriter?
     private var converter: AVAudioConverter?
     private var outputFormat: AVAudioFormat?
+    private var flushTimer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "app.wotold.macos-audio.system")
+    private let flushInterval: TimeInterval = 5.0
     private(set) var bytesWritten: UInt64 = 0
 
     func start(systemURL: URL) async throws {
@@ -87,9 +89,22 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
         try await stream.startCapture()
         self.stream = stream
+
+        // M1.5: периодический flush header на диск для crash-safety.
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + flushInterval, repeating: flushInterval)
+        timer.setEventHandler { [weak self] in
+            guard let writer = self?.wavWriter else { return }
+            try? writer.flushHeader()
+        }
+        timer.resume()
+        flushTimer = timer
     }
 
     func stop() async throws -> StopResult {
+        flushTimer?.cancel()
+        flushTimer = nil
+
         if let stream = stream {
             try await stream.stopCapture()
         }
