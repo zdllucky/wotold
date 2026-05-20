@@ -22,7 +22,11 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://wotold-proxy-staging.animereader.workers.dev https://wotold-proxy.animereader.workers.dev https://*.r2.cloudflarestorage.com https://accounts.google.com https://oauth2.googleapis.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'self'"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://wotold-proxy-staging.animereader.workers.dev https://wotold-proxy.animereader.workers.dev https://*.r2.cloudflarestorage.com https://accounts.google.com https://oauth2.googleapis.com; img-src 'self' data: blob: asset: http://asset.localhost https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; media-src 'self' blob: asset: http://asset.localhost; frame-src 'none'; object-src 'none'; base-uri 'self'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/calls/**/*.wav"]
+      }
     }
   },
   "bundle": {

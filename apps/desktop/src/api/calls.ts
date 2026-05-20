@@ -38,6 +38,11 @@ export function regenerateRecap(callId: string): Promise<void> {
   return invoke<void>('regenerate_recap', { callId });
 }
 
+/** [B16]: путь к WAV-файлу звонка для аудиоплеера. */
+export function getCallAudioPath(callId: string, kind: 'mic' | 'system'): Promise<string> {
+  return invoke<string>('get_call_audio_path', { callId, kind });
+}
+
 /** Перезапустить полный pipeline (STT + recap) для существующего звонка.
  *  Применяется к failed | ready | processing — берёт mic.wav/system.wav с диска. */
 export function reprocessCall(callId: string): Promise<void> {

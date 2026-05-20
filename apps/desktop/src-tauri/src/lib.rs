@@ -204,6 +204,7 @@ pub fn run() {
             commands::delete_voice_sample,
             commands::regenerate_recap,
             commands::reprocess_call,
+            commands::get_call_audio_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

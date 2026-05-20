@@ -268,6 +268,11 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         await new Promise((r) => setTimeout(r, 800));
         return null;
       }
+      if (cmd === 'get_call_audio_path') {
+        // В dev-browser нет реальных WAV — возвращаем error чтобы плеер
+        // показал «нет аудио» (миро в Tauri будет рабочий файл).
+        throw new Error('audio file не найден (dev mock)');
+      }
       if (cmd === 'reprocess_call') {
         await new Promise((r) => setTimeout(r, 1500));
         return null;

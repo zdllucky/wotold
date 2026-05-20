@@ -1186,3 +1186,25 @@
   font-size: var(--text-base);
   line-height: 1.5;
 }
+
+/* [B16] Audio player на CallDetailPage */
+.audio-player-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.audio-player-tracks {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.audio-player-el {
+  width: 100%;
+  outline: none;
+}
