@@ -191,6 +191,9 @@ interface ContactFormProps {
   onCancel: () => void;
 }
 
+// C2 (#40): ключ в contact.attributes для opt-in на накопление voice samples.
+const CONSENT_VOICE_KEY = 'consent_voice';
+
 function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormProps) {
   const [displayName, setDisplayName] = useState(initial?.display_name ?? '');
   const [org, setOrg] = useState(initial?.org ?? '');
@@ -199,10 +202,16 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
   const [identifiers, setIdentifiers] = useState<ContactIdentifierInput[]>(
     initial?.identifiers.map((i) => ({ kind: i.kind, value: i.value })) ?? [],
   );
+  // C2 (#40): био-opt-in отделён от свободных attributes, чтобы юзер видел его
+  // как 1st-class флаг с правовым контекстом, не как «ещё одна пара ключ/значение».
+  const initialAttributes = initial?.attributes ?? {};
+  const [consentVoice, setConsentVoice] = useState<boolean>(
+    String(initialAttributes[CONSENT_VOICE_KEY] ?? '') === 'true',
+  );
   const [attributes, setAttributes] = useState<Array<{ key: string; value: string }>>(() =>
-    initial?.attributes
-      ? Object.entries(initial.attributes).map(([k, v]) => ({ key: k, value: String(v) }))
-      : [],
+    Object.entries(initialAttributes)
+      .filter(([k]) => k !== CONSENT_VOICE_KEY)
+      .map(([k, v]) => ({ key: k, value: String(v) })),
   );
 
   const submit = (e: FormEvent) => {
@@ -215,6 +224,9 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
       const k = key.trim();
       const v = value.trim();
       if (k && v) attrs[k] = v;
+    }
+    if (consentVoice) {
+      attrs[CONSENT_VOICE_KEY] = 'true';
     }
 
     onSubmit({
@@ -272,6 +284,24 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
         onChange={(e) => setNotes(e.target.value)}
         rows={3}
       />
+
+      {/* C2 (#40): био-opt-in. Без этого флага matching pipeline (#25/#26) не пишет
+          voice_samples даже после ручного подтверждения спикера. */}
+      <label className="consent-row">
+        <input
+          type="checkbox"
+          checked={consentVoice}
+          onChange={(e) => setConsentVoice(e.target.checked)}
+        />
+        <span className="consent-row-text">
+          <strong>Накапливать голосовой профиль</strong>
+          <span className="consent-row-hint">
+            При подтверждении спикера в звонке embedding добавляется в voice_samples
+            этого контакта (M3.6). Снять — отключить биометрический tracking даже
+            после ручного confirm.
+          </span>
+        </span>
+      </label>
 
       <div className="row-group">
         <div className="row-group-head">
