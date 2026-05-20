@@ -6,6 +6,25 @@
 
 ---
 
+## Статус MVP
+
+**Реализовано:**
+- Этапы 1-5, 6-10, 11-12 по [паспорту](ПАСПОРТ_ПРОЕКТА.md): audio capture (mic+system), STT relay (Soniox+Gladia с auto-fallback), pipeline (transcript+raw_stt), recap+action_items (Groq Llama 3.3 70B), CallDetail с интерактивным транскриптом+spoken bubbles+Speakers+regenerate, contacts с edit+samples view, settings (managed+BYO+quota+account), MCP server, OIDC scaffold, auto-update, CI/CD (split staging/prod + smoke+rollback + commitlint + claude-review + changelog).
+- Staging backend полностью boevoy: /health, /v1/usage, /v1/stt/staging-url (R2), /v1/llm (Groq), /v1/auth/google/start.
+- Все B1-B12 + B15 backlog requirements закрыты.
+
+**Осталось для production-релиза (manual user actions):**
+- **#42 X1 Tauri minisign** — генерация ключа подписи updater'а (one-time CLI).
+- **#44 X3 CF production** — те же 7 GH Secrets с суффиксом `_PRODUCTION` + Google OAuth Authorized URI + tag `v0.1.0`.
+
+**Deferred до получения ONNX model bytes:**
+- Real OnnxEmbedder + wire identify_speakers в pipeline (часть #26). Speakers UI работает через manual confirm, mic→owner auto-bind работает; biometric matching отключён.
+
+**Активный backlog (пост-MVP улучшения):**
+- B13 preferred_language setting, B14 live recording level meter.
+
+---
+
 ## Готово
 
 - [x] **Bootstrap** монорепо-скелет — [`322f5d6`](#)
@@ -105,7 +124,7 @@
 
 - [ ] **#42** X1 Generate Tauri minisign + публичный ключ в `tauri.conf.json` + приватный в GitHub-секрет + офлайн-бэкап (M11.1, M11.9)
 - [x] **#43** X2 `REPLACE_OWNER/wotold` → `zdllucky/wotold` в `tauri.conf.json` (updater endpoint)
-- [ ] **#44** X3 Cloudflare provisioning per env. Делается через `scripts/cf-bootstrap.sh staging|production` + `wrangler secret put --env`. Полная процедура — `docs/DEPLOYMENT.md`. Требует:
+- [~] **#44** X3 Cloudflare provisioning per env. Staging закрыт полностью (R2 enabled by user, KV created via provision-infra workflow, secrets залиты через sync-proxy-secrets workflow, deploy зелёный, smoke /health 200, /v1/llm и /v1/stt/staging-url работают вживую). **Остаётся для production**: GH Secrets с суффиксом `_PRODUCTION` (можно те же ключи что staging), Google OAuth Authorized redirect URI для production callback, и tag `v0.1.0` для триггера production deploy. Полная процедура — `docs/DEPLOYMENT.md`. Требует:
   - CF Free аккаунт + API token (Workers/KV/R2 edit) + Account ID
   - GitHub Repo Secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
   - GitHub Environments `staging` (auto) и `production` (manual approval)
@@ -133,7 +152,7 @@
 
 ### Активные задачи (формализованные требования)
 
-- [ ] **[B10] Интерактивный транскрипт на CallDetail (M7.3 follow-up).** Сейчас транскрипт рендерится как сырой markdown через ReactMarkdown — стена текста, спикеры теряются. Требование:
+- [x] **[B10] Интерактивный транскрипт на CallDetail (M7.3 follow-up).** Сейчас транскрипт рендерится как сырой markdown через ReactMarkdown — стена текста, спикеры теряются. Требование:
   - Парсить `raw_stt.json` (`merged` массив `TranscriptSegment[]`) вместо `transcript.md`.
   - Рендер в виде чат-бабблов: бейдж спикера + текст + тайм-метка `mm:ss`.
   - Группировка подряд идущих сегментов одного спикера (как сейчас в `render_transcript_md` для md, но в DOM).
@@ -143,14 +162,14 @@
   - `read_call_artifact(kind='raw_stt')` Tauri-команда возвращает JSON segments. Если файл отсутствует (старые звонки) — fallback на текущий markdown.
   - Acceptance: на ready-звонке таб «Расшифровка» показывает баблы; на 5+ спикерах цвета не пересекаются; mobile-узкая ширина окна не ломает layout.
 
-- [ ] **[B11] Авто-добавление всех спикеров в Speakers секцию + кнопка «Добавить как контакт» (M7.4 follow-up #46, M3.5 follow-up #26).** Сейчас `SpeakersSection` показывает только rows из `call_speakers` table — а они туда попадают только если `identify_speakers` отработал (#25 pipeline-wire deferred ⇒ обычно пусто). Требование:
+- [x] **[B11] Авто-добавление всех спикеров в Speakers секцию + кнопка «Добавить как контакт» (M7.4 follow-up #46, M3.5 follow-up #26).** Сейчас `SpeakersSection` показывает только rows из `call_speakers` table — а они туда попадают только если `identify_speakers` отработал (#25 pipeline-wire deferred ⇒ обычно пусто). Требование:
   - В `pipeline::run` после `persist_artifacts`: для каждого distinct `speaker_tag` из merged-транскрипта (кроме `owner` — у него auto-bind, см. M3.7) **создать call_speakers row** с `contact_id=NULL`, `confirmed=0`, `suggestion_*` NULL. Это делает спикера видимым в UI сразу, без identify_speakers.
   - В `SpeakersSection`: рядом с селектором контакта добавить кнопку **«+ Добавить как контакт»**. При клике — inline форма (display_name + опц. `consent_voice` checkbox) → `create_contact` + `confirm_call_speaker(speaker, new_contact_id)` атомарной парой.
   - Список ВСЕХ спикеров отображается даже если они анонимные («S1», «S2» без привязки) с подсказкой «Не привязан».
   - UX-копия: «Кто это? Выбери контакт или добавь нового».
   - Acceptance: после успешного звонка с 3 спикерами в табе «Спикеры» сразу 3 row (включая owner confirmed); кнопка «+ Добавить» создаёт контакт и тут же привязывает.
 
-- [ ] **[B12] LLM resilience: retry on 5xx + UX message.** Groq может вернуть 502/503 при rate-limit (30 RPM free) или временной перегрузке. Сейчас одна ошибка → `recap silent-skip` в pipeline, регенерация — explicit Err во фронте. Требование:
+- [x] **[B12] LLM resilience: retry on 5xx + UX message.** Groq может вернуть 502/503 при rate-limit (30 RPM free) или временной перегрузке. Сейчас одна ошибка → `recap silent-skip` в pipeline, регенерация — explicit Err во фронте. Требование:
   - В `services/proxy/src/lib/llm-backends.ts`: на upstream `≥500` сделать одну паузу 1.5s и retry — это покрывает transient Groq glitches.
   - В UI ошибки рекапа показывать с кнопкой «Повторить» (current «↻ Пересоздать рекап» уже почти оно — добавить hint «бесплатный Groq иногда лимитит, подожди 5 сек и попробуй ещё»).
   - Acceptance: 502 на первом запросе с переход на retry за 1.5s даёт 200; счётчик usage тикает только за фактически использованные токены.
