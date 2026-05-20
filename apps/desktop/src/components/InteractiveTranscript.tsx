@@ -145,8 +145,11 @@ export function InteractiveTranscript({ rawSttJson, fallbackMd, speakers }: Prop
       {groups.map((g, idx) => {
         const start = g.segments[0]?.start ?? 0;
         const color = colorVarFor(g.tag);
-        const speakerName =
-          labels.get(g.tag) ?? (g.tag === OWNER_TAG ? 'я' : g.tag);
+        // [B17] Per artboard §5: speaker column shows ONE word — first
+        // name (uppercased via CSS). Owner → "Я". Unknown tag → tag.
+        const fullName =
+          labels.get(g.tag) ?? (g.tag === OWNER_TAG ? 'Я' : g.tag);
+        const firstName = fullName.split(/\s+/)[0] ?? fullName;
         const text = g.segments
           .map((s) => s.text.trim())
           .filter(Boolean)
@@ -154,7 +157,7 @@ export function InteractiveTranscript({ rawSttJson, fallbackMd, speakers }: Prop
         return (
           <div className="transcript-row" key={`${g.tag}-${idx}`}>
             <div className="transcript-speaker" style={{ color }}>
-              {speakerName}
+              {firstName}
             </div>
             <div className="transcript-text">
               {text || <span className="subtle">…</span>}
