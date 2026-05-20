@@ -221,6 +221,7 @@ pub fn run() {
             commands::list_calls,
             commands::get_call,
             commands::delete_call,
+            commands::wipe_all_data,
             commands::list_call_action_items,
             commands::read_call_artifact,
             commands::get_audio_permissions,
