@@ -101,6 +101,7 @@
 - **[B3] STT job-resume при retry.** Когда воркер таймаутит на 25-секундном polling-бюджете (длинная запись), клиент теряет partner job_id и при повторе создаёт новый job → двойная оплата у Soniox/Gladia. Решение: кэшировать `r2Key → partner_provider:job_id` в Workers KV с TTL ≈30 мин; на retry — резюмировать polling по существующему id. Связано с #18.
 - **[B4] Proxy URL input в Settings.** Pipeline managed-режима требует непустой `proxy_base_url`, но в UI его ввести нельзя — только через прямую правку settings table. Добавить field в SettingsPage после X3 (когда задеплоенный URL прокси будет известен).
 - **[B5] Realtime событие «транскрипция готова».** Сейчас клиент узнаёт о статусе ready/failed только через ручной refresh Calls list. Поднять Tauri event `pipeline:finished {call_id, status}` из `pipeline::run` финала, во фронте слушать через `listen()` и обновлять список без перезагрузки.
+- **[B6] Token-based design system + причёска UI.** Сейчас inline oklch-значения и неравномерные gaps по всем стилям. Нативный macOS 26 (Liquid Glass) через WebKit не воспроизводится точно, поэтому делаем единую *macOS-flavored* систему: CSS-токены (color/spacing/radius/elevation/motion + light/dark через `prefers-color-scheme`), унификация существующих компонентов под токены, density-шкала. Опционально — Radix UI primitives для табов/диалогов/попапов (unstyled, A11y, наш CSS). Делаем когда наберётся 2-3 свежих экрана для рефакторинга.
 
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
