@@ -92,11 +92,16 @@ async fn generate_managed(
             return Err(LlmError::Auth(format!("proxy {status}")));
         }
         if status.is_server_error() {
-            last_provider_err = Some(format!("proxy {status}"));
+            let body = resp.text().await.unwrap_or_default();
+            last_provider_err = Some(format!("proxy {status}: {}", body.chars().take(200).collect::<String>()));
             continue;
         }
         if !status.is_success() {
-            return Err(LlmError::Provider(format!("proxy {status}")));
+            let body = resp.text().await.unwrap_or_default();
+            return Err(LlmError::Provider(format!(
+                "proxy {status}: {}",
+                body.chars().take(200).collect::<String>()
+            )));
         }
         return parse_managed_body(resp).await;
     }
