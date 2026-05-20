@@ -20,23 +20,33 @@
 - [x] **#27** AnthropicProvider (managed + BYO + 6 httpmock-тестов) — [`b942149`](#)
 - [x] **#15** Swift audio sidecar — mic (AVAudioEngine) + system (ScreenCaptureKit) → mic.wav + system.wav — [`2c60ec1`](#) + [`5ab308d`](#)
 - [x] **#30** Calls list (партишн без FTS) — [`4bbf78f`](#)
+- [x] **#16** Permissions UX в Settings (закрывает [B1] тоже) — [`f5cb476`](#) + [`4ddaff7`](#)
+- [x] **#17** Chunked WAV flush для crash safety (M1.5) — [`bd9a9a6`](#)
+- [x] **#18** Proxy: Soniox + Gladia partner relay в /v1/stt — [`8ef5fac`](#)
+- [x] **#46** Edit contact + identifiers + extensible attributes — [`8d61b64`](#)
+- [x] **#20** SonioxProvider (managed + BYO direct, 4 тестов) — [`194aa8b`](#)
+- [x] **#21** GladiaProvider (managed + BYO direct, 3 теста) — [`d9c1163`](#)
+- [x] **#22** Pipeline: mic+system merge + raw_stt.json + transcript.md (M2.4-2.5) — [`4b0970b`](#)
+- [x] startup sweep застрявших recording/processing + status tooltips — [`ddee420`](#)
+- [x] **#28** Recap pipeline (M4.2-4.4) — LLM auto-chain → recap.md + action_items — [`3e1246c`](#)
+- [x] **#31** Call detail tabs (Рекап/Расшифровка/Задачи, без speaker bindings) — [`195ad91`](#)
 
 ---
 
 ## Audio · Этап 2 / M1
 
 - [x] **#15** M1.2 Swift sidecar — mic + system (см. «Готово»)
-- [ ] **#16** M1.3 macOS permissions UX (mic + system tap, обработка отказа) → #15
-- [ ] **#17** M1.5 Record screen + indicator + chunked flush (`calls.status` recording → processing) → #15
+- [x] **#16** M1.3 macOS permissions UX (см. «Готово»)
+- [x] **#17** M1.5 chunked flush (см. «Готово»). Record screen UX живёт в HomePage.
 
 ## STT · Этап 3 / M2 + Этап 8 follow-up
 
-- [ ] **#18** Proxy: подключить Soniox + Gladia в `/v1/stt` (presigned GET + relay + normalize)
+- [x] **#18** Proxy: Soniox + Gladia partner relay (см. «Готово»)
 - [ ] **#19** Proxy: vitest + miniflare integration tests → #18
-- [ ] **#20** M2.2 `SonioxProvider` (managed via proxy + BYO direct из keychain) → #18
-- [ ] **#21** M2.2 `GladiaProvider` (managed + BYO) → #18
-- [ ] **#22** M2.4-2.5 Pipeline: mic+system merge по таймкодам, owner attribution, `raw_stt.json` → #15, #20
-- [ ] **#23** M2.6-2.7 Lang autodetect → `calls.lang_detected` + retries/backoff + UX errors → #22
+- [x] **#20** M2.2 `SonioxProvider` (см. «Готово»)
+- [x] **#21** M2.2 `GladiaProvider` (см. «Готово»)
+- [x] **#22** M2.4-2.5 Pipeline (см. «Готово»)
+- [ ] **#23** M2.6-2.7 Lang autodetect → `calls.lang_detected` + retries/backoff + UX errors. Сейчас lang_detected пишется как есть от провайдера, без auto-fallback Soniox→Gladia
 
 ## Идентификация · Этап 4 / M3
 
@@ -47,13 +57,13 @@
 ## Recap · Этап 5 / M4
 
 - [x] **#27** M4.1 `AnthropicProvider` baseline (см. «Готово»)
-- [ ] **#28** M4.2-4.5 Pipeline: structured prompt → `RecapJson` → owner_hint mapping → `recap.md`/`transcript.md` + regen из `raw_stt.json` → #27, #22, #25
+- [x] **#28** M4.2-4.4 Recap pipeline (см. «Готово»). M4.5 regenerate_recap Tauri-команда — отдельная мини-задача
 
 ## UI · Этап 6 / M7
 
 - [ ] **#29** M7.1 Record screen (start/stop, managed/byo, провайдер) → #17
 - [x] **#30** M7.2 Calls list baseline — без FTS (см. «Готово»); FTS-поиск ждёт #22
-- [ ] **#31** M7.3 Call detail tabs (recap/transcript/tasks/participants + speaker bindings) → #28, #26
+- [x] **#31** M7.3 Call detail tabs — Recap/Transcript/Tasks (см. «Готово»). Speaker bindings — в #26.
 - [x] **#32** M7.4 Contacts baseline — list + create + delete (см. «Готово»)
 - [ ] **#46** M7.4 follow-up: edit + multiple identifiers + extensible attributes
 - [ ] **#45** M7.4 follow-up: voice samples view + manual delete → #26
@@ -90,7 +100,7 @@
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#16` · `#17` · `#18` · `#24` · `#37` · `#42` · `#43` · `#44` · `#46` · `#47` · `[B1]`
+`#19` · `#23` · `#24` · `#37` · `#42` · `#43` · `#44` · `#45` · `#47` · `[B6]`
 
 ## Backlog (кандидаты на доработку)
 
@@ -101,7 +111,30 @@
 - **[B3] STT job-resume при retry.** Когда воркер таймаутит на 25-секундном polling-бюджете (длинная запись), клиент теряет partner job_id и при повторе создаёт новый job → двойная оплата у Soniox/Gladia. Решение: кэшировать `r2Key → partner_provider:job_id` в Workers KV с TTL ≈30 мин; на retry — резюмировать polling по существующему id. Связано с #18.
 - **[B4] Proxy URL input в Settings.** Pipeline managed-режима требует непустой `proxy_base_url`, но в UI его ввести нельзя — только через прямую правку settings table. Добавить field в SettingsPage после X3 (когда задеплоенный URL прокси будет известен).
 - **[B5] Realtime событие «транскрипция готова».** Сейчас клиент узнаёт о статусе ready/failed только через ручной refresh Calls list. Поднять Tauri event `pipeline:finished {call_id, status}` из `pipeline::run` финала, во фронте слушать через `listen()` и обновлять список без перезагрузки.
-- **[B6] Token-based design system + причёска UI.** Сейчас inline oklch-значения и неравномерные gaps по всем стилям. Нативный macOS 26 (Liquid Glass) через WebKit не воспроизводится точно, поэтому делаем единую *macOS-flavored* систему: CSS-токены (color/spacing/radius/elevation/motion + light/dark через `prefers-color-scheme`), унификация существующих компонентов под токены, density-шкала. Опционально — Radix UI primitives для табов/диалогов/попапов (unstyled, A11y, наш CSS). Делаем когда наберётся 2-3 свежих экрана для рефакторинга.
+- **[B6] Design system + dev-only Components showcase. PRIORITY — следующая задача.**
+
+  Цель: единая token-based DS под Wotold (macOS-flavored, не копирует Liquid Glass — WebKit не достаёт), которой обязаны пользоваться все экраны. Не хватает компонента или токена — расширяем DS, не лепим inline.
+
+  Объём:
+  1. **CSS-токены** в `apps/desktop/src/styles/tokens.css`:
+     - Цвета: `--color-bg / surface / border / text / text-muted / accent / danger / success / warning`, light + dark через `prefers-color-scheme`
+     - Spacing: 4-step scale `--space-1` … `--space-8`
+     - Radius: `--radius-sm / md / lg / pill`
+     - Type: `--text-xs / sm / base / lg / xl / 2xl` + `--font-system / --font-mono`
+     - Elevation: 3 уровня теней + один уровень backdrop-blur
+     - Motion: `--duration-fast / normal` + `--ease-out-expo`
+  2. **Базовые компоненты** в `apps/desktop/src/ui/`: `Button`, `Badge`, `Field` (label+input/select/textarea), `Tabs`, `Card`, `Empty` (пустое состояние), `Pill`, `StatusDot`, `Toolbar`. По мере необходимости — `Dialog`/`Popover` через Radix primitives. Всё типизировано, props минимальны.
+  3. **Рефакторинг существующих экранов** (Home, Calls, CallDetail, Contacts, Settings, Onboarding, Permissions) на эти компоненты + токены. Inline `oklch(...)` и magic gaps удаляются.
+  4. **Dev-only Showcase-страница** (`apps/desktop/src/pages/DesignSystemPage.tsx`):
+     - Превью всех токенов (color swatches, type scale, spacing/radius scale, motion демо)
+     - Все компоненты в каждом состоянии (default/hover/active/disabled, light/dark)
+     - Гейт видимости: `import.meta.env.DEV` (Vite — true только в `tauri dev`). Если когда-то появится staging — добавим vite-env `MODE === 'staging' | 'development'`. В production-сборке таб «🛠 Dev» в навбаре отсутствует.
+     - Открывается как обычная страница через топ-нав, скрытая в проде.
+  5. **Правило проекта**: новые экраны/фичи **обязаны** использовать DS-компоненты + токены. Если чего-то не хватает — сначала PR в DS (новый компонент или токен), потом фича.
+
+  Эстетика: спокойная, нейтральная, mac-friendly. Системный шрифт (`-apple-system`), средние радиусы (10–14px), тонкие 1px разделители, один акцент (синий или нейтральный графит), сдержанная типографика. Никаких градиентов и Liquid-эффектов.
+
+  После [B6] — все будущие фичи UI идут через эту систему, и при ревью отлавливаем inline-стили.
 
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
