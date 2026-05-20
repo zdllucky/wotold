@@ -71,7 +71,7 @@
 
 ## UI · Этап 6 / M7
 
-- [ ] **#29** M7.1 Record screen (start/stop, managed/byo, провайдер) → #17
+- [x] **#29** M7.1 Record screen — HomePage реализует start/stop с DS-кнопкой, индикатором активной записи (pulse) и tooltip последнего сохранённого звонка. Provider/managed/byo выбираются в Settings и используются pipeline'ом — раздельный UI не требуется (избыточно для M7.1).
 - [x] **#30** M7.2 Calls list baseline — без FTS (см. «Готово»); FTS-поиск ждёт #22
 - [x] **#31** M7.3 Call detail tabs — Recap/Transcript/Tasks (см. «Готово»). Speaker bindings — в #26.
 - [x] **#32** M7.4 Contacts baseline — list + create + delete (см. «Готово»)
@@ -94,7 +94,7 @@
 
 ## Constraints · Этап 10 / раздел 9
 
-- [ ] **#39** C1 Recording consent dialog → #15
+- [x] **#39** C1 Recording consent dialog — HomePage показывает Card с предупреждением (статьи РФ/РК о тайне коммуникаций) перед первой записью. consent timestamp в `settings.recording_consent_at` — повторно не показываем.
 - [ ] **#40** C2 Biometric opt-in per contact (флаг «накапливать голосовой профиль») → #32
 - [ ] **#41** C5 Cascade delete (audio + samples от удалённого звонка) → #30
 

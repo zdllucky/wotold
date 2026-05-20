@@ -14,6 +14,7 @@ export const SETTINGS_KEYS = {
   PROVIDER_PATH: 'provider_path',
   LLM_MODEL: 'llm_model',
   PROXY_BASE_URL: 'proxy_base_url',
+  RECORDING_CONSENT_AT: 'recording_consent_at',
 } as const;
 
 export const SETTINGS_DEFAULTS = {

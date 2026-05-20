@@ -70,6 +70,24 @@
   max-width: var(--layout-max-content);
 }
 
+/* #39 C1 — recording consent dialog */
+.consent-card {
+  max-width: var(--layout-max-content);
+  margin: var(--space-5) auto 0;
+}
+
+.consent-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+
+.consent-card p {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+}
+
 .update-notes {
   margin: 0 0 var(--space-2);
   padding: var(--space-2) var(--space-3);
