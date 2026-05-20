@@ -33,7 +33,7 @@ const SETTING_PROXY_BASE_URL: &str = "proxy_base_url";
 
 /// Default production proxy URL — managed-режим работает out-of-the-box,
 /// user override через Settings → Прокси → Advanced.
-const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy.workers.dev";
+const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy.animereader.workers.dev";
 
 /// Контекст одной транскрипции: пути к двум дорожкам, call_dir для артефактов,
 /// device-id для managed-режима. Настройки (provider/path/lang/proxy URL) и

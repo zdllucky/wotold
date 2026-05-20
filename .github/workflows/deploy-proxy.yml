@@ -60,7 +60,7 @@ jobs:
     # GitHub Environment "staging" — protection rules + scoped secrets настраиваются в Settings.
     environment:
       name: staging
-      url: https://wotold-proxy-staging.workers.dev
+      url: https://wotold-proxy-staging.animereader.workers.dev
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -86,7 +86,7 @@ jobs:
         id: smoke
         run: |
           set -euo pipefail
-          URL="https://wotold-proxy-staging.workers.dev/health"
+          URL="https://wotold-proxy-staging.animereader.workers.dev/health"
           for i in 1 2 3 4 5; do
             sleep 3
             resp=$(curl -fsS "$URL" || echo "FAIL")
@@ -120,7 +120,7 @@ jobs:
     # GitHub Environment "production" — required reviewers / wait timer / protection rules.
     environment:
       name: production
-      url: https://wotold-proxy.workers.dev
+      url: https://wotold-proxy.animereader.workers.dev
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -141,7 +141,7 @@ jobs:
         id: smoke
         run: |
           set -euo pipefail
-          URL="https://wotold-proxy.workers.dev/health"
+          URL="https://wotold-proxy.animereader.workers.dev/health"
           for i in 1 2 3 4 5; do
             sleep 3
             resp=$(curl -fsS "$URL" || echo "FAIL")

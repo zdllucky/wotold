@@ -67,7 +67,9 @@ PUBLIC_BASE_URL = ""
 
 [env.production]
 name = "wotold-proxy"
-workers_dev = false
+# MVP: используем *.workers.dev subdomain (R7 — без upgrade тарифа).
+# Custom domain через CF DNS — отдельная задача после релиза.
+workers_dev = true
 
 [env.production.observability]
 enabled = true
