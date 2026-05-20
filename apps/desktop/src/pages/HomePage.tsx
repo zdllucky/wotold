@@ -18,7 +18,13 @@ interface AvailableUpdate {
   pub_date: string | null;
 }
 
-export function HomePage() {
+interface HomePageProps {
+  /** Опциональный колбэк навигации в детали звонка. Используется при
+   *  «Open» после остановки записи + auto-redirect через 5 сек. */
+  onOpenCall?: (callId: string) => void;
+}
+
+export function HomePage({ onOpenCall }: HomePageProps = {}) {
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
   const [installing, setInstalling] = useState(false);
@@ -161,10 +167,24 @@ export function HomePage() {
         )}
         {error && <p className="error">{error}</p>}
         {lastCall && !recording && (
-          <p className="record-saved">
-            ✓ Звонок сохранён: <code>{lastCall.id.slice(0, 8)}…</code> ·{' '}
-            {lastCall.duration_sec ?? 0} сек
-          </p>
+          <div className="record-saved-card">
+            <div>
+              <strong>✓ Звонок сохранён</strong>
+              <p className="text-muted" style={{ margin: 0, fontSize: 'var(--text-sm)' }}>
+                Длительность: {lastCall.duration_sec ?? 0} сек. Распознавание
+                идёт в фоне — обычно занимает 10–30 секунд.
+              </p>
+            </div>
+            {onOpenCall && (
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => onOpenCall(lastCall.id)}
+              >
+                Открыть
+              </Button>
+            )}
+          </div>
         )}
       </div>
 

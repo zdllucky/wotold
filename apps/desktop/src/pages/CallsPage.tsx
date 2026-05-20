@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { listCalls, type Call } from '../api/recording';
-import { Badge, Empty, InputField, SelectField, Toolbar } from '../ui';
+import { Badge, CallRowSkeleton, Empty, InputField, SelectField, Toolbar } from '../ui';
 
 type StatusFilter = 'all' | 'recording' | 'processing' | 'ready' | 'failed';
 
@@ -64,7 +64,20 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   }, []);
 
   if (error) return <p className="error">{error}</p>;
-  if (!calls) return <p className="hint">Загрузка…</p>;
+  if (!calls) {
+    return (
+      <section className="calls">
+        <Toolbar title="Звонки" />
+        <ul className="calls-list" aria-busy="true">
+          {Array.from({ length: 5 }, (_, i) => (
+            <li key={i}>
+              <CallRowSkeleton />
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
 
   const filtered = calls
     .filter((c) => statusFilter === 'all' || c.status === statusFilter)
