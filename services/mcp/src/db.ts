@@ -80,13 +80,17 @@ export class WotoldDb {
         )
         .all(limit) as Call[];
     }
-    const pattern = `%${opts.query.trim()}%`;
+    // [B16 audit P2]: escape LIKE wildcards (% _) в user query чтобы юзер
+    // не мог сделать pattern injection (например query='%' = match all,
+    // 'foo_bar' = 'fooXbar'). Используем backslash как escape char и
+    // явный ESCAPE clause.
+    const pattern = `%${escapeLikePattern(opts.query.trim())}%`;
     return this.db
       .prepare(
         `SELECT id, title, started_at, ended_at, duration_sec, status, provider,
                 path_label, lang_detected, failed_reason
          FROM calls
-         WHERE title LIKE ? OR provider LIKE ? OR lang_detected LIKE ?
+         WHERE title LIKE ? ESCAPE '\\' OR provider LIKE ? ESCAPE '\\' OR lang_detected LIKE ? ESCAPE '\\'
          ORDER BY started_at DESC
          LIMIT ?`,
       )
@@ -178,6 +182,11 @@ export class WotoldDb {
       )
       .all(callId) as ActionItem[];
   }
+}
+
+// [B16] Escape LIKE wildcards в user-supplied query. Backslash как escape char.
+function escapeLikePattern(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/[%_]/g, (m) => `\\${m}`);
 }
 
 function clampLimit(n: number): number {
