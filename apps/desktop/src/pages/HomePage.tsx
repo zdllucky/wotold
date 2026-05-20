@@ -483,14 +483,19 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
             </span>
             <span className="stat-label">В архиве</span>
           </div>
-          {pendingSpeakers > 0 && (
-            <div className="stat">
-              <span className="stat-value" style={{ color: 'var(--accent)' }}>
-                {pendingSpeakers}
-              </span>
-              <span className="stat-label">Ждут подтверждения</span>
-            </div>
-          )}
+          {/* [B17] Always show 4 stats per artboard §2 — visual symmetry.
+              При pendingSpeakers === 0 рендерим как muted '0'. */}
+          <div className="stat">
+            <span
+              className="stat-value"
+              style={{
+                color: pendingSpeakers > 0 ? 'var(--accent)' : 'var(--ink)',
+              }}
+            >
+              {pendingSpeakers}
+            </span>
+            <span className="stat-label">Ждут подтверждения</span>
+          </div>
         </div>
       )}
 

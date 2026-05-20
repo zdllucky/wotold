@@ -10,8 +10,9 @@
 //
 // R2 паспорта: no auto-bind, всё через явное подтверждение пользователем.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { humanError } from '../api/errors';
+import { readCallArtifact } from '../api/calls';
 import { createContact, listContacts, type Contact } from '../api/contacts';
 import {
   confirmCallSpeaker,
@@ -53,12 +54,19 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
   const [newName, setNewName] = useState('');
   const [newConsent, setNewConsent] = useState(false);
   const [busyAdd, setBusyAdd] = useState(false);
+  const [rawSttJson, setRawSttJson] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
-      const [s, c] = await Promise.all([listCallSpeakers(callId), listContacts()]);
-      setSpeakers(s);
-      setContacts(c);
+      const [s, c, raw] = await Promise.allSettled([
+        listCallSpeakers(callId),
+        listContacts(),
+        readCallArtifact(callId, 'raw_stt'),
+      ]);
+      if (s.status === 'fulfilled') setSpeakers(s.value);
+      if (c.status === 'fulfilled') setContacts(c.value);
+      if (raw.status === 'fulfilled') setRawSttJson(raw.value);
+      else setRawSttJson(null);
       setError(null);
     } catch (e) {
       setError(humanError(e));
@@ -69,6 +77,10 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callId]);
+
+  // [B17] Per-speaker first sample text — parsed once from raw_stt.json.
+  // Picks the longest segment in the first 5 from this speaker for richer sample.
+  const samplesByTag = useMemo(() => extractSamples(rawSttJson), [rawSttJson]);
 
   const handleAddAsContact = async (s: CallSpeakerView) => {
     const trimmed = newName.trim();
@@ -162,6 +174,7 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
               idx={idx}
               total={unconfirmed.length}
               contacts={contacts}
+              sampleText={samplesByTag.get(s.speaker_tag) ?? null}
               pickedContactId={pickFor[s.id] ?? s.suggestion_contact_id ?? ''}
               onPick={(id) => setPickFor((m) => ({ ...m, [s.id]: id }))}
               onConfirm={(contactId) => void handleConfirm(s, contactId)}
@@ -250,6 +263,7 @@ interface SpeakerCardProps {
   idx: number;
   total: number;
   contacts: Contact[];
+  sampleText: string | null;
   pickedContactId: string;
   onPick: (id: string) => void;
   onConfirm: (contactId?: string) => void;
@@ -270,6 +284,7 @@ function SpeakerCard({
   idx,
   total,
   contacts,
+  sampleText,
   pickedContactId,
   onPick,
   onConfirm,
@@ -357,12 +372,13 @@ function SpeakerCard({
               marginBottom: 8,
               color: 'var(--ink)',
               letterSpacing: '-0.01em',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
             }}
           >
-            «голос распознан · послушать сэмпл»
+            «{sampleText ?? 'голос распознан · послушать сэмпл'}»
           </div>
           <div style={{ height: 22, color }}>
             <MiniWave
@@ -604,4 +620,59 @@ function sourceLabel(s: string | null): string {
   if (s === 'embedding') return 'голос';
   if (s === 'llm') return 'LLM';
   return s;
+}
+
+// [B17] Per-speaker first sample from raw_stt.json.merged segments.
+// Returns map speaker_tag → first non-trivial segment text (longest of first 5).
+interface RawSttSegment {
+  speakerTag: string;
+  text: string;
+  start: number;
+  end: number;
+}
+
+function extractSamples(json: string | null): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!json) return out;
+  try {
+    const data = JSON.parse(json) as { merged?: unknown };
+    if (!Array.isArray(data.merged)) return out;
+    // Bucket first 5 segments per speaker_tag, pick longest.
+    const buckets = new Map<string, RawSttSegment[]>();
+    for (const s of data.merged) {
+      if (!s || typeof s !== 'object') continue;
+      const o = s as Record<string, unknown>;
+      if (
+        typeof o.speakerTag !== 'string' ||
+        typeof o.text !== 'string' ||
+        typeof o.start !== 'number' ||
+        typeof o.end !== 'number'
+      )
+        continue;
+      const tag = o.speakerTag;
+      const arr = buckets.get(tag) ?? [];
+      if (arr.length < 5) {
+        arr.push({
+          speakerTag: tag,
+          text: o.text,
+          start: o.start,
+          end: o.end,
+        });
+        buckets.set(tag, arr);
+      }
+    }
+    for (const [tag, arr] of buckets.entries()) {
+      const best = arr.reduce(
+        (a, b) => (b.text.length > a.text.length ? b : a),
+        arr[0]!,
+      );
+      const trimmed = best.text.trim();
+      if (trimmed.length >= 5) {
+        out.set(tag, trimmed.length > 140 ? trimmed.slice(0, 137) + '…' : trimmed);
+      }
+    }
+  } catch {
+    /* corrupt raw_stt — fallback to placeholder */
+  }
+  return out;
 }
