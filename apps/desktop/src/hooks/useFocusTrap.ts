@@ -38,13 +38,19 @@ export function useFocusTrap(
     const el = ref.current;
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
-    // Initial focus — первый focusable элемент внутри.
+    // Initial focus — первый focusable элемент внутри. Если root пуст
+    // (например, loading state), фокусируем сам root через tabIndex=-1.
+    // Это предотвращает «утечку» фокуса наружу при кратковременно пустом
+    // модале и сохраняет trap.
     const initialFocusables = el.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
     if (initialFocusables.length > 0) {
       initialFocusables[0]?.focus();
     } else {
-      // Если внутри нет focusable — фокусируем сам root (tabIndex=-1 не нужен,
-      // но focus() сработает только если у него есть tabindex). Skip.
+      const hadTabIndex = el.hasAttribute('tabindex');
+      if (!hadTabIndex) {
+        el.setAttribute('tabindex', '-1');
+      }
+      el.focus({ preventScroll: true });
     }
 
     function handleKey(e: KeyboardEvent) {
