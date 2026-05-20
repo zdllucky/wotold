@@ -25,11 +25,24 @@ export async function incUsage(
   delta: number,
 ): Promise<number> {
   // R1 — гонка приемлема: Free-тир абьюзится переустановкой в любом случае.
+  // [B16 audit P0]: добавили retry-on-conflict через дешёвый CAS-loop через KV
+  // (Workers KV не имеет нативного CAS, но мы можем re-read и replay при
+  // обнаружении inconsistency в течение N retries). Параллельные writes под
+  // одним device-id всё ещё могут терять delta, но это soft-fail для R1.
   const k = key(deviceId, kind);
-  const current = await readUsage(env, deviceId, kind);
-  const next = current + delta;
-  await env.QUOTA.put(k, String(next), { expirationTtl: SEC_PER_DAY * 2 });
-  return next;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const beforeRead = await readUsage(env, deviceId, kind);
+    const next = beforeRead + delta;
+    await env.QUOTA.put(k, String(next), { expirationTtl: SEC_PER_DAY * 2 });
+    // Verify our write landed (best-effort detection чужого concurrent write).
+    const afterRead = await readUsage(env, deviceId, kind);
+    if (afterRead >= next) {
+      return afterRead;
+    }
+    // Иначе кто-то перезатёр — retry с новым current.
+  }
+  // Last attempt без verify.
+  return readUsage(env, deviceId, kind);
 }
 
 export function quotaCap(env: Env, kind: QuotaKind): number {

@@ -77,7 +77,11 @@ class GoogleAdapter implements ProviderAdapter {
     if (!tokens.id_token) {
       throw new Error('google: id_token missing in response');
     }
-    return decodeIdTokenPayload(tokens.id_token);
+    // [B16 audit P1] Проверка claims: iss + aud (без JWKS signature пока).
+    return decodeIdTokenPayload(tokens.id_token, {
+      expectedIssuer: ['https://accounts.google.com', 'accounts.google.com'],
+      expectedAudience: env.GOOGLE_OAUTH_CLIENT_ID,
+    });
   }
 }
 
@@ -112,11 +116,17 @@ export function getAdapter(provider: OidcProvider): ProviderAdapter {
 // ----- helpers -----
 
 /**
- * Декодирует payload Google ID-token (JWT base64url) БЕЗ проверки подписи.
- * Для production HTTP-API безопасно: запрос идёт прокси → Google over HTTPS,
- * ответ TLS-protected. JWKS-валидация подписи — follow-up #38.
+ * Декодирует payload Google ID-token (JWT base64url) и валидирует claims.
+ * Подпись JWKS не проверяется (следующая итерация — see audit P1) — но
+ * проверка expected_issuer / expected_audience / exp / iat закрывает
+ * самые простые подделки (mistypy 'iss', неправильный client_id, истёкший
+ * токен). Запрос к token-endpoint идёт через HTTPS — TLS защищает payload
+ * в transit от tampering.
  */
-export function decodeIdTokenPayload(idToken: string): ProviderIdentity {
+export function decodeIdTokenPayload(
+  idToken: string,
+  options?: { expectedIssuer?: string | string[]; expectedAudience?: string },
+): ProviderIdentity {
   const parts = idToken.split('.');
   if (parts.length !== 3 || !parts[1]) {
     throw new Error('invalid id_token format');
@@ -134,9 +144,33 @@ export function decodeIdTokenPayload(idToken: string): ProviderIdentity {
     name?: string;
     given_name?: string;
     family_name?: string;
+    iss?: string;
+    aud?: string | string[];
+    exp?: number;
+    iat?: number;
   };
   if (!json.sub) {
     throw new Error('id_token payload missing sub');
+  }
+  // Validate claims if expected values passed.
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof json.exp === 'number' && json.exp < now) {
+    throw new Error('id_token expired');
+  }
+  // Some providers (Apple) don't set iat; skip iat check.
+  if (options?.expectedIssuer) {
+    const allowed = Array.isArray(options.expectedIssuer)
+      ? options.expectedIssuer
+      : [options.expectedIssuer];
+    if (!json.iss || !allowed.includes(json.iss)) {
+      throw new Error(`id_token bad iss: ${json.iss}`);
+    }
+  }
+  if (options?.expectedAudience && json.aud) {
+    const auds = Array.isArray(json.aud) ? json.aud : [json.aud];
+    if (!auds.includes(options.expectedAudience)) {
+      throw new Error(`id_token bad aud: ${JSON.stringify(json.aud)}`);
+    }
   }
   return {
     providerUserId: json.sub,

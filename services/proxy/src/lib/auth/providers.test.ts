@@ -66,6 +66,83 @@ describe('decodeIdTokenPayload', () => {
     const token = buildIdToken({ email: 'x@y.z' });
     expect(() => decodeIdTokenPayload(token)).toThrow(/sub/);
   });
+
+  // [B16 audit P1] claim validation tests
+  test('throws when exp in past', () => {
+    const token = buildIdToken({
+      sub: 's',
+      exp: Math.floor(Date.now() / 1000) - 60,
+    });
+    expect(() => decodeIdTokenPayload(token)).toThrow(/expired/);
+  });
+
+  test('accepts when exp in future', () => {
+    const token = buildIdToken({
+      sub: 's',
+      exp: Math.floor(Date.now() / 1000) + 60,
+    });
+    expect(() => decodeIdTokenPayload(token)).not.toThrow();
+  });
+
+  test('throws when iss mismatch (string)', () => {
+    const token = buildIdToken({ sub: 's', iss: 'https://evil.com' });
+    expect(() =>
+      decodeIdTokenPayload(token, { expectedIssuer: 'https://accounts.google.com' }),
+    ).toThrow(/bad iss/);
+  });
+
+  test('throws when iss mismatch (array)', () => {
+    const token = buildIdToken({ sub: 's', iss: 'https://evil.com' });
+    expect(() =>
+      decodeIdTokenPayload(token, {
+        expectedIssuer: ['https://accounts.google.com', 'accounts.google.com'],
+      }),
+    ).toThrow(/bad iss/);
+  });
+
+  test('accepts iss inside allowed array', () => {
+    const token = buildIdToken({ sub: 's', iss: 'accounts.google.com' });
+    expect(() =>
+      decodeIdTokenPayload(token, {
+        expectedIssuer: ['https://accounts.google.com', 'accounts.google.com'],
+      }),
+    ).not.toThrow();
+  });
+
+  test('throws when iss missing but expected', () => {
+    const token = buildIdToken({ sub: 's' });
+    expect(() =>
+      decodeIdTokenPayload(token, { expectedIssuer: 'https://accounts.google.com' }),
+    ).toThrow(/bad iss/);
+  });
+
+  test('throws when aud mismatch (string)', () => {
+    const token = buildIdToken({
+      sub: 's',
+      iss: 'https://accounts.google.com',
+      aud: 'wrong-cid',
+    });
+    expect(() =>
+      decodeIdTokenPayload(token, {
+        expectedIssuer: 'https://accounts.google.com',
+        expectedAudience: 'right-cid',
+      }),
+    ).toThrow(/bad aud/);
+  });
+
+  test('accepts aud inside array', () => {
+    const token = buildIdToken({
+      sub: 's',
+      iss: 'https://accounts.google.com',
+      aud: ['other-cid', 'right-cid'],
+    });
+    expect(() =>
+      decodeIdTokenPayload(token, {
+        expectedIssuer: 'https://accounts.google.com',
+        expectedAudience: 'right-cid',
+      }),
+    ).not.toThrow();
+  });
 });
 
 describe('GoogleAdapter', () => {
@@ -97,7 +174,14 @@ describe('GoogleAdapter', () => {
   });
 
   test('exchangeCode happy path returns identity', async () => {
-    const idToken = buildIdToken({ sub: 'g-1', email: 'a@b', name: 'A' });
+    const idToken = buildIdToken({
+      sub: 'g-1',
+      email: 'a@b',
+      name: 'A',
+      iss: 'https://accounts.google.com',
+      aud: 'google-cid',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
