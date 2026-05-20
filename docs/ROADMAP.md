@@ -33,6 +33,7 @@
 - [x] **#23** STT robustness: retry/backoff (Network only), auto-fallback Soniox→Gladia, UX-readable `failed_reason`, banner на CallDetail
 - [x] **#43** `tauri.conf.json` updater endpoint → `zdllucky/wotold`
 - [x] **#47** BYO API keys в Keychain (keyring crate, secrets module, Tauri commands, pipeline wire, Settings UI)
+- [x] **#24** Voice embedding foundation (M3.1) — Embedder trait + cosine + BLOB serde, lib decision = ort + ONNX WeSpeaker
 - [x] **#31** Call detail tabs (Рекап/Расшифровка/Задачи, без speaker bindings) — [`195ad91`](#)
 - [x] **[B6]** Design system + dev-only DS showcase — tokens.css, ui/*, refactor пагов на DS
 - [x] **[B7]** Test infra — vitest (desktop+proxy), cargo-llvm-cov, CI tests+coverage, 21 Rust + 31 TS test, TDD hook + ECC enforcement в CLAUDE.md
@@ -56,7 +57,7 @@
 
 ## Идентификация · Этап 4 / M3
 
-- [ ] **#24** M3.1 Voice embedding sidecar (O3 — выбор библиотеки + интеграция)
+- [x] **#24** M3.1 Voice embedding foundation (O3 — выбран `ort` + ONNX WeSpeaker/ECAPA-TDNN, 256-dim). Модуль `embeddings`: Embedder trait, cosine_similarity, BLOB serde. Реальный OnnxEmbedder + per-segment audio decode + sidecar split → #25
 - [ ] **#25** M3.2-3.4 Matching: cosine по `voice_samples` + LLM hint + merge в ranked suggestion → #24
 - [ ] **#26** M3.5-3.7 UI confirmation (R2 — никакой автопривязки) + dynamic sample update (N=5) + mic→owner auto-bind → #25
 
@@ -106,7 +107,7 @@
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#24` · `#37` · `#42` · `#44` · `#45`
+`#25` · `#37` · `#42` · `#44`
 
 ## Backlog (кандидаты на доработку)
 

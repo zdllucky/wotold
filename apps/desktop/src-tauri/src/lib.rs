@@ -5,6 +5,8 @@ mod audio;
 mod commands;
 mod db;
 mod device;
+#[allow(dead_code)]
+mod embeddings;
 mod error;
 mod pipeline;
 // AnthropicProvider::new пока не вызывается из production (ждёт #28),
