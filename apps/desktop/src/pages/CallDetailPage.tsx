@@ -141,15 +141,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   if (error) return <p className="error">{error}</p>;
   if (!call) return <p className="hint">Звонок не найден.</p>;
 
-  const tabHasContent: Record<Tab, boolean> = {
-    recap: !!recap,
-    transcript: !!transcript,
-    tasks: (tasks?.length ?? 0) > 0,
-    // Спикеры рассчитываются внутри SpeakersSection — counter нет смысла считать
-    // здесь без второго round-trip; пусть всегда показывается без ∅-маркера.
-    speakers: true,
-  };
-
   return (
     <section className="call-detail-section">
       <button type="button" className="call-detail-back" onClick={onBack}>
@@ -240,11 +231,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
         <Tabs.List>
           {(['recap', 'transcript', 'tasks', 'speakers'] as Tab[]).map((t) => (
-            <Tabs.Trigger
-              key={t}
-              value={t}
-              counter={!tabHasContent[t] ? '∅' : undefined}
-            >
+            <Tabs.Trigger key={t} value={t}>
               {tabLabel(t)}
             </Tabs.Trigger>
           ))}

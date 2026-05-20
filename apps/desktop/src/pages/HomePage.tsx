@@ -26,7 +26,6 @@ interface HomePageProps {
 }
 
 export function HomePage({ onOpenCall }: HomePageProps = {}) {
-  const [deviceId, setDeviceId] = useState<string | null>(null);
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
   const [installing, setInstalling] = useState(false);
 
@@ -40,10 +39,6 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   const [showConsent, setShowConsent] = useState(false);
 
   useEffect(() => {
-    invoke<string>('get_device_id')
-      .then(setDeviceId)
-      .catch((e: unknown) => setError(humanError(e)));
-
     invoke<AvailableUpdate | null>('check_for_update')
       .then((u) => {
         if (u) setUpdate(u);
@@ -132,8 +127,13 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
 
   return (
     <section className="home">
-      <h1 className="home-title">Wotold</h1>
-      <p className="home-device">device: {deviceId ?? '…'}</p>
+      <header className="home-hero">
+        <h1 className="home-title">Wotold</h1>
+        <p className="home-subtitle text-muted">
+          Жми «Запись» когда начнёшь звонок. Wotold расшифрует речь и
+          пришлёт саммари — обычно через 10–30 секунд после остановки.
+        </p>
+      </header>
 
       <div className="record-area">
         {!recording && (
