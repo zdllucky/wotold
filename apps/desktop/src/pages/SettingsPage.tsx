@@ -113,15 +113,17 @@ export function SettingsPage() {
         <h3 className="settings-section-title">LLM</h3>
         <Card compact>
           <InputField
-            label="Модель Anthropic"
+            label="Модель (опционально)"
             type="text"
             value={llmModel}
             onChange={(e) => setLlmModel(e.target.value)}
             onBlur={() => {
-              const trimmed = llmModel.trim() || SETTINGS_DEFAULTS.LLM_MODEL;
+              const trimmed = llmModel.trim();
               setLlmModel(trimmed);
               void persist(SETTINGS_KEYS.LLM_MODEL, trimmed);
             }}
+            placeholder="auto (определяется бэкендом прокси)"
+            hint="Пусто = прокси сам выбирает по LLM_BACKEND (сейчас Groq Llama 3.3 70B). Override только если знаешь что делаешь."
           />
         </Card>
       </div>
