@@ -141,7 +141,7 @@ describe('auth storage — state', () => {
     env = mockEnv();
   });
 
-  test('consumeState returns and deletes record', async () => {
+  test('consumeState returns and tombstones record', async () => {
     const rec: StateRecord = {
       provider: 'google',
       redirectUri: 'http://test.proxy.local/v1/auth/google/callback',
@@ -149,8 +149,11 @@ describe('auth storage — state', () => {
       createdAt: '2026-05-20T08:00:00Z',
     };
     await putState(env, 'state-1', rec);
-    expect(await consumeState(env, 'state-1')).toEqual(rec);
-    // single-use: second consume returns null.
+    const consumed = await consumeState(env, 'state-1');
+    // Возвращается record с consumedAt маркером (best-effort CAS tombstone).
+    expect(consumed).toMatchObject(rec);
+    expect(consumed?.consumedAt).toBeTypeOf('number');
+    // single-use: second consume returns null (consumedAt blocks re-use).
     expect(await consumeState(env, 'state-1')).toBeNull();
   });
 
