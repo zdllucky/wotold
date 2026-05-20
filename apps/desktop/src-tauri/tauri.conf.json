@@ -22,12 +22,12 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://wotold-proxy-staging.animereader.workers.dev https://wotold-proxy.animereader.workers.dev https://*.r2.cloudflarestorage.com https://accounts.google.com https://oauth2.googleapis.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg", "updater"],
     "createUpdaterArtifacts": true,
     "externalBin": ["binaries/wotold-audio"],
     "icon": [
@@ -36,7 +36,16 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "category": "public.app-category.productivity",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Wotold записывает микрофон чтобы создавать транскрипты и саммари ваших звонков. Запись запускается только вручную.",
+        "NSScreenCaptureUsageDescription": "Wotold записывает системный звук (например звук собеседника в Zoom/Meet) чтобы создать полный транскрипт звонка. Видео не захватывается.",
+        "LSApplicationCategoryType": "public.app-category.productivity"
+      }
+    }
   },
   "plugins": {
     "deep-link": {

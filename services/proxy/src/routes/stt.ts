@@ -37,11 +37,40 @@ export const sttRoutes = new Hono<{ Bindings: Env; Variables: { deviceId: string
 
 sttRoutes.use('*', requireDeviceId);
 
+// Allowlist content-types для presign — защита от загрузки text/html для
+// phishing через R2 presigned URL (audit [P0]). Аудио-форматы которые
+// поддерживают наши STT-провайдеры.
+const ALLOWED_CONTENT_TYPES = new Set([
+  'audio/wav',
+  'audio/wave',
+  'audio/x-wav',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/ogg',
+  'audio/opus',
+  'audio/webm',
+  'audio/flac',
+]);
+
 sttRoutes.post('/staging-url', async (c) => {
   const body = await c.req.json<SttStagingUrlRequest>().catch(() => null);
   if (!body || typeof body.contentType !== 'string') {
     return c.json(
       { ok: false, code: 'bad_request', message: 'contentType required' } satisfies SttResponse,
+      400,
+    );
+  }
+
+  if (!ALLOWED_CONTENT_TYPES.has(body.contentType.toLowerCase())) {
+    return c.json(
+      {
+        ok: false,
+        code: 'bad_request',
+        message: `contentType '${body.contentType}' не поддерживается. Разрешены аудио-форматы (wav/mp3/m4a/ogg/opus/webm/flac).`,
+      } satisfies SttResponse,
       400,
     );
   }
