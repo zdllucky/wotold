@@ -229,7 +229,21 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 lineHeight: 1,
               }}
             >
-              {formatHMS(elapsed, true)}
+              {(() => {
+                const h = Math.floor(elapsed / 3600);
+                const m = Math.floor((elapsed % 3600) / 60);
+                const s = elapsed % 60;
+                const hm = `${h.toString().padStart(2, '0')}:${m
+                  .toString()
+                  .padStart(2, '0')}`;
+                const ss = s.toString().padStart(2, '0');
+                return (
+                  <>
+                    {hm}
+                    <span style={{ color: 'var(--signal)' }}>:{ss}</span>
+                  </>
+                );
+              })()}
             </div>
           </div>
           <button
@@ -270,7 +284,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 className="mono muted"
                 style={{ fontSize: 11, letterSpacing: '0.04em' }}
               >
-                запись
+                {fakeLevelDb(elapsed, 'mic')}
               </span>
             </div>
             <div className="wave-lane" style={{ height: 110 }}>
@@ -308,7 +322,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 className="mono muted"
                 style={{ fontSize: 11, letterSpacing: '0.04em' }}
               >
-                запись
+                {fakeLevelDb(elapsed, 'sys')}
               </span>
             </div>
             <div className="wave-lane" style={{ height: 110 }}>
@@ -660,6 +674,16 @@ function formatHMS(sec: number, padHours = false): string {
   const ss = s.toString().padStart(2, '0');
   if (h > 0 || padHours) return `${h.toString().padStart(2, '0')}:${mm}:${ss}`;
   return `${m}:${ss}`;
+}
+
+// [B17] Mock dB indicator для recording state — реальные значения требуют
+// IPC из sidecar (см. B14 в ROADMAP). Здесь deterministic oscillation
+// чтобы UI не выглядел статично, +-3 dB около baseline.
+function fakeLevelDb(elapsed: number, track: 'mic' | 'sys'): string {
+  const baseline = track === 'mic' ? -12 : -18;
+  const osc = Math.sin((elapsed / (track === 'mic' ? 2.7 : 4.1)) * Math.PI) * 3;
+  const v = Math.round(baseline + osc);
+  return `${v} dB`;
 }
 
 function formatRuDate(d: Date): string {
