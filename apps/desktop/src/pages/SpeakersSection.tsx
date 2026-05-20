@@ -121,6 +121,7 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
   if (speakers.length === 0) {
     return (
       <Empty
+        icon="🗣"
         title="Участники не распознаны"
         description="В этом звонке не обнаружено отдельных голосов, либо обработка ещё идёт."
       />

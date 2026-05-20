@@ -92,14 +92,14 @@ export function SettingsPage() {
       {error && <p className="error">{error}</p>}
 
       <div className="settings-section">
-        <h3 className="settings-section-title">Системные разрешения</h3>
+        <h3 className="settings-section-title">🔐 Разрешения системы</h3>
         <Card compact>
           <PermissionsSection />
         </Card>
       </div>
 
       <div className="settings-section">
-        <h3 className="settings-section-title">Транскрипция</h3>
+        <h3 className="settings-section-title">🎙 Распознавание речи</h3>
         <Card compact>
           <SelectField
             label="Провайдер"
@@ -118,7 +118,7 @@ export function SettingsPage() {
       </div>
 
       <div className="settings-section">
-        <h3 className="settings-section-title">LLM</h3>
+        <h3 className="settings-section-title">🤖 Саммари и язык</h3>
         <Card compact>
           <SelectField
             label="Язык рекапа и задач"
@@ -153,7 +153,7 @@ export function SettingsPage() {
       </div>
 
       <div className="settings-section">
-        <h3 className="settings-section-title">Как пользуемся сервисами распознавания</h3>
+        <h3 className="settings-section-title">⚙ Источник сервисов</h3>
         <Card compact>
           <label className="radio-row">
             <input
@@ -201,7 +201,7 @@ export function SettingsPage() {
       {providerPath === 'managed' && (
         <div className="settings-section">
           <div className="settings-row-between">
-            <h3 className="settings-section-title">Прокси</h3>
+            <h3 className="settings-section-title">🌐 Сервер Wotold</h3>
             <Button
               variant="ghost"
               size="sm"
@@ -243,7 +243,7 @@ export function SettingsPage() {
       {/* BYO: показываем ключи только при выборе BYO. В managed-режиме они не нужны. */}
       {providerPath === 'byo' && (
         <div className="settings-section">
-          <h3 className="settings-section-title">Свои API-ключи</h3>
+          <h3 className="settings-section-title">🔑 Свои API-ключи</h3>
           <Card compact>
             <ByoKeysSection />
           </Card>
@@ -251,7 +251,7 @@ export function SettingsPage() {
       )}
 
       <div className="settings-section">
-        <h3 className="settings-section-title">Аккаунт</h3>
+        <h3 className="settings-section-title">👤 Аккаунт</h3>
         <AccountSection />
       </div>
 
@@ -259,7 +259,7 @@ export function SettingsPage() {
           в BYO пользователь платит партнёрам напрямую, наша квота не действует. */}
       {providerPath === 'managed' && (
         <div className="settings-section">
-          <h3 className="settings-section-title">Использование</h3>
+          <h3 className="settings-section-title">📊 Использование</h3>
           <UsageSection />
         </div>
       )}

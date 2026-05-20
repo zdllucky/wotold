@@ -91,6 +91,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
       {error && <p className="error">{error}</p>}
       {empty ? (
         <Empty
+          icon="🎵"
           title="Образцов голоса пока нет"
           description="Подтверди этого человека в любом звонке — Wotold начнёт сохранять короткие образцы голоса для авто-определения в будущем. Требует включённой опции «Запоминать голос»."
         />
