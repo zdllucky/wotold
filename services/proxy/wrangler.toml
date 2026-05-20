@@ -36,13 +36,11 @@ enabled = true
 
 [[env.staging.kv_namespaces]]
 binding = "QUOTA"
-# TODO(bootstrap): `wrangler kv namespace create QUOTA --env staging` → подставить id
-id = "TODO_STAGING_KV_QUOTA_ID"
+id = "04c189f572e74d899a0820df9dc9afa8"
 
 [[env.staging.kv_namespaces]]
 binding = "AUTH"
-# TODO(bootstrap): `wrangler kv namespace create AUTH --env staging`
-id = "TODO_STAGING_KV_AUTH_ID"
+id = "0e78c8f84bfe4406983004edfa03b345"
 
 [[env.staging.r2_buckets]]
 binding = "STT_STAGING"
@@ -76,13 +74,11 @@ enabled = true
 
 [[env.production.kv_namespaces]]
 binding = "QUOTA"
-# TODO(bootstrap): `wrangler kv namespace create QUOTA --env production`
-id = "TODO_PROD_KV_QUOTA_ID"
+id = "48b58bffabe446f397c7a4a379ad2321"
 
 [[env.production.kv_namespaces]]
 binding = "AUTH"
-# TODO(bootstrap): `wrangler kv namespace create AUTH --env production`
-id = "TODO_PROD_KV_AUTH_ID"
+id = "3fb86af5aa254f1c9319204f6d53c880"
 
 [[env.production.r2_buckets]]
 binding = "STT_STAGING"
