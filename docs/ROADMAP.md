@@ -18,12 +18,14 @@
 - [x] **#34** Onboarding (welcome + owner rename + persistent flag) — [`7091672`](#)
 - [x] **#33** Settings page baseline (provider/path/LLM model) — [`a30cd9c`](#)
 - [x] **#27** AnthropicProvider (managed + BYO + 6 httpmock-тестов) — [`b942149`](#)
+- [x] **#15** Swift audio sidecar — mic (AVAudioEngine) + system (ScreenCaptureKit) → mic.wav + system.wav — [`2c60ec1`](#) + [`5ab308d`](#)
+- [x] **#30** Calls list (партишн без FTS) — [`4bbf78f`](#)
 
 ---
 
 ## Audio · Этап 2 / M1
 
-- [ ] **#15** M1.2 Swift sidecar Core Audio process tap → `mic.wav` + `system.wav` (16 kHz mono)
+- [x] **#15** M1.2 Swift sidecar — mic + system (см. «Готово»)
 - [ ] **#16** M1.3 macOS permissions UX (mic + system tap, обработка отказа) → #15
 - [ ] **#17** M1.5 Record screen + indicator + chunked flush (`calls.status` recording → processing) → #15
 
@@ -50,7 +52,7 @@
 ## UI · Этап 6 / M7
 
 - [ ] **#29** M7.1 Record screen (start/stop, managed/byo, провайдер) → #17
-- [ ] **#30** M7.2 Calls list + FTS5 search → #28
+- [x] **#30** M7.2 Calls list baseline — без FTS (см. «Готово»); FTS-поиск ждёт #22
 - [ ] **#31** M7.3 Call detail tabs (recap/transcript/tasks/participants + speaker bindings) → #28, #26
 - [x] **#32** M7.4 Contacts baseline — list + create + delete (см. «Готово»)
 - [ ] **#46** M7.4 follow-up: edit + multiple identifiers + extensible attributes
@@ -88,7 +90,13 @@
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#15` · `#18` · `#24` · `#37` · `#42` · `#43` · `#44` · `#46` · `#47`
+`#16` · `#17` · `#18` · `#24` · `#37` · `#42` · `#43` · `#44` · `#46` · `#47` · `[B1]`
+
+## Backlog (кандидаты на доработку)
+
+> Свободная лента идей. Пользователь докидывает, я причёсываю формулировку и кладу сюда. Когда забираем — оформляется как полноценная задача (M-ссылка, deps, чек-боксы) и переезжает в TaskList. Приоритет — «что ближе всего к текущей итерации» / «что сильнее всего разблокирует следующий шаг».
+
+- **[B1] Permissions UX в Onboarding + Settings.** Показывать текущий статус разрешений (`granted` / `denied` / `not_determined`) для Microphone и Screen Recording. Кнопка «Запросить» / «Запросить ещё раз». Когда `denied` — deep-link в System Settings → Privacy & Security → конкретная панель. Логично закрыть вместе с #16 (M1.3).
 
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
