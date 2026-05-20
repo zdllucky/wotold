@@ -1,0 +1,96 @@
+name: Claude PR Review
+
+# [B8.8]: ECC-агенты на PR. Запуск:
+#   1. Авто-комментарий ревью на pull_request: opened|synchronize|reopened
+#   2. Ondemand: коммент в PR с упоминанием "@claude" (например "@claude посмотри auth")
+#
+# Использует официальный anthropics/claude-code-action@beta. Требует
+# repo secret ANTHROPIC_API_KEY (отдельно от партнёрских ключей прокси —
+# чтобы не дать ревьюверу доступ к боевому Anthropic-ключу владельца).
+#
+# Если secret не выставлен — джоба тихо скипается, чтобы PR не блокировался.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  claude-review:
+    name: Claude review
+    runs-on: ubuntu-latest
+    # Гейт по наличию ANTHROPIC_API_KEY и контексту PR (не на форках без секретов
+    # и не на ботах). На @claude-меншене в обычном комменте — проверяем что
+    # коммент в PR (не в issue).
+    if: |
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      ) ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        contains(github.event.comment.body, '@claude')
+      ) ||
+      (
+        github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@claude')
+      )
+    steps:
+      - name: Guard — skip if ANTHROPIC_API_KEY not set
+        id: guard
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::ANTHROPIC_API_KEY not set — Claude review skipped"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.enabled == 'true'
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude code-review
+        if: steps.guard.outputs.enabled == 'true'
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Авто-промпт для PR-открытия. На @claude меншене action автоматически
+          # подхватит текст комментария — direct_prompt применяется только
+          # для pull_request event.
+          direct_prompt: |
+            Review this PR per the project's CLAUDE.md and ECC rules.
+
+            FOCUS (priorities from паспорт раздел W5 + B7):
+            1. Security triggers — `services/proxy/**`, BYO keys (keychain),
+               `services/mcp/**` (untrusted transcript injection M8.3-8.4),
+               auth flow OIDC callback CSRF, audio sidecar permissions C1,
+               cascade delete C5 — flag any change here as CRITICAL if
+               authorization/validation/PII handling is touched.
+            2. R1-R8 constraints (CLAUDE.md раздел 12 паспорта) — do NOT
+               flag as bugs; if PR appears to "fix" R1/R2/R3/R4/R5/R6/R7/R8,
+               flag as CRITICAL "scope violation, requires explicit паспорт update".
+            3. Test coverage gates (cargo llvm-cov + vitest v8). For modules
+               with clear algorithmic surface (matching, parsing, utilities,
+               db repository, middleware) — test-first is mandatory.
+            4. Конвенции: rust фигачит cargo fmt/clippy -D warnings, TS
+               под strict, no `any` без обоснования, no swallowed errors.
+            5. Контракты — изменения формата DiarizedTranscript/Recap/API
+               прокси/latest.json должны идти через `packages/contracts`,
+               не дублироваться.
+
+            Be terse. List findings by severity: CRITICAL / HIGH / MEDIUM / LOW.
+            Skip nitpicks. End with explicit "Approve" / "Block" verdict.

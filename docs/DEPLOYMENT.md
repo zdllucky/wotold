@@ -78,6 +78,7 @@ pnpm dlx wrangler@4 secret put GOOGLE_OAUTH_CLIENT_SECRET   --env staging
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | API token из шага 0.1 |
 | `CLOUDFLARE_ACCOUNT_ID` | Account ID из шага 0.1 |
+| `ANTHROPIC_API_KEY` | (опционально) ключ для `claude-review.yml` PR-ревьюера. Если не выставлен — джоба тихо скипается. **Отдельный ключ от боевого** Anthropic-ключа прокси (S1) — чтобы CI-агент не имел доступа к LLM-аккаунту владельца. |
 
 **Environment-level protection rules** (опционально, для production):
 
