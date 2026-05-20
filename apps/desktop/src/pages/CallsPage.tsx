@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { listCalls, type Call } from '../api/recording';
+import { Empty, Toolbar } from '../ui';
 
 interface CallsPageProps {
   onOpen: (callId: string) => void;
@@ -20,35 +21,43 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   if (!calls) return <p className="hint">Загрузка…</p>;
 
   return (
-    <section className="calls-list">
-      <h2>Звонки</h2>
+    <section className="calls">
+      <Toolbar title="Звонки" />
       {calls.length === 0 ? (
-        <p className="hint">Звонков пока нет. Начни запись с главной.</p>
+        <Empty
+          title="Звонков пока нет"
+          description="Начни запись с главной — сюда подтянется."
+        />
       ) : (
-        <ul>
+        <ul className="calls-list">
           {calls.map((c) => (
-            <li key={c.id} className={`call call-${c.status}`}>
+            <li key={c.id}>
               <button
                 type="button"
-                className="call-open"
+                className="call-row"
+                data-status={c.status}
                 onClick={() => onOpen(c.id)}
                 title="Открыть детали"
               >
-                <div
-                  className="call-status"
+                <span
+                  className="call-status-cell"
                   aria-label={c.status}
-                  title={statusTooltip(c.status)}
+                  title={
+                    c.status === 'failed' && c.failed_reason
+                      ? `${statusTooltip(c.status)}\n\n${c.failed_reason}`
+                      : statusTooltip(c.status)
+                  }
                 >
                   {statusIcon(c.status)}
-                </div>
-                <div className="call-meta">
-                  <div className="call-when">{formatStarted(c.started_at)}</div>
-                  <div className="call-detail">
+                </span>
+                <span className="call-meta">
+                  <span className="call-when">{formatStarted(c.started_at)}</span>
+                  <span className="call-detail-line">
                     {formatDuration(c.duration_sec)} · {c.path_label}
                     {c.provider && ` · ${c.provider}`}
                     {c.lang_detected && ` · ${c.lang_detected}`}
-                  </div>
-                </div>
+                  </span>
+                </span>
                 <code className="call-id">{c.id.slice(0, 8)}</code>
               </button>
             </li>

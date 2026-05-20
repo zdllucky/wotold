@@ -8,6 +8,7 @@ import {
   type Call,
   type RecordingState,
 } from '../api/recording';
+import { Button, Card, StatusDot } from '../ui';
 
 interface AvailableUpdate {
   version: string;
@@ -95,36 +96,39 @@ export function HomePage() {
   };
 
   return (
-    <>
-      <h1>Wotold</h1>
-      <p className="device-id">device: {deviceId ?? '…'}</p>
+    <section className="home">
+      <h1 className="home-title">Wotold</h1>
+      <p className="home-device">device: {deviceId ?? '…'}</p>
 
       <div className="record-area">
         {!recording && (
-          <button
-            type="button"
-            className="record-start"
+          <Button
+            variant="record"
+            size="lg"
+            pill
             onClick={onStart}
             disabled={busy}
+            busy={busy}
+            leading={<StatusDot tone="neutral" size="lg" />}
           >
-            <span className="record-dot" />
             {busy ? 'Запускаем…' : 'Начать запись'}
-          </button>
+          </Button>
         )}
         {recording && (
           <div className="record-active">
             <div className="record-indicator">
-              <span className="record-dot pulse" />
+              <StatusDot tone="danger" size="lg" pulse />
               <span>Запись · {formatElapsed(elapsed)}</span>
             </div>
-            <button
-              type="button"
-              className="record-stop"
+            <Button
+              variant="ghost"
+              pill
               onClick={onStop}
               disabled={busy}
+              busy={busy}
             >
               {busy ? 'Останавливаем…' : 'Стоп'}
-            </button>
+            </Button>
           </div>
         )}
         {error && <p className="error">{error}</p>}
@@ -137,23 +141,23 @@ export function HomePage() {
       </div>
 
       {update && (
-        <aside className="update-prompt">
+        <Card className="update-prompt" variant="raised">
           <p>
             Доступна версия <strong>{update.version}</strong> (сейчас{' '}
             {update.current_version}).
           </p>
           {update.notes && <pre className="update-notes">{update.notes}</pre>}
           <div className="update-actions">
-            <button type="button" onClick={applyUpdate} disabled={installing}>
+            <Button variant="primary" onClick={applyUpdate} disabled={installing} busy={installing}>
               {installing ? 'Устанавливаем…' : 'Обновить сейчас'}
-            </button>
-            <button type="button" onClick={() => setUpdate(null)} disabled={installing}>
+            </Button>
+            <Button variant="ghost" onClick={() => setUpdate(null)} disabled={installing}>
               Позже
-            </button>
+            </Button>
           </div>
-        </aside>
+        </Card>
       )}
-    </>
+    </section>
   );
 }
 

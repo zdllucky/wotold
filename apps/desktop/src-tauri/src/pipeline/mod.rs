@@ -8,7 +8,8 @@ use crate::{
     db,
     providers::{
         transcription::{
-            DiarizedTranscript, GladiaProvider, SonioxProvider, TranscriptionOpts,
+            failure_reason, transcribe_with_fallback, DiarizedTranscript, GladiaProvider,
+            RetryConfig, SonioxProvider, TranscriptionError, TranscriptionOpts,
             TranscriptionProvider,
         },
         ProviderMode,
@@ -49,9 +50,12 @@ pub async fn run(pool: &SqlitePool, ctx: PipelineCtx) -> Result<(), AppError> {
         }
         Err(e) => {
             log::error!("pipeline {} failed: {e}", ctx.call_id);
-            // Не пропагируем ошибку обратно после fail_recording —
-            // вызвавший её уже залогировали.
-            let _ = db::fail_recording(pool, &ctx.call_id).await;
+            // M2.7 (#23): UX-readable reason для UI. Сама технодеталь в логах.
+            let reason = match e {
+                AppError::Other(s) => s.clone(),
+                other => other.to_string(),
+            };
+            let _ = db::fail_recording_with_reason(pool, &ctx.call_id, Some(&reason)).await;
         }
     }
     result
@@ -67,24 +71,26 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
         .unwrap_or_default();
 
     let mode = build_mode(&provider_path, &proxy_base_url, &ctx.device_id)?;
-    let provider = build_provider(&provider_id, mode);
+    let providers = build_providers(&provider_id, mode);
     let opts = TranscriptionOpts {
         lang: lang.clone(),
         diarization: true,
     };
+    let retry_cfg = RetryConfig::default();
 
     log::info!(
-        "pipeline {} start: provider={provider_id} path={provider_path} lang={lang}",
-        ctx.call_id
+        "pipeline {} start: provider={provider_id} path={provider_path} lang={lang} fallbacks={}",
+        ctx.call_id,
+        providers.len()
     );
 
     let (mic_res, sys_res) = tokio::join!(
-        provider.transcribe(&ctx.mic_path, opts.clone()),
-        provider.transcribe(&ctx.system_path, opts.clone()),
+        transcribe_with_fallback(&providers, &ctx.mic_path, opts.clone(), retry_cfg),
+        transcribe_with_fallback(&providers, &ctx.system_path, opts.clone(), retry_cfg),
     );
 
-    let mic_t = mic_res.map_err(|e| AppError::Other(format!("mic stt: {e}")))?;
-    let sys_t = sys_res.map_err(|e| AppError::Other(format!("system stt: {e}")))?;
+    let mic_t = mic_res.map_err(stt_to_app_error)?;
+    let sys_t = sys_res.map_err(stt_to_app_error)?;
 
     let merged = persist_artifacts(&ctx.call_dir, &mic_t, &sys_t).await?;
 
@@ -148,13 +154,25 @@ fn build_mode(
     }
 }
 
-fn build_provider(id: &str, mode: ProviderMode) -> Box<dyn TranscriptionProvider> {
-    // M2.2: auto = Soniox primary. Fallback на Gladia при ошибках Soniox —
-    // отдельный шаг в #23.
+/// M2.2 + #23: возвращает primary + fallback провайдеры в порядке использования.
+/// - `auto` → Soniox primary, Gladia fallback
+/// - `soniox` → только Soniox
+/// - `gladia` → только Gladia
+fn build_providers(id: &str, mode: ProviderMode) -> Vec<Box<dyn TranscriptionProvider>> {
     match id {
-        "gladia" => Box::new(GladiaProvider::new(mode)),
-        _ => Box::new(SonioxProvider::new(mode)),
+        "gladia" => vec![Box::new(GladiaProvider::new(mode))],
+        "soniox" => vec![Box::new(SonioxProvider::new(mode))],
+        _ => vec![
+            Box::new(SonioxProvider::new(mode.clone())),
+            Box::new(GladiaProvider::new(mode)),
+        ],
     }
+}
+
+/// Мапит typed STT error на AppError с UX-readable причиной.
+/// Сообщение попадёт в `calls.failed_reason` (M2.7 / #23).
+fn stt_to_app_error(e: TranscriptionError) -> AppError {
+    AppError::Other(failure_reason(&e))
 }
 
 async fn persist_artifacts(

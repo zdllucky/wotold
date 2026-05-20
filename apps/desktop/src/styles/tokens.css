@@ -1,0 +1,120 @@
+/* Wotold design tokens.
+ * macOS-flavored, не Liquid Glass. Эстетика: спокойная, нейтральная, системная.
+ * Все экраны обязаны использовать эти токены. Inline oklch / magic gaps запрещены.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Type */
+  --font-system: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --text-xs: 0.72rem;
+  --text-sm: 0.82rem;
+  --text-base: 0.92rem;
+  --text-lg: 1.05rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.6rem;
+  --text-display: 2.1rem;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6;
+
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.05em;
+
+  /* Spacing — 4px-base scale */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 2rem;
+  --space-8: 3rem;
+
+  /* Radius */
+  --radius-sm: 0.35rem;
+  --radius-md: 0.55rem;
+  --radius-lg: 0.85rem;
+  --radius-pill: 999px;
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-normal: 220ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Light palette */
+  --color-bg: oklch(98% 0 0);
+  --color-surface: oklch(100% 0 0);
+  --color-surface-raised: oklch(99% 0 0);
+  --color-surface-sunken: oklch(95.5% 0 0);
+  --color-border: oklch(88% 0 0);
+  --color-border-strong: oklch(78% 0 0);
+  --color-text: oklch(18% 0 0);
+  --color-text-muted: oklch(45% 0 0);
+  --color-text-subtle: oklch(60% 0 0);
+
+  --color-accent: oklch(60% 0.16 250);
+  --color-accent-hover: oklch(55% 0.18 250);
+  --color-accent-fg: oklch(99% 0 0);
+  --color-accent-soft: oklch(94% 0.04 250);
+
+  --color-danger: oklch(58% 0.21 25);
+  --color-danger-soft: oklch(94% 0.04 25);
+  --color-success: oklch(55% 0.16 145);
+  --color-success-soft: oklch(94% 0.04 145);
+  --color-warning: oklch(70% 0.15 75);
+  --color-warning-soft: oklch(95% 0.04 75);
+
+  /* Elevation */
+  --shadow-1: 0 1px 2px oklch(0% 0 0 / 6%);
+  --shadow-2: 0 4px 12px oklch(0% 0 0 / 7%), 0 1px 2px oklch(0% 0 0 / 5%);
+  --shadow-3: 0 12px 32px oklch(0% 0 0 / 10%), 0 2px 6px oklch(0% 0 0 / 5%);
+  --blur-overlay: 12px;
+
+  /* Layout */
+  --layout-max-narrow: 28rem;
+  --layout-max-content: 36rem;
+  --layout-max-wide: 44rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: oklch(15% 0.01 250);
+    --color-surface: oklch(19% 0.01 250);
+    --color-surface-raised: oklch(22% 0.01 250);
+    --color-surface-sunken: oklch(13% 0.01 250);
+    --color-border: oklch(28% 0.01 250);
+    --color-border-strong: oklch(38% 0.01 250);
+    --color-text: oklch(94% 0.01 250);
+    --color-text-muted: oklch(70% 0.01 250);
+    --color-text-subtle: oklch(55% 0.01 250);
+
+    --color-accent: oklch(70% 0.16 250);
+    --color-accent-hover: oklch(75% 0.18 250);
+    --color-accent-fg: oklch(15% 0.01 250);
+    --color-accent-soft: oklch(28% 0.06 250);
+
+    --color-danger: oklch(68% 0.21 25);
+    --color-danger-soft: oklch(28% 0.06 25);
+    --color-success: oklch(70% 0.16 145);
+    --color-success-soft: oklch(26% 0.05 145);
+    --color-warning: oklch(78% 0.15 75);
+    --color-warning-soft: oklch(28% 0.06 75);
+
+    --shadow-1: 0 1px 2px oklch(0% 0 0 / 30%);
+    --shadow-2: 0 4px 12px oklch(0% 0 0 / 35%), 0 1px 2px oklch(0% 0 0 / 25%);
+    --shadow-3: 0 12px 32px oklch(0% 0 0 / 45%), 0 2px 6px oklch(0% 0 0 / 25%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+  }
+}

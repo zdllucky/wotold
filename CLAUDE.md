@@ -66,13 +66,30 @@ docs/                 Паспорт и сопутствующие докуме�
 Для каждой нетривиальной фичи из [`docs/ROADMAP.md`](docs/ROADMAP.md):
 
 1. **Plan.** Изложить план (либо `/plan`, либо просто в чате) — какие файлы трогаем, какие модули задеваются, есть ли пересечения с принятыми ограничениями раздела 12.
-2. **Implement.** TDD где разумно: тесты сначала для модулей с чёткой алгоритмической сутью (матчинг, парсинг транскрипта, утилиты). Для UI — визуальная верификация.
+2. **Implement (TDD).** Для модулей с чёткой алгоритмической сутью (матчинг, парсинг, утилиты, db repository, middleware) тесты пишутся **до** реализации. Для UI — визуальная верификация + smoke RTL. Hook `scripts/hooks/tdd-warn.mjs` (PostToolUse) предупреждает если правишь source без соседнего теста.
 3. **Verify.** Локально перед коммитом:
    - Rust: `cargo fmt --check`, `cargo check`, `cargo clippy -- -D warnings`, `cargo test`
-   - TS: `pnpm -r typecheck`, тесты соответствующего пакета
+   - TS: `pnpm -r typecheck`, `pnpm --filter <pkg> test`
    - Хуки (PostToolUse) делают первые шаги автоматически — но финальная сверка ручная.
 4. **Code review.** Запустить `/code-review` (общий) или язык-специфичный (`/rust-review` для Rust, `code-reviewer` агент для TS) **до** коммита фичи в main. Замечания CRITICAL/HIGH — фиксить.
 5. **Mark done.** Снять чек-бокс в `docs/ROADMAP.md` и TaskList харнесса одновременно.
+
+### Тестирование ([B7] enforcement)
+
+| Слой | Тулинг | Где живёт |
+|---|---|---|
+| Rust core | `cargo test` + cargo-llvm-cov | `#[cfg(test)] mod tests` внутри файлов; helper `crate::db::test_support::fresh_db` для SQLite-репозиториев |
+| Frontend (apps/desktop) | vitest + jsdom + React Testing Library | `*.test.ts` / `*.test.tsx` рядом с модулем; setup `src/test/setup.ts` |
+| Proxy (services/proxy) | vitest (node env) | `*.test.ts` рядом с handler/middleware |
+| Coverage gate (CI) | `cargo llvm-cov` + vitest `--coverage` v8 | Артефакт `lcov.info` + html, baseline 10-30% lines, цель 80% |
+
+ECC-агенты для теста:
+- `tdd-guide` — для алгоритмических модулей (PRD-driven test-first)
+- `code-reviewer` / `rust-reviewer` / `typescript-reviewer` — обязательны до commit (см. п.4 выше)
+- `pr-test-analyzer` — оценка покрытия PR
+- `silent-failure-hunter` — поиск swallowed errors
+
+При нехватке покрытия — сначала тесты, потом фича. Понижение coverage threshold в `vitest.config.ts` или `Cargo.toml` — только по явному согласованию.
 
 ## Security-review триггеры (W5 паспорта — обязательно)
 

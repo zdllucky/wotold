@@ -46,6 +46,36 @@ jobs:
       - name: Typecheck @wotold/desktop
         run: pnpm --filter @wotold/desktop typecheck
 
+  ts-tests:
+    name: TS tests + coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Vitest @wotold/desktop (with coverage)
+        run: pnpm --filter @wotold/desktop test:coverage
+      - name: Vitest @wotold/proxy unit (with coverage)
+        run: pnpm --filter @wotold/proxy test:coverage
+      - name: Vitest @wotold/proxy integration (миниframe)
+        run: pnpm --filter @wotold/proxy test:integration
+      - name: Upload coverage artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ts-coverage
+          path: |
+            apps/desktop/coverage/**
+            services/proxy/coverage/**
+          if-no-files-found: warn
+          retention-days: 7
+
   rust:
     name: Rust check + clippy + fmt
     runs-on: macos-latest
@@ -66,3 +96,29 @@ jobs:
       - name: cargo clippy
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings
+
+  rust-tests:
+    name: Rust tests + coverage
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+          shared-key: rust-tests
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: cargo test + coverage (lcov)
+        working-directory: apps/desktop/src-tauri
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      - name: Upload coverage artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage
+          path: apps/desktop/src-tauri/lcov.info
+          if-no-files-found: warn
+          retention-days: 7
