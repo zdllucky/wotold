@@ -74,15 +74,10 @@ jobs:
 
   build:
     needs: [version-sync, changelog]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-14
-            target: aarch64-apple-darwin
-          - platform: macos-13
-            target: x86_64-apple-darwin
-    runs-on: ${{ matrix.platform }}
+    # [B16 audit P0]: одна macos-14 runner вместо matrix macos-13 x86_64 +
+    # macos-14 aarch64. Tauri универсальный target `universal-apple-darwin`
+    # собирает fat binary под обе архитектуры — юзеры не путают какой DMG.
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -95,7 +90,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -137,4 +132,19 @@ jobs:
           prerelease: false
           # M11.2: latest.json генерируется tauri-action для updater'а.
           includeUpdaterJson: true
-          args: --target ${{ matrix.target }}
+          # [B16 audit P0]: universal target — fat binary под intel + apple silicon.
+          args: --target universal-apple-darwin
+
+      # [B16 audit P0]: ad-hoc codesign (без Developer ID — R6 deferred).
+      # Без подписи macOS 14+ quarantine ставит файл в «damaged, move to trash»
+      # вместо showable «Open anyway» dialog. Ad-hoc даёт работающий UX до
+      # полноценной нотаризации.
+      - name: Ad-hoc codesign DMG/App
+        if: always()
+        run: |
+          for app in apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app; do
+            if [ -d "$app" ]; then
+              echo "Ad-hoc signing $app"
+              codesign --force --deep --sign - "$app" || echo "codesign failed for $app"
+            fi
+          done

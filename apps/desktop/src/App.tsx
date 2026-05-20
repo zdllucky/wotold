@@ -1,5 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import {
+  Home,
+  Phone,
+  Users,
+  Settings as SettingsIcon,
+  type LucideProps,
+} from 'lucide-react';
 
 import { CallDetailPage } from './pages/CallDetailPage';
 import { CallsPage } from './pages/CallsPage';
@@ -14,13 +21,16 @@ import { getSetting, SETTINGS_KEYS } from './api/settings';
 type Page = 'home' | 'calls' | 'contacts' | 'settings' | 'ds';
 type Bootstrap = 'loading' | 'onboarding' | 'app';
 
-// [B16] Topnav rework: эмодзи как stopgap до SVG-icon set (lucide-react).
-// Эмодзи + текст-метка дают visual anchor каждой вкладки, юзер быстрее ориентируется.
-const NAV: Array<{ id: Page; label: string; icon: string }> = [
-  { id: 'home', label: 'Главная', icon: '🎙' },
-  { id: 'calls', label: 'Звонки', icon: '📞' },
-  { id: 'contacts', label: 'Контакты', icon: '👥' },
-  { id: 'settings', label: 'Настройки', icon: '⚙' },
+// [B16] Topnav SVG icons из lucide-react — tree-shaken (~6kb на 4 иконки).
+const NAV: Array<{
+  id: Page;
+  label: string;
+  Icon: ComponentType<LucideProps>;
+}> = [
+  { id: 'home', label: 'Главная', Icon: Home },
+  { id: 'calls', label: 'Звонки', Icon: Phone },
+  { id: 'contacts', label: 'Контакты', Icon: Users },
+  { id: 'settings', label: 'Настройки', Icon: SettingsIcon },
 ];
 
 const IS_DEV = import.meta.env.DEV;
@@ -93,6 +103,7 @@ export function App() {
         <div className="topnav-tabs" role="tablist">
           {NAV.map((item) => {
             const active = page === item.id;
+            const Icon = item.Icon;
             return (
               <button
                 key={item.id}
@@ -103,7 +114,12 @@ export function App() {
                 aria-selected={active}
                 aria-current={active ? 'page' : undefined}
               >
-                <span className="topnav-tab-icon" aria-hidden="true">{item.icon}</span>
+                <Icon
+                  className="topnav-tab-icon"
+                  size={16}
+                  strokeWidth={2}
+                  aria-hidden
+                />
                 <span className="topnav-tab-label">{item.label}</span>
               </button>
             );
