@@ -855,6 +855,32 @@
   gap: var(--space-3);
 }
 
+/* [B16] Onboarding hero icon — 128px circle с accent gradient. */
+.onboarding-hero-icon {
+  align-self: center;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background:
+    linear-gradient(
+      135deg,
+      var(--color-accent) 0%,
+      color-mix(in oklch, var(--color-accent) 40%, var(--color-danger)) 100%
+    );
+  box-shadow:
+    0 8px 24px color-mix(in oklch, var(--color-accent) 30%, transparent),
+    0 1px 0 oklch(100% 0 0 / 0.2) inset;
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.onboarding-hero-emoji {
+  font-size: 62px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px oklch(0% 0 0 / 0.15));
+}
+
 .onboarding-features {
   margin: 0;
   padding: 0;
