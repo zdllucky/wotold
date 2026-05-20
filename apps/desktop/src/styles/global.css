@@ -75,18 +75,29 @@ pre {
   color: var(--color-text);
 }
 
-/* Topnav — chrome above .app. */
+/* Topnav — chrome above .app.
+   [B16] titleBarStyle: 'Overlay' — traffic lights draw поверх UI.
+   Левый padding 88px зарезервирован для них (3 кружка × 14px + spacing). */
 .topnav {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4) var(--space-2) 88px;
   border-bottom: 1px solid var(--color-border);
   background: color-mix(in oklch, var(--color-surface) 80%, transparent);
   backdrop-filter: blur(var(--blur-overlay));
   position: sticky;
   top: 0;
   z-index: 10;
+  /* для drag — see [-webkit-app-region] выставим через tauri data attribute. */
+  -webkit-app-region: drag;
+}
+
+.topnav button,
+.topnav a,
+.topnav .topnav-tab,
+.topnav .topnav-pipeline-indicator {
+  -webkit-app-region: no-drag;
 }
 
 .topnav-brand {
