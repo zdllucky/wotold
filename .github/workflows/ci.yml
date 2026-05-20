@@ -41,6 +41,8 @@ jobs:
         run: pnpm --filter @wotold/proxy typecheck
       - name: Typecheck @wotold/desktop
         run: pnpm --filter @wotold/desktop typecheck
+      - name: Typecheck @wotold/mcp
+        run: pnpm --filter @wotold/mcp typecheck
 
   ts-tests:
     name: TS tests + coverage
@@ -59,6 +61,8 @@ jobs:
         run: pnpm --filter @wotold/proxy test:coverage
       - name: Vitest @wotold/proxy integration (миниframe)
         run: pnpm --filter @wotold/proxy test:integration
+      - name: Vitest @wotold/mcp (with coverage)
+        run: pnpm --filter @wotold/mcp test:coverage
       - name: Upload coverage artefacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -67,6 +71,7 @@ jobs:
           path: |
             apps/desktop/coverage/**
             services/proxy/coverage/**
+            services/mcp/coverage/**
           if-no-files-found: warn
           retention-days: 7
 
