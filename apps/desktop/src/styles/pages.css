@@ -167,6 +167,18 @@
 .call-row[data-status='processing'] .call-status-cell {
   background: var(--color-accent-soft);
   color: var(--color-accent);
+  animation: ds-spin 1.2s linear infinite;
+}
+
+@keyframes ds-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .call-row[data-status='processing'] .call-status-cell {
+    animation: none;
+  }
 }
 .call-row[data-status='ready'] .call-status-cell {
   background: var(--color-success-soft);

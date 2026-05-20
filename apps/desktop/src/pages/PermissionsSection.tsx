@@ -24,14 +24,14 @@ const ROWS: Row[] = [
   {
     target: 'microphone',
     label: 'Микрофон',
-    description: 'Запись твоей дорожки звонка (mic.wav).',
+    description: 'Записывает то, что говоришь ты.',
     pane: 'microphone',
   },
   {
     target: 'screen_recording',
-    label: 'Запись экрана',
+    label: 'Запись экрана (системный звук)',
     description:
-      'Захват системного выхода через ScreenCaptureKit (system.wav). После grant в System Settings перезапусти приложение.',
+      'Записывает то, что говорит собеседник через Zoom/Meet/Telegram. После того как разрешишь — перезапусти Wotold.',
     pane: 'screen_recording',
   },
 ];
