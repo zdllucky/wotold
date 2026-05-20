@@ -261,7 +261,7 @@
 
 - [x] **Top nav rework** — segmented topnav-tab с emoji-icon + underline-active indicator. SVG-icon set (lucide-react) — P1 follow-up.
 - [ ] **Sidebar или icons в nav** — отложен; segmented topnav пока closes большинство пользы.
-- [ ] **Title bar overlay + traffic lights padding** — `titleBarStyle: "Overlay"` + `hiddenTitle: true` в tauri.conf, интеграция UI с window chrome.
+- [x] **Title bar overlay + traffic lights padding** — titleBarStyle Overlay, hiddenTitle true, trafficLightPosition 18×18. topnav padding-left 88px + app-region: drag (no-drag на interactive).
 - [x] **HomePage hero block** — stats cards + recent 3 list.
 - [x] **Record-button visual weight** — accent→danger gradient + inset highlight + 6px outer glow ring на hover.
 - [x] **Onboarding hero**: step-dots indicator реализованы (B16 batch P0). Icon + screenshot preview — follow-up.
