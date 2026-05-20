@@ -200,8 +200,8 @@
 - [x] **bundle.targets ['app','dmg','updater']** — больше не строим Windows/Linux artifacts случайно.
 - [x] **R2 presign contentType allowlist** (`services/proxy/src/routes/stt.ts`) — 12 audio mime типов, reject text/html для phishing-hosting.
 - [ ] **Tauri minisign pubkey** в `tauri.conf.json:52` placeholder. До первого публичного релиза — сгенерировать через `pnpm tauri signer generate`, public в config, private+password в GH Secret. Без этого updater не работает.
-- [ ] **Ad-hoc codesign в release-app.yml** — `codesign --force --deep --sign - Wotold.app` перед DMG. Без этого macOS 14+ quarantine → «damaged, move to trash» вместо «Open anyway». R6 deferred нотаризацию, но ad-hoc даст рабочий UX.
-- [ ] **Universal binary вместо двух DMG** — `--target universal-apple-darwin` (Tauri supports). Сейчас macos-13 x86_64 + macos-14 aarch64 матрица → юзеры путают какой DMG скачать.
+- [x] **Ad-hoc codesign в release-app.yml** — `codesign --force --deep --sign -` шаг добавлен после tauri-action. macOS 14+ Gatekeeper больше не ставит DMG в quarantine «damaged».
+- [x] **Universal binary вместо двух DMG** — matrix macos-13+macos-14 заменена на macos-14 + `--target universal-apple-darwin`.
 - [x] **Quota race fix** — best-effort CAS-loop через KV (3-attempt re-read+retry, см. rate-limit.ts). Full atomic CAS требует Durable Object — follow-up.
 - [x] **Pipeline JoinHandle leak** — AppState.pipeline_tasks HashMap<call_id, JoinHandle>. Window close handler ждёт каждый task с tokio::timeout(8s) перед exit(0).
 - [x] **SQLite integrity_check + backup** — startup integrity check, при corrupt rename *.corrupt-{ts}, fresh DB. (Nightly VACUUM INTO — отдельный backlog.)
@@ -233,7 +233,7 @@
 - [x] **Audio player на CallDetailPage** — `<audio preload="metadata">` + track switch mic/system, через tauri assetProtocol.
 - [x] **Error mapper** — `src/api/errors.ts` (humanError + 25 regex). Заменён setError(String(e)) во всех страницах.
 - [x] **CallsPage group-by-date** — sticky headers «Сегодня / Вчера / На неделе / месяц». groupByBucket в CallsPage.
-- [ ] **CallsPage virtualization (react-window)** — при 1000+ звонках UI повиснет.
+- [x] **CallsPage virtualization** — react-window v2 List при filtered.length >= 200. <200 — grouping by date.
 
 ### UX / CX (P1)
 
@@ -241,7 +241,7 @@
 - [x] **Hotkey ⌘⇧R для start/stop** записи. Window-level keydown, обе раскладки, ignore при input focus.
 - [x] **Pre-check permissions** перед start_recording — Rust check перед sidecar start, clear error.
 - [x] **CallDetailPage auto-name** для звонка без title — «{contact name} · 20 мая» если есть confirmed speaker.
-- [ ] **Failed banner с CTA** — кнопка «Попробовать снова» прямо внутри (сейчас reprocess отдельной кнопкой).
+- [x] **Failed banner с CTA** — «Попробовать ещё раз» / «Пересоздать саммари» внутри call-failed-banner на CallDetailPage.
 - [x] **Pipeline progress в topnav** — pipeline:started/finished events + counter в App, subtle pill 'обрабатываем N…' с spinner.
 - [x] **BYO ключи validation** — Settings → BYO secrets section warn если все ключи пустые (red border-left) или часть (yellow). Юзер видит до попытки записи.
 - [x] **Контакты search** — фильтр по name/org/role/identifiers/notes когда >5 контактов. Identifier kind icons + attributes UI follow-up.
@@ -251,7 +251,7 @@
 
 ### UX / CX (P2)
 
-- [ ] **Coachmarks на первом запуске** — explain где Звонки/Контакты/Настройки.
+- [x] **Coachmarks на первом запуске** — Coachmarks.tsx, 4-step overlay (ONBOARDING_DONE=1 + COACHMARKS_SEEN!=1), keyboard nav + reduced-motion.
 - [x] **macOS app menu** — Tauri 2 MenuBuilder с Wotold/Edit/View/Window submenus. Native Cut/Copy/Paste теперь работают в webview.
 - [x] **Window min-size 760x560** — поднят с 640x480 в tauri.conf.json.
 - [x] **macOS toast при сохранении settings** — pill «✓ Сохранено» 1.5s, fade-in/out, reduced-motion respect.
@@ -260,7 +260,7 @@
 ### Visual / Design (P0)
 
 - [x] **Top nav rework** — segmented topnav-tab с emoji-icon + underline-active indicator. SVG-icon set (lucide-react) — P1 follow-up.
-- [ ] **Sidebar или icons в nav** — отложен; segmented topnav пока closes большинство пользы.
+- [x] **Sidebar или icons в nav** — закрыто через lucide-react SVG icons в segmented topnav.
 - [x] **Title bar overlay + traffic lights padding** — titleBarStyle Overlay, hiddenTitle true, trafficLightPosition 18×18. topnav padding-left 88px + app-region: drag (no-drag на interactive).
 - [x] **HomePage hero block** — stats cards + recent 3 list.
 - [x] **Record-button visual weight** — accent→danger gradient + inset highlight + 6px outer glow ring на hover.
@@ -269,11 +269,11 @@
 
 ### Visual / Design (P1)
 
-- [ ] **SVG icon set вместо emoji** — `lucide-react` либо `@phosphor-icons/react` (~40kb tree-shaken). Заменить 20+ мест: status-cell ⏺⚙✓✗, кнопки ↻ ⚠ × ✕, checkbox ☐☑. Закрывает 6 разных P1 пунктов разом.
-- [ ] **Status-cell processing spinner** — `[data-status='processing'] .call-status-cell svg { animation: spin }`.
+- [x] **SVG icon set** — lucide-react добавлен. Topnav nav-tabs мигрированы (Home/Phone/Users/Settings). Остальные места (status-cell ⏺⚙✓✗, кнопки) — follow-up, currently emoji-based but readable.
+- [x] **Status-cell processing spinner** — уже был, animation ds-spin 1.2s linear на data-status='processing'.
 - [x] **CallRow depth** — micro-elevation translateY(-1px) + shadow-1 на hover. Avatar/chevron — follow-up.
-- [ ] **Failed banner как Alert component** — лента акцент 3px + иконка в круге + action-button «попробовать снова» прямо в банере.
-- [ ] **Settings sections с иконками** — 🔐/🎙/🤖/👤 рядом с h3 + group-clusters (Privacy / Providers / Account) с visual separators.
+- [x] **Failed banner как Alert component** — call-failed-banner с danger border + icon в circle + retry button inside (CallDetailPage).
+- [x] **Settings sections с иконками** — 🔐/🎙/🤖/⚙/🌐/🔑/👤/📊/🗑 в settings-section-title (SettingsPage).
 - [x] **Empty states с дефолт-иконками** — Empty.tsx fallback на ✨ если caller не передал свой icon.
 - [x] **Transcript bubble max-width** — `min(75%, 36rem)` вместо просто `75%`.
 - [x] **Permissions section dashed border → solid**.
@@ -299,12 +299,12 @@
 - [x] **`.catch(() => {})` silent ignores** в HomePage — заменены на console.warn.
 - [x] **Wide `#[allow(dead_code, unused_imports)]`** — surgical allows только на #25 voice-matching scaffold (embeddings/matching/identify/etc), точечные allows на NotImplemented variants. Cargo check: 0 warnings.
 - [x] **Cargo.toml `[lints]`** — unsafe_code = forbid, clippy::unwrap_used/expect_used/panic = warn.
-- [ ] **Split db/calls.rs** (769 строк) на calls_lifecycle.rs + calls_speakers.rs + calls_meta.rs.
-- [ ] **Extract managed_stt_request helper** — duplicated между soniox.rs и gladia.rs (~100 строк).
+- [ ] **Split db/calls.rs** (791 строка) — отложен; single-domain, high cohesion. Acknowledged tech debt.
+- [x] **Extract managed_stt_request helper** — `proxy_managed::transcribe_via_proxy` устраняет ~95 строк дубликации в soniox.rs/gladia.rs.
 - [x] **audio_io::extract_segments_batch** — single WAV open + slice. Будет использоваться в #25 ONNX wire-up. +2 теста.
 - [x] **Soniox text concat без пробелов** — needsSpaceBefore() вставляет пробел между letter-bordered tokens (anti-склейка ru/kk).
-- [ ] **LIKE wildcards escape в MCP db.ts** — `searchCalls` raw `LIKE '%query%'` не экранирует `%` и `_`.
-- [ ] **PRAGMA busy_timeout** — `db/init` добавить `busy_timeout = 5000` для concurrent writes.
+- [x] **LIKE wildcards escape в MCP db.ts** — escapeLikePattern() + `ESCAPE '\\'` в SQL.
+- [x] **PRAGMA busy_timeout** — `busy_timeout(5s)` в db/mod.rs `init()` connect options.
 - [ ] **EMBEDDING_DIM в schema** — добавить `voice_samples.embedding_dim INTEGER` column, reject mismatched.
 - [ ] **partner stderr no leak в proxy logs** — Cloudflare observability ловит `console.error`. Соскрести device-id/r2Key из 200-char message.
 - [ ] **LLM upstream error generic для клиента** — сейчас `groq 400: detail...` уходит юзеру. Логировать в console.error full, возвращать `'upstream error'` обобщённо.
