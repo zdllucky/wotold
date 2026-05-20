@@ -3,6 +3,7 @@ use tauri::{AppHandle, State};
 
 use crate::{
     audio::macos as audio_macos,
+    audio::permissions::{self, PermissionsStatus},
     db::{Call, Contact, ContactInput, OwnerContact},
     state::AppState,
     updater::AvailableUpdate,
@@ -124,6 +125,38 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
             Err(e)
         }
     }
+}
+
+#[tauri::command]
+pub async fn get_audio_permissions(app: AppHandle) -> Result<PermissionsStatus, AppError> {
+    permissions::check(&app).await
+}
+
+#[tauri::command]
+pub async fn request_audio_permissions(
+    app: AppHandle,
+    target: String,
+) -> Result<PermissionsStatus, AppError> {
+    permissions::request(&app, &target).await
+}
+
+#[tauri::command]
+pub fn open_system_privacy_pane(pane: String) -> Result<(), AppError> {
+    let url = match pane.as_str() {
+        "microphone" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+        }
+        "screen_recording" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+        _ => return Err(AppError::Other(format!("unknown pane: {pane}"))),
+    };
+
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .map_err(|e| AppError::Other(format!("open failed: {e}")))?;
+    Ok(())
 }
 
 #[tauri::command]

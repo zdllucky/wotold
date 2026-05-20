@@ -46,6 +46,9 @@ pub fn run() {
             commands::stop_recording,
             commands::get_recording_state,
             commands::list_calls,
+            commands::get_audio_permissions,
+            commands::request_audio_permissions,
+            commands::open_system_privacy_pane,
             commands::check_for_update,
             commands::apply_update,
         ])

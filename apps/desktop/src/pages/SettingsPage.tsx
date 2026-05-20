@@ -8,6 +8,7 @@ import {
   type ProviderPath,
   type SttProvider,
 } from '../api/settings';
+import { PermissionsSection } from './PermissionsSection';
 
 function isSttProvider(v: string | null): v is SttProvider {
   return v === 'auto' || v === 'soniox' || v === 'gladia';
@@ -59,6 +60,8 @@ export function SettingsPage() {
       <h2>Настройки</h2>
 
       {error && <p className="error">{error}</p>}
+
+      <PermissionsSection />
 
       <fieldset>
         <legend>Транскрипция</legend>
