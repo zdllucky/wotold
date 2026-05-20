@@ -91,10 +91,14 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
         other => return Err(AppError::Other(format!("unknown provider_path: {other}"))),
     };
 
+    // Собрать known speakers: подтверждённые привязки speaker_tag → contact.
+    // Это даст LLM контекст «owner = Damir», «Speaker 0 = Ivan Petrov (Acme)».
+    let known_speakers = build_known_speakers_block(pool, ctx.call_id).await?;
+
     let provider = AnthropicProvider::new(mode);
     let request = LlmRequest {
         model: ctx.model_override.map(str::to_string),
-        system: build_system_prompt(ctx.lang_detected),
+        system: build_system_prompt(ctx.lang_detected, known_speakers.as_deref()),
         input: ctx.transcript_md.to_string(),
         max_tokens: Some(4096),
     };
@@ -156,9 +160,17 @@ fn match_contact_id(contacts: &[db::Contact], hint: &str) -> Option<String> {
         .map(|c| c.id.clone())
 }
 
-fn build_system_prompt(lang_detected: Option<&str>) -> String {
+fn build_system_prompt(lang_detected: Option<&str>, known_speakers: Option<&str>) -> String {
     let lang_hint = lang_detected
         .map(|l| format!(" Output language: {l}."))
+        .unwrap_or_default();
+    let known_block = known_speakers
+        .map(|s| {
+            format!(
+                "\n\nKnown participants (use their real names in summary/mom/action_items \
+                 instead of raw speaker tags):\n{s}"
+            )
+        })
         .unwrap_or_default();
     format!(
         "You are a meeting recap assistant. Read the diarized transcript below \
@@ -174,8 +186,55 @@ fn build_system_prompt(lang_detected: Option<&str>) -> String {
          }}\n\
          Use 'owner_hint' to refer to action item owner by name as mentioned in the transcript. \
          Use 'speaker_tag' values exactly as they appear in the transcript ('owner', 'Speaker 0' и т.п.).\
-         {lang_hint}"
+         {lang_hint}{known_block}"
     )
+}
+
+/// Собирает «Known participants» блок для LLM-контекста: для каждой
+/// подтверждённой привязки speaker_tag → contact выводит строку с display_name
+/// + опц. org/role. Если привязок нет — None (блок не добавляется).
+async fn build_known_speakers_block(
+    pool: &SqlitePool,
+    call_id: &str,
+) -> Result<Option<String>, AppError> {
+    let speakers = db::list_call_speakers(pool, call_id).await?;
+    let confirmed: Vec<_> = speakers
+        .iter()
+        .filter(|s| s.confirmed && s.contact_id.is_some() && s.contact_display_name.is_some())
+        .collect();
+    if confirmed.is_empty() {
+        return Ok(None);
+    }
+
+    // Подтянем дополнительный контекст (org/role) из contacts table.
+    let contacts = db::list_contacts(pool).await?;
+    let by_id: std::collections::HashMap<&str, &db::Contact> =
+        contacts.iter().map(|c| (c.id.as_str(), c)).collect();
+
+    let mut lines = Vec::new();
+    for s in confirmed {
+        let cid = s.contact_id.as_deref().unwrap_or("");
+        let name = s.contact_display_name.as_deref().unwrap_or("");
+        let extras = by_id
+            .get(cid)
+            .map(|c| {
+                let mut bits = Vec::new();
+                if let Some(role) = c.role.as_deref().filter(|s| !s.is_empty()) {
+                    bits.push(role.to_string());
+                }
+                if let Some(org) = c.org.as_deref().filter(|s| !s.is_empty()) {
+                    bits.push(org.to_string());
+                }
+                if bits.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", bits.join(", "))
+                }
+            })
+            .unwrap_or_default();
+        lines.push(format!("- {} = {}{}", s.speaker_tag, name, extras));
+    }
+    Ok(Some(lines.join("\n")))
 }
 
 fn render_recap_md(

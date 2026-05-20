@@ -12,6 +12,7 @@ import {
   type ActionItem,
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
+import { listCallSpeakers, type CallSpeakerView } from '../api/speakers';
 import type { Call } from '../api/recording';
 import { Button, Card, Empty, Pill, Tabs } from '../ui';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
@@ -32,6 +33,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [rawStt, setRawStt] = useState<string | null>(null);
   const [tasks, setTasks] = useState<ActionItem[] | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [speakersLite, setSpeakersLite] = useState<CallSpeakerView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -45,14 +47,16 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       readCallArtifact(callId, 'raw_stt'),
       listCallActionItems(callId),
       listContacts(),
+      listCallSpeakers(callId),
     ])
-      .then(([c, r, t, raw, ai, cs]) => {
+      .then(([c, r, t, raw, ai, cs, sp]) => {
         setCall(c);
         setRecap(r);
         setTranscript(t);
         setRawStt(raw);
         setTasks(ai);
         setContacts(cs);
+        setSpeakersLite(sp);
       })
       .catch((e: unknown) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -75,18 +79,20 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       await reprocessCall(call.id);
       // Pipeline:finished event на бекенде сам триггерит refresh где надо;
       // здесь явно перечитаем артефакты.
-      const [fresh, freshTranscript, freshRaw, freshTasks, freshCall] = await Promise.all([
+      const [fresh, freshTranscript, freshRaw, freshTasks, freshCall, freshSpeakers] = await Promise.all([
         readCallArtifact(call.id, 'recap'),
         readCallArtifact(call.id, 'transcript'),
         readCallArtifact(call.id, 'raw_stt'),
         listCallActionItems(call.id),
         getCall(call.id),
+        listCallSpeakers(call.id),
       ]);
       setRecap(fresh);
       setTranscript(freshTranscript);
       setRawStt(freshRaw);
       setTasks(freshTasks);
       setCall(freshCall);
+      setSpeakersLite(freshSpeakers);
     } catch (e) {
       setError(`Не удалось перезапустить: ${String(e)}`);
     } finally {
@@ -226,7 +232,11 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           <MdPanel md={recap} emptyHint="Рекап ещё не сгенерирован." />
         </Tabs.Panel>
         <Tabs.Panel value="transcript">
-          <InteractiveTranscript rawSttJson={rawStt} fallbackMd={transcript} />
+          <InteractiveTranscript
+            rawSttJson={rawStt}
+            fallbackMd={transcript}
+            speakers={speakersLite}
+          />
         </Tabs.Panel>
         <Tabs.Panel value="tasks">
           <TasksPanel tasks={tasks ?? []} contacts={contacts} />
