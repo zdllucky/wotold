@@ -81,6 +81,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'apps/desktop/src-tauri -> target'
+      # tauri.conf.json объявляет externalBin = binaries/wotold-audio;
+      # без сборки sidecar'а tauri-build падает с "resource path doesn't exist".
+      - name: Build Swift audio sidecar
+        run: ./scripts/build-audio-sidecar.sh
       - name: cargo fmt --check
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --all -- --check
@@ -105,6 +109,8 @@ jobs:
           shared-key: rust-tests
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Build Swift audio sidecar
+        run: ./scripts/build-audio-sidecar.sh
       - name: cargo test + coverage (lcov)
         working-directory: apps/desktop/src-tauri
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
