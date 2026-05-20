@@ -12,6 +12,7 @@ import {
   Tabs,
   TextareaField,
   Toolbar,
+  UsageBar,
 } from '../ui';
 
 const COLOR_TOKENS = [
@@ -317,6 +318,22 @@ function ComponentsPanel() {
         <h3>Tabs</h3>
         <Card>
           <TabsExample />
+        </Card>
+      </div>
+
+      <div>
+        <h3>UsageBar</h3>
+        <Card compact>
+          <UsageBar label="STT секунды (ok)" used={500} limit={3600} />
+          <UsageBar label="STT секунды (warning)" used={2800} limit={3600} />
+          <UsageBar label="STT секунды (danger)" used={3500} limit={3600} />
+          <UsageBar label="LLM (∞ лимит)" used={120} limit={0} />
+          <UsageBar
+            label="custom format"
+            used={500}
+            limit={3600}
+            format={(v) => `${v}s`}
+          />
         </Card>
       </div>
     </div>

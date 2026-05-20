@@ -460,3 +460,63 @@
   align-items: center;
   gap: var(--space-2);
 }
+
+/* ============================================================
+ * UsageBar
+ * ============================================================ */
+.ds-usagebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ds-usagebar-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.ds-usagebar-label {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.ds-usagebar-values {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ds-usagebar-pct {
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+
+.ds-usagebar-track {
+  position: relative;
+  width: 100%;
+  height: 0.5rem;
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.ds-usagebar-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width var(--duration-normal) var(--ease-out-expo),
+    background var(--duration-normal) var(--ease-out-expo);
+}
+
+.ds-usagebar[data-tone='ok'] .ds-usagebar-fill {
+  background: var(--color-success);
+}
+
+.ds-usagebar[data-tone='warning'] .ds-usagebar-fill {
+  background: var(--color-warning);
+}
+
+.ds-usagebar[data-tone='danger'] .ds-usagebar-fill {
+  background: var(--color-danger);
+}

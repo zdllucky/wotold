@@ -12,6 +12,7 @@ import { Button, Card, InputField, SelectField, Toolbar } from '../ui';
 import { AccountSection } from './AccountSection';
 import { ByoKeysSection } from './ByoKeysSection';
 import { PermissionsSection } from './PermissionsSection';
+import { UsageSection } from './UsageSection';
 
 function isSttProvider(v: string | null): v is SttProvider {
   return v === 'auto' || v === 'soniox' || v === 'gladia';
@@ -226,6 +227,15 @@ export function SettingsPage() {
         <h3 className="settings-section-title">Аккаунт (SSO)</h3>
         <AccountSection />
       </div>
+
+      {/* #48: Quota indicator. Показываем только в managed-режиме —
+          в BYO пользователь платит партнёрам напрямую, наша квота не действует. */}
+      {providerPath === 'managed' && (
+        <div className="settings-section">
+          <h3 className="settings-section-title">Использование (managed-квота)</h3>
+          <UsageSection />
+        </div>
+      )}
 
       <p className="hint">Все изменения сохраняются автоматически.</p>
     </section>
