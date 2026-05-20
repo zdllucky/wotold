@@ -100,12 +100,30 @@ export function ByoKeysSection() {
     }
   };
 
+  // [B16 audit P1]: warn если активирован BYO но ключи не заполнены —
+  // юзер запустит запись, она силит fail с непонятной ошибкой 'no api key'.
+  const missingProviders = PROVIDERS.filter((p) => !(statuses.get(p.id) ?? false));
+  const allMissing = missingProviders.length === PROVIDERS.length;
+  const someMissing = missingProviders.length > 0 && !allMissing;
+
   return (
     <div className="byo-keys">
       <p className="byo-keys-hint">
         Ключи хранятся в системном Keychain. Не пишутся в БД, логи или телеметрию.
       </p>
       {error && <p className="error">{error}</p>}
+      {allMissing && (
+        <p className="byo-keys-warn" role="alert">
+          ⚠ Ни один ключ не задан. Записи будут падать с ошибкой авторизации —
+          либо добавь ключи, либо переключись на «Через Wotold» в выборе режима.
+        </p>
+      )}
+      {someMissing && (
+        <p className="byo-keys-warn-soft">
+          ⓘ Не заданы: {missingProviders.map((p) => p.label).join(', ')}. Без них
+          часть pipeline (STT primary / fallback / recap) работать не будет.
+        </p>
+      )}
       {PROVIDERS.map((p) => {
         const present = statuses.get(p.id) ?? false;
         const draftValue = drafts.get(p.id) ?? '';
