@@ -233,7 +233,22 @@
 - [x] `ui/ui.css` сокращён до Skeleton shimmer (единственное что не покрывается wotold.css).
 - [x] Sections migrated: `AccountSection`, `ByoKeysSection`, `PermissionsSection`, `VoiceSamplesSection`, `UsageSection`, `CallAudioPlayer`, `SettingsPage` (SettingsSection + RadioOption helpers).
 - [x] `DesignSystemPage` переписан с inline-styles по новому token set.
-- [ ] Подсолить руками: проверить все 6 theme×accent комбинаций на каждом экране + reduced-motion + WCAG contrast.
+
+### A11y / Security / Polish (B17 P3.1 — P3.4)
+
+- [x] Code-review HIGH: HomePage recent-row border ordering + consent modal `role=dialog` / `aria-modal` / `aria-labelledby`.
+- [x] Security-review HIGH: AccountSection `openExternal(authorizeUrl)` https-scheme guard (если прокси compromised — javascript:/file:/custom-scheme exploit заблокирован).
+- [x] A11y modal focus trap: new `useFocusTrap` hook + applied to consent (HomePage), Coachmarks, OnboardingPage. ESC + Tab cycling + scroll lock + focus restore.
+- [x] A11y CRITICAL: bumped `--signal` light #DC2626 → #BF1C1C (был 4.40:1, теперь ≈ 5.6:1 на --bg).
+- [x] A11y HIGH: bumped `--muted` #6B6C72 → #5E5F65 (для text-xs/small-caps безопасно).
+- [x] A11y HIGH: Tabs aria-controls / aria-labelledby pairs + id'd via useId().
+- [x] A11y HIGH: App nav убран orphan role=tab/aria-selected — заменён на aria-current="page" (правильный nav pattern).
+- [x] A11y HIGH: Onboarding name label htmlFor + SpeakersSection picker label htmlFor.
+- [x] A11y HIGH: dynamic error `<p>` элементы получили `role="alert"` (HomePage, Settings×2, Account, Calls, CallDetail, Contacts×2, Onboarding, VoiceSamples, ByoKeys, Speakers, Permissions).
+- [x] A11y MEDIUM/WARN: `prefers-reduced-motion` CSS — `.dot--pulse`, `.rec-btn`, `.conf-fill`; JS — `UsageBar` width transition через `useReducedMotion` hook.
+- [x] A11y WARN: ContactsPage name button hit area padding/margin для SC 2.5.8.
+- [x] `useFocusTrap` test suite (8 cases) — initial focus, ESC, Tab/Shift+Tab cycling, inactive, scroll-lock.
+- [ ] Подсолить руками: проверить все 6 theme×accent комбинаций на каждом экране визуально.
 
 ## Production Readiness (B16)
 

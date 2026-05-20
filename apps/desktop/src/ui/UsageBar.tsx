@@ -5,7 +5,7 @@
 //
 // [B17] Atelier v2 — token vars + inline styling, без отдельных DS-классов.
 
-import type { CSSProperties } from 'react';
+import { useSyncExternalStore, type CSSProperties } from 'react';
 
 type Tone = 'ok' | 'warning' | 'danger';
 
@@ -43,11 +43,36 @@ const trackStyle: CSSProperties = {
   overflow: 'hidden',
 };
 
+// [B17 a11y] WCAG SC 2.3.3 — respect prefers-reduced-motion для width
+// transition (inline styles не reachable из CSS @media query).
+function subscribeReducedMotion(callback: () => void): () => void {
+  if (typeof window === 'undefined' || !window.matchMedia) {
+    return () => undefined;
+  }
+  const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  mq.addEventListener('change', callback);
+  return () => mq.removeEventListener('change', callback);
+}
+
+function getReducedMotion(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function useReducedMotion(): boolean {
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotion,
+    () => false,
+  );
+}
+
 export function UsageBar({ label, used, limit, format }: UsageBarProps) {
   const fmt = format ?? ((v: number) => v.toLocaleString('ru-RU'));
   const safeLimit = limit > 0 ? limit : 0;
   const pct = safeLimit === 0 ? 0 : Math.min(100, Math.round((used / safeLimit) * 100));
   const tone = pickTone(pct);
+  const reducedMotion = useReducedMotion();
 
   return (
     <div
@@ -100,8 +125,9 @@ export function UsageBar({ label, used, limit, format }: UsageBarProps) {
             width: `${pct}%`,
             background: fillColor(tone),
             borderRadius: 'var(--radius-pill)',
-            transition:
-              'width var(--duration-normal) var(--ease-out-expo), background var(--duration-normal) var(--ease-out-expo)',
+            transition: reducedMotion
+              ? 'none'
+              : 'width var(--duration-normal) var(--ease-out-expo), background var(--duration-normal) var(--ease-out-expo)',
           }}
         />
       </div>
