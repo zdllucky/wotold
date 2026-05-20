@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { humanError } from '../api/errors';
 
 import {
   deleteByoKey,
@@ -50,7 +51,7 @@ export function ByoKeysSection() {
       setStatuses(map);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 
@@ -79,7 +80,7 @@ export function ByoKeysSection() {
       setDraft(provider, '');
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     } finally {
       setBusy(null);
     }
@@ -93,7 +94,7 @@ export function ByoKeysSection() {
       setDraft(provider, '');
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     } finally {
       setBusy(null);
     }

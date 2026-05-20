@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { humanError } from '../api/errors';
 
 import {
   getAudioPermissions,
@@ -43,7 +44,7 @@ export function PermissionsSection() {
   useEffect(() => {
     getAudioPermissions()
       .then(setStatus)
-      .catch((e: unknown) => setError(String(e)));
+      .catch((e: unknown) => setError(humanError(e)));
   }, []);
 
   const refreshAfter = async (fn: () => Promise<PermissionsStatus>, t: Target) => {
@@ -53,7 +54,7 @@ export function PermissionsSection() {
       const next = await fn();
       setStatus(next);
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     } finally {
       setBusy(null);
     }
@@ -65,7 +66,7 @@ export function PermissionsSection() {
     try {
       await openSystemPrivacyPane(pane);
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 

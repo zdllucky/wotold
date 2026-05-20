@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { humanError } from '../api/errors';
 import { invoke } from '@tauri-apps/api/core';
 
 import {
@@ -41,7 +42,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   useEffect(() => {
     invoke<string>('get_device_id')
       .then(setDeviceId)
-      .catch((e: unknown) => setError(String(e)));
+      .catch((e: unknown) => setError(humanError(e)));
 
     invoke<AvailableUpdate | null>('check_for_update')
       .then((u) => {
@@ -78,7 +79,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       const call = await startRecording();
       setRecording({ call_id: call.id, started_at: call.started_at });
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     } finally {
       setBusy(false);
     }
@@ -100,7 +101,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       setShowConsent(false);
       await startRecordingFlow();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 
@@ -112,7 +113,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       setRecording(null);
       setLastCall(call);
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
       setRecording(null);
     } finally {
       setBusy(false);
@@ -125,7 +126,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       await invoke('apply_update');
     } catch (e) {
       setInstalling(false);
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { humanError } from '../api/errors';
 import { open as openExternal } from '@tauri-apps/plugin-shell';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -60,7 +61,7 @@ export function AccountSection() {
       }
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
       setState({ kind: 'signed_out' });
     }
   };
@@ -77,7 +78,7 @@ export function AccountSection() {
         await setAccountSession(session);
         await refresh();
       } catch (e) {
-        setError(String(e));
+        setError(humanError(e));
       }
     })
       .then((fn) => {
@@ -105,7 +106,7 @@ export function AccountSection() {
       await openExternal(authorizeUrl);
       setState({ kind: 'pending_paste', provider, authorizeUrl });
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     } finally {
       setBusy(false);
     }
@@ -124,7 +125,7 @@ export function AccountSection() {
       setPasteValue('');
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     } finally {
       setBusy(false);
     }
@@ -143,7 +144,7 @@ export function AccountSection() {
       await apiSignOut();
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
       // Локальное удаление как fallback.
       try {
         await clearAccountSession();

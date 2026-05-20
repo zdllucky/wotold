@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { humanError } from '../api/errors';
 
 import { renameOwnerContact } from '../api/contacts';
 import { setSetting, SETTINGS_KEYS } from '../api/settings';
@@ -25,7 +26,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
       await setSetting(SETTINGS_KEYS.ONBOARDING_DONE, '1');
       onComplete();
     } catch (err) {
-      setError(String(err));
+      setError(humanError(err));
       setSaving(false);
     }
   };
