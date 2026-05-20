@@ -7,10 +7,12 @@ use sqlx::{
 
 use crate::AppError;
 
+mod action_items;
 mod calls;
 mod contacts;
 mod settings;
 
+pub use action_items::{replace_action_items, ActionItemInput};
 pub use calls::{
     fail_recording, finish_recording, insert_recording, list_calls, mark_call_ready, set_call_meta,
     sweep_stale_calls, Call,
