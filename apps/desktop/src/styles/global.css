@@ -79,7 +79,7 @@ pre {
 .topnav {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--color-border);
   background: color-mix(in oklch, var(--color-surface) 80%, transparent);
@@ -87,6 +87,66 @@ pre {
   position: sticky;
   top: 0;
   z-index: 10;
+}
+
+.topnav-brand {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+  user-select: none;
+  padding: 0 var(--space-1);
+}
+
+.topnav-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.topnav-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  position: relative;
+  transition: color 120ms var(--ease-out-expo), background 120ms var(--ease-out-expo);
+}
+
+.topnav-tab:hover {
+  color: var(--color-text);
+  background: var(--color-surface-sunken);
+}
+
+.topnav-tab--active {
+  color: var(--color-text);
+  background: var(--color-surface-sunken);
+}
+
+.topnav-tab--active::after {
+  content: "";
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: -7px;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 1px;
+}
+
+.topnav-tab-icon {
+  font-size: 1.05em;
+  line-height: 1;
+}
+
+.topnav-tab-label {
+  font-weight: 500;
 }
 
 .topnav-spacer {

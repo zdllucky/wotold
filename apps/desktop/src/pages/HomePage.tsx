@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import {
   getRecordingState,
+  listCalls,
   startRecording,
   stopRecording,
   type Call,
@@ -37,6 +38,8 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   // #39 (C1): recording consent. Сохраняется один раз — при первом «Начать запись».
   const [consentAt, setConsentAt] = useState<string | null>(null);
   const [showConsent, setShowConsent] = useState(false);
+  // [B16] HomePage hero stats — последний звонок, число за неделю, 3 recent для quick-open.
+  const [recentCalls, setRecentCalls] = useState<Call[]>([]);
 
   useEffect(() => {
     invoke<AvailableUpdate | null>('check_for_update')
@@ -52,6 +55,10 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
     getSetting(SETTINGS_KEYS.RECORDING_CONSENT_AT)
       .then(setConsentAt)
       .catch((e: unknown) => console.warn('getSetting consent failed', e));
+
+    listCalls()
+      .then((calls) => setRecentCalls(calls.slice(0, 50)))
+      .catch((e: unknown) => console.warn('listCalls (home) failed', e));
   }, []);
 
   useEffect(() => {
@@ -125,6 +132,16 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
     }
   };
 
+  // [B16] Stats для hero — derived из recentCalls.
+  const now = Date.now();
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const callsThisWeek = recentCalls.filter((c) => {
+    const t = new Date(c.started_at).getTime();
+    return Number.isFinite(t) && t >= weekAgo;
+  }).length;
+  const lastReady = recentCalls.find((c) => c.status === 'ready') ?? recentCalls[0] ?? null;
+  const recentForList = recentCalls.slice(0, 3);
+
   return (
     <section className="home">
       <header className="home-hero">
@@ -134,6 +151,35 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
           пришлёт саммари — обычно через 10–30 секунд после остановки.
         </p>
       </header>
+
+      {recentCalls.length > 0 && (
+        <div className="home-stats">
+          <div className="home-stat-card">
+            <span className="home-stat-label">Всего звонков</span>
+            <span className="home-stat-value">{recentCalls.length}</span>
+          </div>
+          <div className="home-stat-card">
+            <span className="home-stat-label">За неделю</span>
+            <span className="home-stat-value">{callsThisWeek}</span>
+          </div>
+          {lastReady && (
+            <button
+              type="button"
+              className="home-stat-card home-stat-card--clickable"
+              onClick={() => onOpenCall?.(lastReady.id)}
+              title="Открыть последний звонок"
+            >
+              <span className="home-stat-label">Последний</span>
+              <span className="home-stat-value-sm">
+                {formatRelative(lastReady.started_at)}
+              </span>
+              {lastReady.title && (
+                <span className="home-stat-secondary">{lastReady.title}</span>
+              )}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="record-area">
         {!recording && (
@@ -189,6 +235,46 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
         )}
       </div>
 
+      {recentForList.length > 0 && !recording && (
+        <div className="home-recent">
+          <div className="home-recent-head">
+            <span className="home-recent-title">Недавние</span>
+            {onOpenCall && recentCalls.length > 3 && (
+              <button
+                type="button"
+                className="home-recent-more"
+                onClick={() => onOpenCall(recentCalls[0]!.id)}
+              >
+                Все →
+              </button>
+            )}
+          </div>
+          <ul className="home-recent-list">
+            {recentForList.map((c) => (
+              <li
+                key={c.id}
+                className="home-recent-item"
+                role={onOpenCall ? 'button' : undefined}
+                tabIndex={onOpenCall ? 0 : -1}
+                onClick={() => onOpenCall?.(c.id)}
+                onKeyDown={(e) => {
+                  if (onOpenCall && (e.key === 'Enter' || e.key === ' ')) {
+                    onOpenCall(c.id);
+                  }
+                }}
+              >
+                <span className="home-recent-item-title">
+                  {c.title ?? 'Без названия'}
+                </span>
+                <span className="home-recent-item-meta text-muted">
+                  {formatRelative(c.started_at)} · {c.duration_sec ?? 0}c
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {showConsent && (
         <Card variant="raised" className="consent-card">
           <h3 className="consent-title">Согласие на запись</h3>
@@ -237,4 +323,18 @@ function formatElapsed(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function formatRelative(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return iso;
+  const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (diffSec < 60) return 'только что';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} мин назад`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} ч назад`;
+  if (diffSec < 7 * 86400) return `${Math.floor(diffSec / 86400)} д назад`;
+  return new Date(iso).toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: 'short',
+  });
 }
