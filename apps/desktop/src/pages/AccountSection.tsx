@@ -95,8 +95,13 @@ export function AccountSection() {
     setBusy(true);
     setError(null);
     try {
-      // [B9]: попросим прокси редиректить на wotold:// — Tauri перехватит через deep-link plugin.
-      const { authorizeUrl } = await startSignIn(provider, undefined, 'deeplink');
+      // [B9]: prod использует deep-link wotold:// для авто-перехвата.
+      // Dev mode: LaunchServices не успевает зарегистрировать scheme для
+      // каждой пересборки → Safari показывает «адрес недействителен».
+      // Fallback на 'json' — пользователь видит sessionId в браузере и
+      // копирует в paste-форму ниже.
+      const redirectMode: 'json' | 'deeplink' = import.meta.env.DEV ? 'json' : 'deeplink';
+      const { authorizeUrl } = await startSignIn(provider, undefined, redirectMode);
       await openExternal(authorizeUrl);
       setState({ kind: 'pending_paste', provider, authorizeUrl });
     } catch (e) {

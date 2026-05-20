@@ -411,8 +411,8 @@ mod tests {
                     "ok": true,
                     "transcript": {
                         "version": 1,
-                        "lang_detected": "ru",
-                        "duration_sec": 8.0,
+                        "langDetected": "ru",
+                        "durationSec": 8.0,
                         "provider": "gladia",
                         "segments": []
                     }

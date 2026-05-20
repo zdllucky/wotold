@@ -23,18 +23,23 @@ pub struct TranscriptionOpts {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TranscriptSegment {
     pub start: f64,
     pub end: f64,
     pub text: String,
+    /// На wire (JSON через прокси) — `speakerTag`, в Rust — `speaker_tag` (S2).
     pub speaker_tag: String,
     pub confidence: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DiarizedTranscript {
     pub version: u32,
+    /// На wire — `langDetected`, в Rust — `lang_detected`.
     pub lang_detected: Option<String>,
+    /// На wire — `durationSec`.
     pub duration_sec: f64,
     pub provider: String,
     pub segments: Vec<TranscriptSegment>,
