@@ -31,10 +31,31 @@ const DB_FILE: &str = "app.db";
 
 pub async fn init(app_data_dir: &Path) -> Result<SqlitePool, AppError> {
     let path = app_data_dir.join(DB_FILE);
+
+    // [B16 audit P0] integrity_check перед открытием — если БД corrupt (partial
+    // WAL write, force-quit во время migrations), переименовываем в *.corrupt-{ts}
+    // и стартуем с пустой. Юзер увидит модал в UI через event 'db:reset' что
+    // была пересборка БД (пока без модала — TODO в #refactor).
+    if path.exists() {
+        if let Err(e) = quick_integrity_check(&path).await {
+            let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+            let corrupt_path = app_data_dir.join(format!("{DB_FILE}.corrupt-{ts}"));
+            log::error!(
+                "SQLite integrity check failed: {e}. Renaming {} → {}",
+                path.display(),
+                corrupt_path.display()
+            );
+            std::fs::rename(&path, &corrupt_path).ok();
+        }
+    }
+
     let options = SqliteConnectOptions::new()
         .filename(&path)
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
+        // [B16 audit P1] busy_timeout 5s — concurrent writes (sweep + pipeline)
+        // могут upcкать SQLITE_BUSY; даём wait вместо мгновенного fail.
+        .busy_timeout(std::time::Duration::from_secs(5))
         .foreign_keys(true);
 
     let pool = SqlitePoolOptions::new()
@@ -45,6 +66,29 @@ pub async fn init(app_data_dir: &Path) -> Result<SqlitePool, AppError> {
     sqlx::migrate!("./migrations").run(&pool).await?;
 
     Ok(pool)
+}
+
+/// Открывает БД на одиночный pragma integrity_check; если не вернёт 'ok' —
+/// файл повреждён. Используем минимальный pool (1 connection) + закрываем
+/// сразу после check чтобы не держать handle.
+async fn quick_integrity_check(path: &Path) -> Result<(), AppError> {
+    let options = SqliteConnectOptions::new()
+        .filename(path)
+        .create_if_missing(false)
+        .journal_mode(SqliteJournalMode::Wal)
+        .busy_timeout(std::time::Duration::from_secs(3));
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options)
+        .await?;
+    let row: (String,) = sqlx::query_as("PRAGMA integrity_check")
+        .fetch_one(&pool)
+        .await?;
+    pool.close().await;
+    if row.0 != "ok" {
+        return Err(AppError::Other(format!("integrity_check returned: {}", row.0)));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

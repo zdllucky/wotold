@@ -27,7 +27,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "updater"],
+    "targets": ["app", "dmg"],
     "createUpdaterArtifacts": true,
     "externalBin": ["binaries/wotold-audio"],
     "icon": [
@@ -38,14 +38,9 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "14.0",
-      "category": "public.app-category.productivity",
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "Wotold записывает микрофон чтобы создавать транскрипты и саммари ваших звонков. Запись запускается только вручную.",
-        "NSScreenCaptureUsageDescription": "Wotold записывает системный звук (например звук собеседника в Zoom/Meet) чтобы создать полный транскрипт звонка. Видео не захватывается.",
-        "LSApplicationCategoryType": "public.app-category.productivity"
-      }
-    }
+      "minimumSystemVersion": "14.0"
+    },
+    "category": "Productivity"
   },
   "plugins": {
     "deep-link": {

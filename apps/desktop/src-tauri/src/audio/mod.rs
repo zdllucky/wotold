@@ -38,3 +38,11 @@ pub use macos::MacOsCoreAudioCapture;
 pub mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::WindowsWasapiCapture;
+
+// [B16 audit P2] Linux build guard: explicit early fail с понятным сообщением.
+// Без guard сборка падает позже в callsite не linked AudioCapture impl.
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+compile_error!(
+    "Wotold не собирается на этой платформе — поддержка только macOS (Linux/прочие OS \
+     не реализованы, см. R4 паспорта). Используй macOS 14+ для разработки."
+);

@@ -31,8 +31,47 @@ pub use error::AppError;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // [B16 audit P1] panic hook: silent-kill процессу не оставляет следов.
+    // Пишем backtrace в panic.log + дублируем в stderr. Поверх default hook —
+    // вызываем prev_hook так чтобы dev-сборка получала console-friendly stderr.
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // Используем DATA_DIR из ENV или fallback на home/.wotold-panic.log:
+        // на момент panic AppState может быть не инициализирован.
+        let bt = std::backtrace::Backtrace::force_capture();
+        let log_dir = std::env::var("HOME")
+            .map(|h| std::path::PathBuf::from(h).join("Library/Logs/app.wotold.desktop"))
+            .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"));
+        let _ = std::fs::create_dir_all(&log_dir);
+        let entry = format!(
+            "[{}] PANIC at {}:\n{}\n\nBacktrace:\n{}\n\n",
+            chrono::Utc::now().to_rfc3339(),
+            info.location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_else(|| "<unknown>".into()),
+            info,
+            bt
+        );
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_dir.join("panic.log"))
+        {
+            use std::io::Write;
+            let _ = f.write_all(entry.as_bytes());
+        }
+        prev_hook(info);
+    }));
+
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::default().build())
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                // [B16 audit P2] log rotation: иначе один долгоиграющий user
+                // накопит 50MB+ за месяц. 5MB cap + KeepOne — последние 5MB.
+                .max_file_size(5 * 1024 * 1024)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
