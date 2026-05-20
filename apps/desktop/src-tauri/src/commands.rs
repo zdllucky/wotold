@@ -69,6 +69,8 @@ pub async fn read_call_artifact(
     let filename = match kind.as_str() {
         "recap" => "recap.md",
         "transcript" => "transcript.md",
+        // [B10]: интерактивный транскрипт читает raw_stt.json для рендера баблов.
+        "raw_stt" => "raw_stt.json",
         other => return Err(AppError::Other(format!("unknown artifact kind: {other}"))),
     };
     let path = state

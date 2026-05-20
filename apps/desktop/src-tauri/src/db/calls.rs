@@ -289,6 +289,44 @@ pub async fn list_call_speakers(
         .collect())
 }
 
+/// [B11] M7.4: добавить placeholder rows в `call_speakers` для каждого спикера
+/// из транскрипта (если их там ещё нет). Это делает всех спикеров видимыми
+/// в `SpeakersSection`, в т.ч. анонимных без suggestion от identify_speakers.
+/// Идемпотент: для существующих speaker_tag ничего не делает.
+pub async fn ensure_call_speakers_present(
+    pool: &SqlitePool,
+    call_id: &str,
+    speaker_tags: &[String],
+) -> Result<(), AppError> {
+    if speaker_tags.is_empty() {
+        return Ok(());
+    }
+    let mut tx = pool.begin().await?;
+    for tag in speaker_tags {
+        let exists: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM call_speakers WHERE call_id = ?1 AND speaker_tag = ?2 LIMIT 1",
+        )
+        .bind(call_id)
+        .bind(tag)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if exists.is_some() {
+            continue;
+        }
+        sqlx::query(
+            "INSERT INTO call_speakers (id, call_id, speaker_tag, confirmed)
+             VALUES (?1, ?2, ?3, 0)",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(call_id)
+        .bind(tag)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 /// M3.7 паспорта: mic-дорожка по определению принадлежит владельцу устройства,
 /// никакой биометрии не требуется. Pipeline вызывает этот метод после
 /// merge_tracks чтобы сразу записать speaker_tag="owner" confirmed=1 с

@@ -160,6 +160,16 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
           return '# Рекап\n\n## Главное\n- Договорились о пилоте на 2 недели\n- Дедлайн контракта — 30 мая\n- Иван присылает SOW в пятницу\n\n## Решения\n- Используем managed-тариф\n- Языки: RU + EN';
         if (kind === 'transcript')
           return '## Транскрипт\n\n**Иван:** Давайте обсудим план.\n\n**Дамир:** Я готов. С чего начнём?\n\n**Иван:** Сначала пилот на 2 недели, потом полный контракт.';
+        if (kind === 'raw_stt')
+          return JSON.stringify({
+            version: 1,
+            merged: [
+              { start: 0, end: 3.5, text: 'Давайте обсудим план.', speakerTag: 'Speaker 0' },
+              { start: 3.5, end: 6.0, text: 'Я готов. С чего начнём?', speakerTag: 'owner' },
+              { start: 6.0, end: 12.0, text: 'Сначала пилот на 2 недели, потом полный контракт.', speakerTag: 'Speaker 0' },
+              { start: 12.0, end: 14.0, text: 'Согласен. Дедлайн контракта — 30 мая.', speakerTag: 'owner' },
+            ],
+          });
         return null;
       }
       if (cmd === 'list_call_action_items') {

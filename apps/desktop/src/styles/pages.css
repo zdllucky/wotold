@@ -1033,3 +1033,83 @@
 .calls-filters .ds-field {
   margin: 0;
 }
+
+/* [B11] inline add-as-contact форма */
+.speaker-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-md);
+  margin-top: var(--space-1);
+}
+
+/* ============================================================
+ * [B10] Interactive transcript — chat bubbles
+ * ============================================================ */
+.transcript-stream {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.transcript-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 75%;
+  align-self: flex-start;
+}
+
+.transcript-bubble[data-owner='true'] {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.transcript-bubble-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.transcript-bubble-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--color-accent-fg);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.transcript-bubble-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.transcript-bubble-body {
+  background: var(--color-surface-sunken);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+}
+
+.transcript-bubble[data-owner='true'] .transcript-bubble-body {
+  background: var(--color-accent-soft);
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-sm);
+}
+
+.transcript-bubble-line {
+  margin: 0 0 var(--space-1) 0;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.transcript-bubble-line:last-child {
+  margin-bottom: 0;
+}

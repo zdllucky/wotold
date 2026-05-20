@@ -12,6 +12,17 @@ const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_DEFAULT_MODEL_FALLBACK = 'llama-3.3-70b-versatile';
 
+/** Retry upstream LLM один раз при HTTP 5xx — покрывает transient glitches
+ *  и rate-limit «retry-after» через паузу 1.5s. ([B12]) */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  const first = await fetch(url, init);
+  if (first.status >= 500 || first.status === 429) {
+    await new Promise((r) => setTimeout(r, 1500));
+    return fetch(url, init);
+  }
+  return first;
+}
+
 export interface LlmCallInput {
   system: string;
   input: string;
@@ -70,7 +81,7 @@ async function callAnthropic(env: Env, body: LlmCallInput): Promise<LlmCallResul
     };
   }
   const model = body.model ?? env.ANTHROPIC_DEFAULT_MODEL;
-  const upstream = await fetch(ANTHROPIC_URL, {
+  const upstream = await fetchWithRetry(ANTHROPIC_URL, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -119,7 +130,7 @@ async function callGroq(env: Env, body: LlmCallInput): Promise<LlmCallResult> {
   // Groq OpenAI-compatible chat completions. response_format: json_object форсит
   // model вернуть валидный JSON — но требует "JSON" слово в messages
   // (наш build_system_prompt уже содержит JSON-схему, требование выполнено).
-  const upstream = await fetch(GROQ_URL, {
+  const upstream = await fetchWithRetry(GROQ_URL, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
