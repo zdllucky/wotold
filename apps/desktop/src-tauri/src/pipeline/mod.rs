@@ -74,6 +74,19 @@ pub async fn run(
     ctx: PipelineCtx,
     app: Option<&AppHandle>,
 ) -> Result<(), AppError> {
+    // [B16] Emit `pipeline:started` для global progress indicator в topnav.
+    if let Some(handle) = app {
+        #[derive(Clone, serde::Serialize)]
+        struct Started {
+            call_id: String,
+        }
+        if let Err(e) = handle.emit(
+            "pipeline:started",
+            Started { call_id: ctx.call_id.clone() },
+        ) {
+            log::warn!("emit pipeline:started failed: {e}");
+        }
+    }
     let result = run_inner(pool, &ctx).await;
     let event = match &result {
         Ok(()) => {
