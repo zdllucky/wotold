@@ -30,6 +30,10 @@ const SETTING_PROVIDER_PATH: &str = "provider_path";
 const SETTING_STT_LANG: &str = "stt_lang";
 const SETTING_LLM_MODEL: &str = "llm_model";
 const SETTING_PROXY_BASE_URL: &str = "proxy_base_url";
+/// [B13] Системный язык для LLM-output (рекап + action items). 'auto' = язык
+/// детектированный STT, иначе BCP47 (ru, en, kk, ...). НЕ влияет на STT
+/// auto-detect — STT остаётся multi-lang biased (см. proxy/lib/partners).
+const SETTING_PREFERRED_LANGUAGE: &str = "preferred_language";
 
 /// Default proxy URL — debug-сборки (cargo run / tauri dev) целятся на staging,
 /// release — на production. User override через Settings → Прокси → Advanced.
@@ -189,6 +193,7 @@ pub async fn regenerate_recap(
 
     let provider_path = read_setting(pool, SETTING_PROVIDER_PATH, "managed").await?;
     let llm_model = read_setting(pool, SETTING_LLM_MODEL, "").await?;
+    let preferred_language = read_setting(pool, SETTING_PREFERRED_LANGUAGE, "auto").await?;
     let proxy_base_url = db::get_setting(pool, SETTING_PROXY_BASE_URL)
         .await?
         .filter(|s| !s.trim().is_empty())
@@ -199,12 +204,19 @@ pub async fn regenerate_recap(
     } else {
         Some(llm_model.as_str())
     };
+    // [B13] preferred_language='auto' → используем lang_detected от STT,
+    // иначе override (например 'ru' даже для en-транскрипта).
+    let effective_lang: Option<String> = if preferred_language == "auto" || preferred_language.is_empty() {
+        call.lang_detected.clone()
+    } else {
+        Some(preferred_language.clone())
+    };
 
     let recap_ctx = recap::RecapCtx {
         call_id,
         call_dir: &call_dir,
         transcript_md: &transcript_md,
-        lang_detected: call.lang_detected.as_deref(),
+        lang_detected: effective_lang.as_deref(),
         proxy_base_url: &proxy_base_url,
         device_id,
         provider_path: &provider_path,
@@ -292,11 +304,18 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     } else {
         Some(llm_model.as_str())
     };
+    // [B13] preferred_language override для LLM (см. regenerate_recap).
+    let preferred_language = read_setting(pool, SETTING_PREFERRED_LANGUAGE, "auto").await?;
+    let effective_lang: Option<String> = if preferred_language == "auto" || preferred_language.is_empty() {
+        lang_detected.clone()
+    } else {
+        Some(preferred_language.clone())
+    };
     let recap_ctx = recap::RecapCtx {
         call_id: &ctx.call_id,
         call_dir: &ctx.call_dir,
         transcript_md: &transcript_md,
-        lang_detected: lang_detected.as_deref(),
+        lang_detected: effective_lang.as_deref(),
         proxy_base_url: &proxy_base_url,
         device_id: &ctx.device_id,
         provider_path: &provider_path,
