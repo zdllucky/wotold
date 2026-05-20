@@ -54,6 +54,10 @@ QUOTA_LLM_TOKENS_PER_DAY = "200000"
 STAGING_PRESIGN_TTL_SECONDS = "900"
 STT_STAGING_BUCKET = "wotold-stt-staging-stg"
 ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
+# LLM_BACKEND: 'groq' (free 14.4k req/day, Llama 3.3 70B) | 'anthropic' | '' (auto)
+# Default — пусто, auto-pick: groq если GROQ_API_KEY есть, иначе anthropic.
+LLM_BACKEND = "groq"
+GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 AUTH_STATE_TTL_SECONDS = "300"
 AUTH_SESSION_TTL_SECONDS = "2592000"
 GOOGLE_OAUTH_CLIENT_ID = "819882374666-bvn6nmae4bmiogiia9jb859k4fmbr9ea.apps.googleusercontent.com"
@@ -94,6 +98,10 @@ QUOTA_LLM_TOKENS_PER_DAY = "200000"
 STAGING_PRESIGN_TTL_SECONDS = "900"
 STT_STAGING_BUCKET = "wotold-stt-staging"
 ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
+# LLM_BACKEND: 'groq' (free 14.4k req/day, Llama 3.3 70B) | 'anthropic' | '' (auto)
+# Default — пусто, auto-pick: groq если GROQ_API_KEY есть, иначе anthropic.
+LLM_BACKEND = "groq"
+GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 AUTH_STATE_TTL_SECONDS = "300"
 AUTH_SESSION_TTL_SECONDS = "2592000"
 # TODO(production): подставить отдельный Google OAuth Client ID для продового

@@ -16,6 +16,11 @@ export interface Env {
   STT_STAGING_BUCKET: string;
   ANTHROPIC_DEFAULT_MODEL: string;
 
+  /** Какой LLM-провайдер использует /v1/llm: 'groq' | 'anthropic'.
+   *  Если пусто — auto: groq если есть GROQ_API_KEY, иначе anthropic. */
+  LLM_BACKEND: string;
+  GROQ_DEFAULT_MODEL: string;
+
   // M10 auth (#37) — vars (публичные).
   AUTH_STATE_TTL_SECONDS: string;
   AUTH_SESSION_TTL_SECONDS: string;
@@ -26,6 +31,7 @@ export interface Env {
 
   // secrets (S1)
   ANTHROPIC_API_KEY?: string;
+  GROQ_API_KEY?: string;
   SONIOX_API_KEY?: string;
   GLADIA_API_KEY?: string;
 
