@@ -138,7 +138,10 @@ pub async fn reprocess_call(
     call_id: &str,
     app: Option<&AppHandle>,
 ) -> Result<(), AppError> {
-    let call = db::get_call(pool, call_id)
+    // [B16] Validate существование row. Само значение `call` не нужно ниже —
+    // только existence-check. `_` префикс подавляет dead-code warning без
+    // искусственного `let _ = &call`.
+    let _call = db::get_call(pool, call_id)
         .await?
         .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
 
@@ -166,7 +169,6 @@ pub async fn reprocess_call(
     .bind(call_id)
     .execute(pool)
     .await?;
-    let _ = &call; // suppress unused warning — call взят чтобы валидировать что row существует.
 
     let ctx = PipelineCtx {
         call_id: call_id.to_string(),

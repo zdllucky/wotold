@@ -308,15 +308,15 @@
 - [x] **EMBEDDING_DIM в schema** — migration 0005 + backfill из length(embedding)/4. Insert-time validation в Rust — follow-up.
 - [x] **partner stderr no leak в proxy logs** — scrubProviderError() в routes/stt.ts: UUID/r2-key/Bearer/sk-/gl_ tokens замаскированы.
 - [x] **LLM upstream error generic для клиента** — anthropic/groq возвращают 'LLM upstream error (status)' без upstream body.
-- [ ] **call_fts virtual table** — создана в 0001_initial.sql, никогда не populated. Либо implement #30, либо drop.
+- [x] **call_fts virtual table** — dropped migration 0006 (никогда не populated, FTS5 follow-up в #30).
 
 ### Logic / Code Quality (P2)
 
-- [ ] **CallsPage listen pipeline:finished** — только когда CallsPage mounted, не глобально.
+- [x] **CallsPage listen pipeline:finished** — уже scoped в CallsPage useEffect, unlisten на unmount.
 - [x] **Wrap JSON.parse(rawSttJson) в runtime validator** — parseRawStt() в InteractiveTranscript filter'ит невалидные segments (без zod dep).
-- [ ] **`let _ = &call` comment** в pipeline/mod.rs — discarding result чище.
+- [x] **`let _ = &call`** — заменён на `let _call =` (underscore prefix подавляет dead-code idiomatic).
 - [x] **NaN guard в merge_tracks sort** — segments с NaN start dropped + log::warn.
-- [ ] **chunk.try_into() → manual array** в embeddings.rs.
+- [x] **chunk.try_into() → manual array** — `[chunk[0], chunk[1], chunk[2], chunk[3]]` zero-cost vs runtime check.
 
 ### Tests (P1)
 

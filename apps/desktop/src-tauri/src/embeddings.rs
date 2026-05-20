@@ -100,9 +100,11 @@ pub fn bytes_to_embedding(bytes: &[u8]) -> Result<Vec<f32>, AppError> {
         )));
     }
     let mut out = Vec::with_capacity(bytes.len() / 4);
+    // [B16] Manual array build вместо chunk.try_into().expect() —
+    // chunks_exact(4) гарантирует size 4, но try_into даёт unnecessary
+    // runtime check. Manual array idiomatic + zero-cost.
     for chunk in bytes.chunks_exact(4) {
-        let arr: [u8; 4] = chunk.try_into().expect("chunk_exact(4) is 4 bytes");
-        out.push(f32::from_le_bytes(arr));
+        out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
     }
     Ok(out)
 }
