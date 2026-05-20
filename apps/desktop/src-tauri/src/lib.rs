@@ -32,8 +32,52 @@ pub fn run() {
         )
         .setup(|app| {
             let handle = app.handle().clone();
-            let state = tauri::async_runtime::block_on(state::init(handle))?;
+            let state = tauri::async_runtime::block_on(state::init(handle.clone()))?;
             tauri::Manager::manage(app, state);
+
+            // [B2]: graceful stop при window close. Если идёт запись —
+            // префлайт-stop через pipeline, потом exit. Иначе sidecar получает
+            // SIGHUP, последние ≤5s могут не успеть flush, calls row висит recording.
+            if let Some(window) = tauri::Manager::get_webview_window(app, "main") {
+                let app_for_event = handle.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        let state = tauri::Manager::state::<state::AppState>(&app_for_event);
+                        let has_active = tauri::async_runtime::block_on(async {
+                            state.recording.lock().await.is_some()
+                        });
+                        if !has_active {
+                            return;
+                        }
+
+                        // Останавливаем close, тушим запись в фоне, потом exit.
+                        api.prevent_close();
+                        let app_for_quit = app_for_event.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let state = tauri::Manager::state::<state::AppState>(&app_for_quit);
+                            let session = state.recording.lock().await.take();
+                            if let Some(session) = session {
+                                let call_id = session.call_id.clone();
+                                if let Err(e) = audio::macos::stop(session).await {
+                                    log::error!(
+                                        "graceful stop {call_id} failed: {e}; marking failed"
+                                    );
+                                    let _ = db::fail_recording_with_reason(
+                                        &state.db,
+                                        &call_id,
+                                        Some("Окно закрыто во время записи — аудио неполное."),
+                                    )
+                                    .await;
+                                } else {
+                                    log::info!("graceful stop {call_id} ok");
+                                }
+                            }
+                            // Выход — pipeline не запускаем (юзер закрыл окно осознанно).
+                            app_for_quit.exit(0);
+                        });
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
