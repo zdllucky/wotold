@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { ask } from '@tauri-apps/plugin-dialog';
 
 import {
+  deleteCall,
   getCall,
   listCallActionItems,
   readCallArtifact,
@@ -9,7 +11,7 @@ import {
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
 import type { Call } from '../api/recording';
-import { Card, Empty, Pill, Tabs } from '../ui';
+import { Button, Card, Empty, Pill, Tabs } from '../ui';
 
 type Tab = 'recap' | 'transcript' | 'tasks';
 
@@ -49,6 +51,25 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       .finally(() => setLoading(false));
   }, [callId]);
 
+  const [deleting, setDeleting] = useState(false);
+
+  const onDelete = async () => {
+    if (!call) return;
+    const ok = await ask(
+      `Удалить звонок «${call.title ?? call.id.slice(0, 8)}»?\n\nЭто навсегда удалит аудио, транскрипт, рекап, задачи и связанные voice samples.`,
+      { title: 'Wotold', kind: 'warning', okLabel: 'Удалить', cancelLabel: 'Отмена' },
+    );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await deleteCall(call.id);
+      onBack();
+    } catch (e) {
+      setError(String(e));
+      setDeleting(false);
+    }
+  };
+
   if (loading) return <p className="hint">Загрузка…</p>;
   if (error) return <p className="error">{error}</p>;
   if (!call) return <p className="hint">Звонок не найден.</p>;
@@ -66,9 +87,20 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       </button>
 
       <header className="call-detail-header">
-        <h2 className="call-detail-title">
-          {call.title ?? `Звонок ${call.id.slice(0, 8)}`}
-        </h2>
+        <div className="call-detail-title-row">
+          <h2 className="call-detail-title">
+            {call.title ?? `Звонок ${call.id.slice(0, 8)}`}
+          </h2>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={onDelete}
+            disabled={deleting}
+            busy={deleting}
+          >
+            Удалить
+          </Button>
+        </div>
         <div className="call-detail-meta">
           <span>{formatStarted(call.started_at)}</span>
           <span>·</span>
