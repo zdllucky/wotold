@@ -96,7 +96,8 @@
 
 > Свободная лента идей. Пользователь докидывает, я причёсываю формулировку и кладу сюда. Когда забираем — оформляется как полноценная задача (M-ссылка, deps, чек-боксы) и переезжает в TaskList. Приоритет — «что ближе всего к текущей итерации» / «что сильнее всего разблокирует следующий шаг».
 
-- **[B1] Permissions UX в Onboarding + Settings.** Показывать текущий статус разрешений (`granted` / `denied` / `not_determined`) для Microphone и Screen Recording. Кнопка «Запросить» / «Запросить ещё раз». Когда `denied` — deep-link в System Settings → Privacy & Security → конкретная панель. Логично закрыть вместе с #16 (M1.3).
+- ~~**[B1] Permissions UX в Onboarding + Settings.**~~ Закрыто в #16 — [`f5cb476`](#) + [`4ddaff7`](#) fix.
+- **[B2] Graceful stop при закрытии окна.** Если юзер закрывает окно с активной записью, сидекар получает SIGHUP — последние ≤5 сек могут не успеть на flushHeader, а calls row остаётся «recording» навсегда. Нужен Tauri on_window_close → invoke stop_recording → finish или fail. Связано с #17.
 
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
