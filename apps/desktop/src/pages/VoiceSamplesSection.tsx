@@ -72,43 +72,79 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   };
 
   if (samples === null && !error) {
-    return <p className="text-muted">Загрузка…</p>;
+    return <p className="muted">Загрузка…</p>;
   }
 
   const empty = !samples || samples.length === 0;
   if (empty && !alwaysShow) return null;
 
   return (
-    <div className="voice-samples-section">
-      <div className="row-group-head">
-        <span className="row-group-title">
-          Голосовые семплы
-          {samples && samples.length > 0 && (
-            <Badge tone="neutral">{samples.length}</Badge>
-          )}
-        </span>
+    <div style={{ marginTop: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 10,
+        }}
+      >
+        <span className="small-caps">Голосовые семплы</span>
+        {samples && samples.length > 0 && (
+          <Badge tone="neutral">{samples.length}</Badge>
+        )}
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <p
+          style={{
+            color: 'var(--signal)',
+            fontFamily: 'var(--font-sans)',
+            marginBottom: 12,
+          }}
+        >
+          {error}
+        </p>
+      )}
       {empty ? (
         <Empty
-          icon="🎵"
           title="Образцов голоса пока нет"
           description="Подтверди этого человека в любом звонке — Wotold начнёт сохранять короткие образцы голоса для авто-определения в будущем. Требует включённой опции «Запоминать голос»."
         />
       ) : (
-        <ul className="voice-sample-list">
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {samples!.map((s) => (
-            <li key={s.id} className="voice-sample-row">
-              <div className="voice-sample-meta">
-                <span className="voice-sample-date">{formatCreatedAt(s.created_at)}</span>
-                <span className="voice-sample-quality text-muted">
-                  качество: {formatQuality(s.quality)}
+            <li
+              key={s.id}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr auto',
+                gap: 12,
+                padding: '10px 0',
+                borderTop: '1px solid var(--line-soft)',
+                alignItems: 'center',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 14,
+                  flexWrap: 'wrap',
+                  alignItems: 'baseline',
+                }}
+              >
+                <span
+                  className="mono"
+                  style={{ fontSize: 12, color: 'var(--ink)' }}
+                >
+                  {formatCreatedAt(s.created_at)}
                 </span>
-                <span className="voice-sample-bytes text-subtle">
+                <span className="muted" style={{ fontSize: 12 }}>
+                  качество {formatQuality(s.quality)}
+                </span>
+                <span className="subtle" style={{ fontSize: 11 }}>
                   {s.embedding_bytes} байт
                 </span>
                 {s.source_call && (
-                  <span className="text-subtle text-mono" style={{ fontSize: 'var(--text-xs)' }}>
+                  <span className="subtle mono" style={{ fontSize: 10 }}>
                     call:{s.source_call.slice(0, 8)}
                   </span>
                 )}

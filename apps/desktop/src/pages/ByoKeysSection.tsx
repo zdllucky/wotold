@@ -107,72 +107,149 @@ export function ByoKeysSection() {
   const someMissing = missingProviders.length > 0 && !allMissing;
 
   return (
-    <div className="byo-keys">
-      <p className="byo-keys-hint">
+    <div>
+      <p
+        className="muted"
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 14,
+          marginTop: 0,
+          marginBottom: 14,
+        }}
+      >
         Ключи хранятся в системном Keychain. Не пишутся в БД, логи или телеметрию.
       </p>
-      {error && <p className="error">{error}</p>}
-      {allMissing && (
-        <p className="byo-keys-warn" role="alert">
-          ⚠ Ни один ключ не задан. Записи будут падать с ошибкой авторизации —
-          либо добавь ключи, либо переключись на «Через Wotold» в выборе режима.
+      {error && (
+        <p
+          style={{
+            color: 'var(--signal)',
+            fontFamily: 'var(--font-sans)',
+            marginBottom: 12,
+          }}
+        >
+          {error}
         </p>
       )}
+      {allMissing && (
+        <div
+          role="alert"
+          className="card"
+          style={{
+            borderColor: 'var(--signal)',
+            background: 'var(--signal-soft)',
+            marginBottom: 16,
+            padding: 12,
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--ink)',
+              fontSize: 13,
+            }}
+          >
+            ⚠ Ни один ключ не задан. Записи будут падать с ошибкой авторизации —
+            либо добавь ключи, либо переключись на «Через Wotold» в выборе режима.
+          </p>
+        </div>
+      )}
       {someMissing && (
-        <p className="byo-keys-warn-soft">
+        <p
+          className="muted"
+          style={{
+            fontFamily: 'var(--font-serif)',
+            fontStyle: 'italic',
+            fontSize: 13,
+            marginBottom: 12,
+          }}
+        >
           ⓘ Не заданы: {missingProviders.map((p) => p.label).join(', ')}. Без них
           часть pipeline (STT primary / fallback / recap) работать не будет.
         </p>
       )}
-      {PROVIDERS.map((p) => {
-        const present = statuses.get(p.id) ?? false;
-        const draftValue = drafts.get(p.id) ?? '';
-        const isBusy = busy === p.id;
-        return (
-          <div key={p.id} className="byo-row">
-            <div className="byo-row-head">
-              <span className="byo-row-label">{p.label}</span>
-              {present ? (
-                <Badge tone="success">сохранён</Badge>
-              ) : (
-                <Badge tone="neutral">пусто</Badge>
-              )}
-            </div>
-            <p className="byo-row-hint">{p.hint}</p>
-            <div className="byo-row-controls">
-              <InputField
-                type="password"
-                placeholder={present ? '••••• (введи, чтобы заменить)' : p.placeholder}
-                value={draftValue}
-                onChange={(e) => setDraft(p.id, e.target.value)}
-                autoComplete="off"
-                disabled={isBusy}
-              />
-              <div className="byo-row-actions">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => onSave(p.id)}
-                  disabled={isBusy || !draftValue.trim()}
-                  busy={isBusy}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {PROVIDERS.map((p) => {
+          const present = statuses.get(p.id) ?? false;
+          const draftValue = drafts.get(p.id) ?? '';
+          const isBusy = busy === p.id;
+          return (
+            <div
+              key={p.id}
+              style={{
+                padding: '14px 0',
+                borderBottom: '1px solid var(--line-soft)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  marginBottom: 4,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: 'var(--font-serif)',
+                    fontSize: 17,
+                    color: 'var(--ink)',
+                  }}
                 >
-                  Сохранить
-                </Button>
-                {present && (
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => onDelete(p.id)}
-                    disabled={isBusy}
-                  >
-                    Удалить
-                  </Button>
+                  {p.label}
+                </span>
+                {present ? (
+                  <Badge tone="success">сохранён</Badge>
+                ) : (
+                  <Badge tone="neutral">пусто</Badge>
                 )}
               </div>
+              <p
+                className="muted"
+                style={{ fontSize: 12, margin: '0 0 8px' }}
+              >
+                {p.hint}
+              </p>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <InputField
+                    type="password"
+                    placeholder={
+                      present ? '••••• (введи, чтобы заменить)' : p.placeholder
+                    }
+                    value={draftValue}
+                    onChange={(e) => setDraft(p.id, e.target.value)}
+                    autoComplete="off"
+                    disabled={isBusy}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 6, paddingBottom: 8 }}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => onSave(p.id)}
+                    disabled={isBusy || !draftValue.trim()}
+                    busy={isBusy}
+                  >
+                    Сохранить
+                  </Button>
+                  {present && (
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => onDelete(p.id)}
+                      disabled={isBusy}
+                    >
+                      Удалить
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

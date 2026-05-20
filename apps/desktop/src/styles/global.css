@@ -1,352 +1,151 @@
-/* Global base — reset, body, common layout primitives. */
+/* [B17] Atelier v2 — global base. wotold.css уже устанавливает body,
+ * box-sizing и focus-visible reset. Здесь — селекция, markdown типографика,
+ * topnav drag-region (только Tauri-специфичные хвосты), и macOS traffic
+ * lights padding.
+ */
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-}
-
-body {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-system);
-  font-size: var(--text-base);
-  line-height: var(--leading-normal);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
 }
 
 #root {
   display: flex;
   flex-direction: column;
-  flex: 1;
   min-height: 100vh;
 }
 
-h1,
-h2,
-h3,
-h4 {
-  margin: 0 0 var(--space-3);
-  font-weight: 600;
-  letter-spacing: var(--tracking-tight);
-}
-
-h1 {
-  font-size: var(--text-display);
-}
-
-h2 {
-  font-size: var(--text-xl);
-}
-
-h3 {
-  font-size: var(--text-lg);
-}
-
-p {
-  margin: 0 0 var(--space-3);
-}
-
-a {
-  color: var(--color-accent);
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
-}
-
-code,
-pre {
-  font-family: var(--font-mono);
-}
-
-::selection {
-  background: var(--color-accent-soft);
-  color: var(--color-text);
-}
-
-/* Topnav — chrome above .app.
-   [B16] titleBarStyle: 'Overlay' — traffic lights draw поверх UI.
-   Левый padding 88px зарезервирован для них (3 кружка × 14px + spacing). */
-.topnav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4) var(--space-2) 88px;
-  border-bottom: 1px solid var(--color-border);
-  background: color-mix(in oklch, var(--color-surface) 80%, transparent);
-  backdrop-filter: blur(var(--blur-overlay));
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  /* для drag — see [-webkit-app-region] выставим через tauri data attribute. */
+/* [B16] macOS traffic lights — в Tauri titleBarStyle: 'Overlay' кружки
+ * рисуются поверх окна. Левый padding 88px в .app-rail зарезервирован под
+ * них, плюс drag-region. */
+.app-rail {
+  padding-top: 56px;
   -webkit-app-region: drag;
 }
-
-.topnav button,
-.topnav a,
-.topnav .topnav-tab,
-.topnav .topnav-pipeline-indicator {
+.app-rail button,
+.app-rail a {
   -webkit-app-region: no-drag;
 }
 
-.topnav-brand {
-  font-weight: 600;
-  font-size: var(--text-sm);
-  letter-spacing: 0.01em;
-  color: var(--color-text);
-  user-select: none;
-  padding: 0 var(--space-1);
-}
-
-.topnav-tabs {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.topnav-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  border: 0;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  position: relative;
-  transition: color 120ms var(--ease-out-expo), background 120ms var(--ease-out-expo);
-}
-
-.topnav-tab:hover {
-  color: var(--color-text);
-  background: var(--color-surface-sunken);
-}
-
-.topnav-tab--active {
-  color: var(--color-text);
-  background: var(--color-surface-sunken);
-}
-
-.topnav-tab--active::after {
-  content: "";
-  position: absolute;
-  left: var(--space-2);
-  right: var(--space-2);
-  bottom: -7px;
-  height: 2px;
-  background: var(--color-accent);
-  border-radius: 1px;
-}
-
-.topnav-tab-icon {
-  /* [B16] SVG icon (lucide-react) — фиксированный размер. */
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  opacity: 0.85;
-}
-
-.topnav-tab--active .topnav-tab-icon {
-  opacity: 1;
-}
-
-.topnav-tab-label {
-  font-weight: 500;
-}
-
-.topnav-spacer {
-  flex: 1;
-}
-
-/* [B16] Global pipeline progress indicator в topnav. */
-.topnav-pipeline-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 0.1rem var(--space-2);
-  background: var(--color-surface-sunken);
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-}
-
-.topnav-pipeline-spinner {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-accent);
-  border-right-color: transparent;
-  animation: topnav-pipeline-spin 0.9s linear infinite;
-}
-
-@keyframes topnav-pipeline-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .topnav-pipeline-spinner {
-    animation: none;
-    border-right-color: var(--color-accent);
-  }
-}
-
-.topnav-pipeline-label {
-  white-space: nowrap;
-}
-
-.app {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-7) var(--space-4);
-  width: 100%;
-}
-
-.app > * {
-  width: 100%;
-  max-width: var(--layout-max-wide);
-}
-
-.app--center {
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-}
-
-.text-muted {
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
-
-.text-subtle {
-  color: var(--color-text-subtle);
-  font-size: var(--text-sm);
-}
-
-.text-mono {
-  font-family: var(--font-mono);
-}
-
-.markdown {
-  font-size: var(--text-base);
-  line-height: var(--leading-relaxed);
+/* Markdown — recap и transcript-fallback. Serif first-class. */
+.markdown,
+.markdown p,
+.markdown li {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink);
 }
 
 .markdown h1 {
+  font-family: var(--font-serif);
   font-size: var(--text-2xl);
-  margin: 0 0 var(--space-3);
+  font-weight: 500;
+  margin: 0 0 12px;
+  letter-spacing: var(--tracking-tight);
 }
 
 .markdown h2 {
+  font-family: var(--font-serif);
   font-size: var(--text-lg);
-  margin: var(--space-5) 0 var(--space-2);
+  font-weight: 500;
+  margin: 20px 0 8px;
 }
 
 .markdown h3 {
-  font-size: var(--text-base);
-  margin: var(--space-4) 0 var(--space-2);
+  font-family: var(--font-sans);
+  font-size: 11px;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--muted);
+  margin: 18px 0 8px;
 }
 
 .markdown p {
-  margin: var(--space-2) 0;
+  margin: 10px 0;
 }
 
 .markdown ul,
 .markdown ol {
-  padding-left: var(--space-5);
-  margin: var(--space-2) 0;
+  padding-left: 22px;
+  margin: 10px 0;
 }
 
 .markdown li {
-  margin: var(--space-1) 0;
+  margin: 4px 0;
 }
 
 .markdown code {
   font-family: var(--font-mono);
   font-size: 0.88em;
-  background: var(--color-surface-sunken);
-  padding: 0.08rem var(--space-1);
+  background: var(--bg-2);
+  padding: 0.08rem 4px;
   border-radius: var(--radius-sm);
 }
 
 .markdown pre {
-  background: var(--color-surface-sunken);
-  padding: var(--space-3);
+  font-family: var(--font-mono);
+  background: var(--bg-2);
+  padding: 14px;
   border-radius: var(--radius-md);
   overflow-x: auto;
-  font-size: var(--text-sm);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .markdown strong {
-  font-weight: 600;
+  font-weight: 500;
 }
 
-/* [B16] Responsive breakpoints — узкое окно не должно ломать rows.
-   Min window size = 760×560 (см. tauri.conf), но юзер может уменьшить
-   через accessibility zoom либо мы не на 100% контролируем chrome. */
-@media (max-width: 760px) {
-  .app {
-    padding: var(--space-5) var(--space-2);
-  }
+.markdown em {
+  font-style: italic;
+  color: var(--muted);
+}
 
-  .topnav {
+.markdown a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+}
+
+.markdown a:hover {
+  border-bottom-color: var(--accent);
+}
+
+/* Responsive — Tauri minimum window 760×560. Narrow desktop / split-pane
+ * — сужаем main padding и сворачиваем 4-col grids. */
+@media (max-width: 880px) {
+  .app-rail {
+    width: 168px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .app-main {
+    padding: 24px 22px;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .app-rail {
+    width: 100%;
+    flex-direction: row;
     flex-wrap: wrap;
-    gap: var(--space-2);
+    border-right: none;
+    border-bottom: 1px solid var(--line-soft);
+    padding: 12px 16px;
   }
-
-  .topnav-brand {
-    font-size: var(--text-xs);
-  }
-
-  .topnav-tab-label {
-    display: none; /* Только иконки. */
-  }
-
-  /* CallRow в узком окне — два ряда вместо трёх колонок. */
-  .call-row {
-    grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto;
-  }
-  .call-row .call-meta {
-    grid-column: 1 / -1;
-  }
-
-  /* Topnav убираем underline-after — слишком тонкий шов в wrap-режиме. */
-  .topnav-tab--active::after {
+  .app-rail-foot {
     display: none;
   }
-  .topnav-tab--active {
-    border-bottom: 2px solid var(--color-accent);
+  .app-brand {
+    margin-bottom: 0;
+    margin-right: 14px;
   }
-}
-
-@media (max-width: 560px) {
-  .home-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .home-recent {
-    max-width: 100%;
-  }
-
-  .ds-tabs-list {
-    flex-wrap: wrap;
+  .nav-item--active::before {
+    display: none;
   }
 }

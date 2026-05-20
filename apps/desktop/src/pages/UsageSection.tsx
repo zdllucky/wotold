@@ -55,9 +55,17 @@ export function UsageSection() {
   }, [load]);
 
   return (
-    <Card compact>
-      <div className="settings-row-between">
-        <div className="settings-row" style={{ gap: 'var(--space-2)' }}>
+    <Card>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ display: 'flex', gap: 8 }}>
           {state.kind === 'ready' && (
             <Badge tone="success">tier: {state.data.tier}</Badge>
           )}
@@ -72,28 +80,27 @@ export function UsageSection() {
         </Button>
       </div>
 
-      {state.kind === 'idle' && (
-        <p className="text-muted">Загружаем данные…</p>
-      )}
-
-      {state.kind === 'loading' && (
-        <p className="text-muted">Загружаем данные…</p>
+      {(state.kind === 'idle' || state.kind === 'loading') && (
+        <p className="muted">Загружаем данные…</p>
       )}
 
       {state.kind === 'error' && (
         <div>
-          <p className="text-muted">
+          <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
             Не удалось получить данные использования. Это нормально если ты
             offline или прокси не настроен.
           </p>
-          <p className="text-subtle text-mono" style={{ fontSize: 'var(--text-xs)' }}>
+          <p
+            className="subtle mono"
+            style={{ fontSize: 11, margin: 0, wordBreak: 'break-all' }}
+          >
             {state.message}
           </p>
         </div>
       )}
 
       {state.kind === 'ready' && (
-        <>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <UsageBar
             label="STT (распознавание речи)"
             used={state.data.sttSecondsUsed}
@@ -106,10 +113,10 @@ export function UsageSection() {
             limit={state.data.llmTokensLimit}
             format={(v) => `${v.toLocaleString('ru-RU')} токенов`}
           />
-          <p className="text-subtle" style={{ fontSize: 'var(--text-xs)' }}>
+          <p className="subtle" style={{ fontSize: 12, margin: 0 }}>
             Сброс счётчиков: {formatResetAt(state.data.periodResetAt)}
           </p>
-        </>
+        </div>
       )}
     </Card>
   );

@@ -1,4 +1,8 @@
-import { useState } from 'react';
+// [B17] Atelier v2 — dev-only showcase page для всех токенов и компонентов.
+// Inline-styles вместо отдельных DS-классов: каждая секция использует
+// только токены из styles/tokens.css.
+
+import { useState, type CSSProperties } from 'react';
 
 import {
   Badge,
@@ -11,12 +15,9 @@ import {
   StatusDot,
   Tabs,
   TextareaField,
-  Toolbar,
   UsageBar,
 } from '../ui';
 
-// [B17] Atelier v2 token set (см. apps/desktop/src/styles/tokens.css).
-// Legacy --color-* токены доступны через legacy-tokens.css shim до полной миграции.
 const COLOR_TOKENS = [
   'bg',
   'bg-2',
@@ -54,10 +55,21 @@ const TYPE_TOKENS: Array<{ name: string; sample: string }> = [
   { name: 'text-xl', sample: 'The quick brown fox' },
   { name: 'text-2xl', sample: 'The quick brown fox' },
   { name: 'text-display', sample: 'Display' },
+  { name: 'text-hero', sample: 'Hero' },
 ];
 
-const SPACING_TOKENS = ['space-1', 'space-2', 'space-3', 'space-4', 'space-5', 'space-6', 'space-7', 'space-8'];
-const RADIUS_TOKENS = ['radius-sm', 'radius-md', 'radius-lg', 'radius-pill'];
+const SPACING_TOKENS = [
+  'space-1',
+  'space-2',
+  'space-3',
+  'space-4',
+  'space-5',
+  'space-6',
+  'space-7',
+  'space-8',
+  'space-9',
+];
+const RADIUS_TOKENS = ['radius-sm', 'radius-md', 'radius-lg', 'radius-xl', 'radius-pill'];
 const TONES: Array<'neutral' | 'accent' | 'success' | 'warning' | 'danger'> = [
   'neutral',
   'accent',
@@ -65,6 +77,33 @@ const TONES: Array<'neutral' | 'accent' | 'success' | 'warning' | 'danger'> = [
   'warning',
   'danger',
 ];
+
+const SECTION_HEADING: CSSProperties = {
+  fontFamily: 'var(--font-serif)',
+  fontSize: 22,
+  fontWeight: 500,
+  marginBottom: 14,
+  marginTop: 32,
+  color: 'var(--ink)',
+};
+const ROW: CSSProperties = {
+  display: 'flex',
+  gap: 12,
+  flexWrap: 'wrap',
+  alignItems: 'center',
+};
+const GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+  gap: 14,
+};
+const SWATCH_LABEL: CSSProperties = {
+  fontFamily: 'var(--font-mono)',
+  fontSize: 11,
+  color: 'var(--muted)',
+  marginTop: 6,
+  display: 'block',
+};
 
 function initialDsTab(): 'tokens' | 'components' | 'forms' {
   if (typeof window === 'undefined') return 'tokens';
@@ -78,14 +117,33 @@ export function DesignSystemPage() {
   const [tab, setTab] = useState<'tokens' | 'components' | 'forms'>(initialDsTab);
 
   return (
-    <section className="ds-showcase">
-      <Toolbar
-        title="Design system"
-        actions={<Badge tone="warning">dev only</Badge>}
-      />
-      <p className="text-muted">
-        Эталон для всех экранов. Не хватает компонента или токена — расширяем DS, а не лепим
-        inline. Production-сборка скрывает этот таб.
+    <section>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: 16,
+          marginBottom: 28,
+          flexWrap: 'wrap',
+        }}
+      >
+        <h1 className="title" style={{ fontSize: 36, margin: 0 }}>
+          Design system
+        </h1>
+        <Badge tone="warning">dev only</Badge>
+      </div>
+      <p
+        className="muted"
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 15,
+          maxWidth: 540,
+          marginBottom: 18,
+        }}
+      >
+        Эталон для всех экранов. Не хватает компонента или токена — расширяем DS,
+        а не лепим inline. Production-сборка скрывает этот таб.
       </p>
 
       <Tabs value={tab} onChange={(v) => setTab(v as typeof tab)}>
@@ -111,229 +169,288 @@ export function DesignSystemPage() {
 
 function TokensPanel() {
   return (
-    <div className="ds-showcase-section">
-      <div>
-        <h3>Цвет</h3>
-        <div className="ds-swatches">
-          {COLOR_TOKENS.map((t) => (
-            <div className="ds-swatch" key={t}>
-              <div
-                className="ds-swatch-chip"
-                style={{ background: `var(--${t})` }}
-                title={t}
-              />
-              <span className="ds-swatch-label">--{t}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h3>Типографика</h3>
-        {TYPE_TOKENS.map((t) => (
-          <div className="ds-type-row" key={t.name}>
-            <code>--{t.name}</code>
-            <span style={{ fontSize: `var(--${t.name})` }}>{t.sample}</span>
+    <div>
+      <h3 style={SECTION_HEADING}>Цвет</h3>
+      <div style={GRID}>
+        {COLOR_TOKENS.map((t) => (
+          <div
+            key={t}
+            style={{ display: 'flex', flexDirection: 'column' }}
+          >
+            <div
+              style={{
+                width: '100%',
+                height: 48,
+                borderRadius: 'var(--radius-md)',
+                background: `var(--${t})`,
+                border: '1px solid var(--line)',
+              }}
+              title={t}
+            />
+            <span style={SWATCH_LABEL}>--{t}</span>
           </div>
         ))}
       </div>
 
-      <div>
-        <h3>Spacing</h3>
-        {SPACING_TOKENS.map((t) => (
-          <div className="ds-spacing-row" key={t}>
-            <code>--{t}</code>
-            <div className="ds-spacing-bar" style={{ width: `var(--${t})` }} />
+      <h3 style={SECTION_HEADING}>Типографика</h3>
+      {TYPE_TOKENS.map((t) => (
+        <div
+          key={t.name}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '140px 1fr',
+            gap: 16,
+            padding: '8px 0',
+            borderBottom: '1px solid var(--line-soft)',
+            alignItems: 'baseline',
+          }}
+        >
+          <code
+            className="mono"
+            style={{ fontSize: 11, color: 'var(--muted)' }}
+          >
+            --{t.name}
+          </code>
+          <span
+            style={{
+              fontSize: `var(--${t.name})`,
+              fontFamily: 'var(--font-serif)',
+              color: 'var(--ink)',
+            }}
+          >
+            {t.sample}
+          </span>
+        </div>
+      ))}
+
+      <h3 style={SECTION_HEADING}>Spacing</h3>
+      {SPACING_TOKENS.map((t) => (
+        <div
+          key={t}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '140px 1fr',
+            gap: 16,
+            padding: '6px 0',
+            alignItems: 'center',
+          }}
+        >
+          <code
+            className="mono"
+            style={{ fontSize: 11, color: 'var(--muted)' }}
+          >
+            --{t}
+          </code>
+          <div
+            style={{
+              height: 16,
+              background: 'var(--accent-soft)',
+              width: `var(--${t})`,
+              borderRadius: 'var(--radius-sm)',
+            }}
+          />
+        </div>
+      ))}
+
+      <h3 style={SECTION_HEADING}>Radius</h3>
+      <div style={ROW}>
+        {RADIUS_TOKENS.map((t) => (
+          <div
+            key={t}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+          >
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                background: 'var(--accent-soft)',
+                borderRadius: `var(--${t})`,
+                border: '1px solid var(--line)',
+              }}
+            />
+            <span style={SWATCH_LABEL}>--{t}</span>
           </div>
         ))}
       </div>
 
-      <div>
-        <h3>Radius</h3>
-        <div className="ds-row">
-          {RADIUS_TOKENS.map((t) => (
-            <div className="ds-swatch" key={t}>
-              <div
-                className="ds-swatch-chip"
-                style={{
-                  background: 'var(--color-accent-soft)',
-                  borderRadius: `var(--${t})`,
-                  width: '4rem',
-                  height: '4rem',
-                }}
-              />
-              <span className="ds-swatch-label">--{t}</span>
-            </div>
-          ))}
-        </div>
+      <h3 style={SECTION_HEADING}>Elevation</h3>
+      <div style={ROW}>
+        {[1, 2, 3].map((n) => (
+          <div
+            key={n}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+          >
+            <div
+              style={{
+                width: 96,
+                height: 64,
+                background: 'var(--surface)',
+                boxShadow: `var(--shadow-${n})`,
+                borderRadius: 'var(--radius-md)',
+              }}
+            />
+            <span style={SWATCH_LABEL}>--shadow-{n}</span>
+          </div>
+        ))}
       </div>
 
-      <div>
-        <h3>Elevation</h3>
-        <div className="ds-row">
-          {[1, 2, 3].map((n) => (
-            <div className="ds-swatch" key={n}>
-              <div
-                className="ds-swatch-chip"
-                style={{
-                  width: '6rem',
-                  height: '4rem',
-                  background: 'var(--color-surface)',
-                  boxShadow: `var(--shadow-${n})`,
-                  border: 'none',
-                }}
-              />
-              <span className="ds-swatch-label">--shadow-{n}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h3>Motion</h3>
-        <p className="text-muted">
-          <code>--duration-fast</code> = 120ms · <code>--duration-normal</code> = 220ms ·{' '}
-          <code>--ease-out-expo</code>
-        </p>
-      </div>
+      <h3 style={SECTION_HEADING}>Motion</h3>
+      <p className="muted" style={{ fontFamily: 'var(--font-serif)', fontSize: 15 }}>
+        <code className="mono">--duration-fast</code> = 120ms ·{' '}
+        <code className="mono">--duration-normal</code> = 220ms ·{' '}
+        <code className="mono">--duration-slow</code> = 360ms ·{' '}
+        <code className="mono">--ease-out-expo</code> /{' '}
+        <code className="mono">--ease-out-quart</code>
+      </p>
     </div>
   );
 }
 
 function ComponentsPanel() {
   return (
-    <div className="ds-showcase-section">
-      <div>
-        <h3>Button — варианты</h3>
-        <div className="ds-row">
-          <Button variant="primary">Primary</Button>
-          <Button variant="secondary">Secondary</Button>
-          <Button variant="ghost">Ghost</Button>
-          <Button variant="danger">Danger</Button>
-          <Button variant="record" pill leading={<StatusDot tone="neutral" />}>
-            Record
-          </Button>
-        </div>
+    <div>
+      <h3 style={SECTION_HEADING}>Button — варианты</h3>
+      <div style={ROW}>
+        <Button variant="primary">Primary</Button>
+        <Button variant="secondary">Secondary</Button>
+        <Button variant="ghost">Ghost</Button>
+        <Button variant="danger">Danger</Button>
+        <button className="rec-btn rec-btn--sm" aria-label="Record" />
       </div>
 
-      <div>
-        <h3>Button — размеры</h3>
-        <div className="ds-row">
-          <Button size="sm">Small</Button>
-          <Button size="md">Medium</Button>
-          <Button size="lg">Large</Button>
-        </div>
+      <h3 style={SECTION_HEADING}>Button — размеры</h3>
+      <div style={ROW}>
+        <Button size="sm">Small</Button>
+        <Button size="md">Medium</Button>
+        <Button size="lg">Large</Button>
       </div>
 
-      <div>
-        <h3>Button — состояния</h3>
-        <div className="ds-row">
-          <Button variant="primary">Default</Button>
-          <Button variant="primary" disabled>
-            Disabled
-          </Button>
-          <Button variant="primary" busy>
-            Busy
-          </Button>
-        </div>
+      <h3 style={SECTION_HEADING}>Button — состояния</h3>
+      <div style={ROW}>
+        <Button variant="primary">Default</Button>
+        <Button variant="primary" disabled>
+          Disabled
+        </Button>
+        <Button variant="primary" busy>
+          Busy
+        </Button>
       </div>
 
-      <div>
-        <h3>Badge / Pill / StatusDot</h3>
-        <div className="ds-row">
-          {TONES.map((t) => (
-            <Badge tone={t} key={`b-${t}`}>
-              {t}
-            </Badge>
-          ))}
-        </div>
-        <div className="ds-row">
-          {TONES.map((t) => (
-            <Pill tone={t} key={`p-${t}`}>
-              {t}
-            </Pill>
-          ))}
-        </div>
-        <div className="ds-row">
-          {TONES.map((t) => (
-            <span key={`s-${t}`} style={{ display: 'inline-flex', gap: 'var(--space-1)', alignItems: 'center' }}>
-              <StatusDot tone={t} />
-              {t}
-            </span>
-          ))}
-          <span style={{ display: 'inline-flex', gap: 'var(--space-1)', alignItems: 'center' }}>
-            <StatusDot tone="danger" pulse />
-            pulse
+      <h3 style={SECTION_HEADING}>Badge / Pill / StatusDot</h3>
+      <div style={ROW}>
+        {TONES.map((t) => (
+          <Badge tone={t} key={`b-${t}`}>
+            {t}
+          </Badge>
+        ))}
+      </div>
+      <div style={{ ...ROW, marginTop: 10 }}>
+        {TONES.map((t) => (
+          <Pill tone={t} key={`p-${t}`}>
+            {t}
+          </Pill>
+        ))}
+      </div>
+      <div style={{ ...ROW, marginTop: 10 }}>
+        {TONES.map((t) => (
+          <span
+            key={`s-${t}`}
+            style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
+          >
+            <StatusDot tone={t} />
+            <span style={{ fontSize: 13 }}>{t}</span>
           </span>
-        </div>
+        ))}
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <StatusDot tone="danger" pulse />
+          <span style={{ fontSize: 13 }}>pulse</span>
+        </span>
       </div>
 
-      <div>
-        <h3>Card</h3>
-        <div className="ds-grid">
-          <Card>
-            <Card.Header>
-              <Card.Title>Default</Card.Title>
-              <Badge tone="neutral">label</Badge>
-            </Card.Header>
-            <p className="text-muted">Базовая карточка с границей и фоном.</p>
-          </Card>
-          <Card variant="sunken">
-            <Card.Title>Sunken</Card.Title>
-            <p className="text-muted">Утопленная — для секций внутри settings.</p>
-          </Card>
-          <Card variant="raised">
-            <Card.Title>Raised</Card.Title>
-            <p className="text-muted">Тень — overlay, prompts.</p>
-          </Card>
-        </div>
+      <h3 style={SECTION_HEADING}>Speaker chips</h3>
+      <div style={ROW}>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <span className="sp" key={i}>
+            <span
+              className="sp-avatar"
+              style={{ background: `var(--sp-${i})` }}
+            >
+              S{i}
+            </span>
+            Спикер {i}
+          </span>
+        ))}
       </div>
 
-      <div>
-        <h3>Empty state</h3>
+      <h3 style={SECTION_HEADING}>Card</h3>
+      <div style={GRID}>
         <Card>
-          <Empty
-            icon="∅"
-            title="Ничего нет"
-            description="Здесь появится список, когда что-нибудь добавишь."
-            action={
-              <Button variant="primary" size="sm">
-                Добавить
-              </Button>
-            }
-          />
+          <Card.Header>
+            <Card.Title>Default</Card.Title>
+            <Badge tone="neutral">label</Badge>
+          </Card.Header>
+          <p className="muted" style={{ margin: '8px 0 0', fontSize: 14 }}>
+            Базовая карточка с границей и фоном.
+          </p>
+        </Card>
+        <Card variant="sunken">
+          <Card.Title>Sunken</Card.Title>
+          <p className="muted" style={{ margin: '8px 0 0', fontSize: 14 }}>
+            Утопленная — для секций внутри settings.
+          </p>
+        </Card>
+        <Card variant="raised">
+          <Card.Title>Raised</Card.Title>
+          <p className="muted" style={{ margin: '8px 0 0', fontSize: 14 }}>
+            Тень — overlay, prompts.
+          </p>
         </Card>
       </div>
 
-      <div>
-        <h3>Toolbar</h3>
-        <Card>
-          <Toolbar
-            title="Заголовок"
-            actions={
-              <>
-                <Button size="sm" variant="ghost">
-                  Действие
-                </Button>
-                <Button size="sm" variant="primary">
-                  Primary
-                </Button>
-              </>
-            }
-          />
-        </Card>
+      <h3 style={SECTION_HEADING}>Confidence bar</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 320 }}>
+        {[0.3, 0.6, 0.85, 0.99].map((p) => (
+          <div key={p}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: 4,
+              }}
+            >
+              <span className="small-caps">Уверенность</span>
+              <span className="mono" style={{ fontSize: 12 }}>
+                {Math.round(p * 100)}%
+              </span>
+            </div>
+            <div className="conf">
+              <div className="conf-fill" style={{ width: `${p * 100}%` }} />
+            </div>
+          </div>
+        ))}
       </div>
 
-      <div>
-        <h3>Tabs</h3>
-        <Card>
-          <TabsExample />
-        </Card>
-      </div>
+      <h3 style={SECTION_HEADING}>Empty state</h3>
+      <Card>
+        <Empty
+          title="Ничего нет"
+          description="Здесь появится список, когда что-нибудь добавишь."
+          action={
+            <Button variant="primary" size="sm">
+              Добавить
+            </Button>
+          }
+        />
+      </Card>
 
-      <div>
-        <h3>UsageBar</h3>
-        <Card compact>
+      <h3 style={SECTION_HEADING}>Tabs</h3>
+      <Card>
+        <TabsExample />
+      </Card>
+
+      <h3 style={SECTION_HEADING}>UsageBar</h3>
+      <Card>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <UsageBar label="STT секунды (ok)" used={500} limit={3600} />
           <UsageBar label="STT секунды (warning)" used={2800} limit={3600} />
           <UsageBar label="STT секунды (danger)" used={3500} limit={3600} />
@@ -344,8 +461,8 @@ function ComponentsPanel() {
             limit={3600}
             format={(v) => `${v}s`}
           />
-        </Card>
-      </div>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -367,13 +484,13 @@ function TabsExample() {
         </Tabs.Trigger>
       </Tabs.List>
       <Tabs.Panel value="one">
-        <p>Контент первой вкладки.</p>
+        <p style={{ fontFamily: 'var(--font-serif)' }}>Контент первой вкладки.</p>
       </Tabs.Panel>
       <Tabs.Panel value="two">
-        <p>Вторая.</p>
+        <p style={{ fontFamily: 'var(--font-serif)' }}>Вторая.</p>
       </Tabs.Panel>
       <Tabs.Panel value="three">
-        <p>Третья.</p>
+        <p style={{ fontFamily: 'var(--font-serif)' }}>Третья.</p>
       </Tabs.Panel>
     </Tabs>
   );
@@ -385,38 +502,36 @@ function FormsPanel() {
   const [area, setArea] = useState('');
 
   return (
-    <div className="ds-showcase-section">
+    <div>
       <Card>
         <Card.Title>Field-компоненты</Card.Title>
-        <InputField
-          label="Текстовое поле"
-          hint="С подсказкой под полем."
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Введи что-нибудь"
-        />
-        <InputField
-          label="С ошибкой"
-          error="Поле обязательное."
-          defaultValue=""
-        />
-        <InputField label="Disabled" disabled defaultValue="нельзя" />
-        <SelectField
-          label="Select"
-          value={select}
-          onChange={(e) => setSelect(e.target.value)}
-        >
-          <option value="a">Вариант A</option>
-          <option value="b">Вариант B</option>
-          <option value="c">Вариант C</option>
-        </SelectField>
-        <TextareaField
-          label="Textarea"
-          value={area}
-          onChange={(e) => setArea(e.target.value)}
-          rows={3}
-          placeholder="Многострочный ввод"
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <InputField
+            label="Текстовое поле"
+            hint="С подсказкой под полем."
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Введи что-нибудь"
+          />
+          <InputField label="С ошибкой" error="Поле обязательное." defaultValue="" />
+          <InputField label="Disabled" disabled defaultValue="нельзя" />
+          <SelectField
+            label="Select"
+            value={select}
+            onChange={(e) => setSelect(e.target.value)}
+          >
+            <option value="a">Вариант A</option>
+            <option value="b">Вариант B</option>
+            <option value="c">Вариант C</option>
+          </SelectField>
+          <TextareaField
+            label="Textarea"
+            value={area}
+            onChange={(e) => setArea(e.target.value)}
+            rows={3}
+            placeholder="Многострочный ввод"
+          />
+        </div>
       </Card>
     </div>
   );

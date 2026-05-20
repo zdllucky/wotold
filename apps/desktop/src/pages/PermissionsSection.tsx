@@ -71,21 +71,69 @@ export function PermissionsSection() {
   };
 
   return (
-    <div className="perms">
-      {error && <p className="error">{error}</p>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {error && (
+        <p
+          style={{
+            color: 'var(--signal)',
+            fontFamily: 'var(--font-sans)',
+            marginBottom: 0,
+          }}
+        >
+          {error}
+        </p>
+      )}
       {ROWS.map((row) => {
         const current: PermissionStatus = status?.[row.target] ?? 'unknown';
         const isBusy = busy === row.target;
         return (
-          <div key={row.target} className="perm-row">
-            <div className="perm-info">
-              <div className="perm-head">
-                <span className="perm-label">{row.label}</span>
+          <div
+            key={row.target}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr auto',
+              gap: 16,
+              padding: '14px 0',
+              borderBottom: '1px solid var(--line-soft)',
+              alignItems: 'start',
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'baseline',
+                  flexWrap: 'wrap',
+                  marginBottom: 4,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: 'var(--font-serif)',
+                    fontSize: 16,
+                    color: 'var(--ink)',
+                  }}
+                >
+                  {row.label}
+                </span>
                 <PermBadge status={current} />
               </div>
-              <p className="perm-desc">{row.description}</p>
+              <p
+                className="muted"
+                style={{ fontSize: 13, margin: 0, lineHeight: 1.45 }}
+              >
+                {row.description}
+              </p>
             </div>
-            <div className="perm-actions">
+            <div
+              style={{
+                display: 'flex',
+                gap: 6,
+                alignItems: 'center',
+                flexWrap: 'wrap',
+              }}
+            >
               <Button
                 size="sm"
                 variant="secondary"
@@ -104,7 +152,7 @@ export function PermissionsSection() {
                   disabled={isBusy}
                   title="Открыть System Settings → Privacy & Security"
                 >
-                  Открыть Настройки
+                  Настройки
                 </Button>
               )}
               <Button

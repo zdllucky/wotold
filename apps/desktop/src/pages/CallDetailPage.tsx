@@ -155,9 +155,14 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     }
   };
 
-  if (loading) return <p className="hint">Загрузка…</p>;
-  if (error) return <p className="error">{error}</p>;
-  if (!call) return <p className="hint">Звонок не найден.</p>;
+  if (loading) return <p className="muted">Загрузка…</p>;
+  if (error)
+    return (
+      <p style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+        {error}
+      </p>
+    );
+  if (!call) return <p className="muted">Звонок не найден.</p>;
 
   return (
     <section>
@@ -327,14 +332,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
   if (!md) return <Empty description={emptyHint} />;
   return (
-    <div
-      style={{
-        fontFamily: 'var(--font-serif)',
-        fontSize: 17,
-        lineHeight: 1.6,
-        color: 'var(--ink)',
-      }}
-    >
+    <div className="markdown">
       <ReactMarkdown>{md}</ReactMarkdown>
     </div>
   );
