@@ -295,11 +295,11 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
           onChange={(e) => setConsentVoice(e.target.checked)}
         />
         <span className="consent-row-text">
-          <strong>Накапливать голосовой профиль</strong>
+          <strong>Запоминать голос для авто-определения</strong>
           <span className="consent-row-hint">
-            При подтверждении спикера в звонке embedding добавляется в voice_samples
-            этого контакта (M3.6). Снять — отключить биометрический tracking даже
-            после ручного confirm.
+            При подтверждении этого человека в звонке Wotold сохранит
+            короткий образец голоса — чтобы в будущем определять его
+            автоматически. Сними галку, чтобы отключить.
           </span>
         </span>
       </label>

@@ -152,7 +152,7 @@ export function SettingsPage() {
       </div>
 
       <div className="settings-section">
-        <h3 className="settings-section-title">Доставка партнёрских вызовов</h3>
+        <h3 className="settings-section-title">Как пользуемся сервисами распознавания</h3>
         <Card compact>
           <label className="radio-row">
             <input
@@ -166,10 +166,10 @@ export function SettingsPage() {
               }}
             />
             <span className="radio-row-text">
-              <strong>Managed</strong>
+              <strong>Через Wotold</strong>
               <span className="radio-row-hint">
-                Out-of-the-box: запросы идут через прокси Wotold с квотой Free-тира.
-                Свой ключ не нужен.
+                По умолчанию. Все запросы идут через серверы Wotold —
+                свои API-ключи не нужны. Есть бесплатные лимиты.
               </span>
             </span>
           </label>
@@ -185,9 +185,10 @@ export function SettingsPage() {
               }}
             />
             <span className="radio-row-text">
-              <strong>BYO</strong>
+              <strong>Свои API-ключи</strong>
               <span className="radio-row-hint">
-                Свои ключи Soniox/Gladia/Anthropic. Хранятся в системном Keychain.
+                Подключи свои ключи Soniox/Gladia/Anthropic — Wotold пойдёт
+                напрямую без посредника. Ключи хранятся в Keychain macOS.
               </span>
             </span>
           </label>
@@ -241,7 +242,7 @@ export function SettingsPage() {
       {/* BYO: показываем ключи только при выборе BYO. В managed-режиме они не нужны. */}
       {providerPath === 'byo' && (
         <div className="settings-section">
-          <h3 className="settings-section-title">BYO API ключи</h3>
+          <h3 className="settings-section-title">Свои API-ключи</h3>
           <Card compact>
             <ByoKeysSection />
           </Card>
@@ -249,7 +250,7 @@ export function SettingsPage() {
       )}
 
       <div className="settings-section">
-        <h3 className="settings-section-title">Аккаунт (SSO)</h3>
+        <h3 className="settings-section-title">Аккаунт</h3>
         <AccountSection />
       </div>
 
@@ -257,7 +258,7 @@ export function SettingsPage() {
           в BYO пользователь платит партнёрам напрямую, наша квота не действует. */}
       {providerPath === 'managed' && (
         <div className="settings-section">
-          <h3 className="settings-section-title">Использование (managed-квота)</h3>
+          <h3 className="settings-section-title">Использование</h3>
           <UsageSection />
         </div>
       )}

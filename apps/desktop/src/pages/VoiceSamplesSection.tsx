@@ -90,8 +90,8 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
       {error && <p className="error">{error}</p>}
       {empty ? (
         <Empty
-          title="Семплов пока нет"
-          description="Embedding'и накапливаются после подтверждения спикера в звонке (M3.6). Требует consent_voice = true."
+          title="Образцов голоса пока нет"
+          description="Подтверди этого человека в любом звонке — Wotold начнёт сохранять короткие образцы голоса для авто-определения в будущем. Требует включённой опции «Запоминать голос»."
         />
       ) : (
         <ul className="voice-sample-list">

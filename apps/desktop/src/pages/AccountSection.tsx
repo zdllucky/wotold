@@ -163,8 +163,8 @@ export function AccountSection() {
   return (
     <div className="account-section">
       <p className="account-section-hint">
-        M10.3: аккаунт в MVP ничего не разблокирует — это задел под облачную
-        синхронизацию (DEFERRED). Локальный режим работает без логина.
+        Облачная синхронизация скоро. Сейчас вход в аккаунт ничего не разблокирует —
+        Wotold полностью работает локально без логина.
       </p>
       {error && <p className="error">{error}</p>}
 
@@ -307,7 +307,7 @@ function SignedOutView({
             {p.label}
             {p.disabled && (
               <Badge tone="neutral" style={{ marginLeft: '0.4rem' }}>
-                X4 deferred
+                скоро
               </Badge>
             )}
           </Button>
