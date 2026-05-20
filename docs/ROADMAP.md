@@ -95,7 +95,7 @@
 ## Constraints · Этап 10 / раздел 9
 
 - [x] **#39** C1 Recording consent dialog — HomePage показывает Card с предупреждением (статьи РФ/РК о тайне коммуникаций) перед первой записью. consent timestamp в `settings.recording_consent_at` — повторно не показываем.
-- [ ] **#40** C2 Biometric opt-in per contact (флаг «накапливать голосовой профиль») → #32
+- [x] **#40** C2 Biometric opt-in per contact — checkbox «Накапливать голосовой профиль» в ContactForm, хранится как `attributes.consent_voice='true'` (без миграции). Matching pipeline (#25/#26) обязан проверять этот флаг перед записью в voice_samples.
 - [x] **#41** C5 Cascade delete — `db::delete_call_and_samples` (voice_samples + CASCADE FK на action_items/call_speakers), Tauri `delete_call` команда удаляет также audio dir `calls/<id>/`. UI: красная кнопка «Удалить» в CallDetailPage с native confirm dialog.
 
 > C3 (локальность семплов) и C4 (прокси не логирует контент) — отрицательные инварианты, реализуются как тесты/аудит поверх существующих модулей, не отдельные таски.
