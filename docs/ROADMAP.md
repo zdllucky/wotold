@@ -189,6 +189,146 @@
   - При записи на HomePage: показывать meter вместо/рядом с pulse-dot. При остановке — fade out.
   - Acceptance: говорим в микрофон — mic-meter растёт. Включаем YouTube/Zoom — system-meter растёт. Меняем громкость — meter реагирует в реальном времени.
 
+## Production Readiness (B16)
+
+> **Контекст**: после прохождения MVP-фич — 4 параллельных аудита (UX/CX, Visual/Design, Logic/Code Quality, Build/Deploy/Security) нашли ~260 пунктов разной серьёзности для перехода PoC → consumer-ready. Здесь — сводка с приоритетами. Items закрываются батчами; статус фиксируется галочкой ☑. **P0** = блокер для shipping / data loss / security. **P1** = serious UX / maintenance burden. **P2** = polish.
+
+### Security & Build (10 P0)
+
+- [x] **CSP strict** на webview (`tauri.conf.json` security.csp) — был null, теперь allowlist для self+proxy+R2+Google OAuth. Закрывает XSS escalation через markdown rendering.
+- [x] **bundle.macOS.minimumSystemVersion '14.0'** + category productivity + Info.plist с NSMicrophoneUsageDescription + NSScreenCaptureUsageDescription. Без screen-cap string ScreenCaptureKit silently denies на macOS 14+.
+- [x] **bundle.targets ['app','dmg','updater']** — больше не строим Windows/Linux artifacts случайно.
+- [x] **R2 presign contentType allowlist** (`services/proxy/src/routes/stt.ts`) — 12 audio mime типов, reject text/html для phishing-hosting.
+- [ ] **Tauri minisign pubkey** в `tauri.conf.json:52` placeholder. До первого публичного релиза — сгенерировать через `pnpm tauri signer generate`, public в config, private+password в GH Secret. Без этого updater не работает.
+- [ ] **Ad-hoc codesign в release-app.yml** — `codesign --force --deep --sign - Wotold.app` перед DMG. Без этого macOS 14+ quarantine → «damaged, move to trash» вместо «Open anyway». R6 deferred нотаризацию, но ad-hoc даст рабочий UX.
+- [ ] **Universal binary вместо двух DMG** — `--target universal-apple-darwin` (Tauri supports). Сейчас macos-13 x86_64 + macos-14 aarch64 матрица → юзеры путают какой DMG скачать.
+- [ ] **Quota race fix** — `services/proxy/src/middleware/rate-limit.ts` read-then-write без CAS. Парные concurrent /v1/stt дают double-spend. Pre-reserve placeholder или secondary IP-rate-limit (cf-connecting-ip).
+- [ ] **Pipeline JoinHandle leak** — `commands.rs:255-267` spawn без хранения handle. Если приложение exit — pipeline aborted, `calls.status='processing'` навсегда (до sweep). Хранить handles в AppState keyed by call_id.
+- [ ] **SQLite integrity_check + backup** — `db/mod.rs::init` запускает `PRAGMA integrity_check`. При corrupt → rename `app.db.corrupt-{ts}` + restart fresh с modal. Plus nightly `VACUUM INTO app.db.backup`.
+
+### Security & Build (P1)
+
+- [ ] **shell:allow-open** в capabilities — `https://accounts.google.com/**` слишком широкий, заузить до `/o/oauth2/**`.
+- [ ] **OIDC ID token signature verification** — `auth/providers.ts:119-149` принимает любой JWT без проверки подписи. Проверить `aud`/`iss` минимум + опционально JWKS verify.
+- [ ] **consumeState CAS race** — `auth/storage.ts:121-126` read-then-delete не атомарен. Двое одновременно используют тот же state — оба проходят.
+- [ ] **CORS для /v1/auth/me** — сейчас `origin:*` + cookie auth. Малиозный сайт может прочитать сессию. Restrict origin до `tauri://localhost`, `http://tauri.localhost`, или вообще убрать cookie auth, оставить только Bearer.
+- [ ] **device-id spoof + IP rate-limit** — UUID regex недостаточно. HMAC-bind device-id с server-side secret при первом контакте + cf-connecting-ip rate-limit /16.
+- [ ] **panic hook** — `std::panic::set_hook` пишет `app_data_dir/panic.log` с timestamp + backtrace. Сейчас panic = silent process kill.
+- [ ] **single-instance plugin** — `tauri-plugin-single-instance` чтобы 2 запуска не плодили race на SQLite WAL + recording mutex.
+- [ ] **log rotation** — `tauri_plugin_log` без cap → может накопить 50MB. `max_file_size(5MB).rotation(KeepOne)`.
+- [ ] **Apple/Linux build guard** — `tauri.conf.json` уже ограничен, но добавить `#[cfg(target_os="linux")] compile_error!` в audio/mod.rs.
+- [ ] **README user-facing** — переписать или добавить INSTALL.md секцию для конечного пользователя (5 шагов: скачать → открыть → разрешить → онбординг → запись).
+- [ ] **Privacy Policy + ToS** — `docs/PRIVACY.md` минимум, ссылка из Onboarding step 1. GDPR Art. 13 обязательно для audio-recording app.
+- [ ] **Delete-all-data button** — Settings → Confidentiality → wipe `app.db` + `calls/` + keychain + restart onboarding. GDPR Art. 17.
+
+### UX / CX (10 P0)
+
+- [x] **Internal-jargon leak фикс** (R2/M3.6/M10/B11/X4/embedding/voice_samples/BYO/Managed/SSO/provider_path) — 15+ мест в SettingsPage/AccountSection/SpeakersSection/VoiceSamplesSection/ContactsPage/CallDetailPage переписаны на человеческий русский.
+- [x] **Post-Stop Open CTA на HomePage** — было `✓ Звонок сохранён: id8…`; стало success-card с большой кнопкой «Открыть» → навигация в CallDetailPage. Закрывает разорванный CJM «запись → стоп → видеть результат».
+- [x] **Skeleton loaders** — DS Skeleton + CallRowSkeleton, заменяет голый `<p>Загрузка…</p>` на shimmer-rows на CallsPage. Применить также на CallDetailPage / SettingsPage / ContactsPage.
+- [x] **Tab labels human-readable**: «Рекап» → «Саммари», «Спикеры» → «Участники», «Action items» → «Задачи»
+- [ ] **Onboarding step Permissions** — добавить между шагами 1 и 2 step «Разрешения» с embed PermissionsSection. Сейчас юзер увидит macOS prompt без контекста при первой записи.
+- [ ] **Onboarding step Consent** — перенести consent-card из HomePage в onboarding step 3. Сейчас появляется after «Начать запись» — психологически зажал кнопку.
+- [ ] **HomePage hero** — заменить `<h1>Wotold</h1> + device:id` на info-cards: «Последний звонок», «Сегодня», 3 recent calls preview. Сейчас main screen = diag.
+- [ ] **Audio player на CallDetailPage** — `<audio>` + waveform + timecode-sync с транскриптом. Для call-recording app это критическое.
+- [ ] **Error mapper** — `src/api/errors.ts` central translation Tauri error strings → human-readable. Заменить `setError(String(e))` везде.
+- [ ] **CallsPage group-by-date** — sticky headers «Сегодня / Вчера / На неделе / Май 2026». На 100+ звонках сейчас стена.
+- [ ] **CallsPage virtualization (react-window)** — при 1000+ звонках UI повиснет.
+
+### UX / CX (P1)
+
+- [ ] **Settings auto-name из NSFullUserName** в onboarding (default «Я» + edit).
+- [ ] **Hotkey ⌘⇧R для start/stop** записи.
+- [ ] **Pre-check permissions** перед start_recording — блокировать кнопку с tooltip.
+- [ ] **CallDetailPage auto-name** для звонка без title (например «{first speaker name} · {date}»).
+- [ ] **Failed banner с CTA** — кнопка «Попробовать снова» прямо внутри (сейчас reprocess отдельной кнопкой).
+- [ ] **Pipeline progress в topnav** — global indicator пока идёт processing. Сейчас juzер видит «⚙ В работе» без progress.
+- [ ] **BYO ключи validation** при выборе path=byo но пустые ключи — предупреждать перед записью.
+- [ ] **Контакты search** + identifier kind icons + simpler attributes UI.
+- [ ] **Export markdown** для recap/transcript из CallDetailPage.
+- [ ] **CSS responsive breakpoints** — `@media (max-width: 720px)` для узких окон (640x480 ломаются rows).
+- [ ] **Recording level meter (B14 backlog)** — Swift sidecar emits RMS → DS LevelMeter.
+
+### UX / CX (P2)
+
+- [ ] **Coachmarks на первом запуске** — explain где Звонки/Контакты/Настройки.
+- [ ] **macOS app menu** — File / Edit / View / Window через Tauri 2 Menu API.
+- [ ] **Window min-size 760x560** (currently 640x480 ломает rows).
+- [ ] **macOS toast при сохранении settings** — subtle saved checkmark.
+- [ ] **Toolbar поддержка subtitle + sticky positioning** — расширить API.
+
+### Visual / Design (P0)
+
+- [ ] **Top nav rework** — заменить text-only кнопки на segmented control с иконками + underline-active indicator. Сейчас выглядит как debug bar.
+- [ ] **Sidebar или icons в nav** — `App.tsx:70-93`. Десктоп-приложение без sidebar = одностраничный web.
+- [ ] **Title bar overlay + traffic lights padding** — `titleBarStyle: "Overlay"` + `hiddenTitle: true` в tauri.conf, интеграция UI с window chrome.
+- [ ] **HomePage hero block** — last call + week metrics + recent 3 (см. UX P0).
+- [ ] **Record-button visual weight** — gradient accent→danger + outer glow ring on hover. Сейчас просто красная пилюля.
+- [ ] **Onboarding hero**: app icon 128px + screenshot preview + step dots indicator. Сейчас text-only.
+- [ ] **App identity в UI** — SVG logo в onboarding и top-nav слева.
+
+### Visual / Design (P1)
+
+- [ ] **SVG icon set вместо emoji** — `lucide-react` либо `@phosphor-icons/react` (~40kb tree-shaken). Заменить 20+ мест: status-cell ⏺⚙✓✗, кнопки ↻ ⚠ × ✕, checkbox ☐☑. Закрывает 6 разных P1 пунктов разом.
+- [ ] **Status-cell processing spinner** — `[data-status='processing'] .call-status-cell svg { animation: spin }`.
+- [ ] **CallRow depth** — micro-elevation на hover (`box-shadow: var(--shadow-1)`), avatar/speaker-badge слева, chevron `›` справа.
+- [ ] **Failed banner как Alert component** — лента акцент 3px + иконка в круге + action-button «попробовать снова» прямо в банере.
+- [ ] **Settings sections с иконками** — 🔐/🎙/🤖/👤 рядом с h3 + group-clusters (Privacy / Providers / Account) с visual separators.
+- [ ] **Empty states с дефолт-иконками** — `Empty.tsx` дефолтная иконка по контексту.
+- [ ] **Transcript bubble max-width** — `min(75%, 36rem)` вместо просто `75%` (на 980px = нечитаемо длинная строка).
+- [ ] **Permissions section dashed border → solid** (выглядит как недоделанный wireframe).
+- [ ] **Tabs active state visual** — `background: var(--color-surface-sunken)` для active trigger + bolder weight. Сейчас разница тонкая.
+
+### Logic / Code Quality (P0)
+
+- [ ] **Pipeline JoinHandle storage** — см. Security P0 выше.
+- [ ] **Recap fail persistence** — `pipeline/mod.rs:305-307` сейчас silent log::warn. Запоминать в `failed_reason` или отдельный флаг чтобы UI показывал «recap failed, retry».
+- [ ] **OIDC ID token signature** — см. Security P1.
+- [ ] **consumeState CAS** — см. Security P1.
+- [ ] **Quota race CAS** — см. Security P0.
+- [ ] **Soniox/Gladia poll timeout** — `lib/partners/{soniox,gladia}.ts` правильно бросать "poll timeout" вместо fall-through на 4xx.
+- [ ] **deviceId UUID validation в /v1/auth/start** — сейчас принимает любое из body.
+- [ ] **CSP-related: ReactMarkdown rehypeRaw audit** — подтвердить что raw HTML не разрешён.
+- [ ] **FK ON DELETE для call_speakers.contact_id, action_items.owner_contact_id, voice_samples.source_call** — миграция `0003_fk_on_delete.sql` с `SET NULL`.
+
+### Logic / Code Quality (P1)
+
+- [ ] **Zod schemas в proxy boundary** — заменить hand-rolled `typeof body.X !== 'string'` validation на `z.object({...}).parse()`. Routes: stt/auth/llm/usage.
+- [ ] **Hand-rolled Promise.all → Promise.allSettled** в `CallDetailPage:43-63` — сейчас один rejection ломает все state setters.
+- [ ] **`as 400 | 502 | 503` type cast в llm.ts** — заменить explicit allow-list.
+- [ ] **`.catch(() => {})` silent ignores** в HomePage:46,50 и других — log хотя бы warn.
+- [ ] **Wide `#[allow(dead_code, unused_imports)]`** в lib.rs:1-25 — surgical allows только на specific items.
+- [ ] **Cargo.toml `[lints]`** добавить `unsafe_code = "forbid"`, `clippy::unwrap_used = "warn"`.
+- [ ] **Split db/calls.rs** (769 строк) на calls_lifecycle.rs + calls_speakers.rs + calls_meta.rs.
+- [ ] **Extract managed_stt_request helper** — duplicated между soniox.rs и gladia.rs (~100 строк).
+- [ ] **audio_io::extract_segment** — открывает WAV file заново для каждого segment. На 100 segments 100x чтение. Open once + slice.
+- [ ] **Soniox text concat без пробелов** — `last.text.push_str(&tok.text)` может склеить слова без пробела для некоторых языков.
+- [ ] **LIKE wildcards escape в MCP db.ts** — `searchCalls` raw `LIKE '%query%'` не экранирует `%` и `_`.
+- [ ] **PRAGMA busy_timeout** — `db/init` добавить `busy_timeout = 5000` для concurrent writes.
+- [ ] **EMBEDDING_DIM в schema** — добавить `voice_samples.embedding_dim INTEGER` column, reject mismatched.
+- [ ] **partner stderr no leak в proxy logs** — Cloudflare observability ловит `console.error`. Соскрести device-id/r2Key из 200-char message.
+- [ ] **LLM upstream error generic для клиента** — сейчас `groq 400: detail...` уходит юзеру. Логировать в console.error full, возвращать `'upstream error'` обобщённо.
+- [ ] **call_fts virtual table** — создана в 0001_initial.sql, никогда не populated. Либо implement #30, либо drop.
+
+### Logic / Code Quality (P2)
+
+- [ ] **CallsPage listen pipeline:finished** — только когда CallsPage mounted, не глобально.
+- [ ] **Wrap JSON.parse(rawSttJson) в zod** в InteractiveTranscript.
+- [ ] **`let _ = &call` comment** в pipeline/mod.rs — discarding result чище.
+- [ ] **NaN guard в merge_tracks sort** — фильтровать NaN start times.
+- [ ] **chunk.try_into() → manual array** в embeddings.rs.
+
+### Tests (P1)
+
+- [ ] **voice_samples cascade test** — verify `ON DELETE CASCADE` для samples.
+- [ ] **delete_call_and_samples** — test для action_items + call_speakers cleanup.
+- [ ] **pipeline::run/reprocess_call/regenerate_recap** — нет unit тестов. Cover happy + missing audio + recap fail.
+- [ ] **STT KV-resume happy path** integration test.
+- [ ] **OIDC ID-token signature negative tests** после P0 fix.
+- [ ] **MCP prompt-injection content** — pass-through test (M8.3).
+
+---
+
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
 См. раздел 12 паспорта. Здесь только маркеры — детали и причины там.
