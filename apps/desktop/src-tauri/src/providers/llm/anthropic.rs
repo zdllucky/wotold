@@ -55,30 +55,57 @@ async fn generate_managed(
     request: &LlmRequest,
 ) -> Result<Value, LlmError> {
     let url = format!("{}{}", proxy_base_url.trim_end_matches('/'), PROXY_LLM_PATH);
+    let payload = json!({
+        "model": request.model,
+        "system": request.system,
+        "input": request.input,
+        "maxTokens": request.max_tokens,
+    });
 
-    let resp = http
-        .post(&url)
-        .header("x-device-id", device_id)
-        .json(&json!({
-            "model": request.model,
-            "system": request.system,
-            "input": request.input,
-            "maxTokens": request.max_tokens,
-        }))
-        .send()
-        .await
-        .map_err(|e| LlmError::Network(e.to_string()))?;
+    // [B12] клиент-side retry: на 5xx или Network один раз пробуем ещё с
+    // паузой 2 секунды. Покрывает кейс когда proxy внутренний retry тоже
+    // упал в transient Groq glitch.
+    let mut last_provider_err: Option<String> = None;
+    for attempt in 0..2_u32 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+        let resp = match http
+            .post(&url)
+            .header("x-device-id", device_id)
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last_provider_err = Some(format!("network {e}"));
+                continue;
+            }
+        };
 
-    let status = resp.status();
-    if status == StatusCode::TOO_MANY_REQUESTS {
-        return Err(LlmError::QuotaExceeded);
+        let status = resp.status();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(LlmError::QuotaExceeded);
+        }
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            return Err(LlmError::Auth(format!("proxy {status}")));
+        }
+        if status.is_server_error() {
+            last_provider_err = Some(format!("proxy {status}"));
+            continue;
+        }
+        if !status.is_success() {
+            return Err(LlmError::Provider(format!("proxy {status}")));
+        }
+        return parse_managed_body(resp).await;
     }
-    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        return Err(LlmError::Auth(format!("proxy {status}")));
-    }
-    if !status.is_success() {
-        return Err(LlmError::Provider(format!("proxy {status}")));
-    }
+    Err(LlmError::Provider(
+        last_provider_err.unwrap_or_else(|| "proxy unknown".into()),
+    ))
+}
+
+async fn parse_managed_body(resp: reqwest::Response) -> Result<Value, LlmError> {
 
     // Прокси отдаёт LlmResponse: { ok: true, json: ... } | { ok: false, code, message }.
     let body: Value = resp
@@ -94,7 +121,6 @@ async fn generate_managed(
             .and_then(|v| v.as_str())
             .unwrap_or("unknown proxy error")
             .to_string();
-        // Проксируем code → подходящую категорию ошибки.
         match body.get("code").and_then(|v| v.as_str()) {
             Some("quota_exceeded") => Err(LlmError::QuotaExceeded),
             Some("invalid_device_id") => Err(LlmError::Auth(message)),
