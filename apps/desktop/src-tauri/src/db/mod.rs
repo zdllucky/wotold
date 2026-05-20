@@ -11,6 +11,7 @@ mod action_items;
 mod calls;
 mod contacts;
 mod settings;
+mod voice_samples;
 
 pub use action_items::{list_action_items, replace_action_items, ActionItem, ActionItemInput};
 pub use calls::{
@@ -24,6 +25,7 @@ pub use contacts::{
     update_contact, Contact, ContactInput, OwnerContact,
 };
 pub use settings::{get_setting, set_setting};
+pub use voice_samples::{delete_voice_sample, list_voice_samples, VoiceSampleView};
 
 const DB_FILE: &str = "app.db";
 

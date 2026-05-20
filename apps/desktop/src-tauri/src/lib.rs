@@ -161,6 +161,8 @@ pub fn run() {
             commands::list_call_speakers,
             commands::confirm_call_speaker,
             commands::unbind_call_speaker,
+            commands::list_voice_samples,
+            commands::delete_voice_sample,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

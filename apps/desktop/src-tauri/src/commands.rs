@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 use crate::{
     audio::macos as audio_macos,
     audio::permissions::{self, PermissionsStatus},
-    db::{ActionItem, Call, CallSpeakerView, Contact, ContactInput, OwnerContact},
+    db::{ActionItem, Call, CallSpeakerView, Contact, ContactInput, OwnerContact, VoiceSampleView},
     secrets::{self, ByoProvider, ByoStatus},
     state::AppState,
     updater::AvailableUpdate,
@@ -358,4 +358,27 @@ pub async fn unbind_call_speaker(
     call_speaker_id: String,
 ) -> Result<(), AppError> {
     crate::db::unbind_call_speaker(&state.db, &call_speaker_id).await
+}
+
+// ============================================================
+// M3.6 / M7.4 (#45) voice samples view + manual delete (C3)
+// ============================================================
+
+#[tauri::command]
+pub async fn list_voice_samples(
+    state: State<'_, AppState>,
+    contact_id: String,
+) -> Result<Vec<VoiceSampleView>, AppError> {
+    crate::db::list_voice_samples(&state.db, &contact_id).await
+}
+
+/// Manual delete одного семпла (C3 паспорта). Используется когда пользователь
+/// ошибочно подтвердил спикера или хочет очистить устаревший биометрический
+/// слепок.
+#[tauri::command]
+pub async fn delete_voice_sample(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), AppError> {
+    crate::db::delete_voice_sample(&state.db, &id).await
 }
