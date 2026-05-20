@@ -3,8 +3,10 @@ import { useEffect, useState } from 'react';
 import {
   getSetting,
   setSetting,
+  PREFERRED_LANGUAGES,
   SETTINGS_DEFAULTS,
   SETTINGS_KEYS,
+  type PreferredLanguage,
   type ProviderPath,
   type SttProvider,
 } from '../api/settings';
@@ -37,6 +39,9 @@ export function SettingsPage() {
   const [sttProvider, setSttProvider] = useState<SttProvider>(SETTINGS_DEFAULTS.STT_PROVIDER);
   const [providerPath, setProviderPath] = useState<ProviderPath>(SETTINGS_DEFAULTS.PROVIDER_PATH);
   const [llmModel, setLlmModel] = useState<string>(SETTINGS_DEFAULTS.LLM_MODEL);
+  const [preferredLanguage, setPreferredLanguage] = useState<PreferredLanguage>(
+    SETTINGS_DEFAULTS.PREFERRED_LANGUAGE,
+  );
   const [proxyUrl, setProxyUrl] = useState<string>('');
   const [proxyUrlError, setProxyUrlError] = useState<string | null>(null);
   const [showAdvancedProxy, setShowAdvancedProxy] = useState(false);
@@ -45,16 +50,18 @@ export function SettingsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [stt, path, model, proxy] = await Promise.all([
+        const [stt, path, model, proxy, lang] = await Promise.all([
           getSetting(SETTINGS_KEYS.STT_PROVIDER),
           getSetting(SETTINGS_KEYS.PROVIDER_PATH),
           getSetting(SETTINGS_KEYS.LLM_MODEL),
           getSetting(SETTINGS_KEYS.PROXY_BASE_URL),
+          getSetting(SETTINGS_KEYS.PREFERRED_LANGUAGE),
         ]);
         if (isSttProvider(stt)) setSttProvider(stt);
         if (isProviderPath(path)) setProviderPath(path);
         if (model) setLlmModel(model);
         if (proxy) setProxyUrl(proxy);
+        if (lang) setPreferredLanguage(lang as PreferredLanguage);
       } catch (e) {
         setError(String(e));
       } finally {
@@ -112,6 +119,22 @@ export function SettingsPage() {
       <div className="settings-section">
         <h3 className="settings-section-title">LLM</h3>
         <Card compact>
+          <SelectField
+            label="Язык рекапа и задач"
+            value={preferredLanguage}
+            onChange={(e) => {
+              const v = e.target.value as PreferredLanguage;
+              setPreferredLanguage(v);
+              void persist(SETTINGS_KEYS.PREFERRED_LANGUAGE, v);
+            }}
+            hint="На каком языке писать рекап и задачи. 'Авто' = язык распознанной речи. Не влияет на сам STT — звонок на любом языке распознаётся как есть."
+          >
+            {PREFERRED_LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </SelectField>
           <InputField
             label="Модель (опционально)"
             type="text"

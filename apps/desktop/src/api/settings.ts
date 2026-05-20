@@ -15,6 +15,8 @@ export const SETTINGS_KEYS = {
   LLM_MODEL: 'llm_model',
   PROXY_BASE_URL: 'proxy_base_url',
   RECORDING_CONSENT_AT: 'recording_consent_at',
+  /** [B13] BCP47 язык override для LLM-output. 'auto' = язык STT detection. */
+  PREFERRED_LANGUAGE: 'preferred_language',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
@@ -28,7 +30,17 @@ export const SETTINGS_DEFAULTS = {
   PROXY_BASE_URL: import.meta.env.DEV
     ? 'https://wotold-proxy-staging.animereader.workers.dev'
     : 'https://wotold-proxy.animereader.workers.dev',
+  PREFERRED_LANGUAGE: 'auto' as PreferredLanguage,
 } as const;
+
+/** Список языков для UI селектора. 'auto' = язык STT. */
+export type PreferredLanguage = 'auto' | 'ru' | 'en' | 'kk' | string;
+export const PREFERRED_LANGUAGES: Array<{ code: PreferredLanguage; label: string }> = [
+  { code: 'auto', label: 'Автоматически (как в звонке)' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'en', label: 'English' },
+  { code: 'kk', label: 'Қазақша' },
+];
 
 export type SttProvider = 'auto' | 'soniox' | 'gladia';
 export type ProviderPath = 'managed' | 'byo';
