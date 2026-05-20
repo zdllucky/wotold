@@ -57,6 +57,17 @@ wrangler r2 bucket create wotold-stt-staging
 
 ## TODO
 
-- Реальная привязка партнёрского STT (Soniox primary, Gladia fallback) в `src/routes/stt.ts`. Сейчас возвращает `501 provider_error`.
-- Вёрстка тестов через `vitest` + miniflare (под Этап 8 follow-up).
+- ~~Реальная привязка партнёрского STT~~ — сделано в #18 (Soniox + Gladia).
+- Вёрстка тестов через `vitest` + miniflare (#19).
 - `// TODO(paid)` маркеры на ветках для платных тиров (R5).
+
+## STT pipeline (после #18)
+
+1. Клиент `POST /v1/stt/staging-url` → presigned R2 PUT.
+2. Клиент льёт WAV в R2 напрямую (мимо воркера, R8).
+3. Клиент `POST /v1/stt { r2Key, opts: { provider, lang, diarization: true } }`.
+4. Воркер: HEAD R2 → presigned GET (30 мин) → POST в партнёра (Soniox или Gladia) → polling до `completed/done` или таймаут 25s → нормализация в `DiarizedTranscript`.
+5. `incUsage(stt_sec, ceil(durationSec))` в KV.
+6. Возвращает `{ok: true, transcript}` или `{ok: false, code, message}`.
+
+**Лимит 25s polling** — workers free CPU/wall ≈ 30s. Длинные записи (>1-2 минут партнёр-обработки) выйдут с `provider_error` "poll timeout". Клиент может повторить — partner job уже в очереди, при повторе соберётся быстрее (но job_id потеряется → дубль). В backlog: cache job_id по r2Key в KV и резюмировать polling при retry.

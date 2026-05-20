@@ -7,8 +7,15 @@ import type {
 } from '@wotold/contracts';
 import type { Env } from '../lib/env.js';
 import { requireDeviceId } from '../middleware/device-id.js';
-import { enforceQuota } from '../middleware/rate-limit.js';
-import { presignR2Put } from '../lib/r2-presign.js';
+import { enforceQuota, incUsage } from '../middleware/rate-limit.js';
+import { presignR2Get, presignR2Put } from '../lib/r2-presign.js';
+import { transcribeSoniox } from '../lib/partners/soniox.js';
+import { transcribeGladia } from '../lib/partners/gladia.js';
+
+// Workers Free CPU/wall лимит ≈ 30s на запрос. Polling 25s + буфер на сеть.
+const POLL_BUDGET_MS = 25_000;
+// Presigned GET URL для партнёра — TTL под async-окно (30 минут хватит).
+const PARTNER_AUDIO_TTL_SECONDS = 1800;
 
 export const sttRoutes = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
 
@@ -58,7 +65,6 @@ sttRoutes.post('/', async (c) => {
     );
   }
 
-  // Defensive: stage object must exist (cheap HEAD via R2 binding).
   const head = await c.env.STT_STAGING.head(body.r2Key);
   if (!head) {
     return c.json(
@@ -71,21 +77,92 @@ sttRoutes.post('/', async (c) => {
     );
   }
 
-  // TODO(soniox|gladia): подключить реальный вызов партнёрского STT.
-  //   1. Подписать GET-URL для r2Key (TTL под async-окно партнёра)
-  //   2. POST к Soniox/Gladia с этим URL + opts (diarization, lang)
-  //   3. Дождаться/поллить результат, нормализовать в DiarizedTranscript
-  //   4. incUsage(c.env, deviceId, 'stt_sec', durationSec)
-  //
-  // Ключ из секрета: c.env.SONIOX_API_KEY / c.env.GLADIA_API_KEY (S1).
-  // M9.6: не логировать содержимое транскрипта. Метрики — да.
+  // R8: партнёр сам забирает аудио из R2 по presigned URL — байты не
+  // проходят через память воркера.
+  let audioUrl: string;
+  try {
+    audioUrl = await presignR2Get(c.env, body.r2Key, PARTNER_AUDIO_TTL_SECONDS);
+  } catch (e) {
+    console.error('presign GET failed', (e as Error).message);
+    return c.json(
+      { ok: false, code: 'internal_error', message: 'presign failed' } satisfies SttResponse,
+      500,
+    );
+  }
 
-  return c.json(
-    {
-      ok: false,
-      code: 'provider_error',
-      message: 'STT provider relay not yet wired',
-    } satisfies SttResponse,
-    501,
-  );
+  const provider = body.opts.provider;
+  const lang = body.opts.lang;
+  const deadline = Date.now() + POLL_BUDGET_MS;
+
+  try {
+    let transcript;
+    if (provider === 'soniox') {
+      if (!c.env.SONIOX_API_KEY) {
+        return c.json(
+          {
+            ok: false,
+            code: 'provider_error',
+            message: 'Soniox key not configured on proxy',
+          } satisfies SttResponse,
+          503,
+        );
+      }
+      transcript = await transcribeSoniox({
+        apiKey: c.env.SONIOX_API_KEY,
+        audioUrl,
+        lang,
+        pollDeadlineMs: deadline,
+      });
+    } else if (provider === 'gladia') {
+      if (!c.env.GLADIA_API_KEY) {
+        return c.json(
+          {
+            ok: false,
+            code: 'provider_error',
+            message: 'Gladia key not configured on proxy',
+          } satisfies SttResponse,
+          503,
+        );
+      }
+      transcript = await transcribeGladia({
+        apiKey: c.env.GLADIA_API_KEY,
+        audioUrl,
+        lang,
+        pollDeadlineMs: deadline,
+      });
+    } else {
+      return c.json(
+        {
+          ok: false,
+          code: 'bad_request',
+          message: `unknown provider: ${provider}`,
+        } satisfies SttResponse,
+        400,
+      );
+    }
+
+    // M9.6: логируем только метрики, не контент.
+    if (transcript.durationSec > 0) {
+      await incUsage(
+        c.env,
+        c.get('deviceId'),
+        'stt_sec',
+        Math.ceil(transcript.durationSec),
+      );
+    }
+
+    return c.json({ ok: true, transcript } satisfies SttResponse);
+  } catch (e) {
+    // R7 + Workers free: при превышении 30s wall time запрос упадёт.
+    // Клиенту возвращаем provider_error, он может повторить попытку.
+    console.error(`stt ${provider} failed`, (e as Error).message);
+    return c.json(
+      {
+        ok: false,
+        code: 'provider_error',
+        message: (e as Error).message,
+      } satisfies SttResponse,
+      502,
+    );
+  }
 });
