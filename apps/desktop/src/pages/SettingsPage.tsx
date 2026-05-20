@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { humanError } from '../api/errors';
 
 import {
   getSetting,
@@ -63,7 +64,7 @@ export function SettingsPage() {
         if (proxy) setProxyUrl(proxy);
         if (lang) setPreferredLanguage(lang as PreferredLanguage);
       } catch (e) {
-        setError(String(e));
+        setError(humanError(e));
       } finally {
         setLoading(false);
       }
@@ -75,7 +76,7 @@ export function SettingsPage() {
       await setSetting(key, value);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 

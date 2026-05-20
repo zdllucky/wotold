@@ -9,6 +9,7 @@
 //   - кнопка "Подтвердить" / "Отвязать"
 
 import { useEffect, useState } from 'react';
+import { humanError } from '../api/errors';
 import { createContact, listContacts, type Contact } from '../api/contacts';
 import {
   confirmCallSpeaker,
@@ -67,7 +68,7 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
       setNewConsent(false);
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     } finally {
       setBusyAdd(false);
     }
@@ -80,7 +81,7 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
       setContacts(c);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 
@@ -100,7 +101,7 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
       setPickFor((m) => ({ ...m, [s.id]: '' }));
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 
@@ -109,7 +110,7 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
       await unbindCallSpeaker(s.id);
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 

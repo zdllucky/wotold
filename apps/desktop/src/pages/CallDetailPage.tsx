@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { humanError } from '../api/errors';
 import ReactMarkdown from 'react-markdown';
 import { ask } from '@tauri-apps/plugin-dialog';
 
@@ -58,7 +59,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         setContacts(cs);
         setSpeakersLite(sp);
       })
-      .catch((e: unknown) => setError(String(e)))
+      .catch((e: unknown) => setError(humanError(e)))
       .finally(() => setLoading(false));
   }, [callId]);
 
@@ -131,7 +132,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       await deleteCall(call.id);
       onBack();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
       setDeleting(false);
     }
   };

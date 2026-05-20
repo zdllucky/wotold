@@ -6,6 +6,7 @@
 // каскадом — но это удаление контакта; здесь — точечное.
 
 import { useCallback, useEffect, useState } from 'react';
+import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { Badge, Button, Empty } from '../ui';
 import {
@@ -49,7 +50,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
         setSamples(v);
         setError(null);
       })
-      .catch((e: unknown) => setError(String(e)));
+      .catch((e: unknown) => setError(humanError(e)));
   }, [contactId]);
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
       await deleteVoiceSample(s.id);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 

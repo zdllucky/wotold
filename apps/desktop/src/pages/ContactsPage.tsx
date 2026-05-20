@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
 
 import {
@@ -31,7 +32,7 @@ export function ContactsPage() {
   const refresh = () => {
     listContacts()
       .then(setContacts)
-      .catch((e: unknown) => setError(String(e)));
+      .catch((e: unknown) => setError(humanError(e)));
   };
 
   useEffect(refresh, []);
@@ -43,7 +44,7 @@ export function ContactsPage() {
       setError(null);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 
@@ -54,7 +55,7 @@ export function ContactsPage() {
       setError(null);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 
@@ -71,7 +72,7 @@ export function ContactsPage() {
       setError(null);
       refresh();
     } catch (e) {
-      setError(String(e));
+      setError(humanError(e));
     }
   };
 

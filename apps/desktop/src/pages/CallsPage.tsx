@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { humanError } from '../api/errors';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { listCalls, type Call } from '../api/recording';
@@ -41,7 +42,7 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   const refresh = () => {
     listCalls()
       .then(setCalls)
-      .catch((e: unknown) => setError(String(e)));
+      .catch((e: unknown) => setError(humanError(e)));
   };
 
   useEffect(() => {
