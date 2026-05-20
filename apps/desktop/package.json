@@ -18,11 +18,13 @@
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
     "@tauri-apps/plugin-updater": "^2.0.0",
+    "@types/react-window": "^2.0.0",
     "@wotold/contracts": "workspace:*",
     "lucide-react": "^1.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "react-window": "^2.2.7"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
