@@ -47,11 +47,11 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
 
     getRecordingState()
       .then(setRecording)
-      .catch(() => {});
+      .catch((e: unknown) => console.warn('getRecordingState failed', e));
 
     getSetting(SETTINGS_KEYS.RECORDING_CONSENT_AT)
       .then(setConsentAt)
-      .catch(() => {});
+      .catch((e: unknown) => console.warn('getSetting consent failed', e));
   }, []);
 
   useEffect(() => {

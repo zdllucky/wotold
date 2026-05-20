@@ -42,7 +42,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    Promise.all([
+    // [B16 audit P1]: allSettled чтобы failed artifact (например ещё не существует
+    // recap.md когда юзер открыл звонок до завершения pipeline) не ломал все state setters.
+    Promise.allSettled([
       getCall(callId),
       readCallArtifact(callId, 'recap'),
       readCallArtifact(callId, 'transcript'),
@@ -51,16 +53,31 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       listContacts(),
       listCallSpeakers(callId),
     ])
-      .then(([c, r, t, raw, ai, cs, sp]) => {
-        setCall(c);
-        setRecap(r);
-        setTranscript(t);
-        setRawStt(raw);
-        setTasks(ai);
-        setContacts(cs);
-        setSpeakersLite(sp);
+      .then(([rCall, rRecap, rTrans, rRaw, rTasks, rContacts, rSpeakers]) => {
+        // Call meta — критично. Без неё страница не имеет смысла.
+        if (rCall.status === 'fulfilled') {
+          setCall(rCall.value);
+        } else {
+          setError(humanError(rCall.reason));
+        }
+        if (rRecap.status === 'fulfilled') setRecap(rRecap.value);
+        if (rTrans.status === 'fulfilled') setTranscript(rTrans.value);
+        if (rRaw.status === 'fulfilled') setRawStt(rRaw.value);
+        if (rTasks.status === 'fulfilled') setTasks(rTasks.value);
+        if (rContacts.status === 'fulfilled') setContacts(rContacts.value);
+        if (rSpeakers.status === 'fulfilled') setSpeakersLite(rSpeakers.value);
+        // Log невидимые failures чтобы они не исчезли silent.
+        for (const [name, r] of [
+          ['recap', rRecap],
+          ['transcript', rTrans],
+          ['raw_stt', rRaw],
+          ['tasks', rTasks],
+          ['contacts', rContacts],
+          ['speakers', rSpeakers],
+        ] as const) {
+          if (r.status === 'rejected') console.warn(`CallDetail ${name} load failed`, r.reason);
+        }
       })
-      .catch((e: unknown) => setError(humanError(e)))
       .finally(() => setLoading(false));
   }, [callId]);
 
