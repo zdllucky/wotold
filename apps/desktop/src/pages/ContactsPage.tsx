@@ -28,6 +28,9 @@ export function ContactsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // [B16 audit P1] Search по имени/identifiers/org/role. На 50+ контактах
+  // scroll становится бесполезным.
+  const [search, setSearch] = useState('');
 
   const refresh = () => {
     listContacts()
@@ -79,6 +82,23 @@ export function ContactsPage() {
   if (error && !contacts) return <p className="error">{error}</p>;
   if (!contacts) return <p className="hint">Загрузка…</p>;
 
+  // [B16] Search фильтр — name / org / role / identifiers / notes.
+  const q = search.trim().toLowerCase();
+  const filtered = !q
+    ? contacts
+    : contacts.filter((c) => {
+        const hay = [
+          c.display_name,
+          c.org ?? '',
+          c.role ?? '',
+          c.notes ?? '',
+          ...c.identifiers.map((i) => i.value),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(q);
+      });
+
   return (
     <section className="contacts">
       <Toolbar
@@ -108,15 +128,39 @@ export function ContactsPage() {
       )}
       {error && <p className="error">{error}</p>}
 
+      {contacts.length > 5 && (
+        <div className="contacts-search">
+          <input
+            className="ds-input"
+            type="search"
+            placeholder="Поиск по имени, организации, телефону…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Поиск контактов"
+          />
+          {q && (
+            <span className="contacts-search-count text-muted">
+              {filtered.length} из {contacts.length}
+            </span>
+          )}
+        </div>
+      )}
+
       {contacts.length === 0 ? (
         <Empty
           icon="👥"
           title="Контактов нет"
           description="Добавь первый контакт — кнопка «+ Добавить» сверху справа. Контакты помогают Wotold подписывать спикеров в расшифровках."
         />
+      ) : filtered.length === 0 ? (
+        <Empty
+          icon="🔍"
+          title="Ничего не нашлось"
+          description={`По запросу «${search.trim()}» нет контактов.`}
+        />
       ) : (
         <ul className="contact-list">
-          {contacts.map((c) =>
+          {filtered.map((c) =>
             editingId === c.id ? (
               <li key={c.id}>
                 <Card>

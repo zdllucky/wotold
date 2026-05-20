@@ -132,6 +132,29 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
     }
   };
 
+  // [B16 audit P1] Hotkey ⌘⇧R: start / stop запись без клика. Слушаем
+  // на window — главный экран всегда в focus при desktop-app. Игнорируем
+  // если activeElement — input/textarea (юзер пишет где-то).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isCmd = e.metaKey || e.ctrlKey;
+      const target = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
+      if (target === 'input' || target === 'textarea' || target === 'select') return;
+      if (isCmd && e.shiftKey && (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К')) {
+        e.preventDefault();
+        if (busy) return;
+        if (recording) {
+          void onStop();
+        } else {
+          void onStart();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording, busy, consentAt]);
+
   // [B16] Stats для hero — derived из recentCalls.
   const now = Date.now();
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
@@ -191,6 +214,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
             disabled={busy}
             busy={busy}
             leading={<StatusDot tone="neutral" size="lg" />}
+            title="Горячая клавиша: ⌘⇧R"
           >
             {busy ? 'Запускаем…' : 'Начать запись'}
           </Button>
