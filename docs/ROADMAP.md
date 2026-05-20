@@ -242,7 +242,7 @@
 - [x] **Pre-check permissions** перед start_recording — Rust check перед sidecar start, clear error.
 - [x] **CallDetailPage auto-name** для звонка без title — «{contact name} · 20 мая» если есть confirmed speaker.
 - [ ] **Failed banner с CTA** — кнопка «Попробовать снова» прямо внутри (сейчас reprocess отдельной кнопкой).
-- [ ] **Pipeline progress в topnav** — global indicator пока идёт processing. Сейчас juzер видит «⚙ В работе» без progress.
+- [x] **Pipeline progress в topnav** — pipeline:started/finished events + counter в App, subtle pill 'обрабатываем N…' с spinner.
 - [x] **BYO ключи validation** — Settings → BYO secrets section warn если все ключи пустые (red border-left) или часть (yellow). Юзер видит до попытки записи.
 - [x] **Контакты search** — фильтр по name/org/role/identifiers/notes когда >5 контактов. Identifier kind icons + attributes UI follow-up.
 - [ ] **Export markdown** для recap/transcript из CallDetailPage.
