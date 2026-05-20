@@ -252,19 +252,25 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     let device_id = state.device_id.clone();
     let app_data_dir = state.app_data_dir.clone();
     let app_handle = app.clone();
-    tauri::async_runtime::spawn(async move {
+    let tasks = state.pipeline_tasks.clone();
+    let call_id_for_task = call_id.clone();
+    let handle = tauri::async_runtime::spawn(async move {
         let ctx = crate::pipeline::PipelineCtx {
-            call_id: call_id.clone(),
-            call_dir: app_data_dir.join("calls").join(&call_id),
+            call_id: call_id_for_task.clone(),
+            call_dir: app_data_dir.join("calls").join(&call_id_for_task),
             mic_path,
             system_path,
             device_id,
         };
         // [B5]: передаём AppHandle чтобы pipeline emit 'pipeline:finished'.
         if let Err(e) = crate::pipeline::run(&pool, ctx, Some(&app_handle)).await {
-            log::error!("pipeline {call_id} error: {e}");
+            log::error!("pipeline {call_id_for_task} error: {e}");
         }
+        // [B16 audit P0]: убираем себя из реестра по завершении.
+        tasks.lock().await.remove(&call_id_for_task);
     });
+    // [B16 audit P0]: регистрируем handle чтобы graceful shutdown мог дождаться.
+    state.pipeline_tasks.lock().await.insert(call_id.clone(), handle);
 
     Ok(call)
 }

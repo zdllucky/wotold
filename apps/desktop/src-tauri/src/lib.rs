@@ -159,6 +159,31 @@ pub fn run() {
                                     log::info!("graceful stop {call_id} ok");
                                 }
                             }
+                            // [B16 audit P0]: дождаться pipeline-tasks (с таймаутом),
+                            // чтобы избежать UB при abrupt exit во время DB write /
+                            // file flush. Раньше JoinHandle dropped → tokio cancel.
+                            let pending: Vec<_> = {
+                                let mut guard = state.pipeline_tasks.lock().await;
+                                guard.drain().collect()
+                            };
+                            if !pending.is_empty() {
+                                log::info!(
+                                    "graceful shutdown: ждём {} pipeline task(s)",
+                                    pending.len()
+                                );
+                                for (cid, h) in pending {
+                                    let waited = tokio::time::timeout(
+                                        std::time::Duration::from_secs(8),
+                                        h,
+                                    )
+                                    .await;
+                                    match waited {
+                                        Ok(Ok(())) => log::info!("pipeline {cid} done"),
+                                        Ok(Err(e)) => log::warn!("pipeline {cid} join error: {e}"),
+                                        Err(_) => log::warn!("pipeline {cid} timeout — abort"),
+                                    }
+                                }
+                            }
                             // Выход — pipeline не запускаем (юзер закрыл окно осознанно).
                             app_for_quit.exit(0);
                         });
