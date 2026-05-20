@@ -84,8 +84,8 @@
 
 ## MCP · Этап 7 / M8
 
-- [ ] **#35** M8.1-8.4 Local MCP server + 7 read-only tools (search_calls, get_call, get_recap, get_transcript, list_participants, find_calls_by_contact, calls_in_range) → #28
-- [ ] **#36** Connector setup docs для подключения в Claude → #35
+- [x] **#35** M8.1-8.4 Local MCP server — `services/mcp/` Node TS + `@modelcontextprotocol/sdk` stdio + 7 read-only tools. `better-sqlite3` readonly. Zod input validation. 16 vitest tests.
+- [x] **#36** `docs/MCP.md` — установка в Claude Desktop / Cursor / mcp-inspector + env override через `WOTOLD_APP_DATA_DIR` + M8.3 injection warning.
 
 ## Auth · Этап 9 / M10 (SCAFFOLD — ничего не разблокирует в MVP)
 
@@ -114,7 +114,7 @@
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#26` · `#35` · `#42` · `#44`
+`#26` · `#42` · `#44`
 
 ## Backlog (кандидаты на доработку)
 
