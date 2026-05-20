@@ -73,6 +73,7 @@ jobs:
       # ломая pnpm workspace:* протокол на @wotold/contracts. Поэтому используем
       # wrangler напрямую через pnpm exec — он уже разрешён pnpm install выше.
       - name: Deploy via wrangler (staging)
+        id: deploy
         working-directory: services/proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -80,6 +81,34 @@ jobs:
         run: pnpm exec wrangler deploy --env staging
         # Партнёрские/OAuth ключи и R2 S3 креды ставятся отдельно через
         # `wrangler secret put --env staging` (one-time). См. docs/DEPLOYMENT.md.
+
+      - name: Post-deploy smoke (/health)
+        id: smoke
+        run: |
+          set -euo pipefail
+          URL="https://wotold-proxy-staging.workers.dev/health"
+          for i in 1 2 3 4 5; do
+            sleep 3
+            resp=$(curl -fsS "$URL" || echo "FAIL")
+            if echo "$resp" | grep -q '"ok":true'; then
+              echo "smoke ok: $resp"
+              exit 0
+            fi
+            echo "[attempt $i] $resp"
+          done
+          echo "smoke FAILED after 5 attempts"
+          exit 1
+
+      - name: Auto-rollback on smoke failure
+        if: failure() && steps.smoke.outcome == 'failure'
+        working-directory: services/proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "::warning::Smoke test failed, rolling back staging deployment"
+          pnpm exec wrangler rollback --env staging --message "auto-rollback after smoke fail in ${{ github.run_id }}" --yes || \
+            echo "::error::Rollback also failed — manual intervention required"
 
   deploy-production:
     name: Deploy production
@@ -101,8 +130,37 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Deploy via wrangler (production)
+        id: deploy
         working-directory: services/proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler deploy --env production
+
+      - name: Post-deploy smoke (/health)
+        id: smoke
+        run: |
+          set -euo pipefail
+          URL="https://wotold-proxy.workers.dev/health"
+          for i in 1 2 3 4 5; do
+            sleep 3
+            resp=$(curl -fsS "$URL" || echo "FAIL")
+            if echo "$resp" | grep -q '"ok":true'; then
+              echo "smoke ok: $resp"
+              exit 0
+            fi
+            echo "[attempt $i] $resp"
+          done
+          echo "smoke FAILED after 5 attempts"
+          exit 1
+
+      - name: Auto-rollback on smoke failure (PRODUCTION)
+        if: failure() && steps.smoke.outcome == 'failure'
+        working-directory: services/proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "::error::Production smoke test failed, rolling back"
+          pnpm exec wrangler rollback --env production --message "auto-rollback after smoke fail in ${{ github.run_id }}" --yes || \
+            echo "::error::Production rollback failed — IMMEDIATE manual intervention required"
