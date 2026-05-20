@@ -30,6 +30,10 @@ const SETTING_STT_LANG: &str = "stt_lang";
 const SETTING_LLM_MODEL: &str = "llm_model";
 const SETTING_PROXY_BASE_URL: &str = "proxy_base_url";
 
+/// Default production proxy URL — managed-режим работает out-of-the-box,
+/// user override через Settings → Прокси → Advanced.
+const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy.workers.dev";
+
 /// Контекст одной транскрипции: пути к двум дорожкам, call_dir для артефактов,
 /// device-id для managed-режима. Настройки (provider/path/lang/proxy URL) и
 /// BYO-ключи читаются из БД внутри `run`.
@@ -105,7 +109,8 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     let llm_model = read_setting(pool, SETTING_LLM_MODEL, "").await?;
     let proxy_base_url = db::get_setting(pool, SETTING_PROXY_BASE_URL)
         .await?
-        .unwrap_or_default();
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_PROXY_BASE_URL.to_string());
 
     let providers = build_providers(
         &provider_id,
