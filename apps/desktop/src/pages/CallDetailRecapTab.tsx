@@ -51,18 +51,30 @@ export function RecapTab({
             <div className="small-caps" style={{ marginBottom: 8 }}>
               Резюме
             </div>
-            <p
+            <div
               style={{
                 fontFamily: 'var(--font-serif)',
                 fontSize: 19,
                 lineHeight: 1.55,
                 color: 'var(--ink)',
                 letterSpacing: '-0.005em',
-                margin: 0,
               }}
             >
-              {parsed.summary}
-            </p>
+              {/* Markdown inside summary preserves **bold** → strong accent
+                  per artboard §6 (key phrase highlighting). */}
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
+                  strong: ({ children }) => (
+                    <strong style={{ color: 'var(--accent)', fontWeight: 500 }}>
+                      {children}
+                    </strong>
+                  ),
+                }}
+              >
+                {parsed.summary}
+              </ReactMarkdown>
+            </div>
           </section>
         ) : null}
 
