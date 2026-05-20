@@ -4,8 +4,8 @@
 
 | Environment | Триггер | Worker URL |
 |---|---|---|
-| **staging** | push в `main` (после `preflight` job) | `wotold-proxy-staging.workers.dev` |
-| **production** | tag `v*.*.*` (синхронно с релизом desktop-приложения) | `wotold-proxy.workers.dev` |
+| **staging** | push в `main` (после `preflight` job) | `wotold-proxy-staging.animereader.workers.dev` |
+| **production** | tag `v*.*.*` (синхронно с релизом desktop-приложения) | `wotold-proxy.animereader.workers.dev` |
 
 Frontend = desktop-приложение, **не web** — деплой через GitHub Releases + Tauri updater (см. `release-app.yml` и М11 паспорта).
 
@@ -110,9 +110,9 @@ STT staging-объекты живут временно. На бесплатно�
 `deploy-proxy.yml` автоматически:
 
 1. Запускает preflight.
-2. Деплоит на `wotold-proxy-staging.workers.dev` через `wrangler deploy --env staging`.
+2. Деплоит на `wotold-proxy-staging.animereader.workers.dev` через `wrangler deploy --env staging`.
 
-Проверить health: `curl https://wotold-proxy-staging.workers.dev/health`
+Проверить health: `curl https://wotold-proxy-staging.animereader.workers.dev/health`
 
 ### 1.3 Production release
 

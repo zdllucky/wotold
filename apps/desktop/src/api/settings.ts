@@ -23,7 +23,7 @@ export const SETTINGS_DEFAULTS = {
   LLM_MODEL: 'claude-sonnet-4-6',
   /** Production proxy URL — managed-режим работает out-of-the-box без настроек.
    *  User может переопределить через advanced секцию в Settings. */
-  PROXY_BASE_URL: 'https://wotold-proxy.workers.dev',
+  PROXY_BASE_URL: 'https://wotold-proxy.animereader.workers.dev',
 } as const;
 
 export type SttProvider = 'auto' | 'soniox' | 'gladia';
