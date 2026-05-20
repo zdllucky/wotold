@@ -8,7 +8,7 @@
 //     subtitle role; 3-stat row; 2-col contact fields grid; voice samples
 //     table.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
 
@@ -20,9 +20,16 @@ import {
   type Contact,
   type ContactInput,
 } from '../api/contacts';
+import { listCalls } from '../api/recording';
+import { listCallSpeakers } from '../api/speakers';
 import { Badge, Empty } from '../ui';
 import { ContactForm } from './ContactForm';
 import { VoiceSamplesSection } from './VoiceSamplesSection';
+
+interface ContactStats {
+  callCount: number;
+  totalSec: number;
+}
 
 const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
 
@@ -60,6 +67,9 @@ export function ContactsPage() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'empty' });
   const [search, setSearch] = useState('');
+  const [statsByContact, setStatsByContact] = useState<Map<string, ContactStats>>(
+    new Map(),
+  );
 
   const refresh = () => {
     listContacts()
@@ -77,6 +87,42 @@ export function ContactsPage() {
   };
 
   useEffect(refresh, []);
+
+  // [B17] Aggregate stats: count calls + sum duration per confirmed contact.
+  // Heavy (N+1) на первом mount, кэшируется до full reload.
+  useEffect(() => {
+    if (!contacts || contacts.length === 0) return;
+    void (async () => {
+      try {
+        const calls = await listCalls();
+        const speakerLists = await Promise.allSettled(
+          calls.map((c) => listCallSpeakers(c.id)),
+        );
+        const stats = new Map<string, ContactStats>();
+        speakerLists.forEach((r, i) => {
+          if (r.status !== 'fulfilled') return;
+          const call = calls[i]!;
+          const seen = new Set<string>();
+          for (const s of r.value) {
+            if (s.confirmed && s.contact_id && !seen.has(s.contact_id)) {
+              seen.add(s.contact_id);
+              const prev = stats.get(s.contact_id) ?? {
+                callCount: 0,
+                totalSec: 0,
+              };
+              stats.set(s.contact_id, {
+                callCount: prev.callCount + 1,
+                totalSec: prev.totalSec + (call.duration_sec ?? 0),
+              });
+            }
+          }
+        });
+        setStatsByContact(stats);
+      } catch (e) {
+        console.warn('contact stats aggregate failed', e);
+      }
+    })();
+  }, [contacts]);
 
   const handleCreate = async (input: ContactInput) => {
     try {
@@ -329,6 +375,7 @@ export function ContactsPage() {
             colorIdx={
               contacts.findIndex((c) => c.id === activeContact.id) % SP_COLORS.length
             }
+            stats={statsByContact.get(activeContact.id) ?? null}
             onEdit={() => setMode({ kind: 'edit', contactId: activeContact.id })}
             onDelete={() => void handleDelete(activeContact)}
           />
@@ -435,11 +482,18 @@ function ContactGroup({ label, items, activeId, onSelect }: ContactGroupProps) {
 interface ContactViewProps {
   contact: Contact;
   colorIdx: number;
+  stats: ContactStats | null;
   onEdit: () => void;
   onDelete: () => void;
 }
 
-function ContactView({ contact, colorIdx, onEdit, onDelete }: ContactViewProps) {
+function ContactView({
+  contact,
+  colorIdx,
+  stats,
+  onEdit,
+  onDelete,
+}: ContactViewProps) {
   const color = contact.is_owner ? SP_COLORS[0] : SP_COLORS[colorIdx % SP_COLORS.length];
   const consentVoice = String(contact.attributes['consent_voice'] ?? '') === 'true';
   return (
@@ -486,7 +540,6 @@ function ContactView({ contact, colorIdx, onEdit, onDelete }: ContactViewProps) 
             width: 76,
             height: 76,
             fontSize: 22,
-            borderRadius: 16,
           }}
         >
           {initials(contact.display_name)}
@@ -511,16 +564,22 @@ function ContactView({ contact, colorIdx, onEdit, onDelete }: ContactViewProps) 
 
       <div style={{ display: 'flex', gap: 18, marginBottom: 32 }}>
         <div className="stat" style={{ padding: '0 24px 0 0' }}>
-          <span className="stat-value">—</span>
+          <span className="stat-value">{stats?.callCount ?? 0}</span>
           <span className="stat-label">Звонков</span>
         </div>
         <div className="stat">
-          <span className="stat-value">—</span>
+          <span className="stat-value">
+            {formatRecordedDuration(stats?.totalSec ?? 0)}
+          </span>
           <span className="stat-label">Записано</span>
         </div>
         <div className="stat">
           <span className="stat-value">
-            {consentVoice ? <span style={{ color: 'var(--accent)' }}>opt-in</span> : '—'}
+            {consentVoice ? (
+              <span style={{ color: 'var(--accent)' }}>opt-in</span>
+            ) : (
+              '—'
+            )}
           </span>
           <span className="stat-label">Голосовые семплы</span>
         </div>
@@ -600,5 +659,26 @@ function ContactView({ contact, colorIdx, onEdit, onDelete }: ContactViewProps) 
 
       <VoiceSamplesSection contactId={contact.id} alwaysShow={consentVoice} />
     </div>
+  );
+}
+
+function formatRecordedDuration(sec: number): ReactNode {
+  if (sec === 0) return '0';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h === 0) return `${m}м`;
+  if (m === 0) {
+    return (
+      <>
+        {h}
+        <span style={{ fontSize: 18, marginLeft: 4 }}>ч</span>
+      </>
+    );
+  }
+  return (
+    <>
+      {h}
+      <span style={{ fontSize: 18, marginLeft: 4 }}>ч {m}м</span>
+    </>
   );
 }
