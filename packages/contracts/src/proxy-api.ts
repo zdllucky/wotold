@@ -57,8 +57,12 @@ export interface UsageResponse {
   /** SCAFFOLD — захардкожено 'free' (M9.3). */
   tier: 'free';
   sttSecondsUsed: number;
+  /** Дневной лимит STT секунд для текущего тира. 0 = безлимит/не настроен. */
+  sttSecondsLimit: number;
   llmTokensUsed: number;
-  /** ISO 8601 UTC. */
+  /** Дневной лимит LLM токенов для текущего тира. 0 = безлимит/не настроен. */
+  llmTokensLimit: number;
+  /** ISO 8601 UTC. Окончание текущего suток счёта (UTC midnight + 1). */
   periodResetAt: string;
 }
 

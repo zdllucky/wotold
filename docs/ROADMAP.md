@@ -79,7 +79,7 @@
 - [ ] **#45** M7.4 follow-up: voice samples view + manual delete → #26
 - [x] **#33** M7.5 Settings baseline — provider/path/LLM model (см. «Готово»)
 - [x] **#47** M7.5 follow-up: BYO keys в keychain — `keyring` crate, `secrets::ByoProvider` enum, Tauri commands (set/delete/list_byo_status — без раскрытия значений), pipeline `mode_for` читает ключ per-provider, Settings BYO UI с password input + status badge
-- [ ] **#48** M7.5 follow-up: Quota indicator из /v1/usage → #44
+- [x] **#48** M7.5 follow-up: Quota indicator UI из /v1/usage — `apps/desktop/src/api/usage.ts` клиент + `ui/UsageBar` DS-компонент (tone ok/warning/danger по % использования) + `pages/UsageSection` показан только в managed-режиме. Прокси расширен `sttSecondsLimit`/`llmTokensLimit` в `UsageResponse` (берётся из `QUOTA_STT_SECONDS_PER_DAY`/`QUOTA_LLM_TOKENS_PER_DAY` env vars). 3 integration теста для /v1/usage. Сброс счётчиков отображается в локальной таймзоне юзера.
 - [x] **#34** M7.6 Onboarding baseline — welcome + owner rename (см. «Готово»)
 
 ## MCP · Этап 7 / M8

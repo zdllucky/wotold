@@ -7,3 +7,4 @@ export { Pill } from './Pill';
 export { StatusDot } from './StatusDot';
 export { Tabs } from './Tabs';
 export { Toolbar } from './Toolbar';
+export { UsageBar } from './UsageBar';
