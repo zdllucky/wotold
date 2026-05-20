@@ -163,8 +163,11 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               саммари.
             </p>
             <div className="field" style={{ marginBottom: 24 }}>
-              <label className="field-label">Имя</label>
+              <label className="field-label" htmlFor="onboarding-name">
+                Имя
+              </label>
               <input
+                id="onboarding-name"
                 type="text"
                 className="input"
                 value={name}
@@ -176,6 +179,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
             </div>
             {error && (
               <p
+                role="alert"
                 style={{
                   color: 'var(--signal)',
                   fontFamily: 'var(--font-sans)',

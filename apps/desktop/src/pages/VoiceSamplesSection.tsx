@@ -95,6 +95,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
       </div>
       {error && (
         <p
+          role="alert"
           style={{
             color: 'var(--signal)',
             fontFamily: 'var(--font-sans)',

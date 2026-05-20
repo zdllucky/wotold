@@ -135,7 +135,9 @@ export function CallsPage({ onOpen }: CallsPageProps) {
 
   if (error) {
     return (
-      <p style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>{error}</p>
+      <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+        {error}
+      </p>
     );
   }
   if (!calls) {

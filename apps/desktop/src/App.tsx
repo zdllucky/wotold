@@ -99,10 +99,8 @@ function AppShell() {
             <button
               key={item.id}
               type="button"
-              role="tab"
               className={`nav-item${active ? ' nav-item--active' : ''}`}
               onClick={() => setPage(item.id)}
-              aria-selected={active}
               aria-current={active ? 'page' : undefined}
             >
               {item.label}

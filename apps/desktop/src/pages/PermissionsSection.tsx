@@ -74,6 +74,7 @@ export function PermissionsSection() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {error && (
         <p
+          role="alert"
           style={{
             color: 'var(--signal)',
             fontFamily: 'var(--font-sans)',

@@ -251,6 +251,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
 
       {error && (
         <p
+          role="alert"
           style={{
             color: 'var(--signal)',
             marginBottom: 24,
