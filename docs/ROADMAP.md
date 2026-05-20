@@ -35,6 +35,7 @@
 - [x] **#47** BYO API keys в Keychain (keyring crate, secrets module, Tauri commands, pipeline wire, Settings UI)
 - [x] **#24** Voice embedding foundation (M3.1) — Embedder trait + cosine + BLOB serde, lib decision = ort + ONNX WeSpeaker
 - [x] **#37** OIDC backend в прокси (M10.1 SCAFFOLD) — Google real + Apple/MS stubs, KV AUTH namespace, state CSRF, session с TTL
+- [x] **[B8]** Backend deployment pipeline — wrangler envs (staging + production), GH Actions split (preflight → staging on main / production on tag), `scripts/cf-bootstrap.sh`, `docs/DEPLOYMENT.md`, `.dev.vars.example` обновлён под OIDC. Бесплатность сохранена (R7). Manual setup → #44.
 - [x] **#31** Call detail tabs (Рекап/Расшифровка/Задачи, без speaker bindings) — [`195ad91`](#)
 - [x] **[B6]** Design system + dev-only DS showcase — tokens.css, ui/*, refactor пагов на DS
 - [x] **[B7]** Test infra — vitest (desktop+proxy), cargo-llvm-cov, CI tests+coverage, 21 Rust + 31 TS test, TDD hook + ECC enforcement в CLAUDE.md
@@ -102,7 +103,11 @@
 
 - [ ] **#42** X1 Generate Tauri minisign + публичный ключ в `tauri.conf.json` + приватный в GitHub-секрет + офлайн-бэкап (M11.1, M11.9)
 - [x] **#43** X2 `REPLACE_OWNER/wotold` → `zdllucky/wotold` в `tauri.conf.json` (updater endpoint)
-- [ ] **#44** X3 Cloudflare provisioning: `wrangler kv namespace create QUOTA`, `wrangler r2 bucket create wotold-stt-staging`, подставить id в `wrangler.toml`, `wrangler secret put` для ANTHROPIC/SONIOX/GLADIA/R2_* (раздел 16.2)
+- [ ] **#44** X3 Cloudflare provisioning per env. Делается через `scripts/cf-bootstrap.sh staging|production` + `wrangler secret put --env`. Полная процедура — `docs/DEPLOYMENT.md`. Требует:
+  - CF Free аккаунт + API token (Workers/KV/R2 edit) + Account ID
+  - GitHub Repo Secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+  - GitHub Environments `staging` (auto) и `production` (manual approval)
+  - Подстановка реальных KV IDs в `services/proxy/wrangler.toml` (TODO_* плейсхолдеры)
 
 ---
 

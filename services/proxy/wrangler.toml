@@ -1,65 +1,120 @@
-name = "wotold-proxy"
+# wotold-proxy — Cloudflare Workers config.
+#
+# Two environments:
+#   - staging    deployed автоматически на каждый push в main.
+#                Используется для предпрод тестов + integration sanity.
+#   - production deployed только на tag v*.*.*.
+#                Боевая cредa.
+#
+# Бесплатность (R7 паспорта): Free план у обоих окружений. Никаких Durable Objects,
+# Cron > 3, Email Workers. KV 100k reads/1k writes/день · R2 10GB/10M ops · Workers 100k req/день.
+#
+# Top-level fields служат defaults (wrangler dev в проекте использует их если не указан --env).
+# Для production деплоя ВСЕГДА указывать `--env production`, для staging — `--env staging`.
+
+name = "wotold-proxy-dev"
 main = "src/index.ts"
 compatibility_date = "2026-05-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
-# Free-тир (R7). НЕ закладывать Cron Triggers / Durable Objects /
-# длительные синхронные операции — упрётся в лимиты Free.
+[observability]
+enabled = true
 
-[[kv_namespaces]]
+# ============================================================
+# STAGING
+# ============================================================
+
+[env.staging]
+name = "wotold-proxy-staging"
+workers_dev = true
+# Маркируем staging в логах + JSON-ответах /health (отдельный TIER не нужен).
+# Лайфсайкл R2 — настраивается правилами бакета вне wrangler.
+
+[env.staging.observability]
+enabled = true
+
+[[env.staging.kv_namespaces]]
 binding = "QUOTA"
-# TODO: `wrangler kv namespace create QUOTA` → подставить id + preview_id
-id = "TODO_KV_NAMESPACE_ID"
-preview_id = "TODO_KV_PREVIEW_ID"
+# TODO(bootstrap): `wrangler kv namespace create QUOTA --env staging` → подставить id
+id = "TODO_STAGING_KV_QUOTA_ID"
 
-# M10 auth (#37). Хранит state-токены (TTL 5min), сессии (TTL 30d) и account записи (без TTL).
-[[kv_namespaces]]
+[[env.staging.kv_namespaces]]
 binding = "AUTH"
-# TODO: `wrangler kv namespace create AUTH` → подставить id + preview_id
-id = "TODO_AUTH_KV_NAMESPACE_ID"
-preview_id = "TODO_AUTH_KV_PREVIEW_ID"
+# TODO(bootstrap): `wrangler kv namespace create AUTH --env staging`
+id = "TODO_STAGING_KV_AUTH_ID"
 
-[[r2_buckets]]
+[[env.staging.r2_buckets]]
 binding = "STT_STAGING"
-# TODO: `wrangler r2 bucket create wotold-stt-staging`
-bucket_name = "wotold-stt-staging"
-preview_bucket_name = "wotold-stt-staging-preview"
+# TODO(bootstrap): `wrangler r2 bucket create wotold-stt-staging-stg`
+bucket_name = "wotold-stt-staging-stg"
 
-[vars]
+[env.staging.vars]
+TIER = "free"
+QUOTA_STT_SECONDS_PER_DAY = "3600"
+QUOTA_LLM_TOKENS_PER_DAY = "200000"
+STAGING_PRESIGN_TTL_SECONDS = "900"
+STT_STAGING_BUCKET = "wotold-stt-staging-stg"
+ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
+AUTH_STATE_TTL_SECONDS = "300"
+AUTH_SESSION_TTL_SECONDS = "2592000"
+GOOGLE_OAUTH_CLIENT_ID = ""
+APPLE_OAUTH_CLIENT_ID = ""
+MICROSOFT_OAUTH_CLIENT_ID = ""
+PUBLIC_BASE_URL = ""
+
+# ============================================================
+# PRODUCTION
+# ============================================================
+
+[env.production]
+name = "wotold-proxy"
+workers_dev = false
+
+[env.production.observability]
+enabled = true
+
+[[env.production.kv_namespaces]]
+binding = "QUOTA"
+# TODO(bootstrap): `wrangler kv namespace create QUOTA --env production`
+id = "TODO_PROD_KV_QUOTA_ID"
+
+[[env.production.kv_namespaces]]
+binding = "AUTH"
+# TODO(bootstrap): `wrangler kv namespace create AUTH --env production`
+id = "TODO_PROD_KV_AUTH_ID"
+
+[[env.production.r2_buckets]]
+binding = "STT_STAGING"
+# TODO(bootstrap): `wrangler r2 bucket create wotold-stt-staging`
+bucket_name = "wotold-stt-staging"
+
+[env.production.vars]
 TIER = "free"
 QUOTA_STT_SECONDS_PER_DAY = "3600"
 QUOTA_LLM_TOKENS_PER_DAY = "200000"
 STAGING_PRESIGN_TTL_SECONDS = "900"
 STT_STAGING_BUCKET = "wotold-stt-staging"
 ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"
-
-# M10 auth (#37). Длительности — TTL для KV. Менять без миграции существующих ключей.
 AUTH_STATE_TTL_SECONDS = "300"
 AUTH_SESSION_TTL_SECONDS = "2592000"
-# OIDC client IDs — публичные, не secrets. Прокси не делает code-exchange без серверного secret-а.
 GOOGLE_OAUTH_CLIENT_ID = ""
 APPLE_OAUTH_CLIENT_ID = ""
 MICROSOFT_OAUTH_CLIENT_ID = ""
-# Public origin прокси (нужен в redirect_uri OIDC). Прод: из wrangler.toml,
-# dev: из `wrangler dev --local` URL. Пусто = derive из request URL.
 PUBLIC_BASE_URL = ""
 
-# Секреты (S1) — через `wrangler secret put`:
-#   ANTHROPIC_API_KEY        ключ владельца для LLM
-#   SONIOX_API_KEY           primary STT
-#   GLADIA_API_KEY           fallback STT
-#   R2_ACCOUNT_ID            cloudflare account id (R2 S3 endpoint)
-#   R2_ACCESS_KEY_ID         R2 S3 access key
-#   R2_SECRET_ACCESS_KEY     R2 S3 secret
-#   # M10 auth (#37):
-#   GOOGLE_OAUTH_CLIENT_SECRET    OAuth client secret (Google)
-#   APPLE_OAUTH_CLIENT_SECRET     JWT client secret (Apple, ES256-signed, TTL ≤6 месяцев)
-#   MICROSOFT_OAUTH_CLIENT_SECRET OAuth client secret (Microsoft Azure AD)
+# ============================================================
+# Секреты (S1) — через `wrangler secret put --env <staging|production>`:
+#   ANTHROPIC_API_KEY                ключ владельца LLM
+#   SONIOX_API_KEY                   primary STT
+#   GLADIA_API_KEY                   fallback STT
+#   R2_ACCOUNT_ID                    CF account id для R2 S3 endpoint
+#   R2_ACCESS_KEY_ID                 R2 S3 access key
+#   R2_SECRET_ACCESS_KEY             R2 S3 secret
+#   GOOGLE_OAUTH_CLIENT_SECRET       Google OAuth client secret (#37)
+#   APPLE_OAUTH_CLIENT_SECRET        Apple JWT client secret (#37, X4 deferred)
+#   MICROSOFT_OAUTH_CLIENT_SECRET    MS Azure AD client secret (#37, X4 deferred)
+#
 # Доступны ТОЛЬКО джобе деплоя прокси (не сборке приложения).
-
-[observability]
-enabled = true
-
-# Лайфсайкл стейджинга R2 — настраивается правилами бакета вне wrangler
-# (Cron Triggers на Free недоступны, см. раздел 16.2 паспорта).
+# Для local dev — `services/proxy/.dev.vars` (.gitignored), template — `.dev.vars.example`.
+# ============================================================
