@@ -211,7 +211,7 @@
 - [x] **shell:allow-open** в capabilities — сужено: `accounts.google.com/o/oauth2/**`, `appleid.apple.com/auth/**`, `login.microsoftonline.com/**/oauth2/**`, `{proxy}/v1/auth/**`.
 - [x] **OIDC ID token claims validation** — `decodeIdTokenPayload` теперь проверяет exp/iss/aud (GoogleAdapter передаёт expected). JWKS signature — follow-up.
 - [x] **consumeState CAS race** — best-effort через consumedAt tombstone + re-read verify. Full atomic CAS = DO follow-up.
-- [ ] **CORS для /v1/auth/me** — сейчас `origin:*` + cookie auth. Малиозный сайт может прочитать сессию. Restrict origin до `tauri://localhost`, `http://tauri.localhost`, или вообще убрать cookie auth, оставить только Bearer.
+- [x] **CORS /v1/*** — origin allowlist (tauri://localhost, http://tauri.localhost, http://localhost:5173, http://127.0.0.1:5173). /, /health открыты для smoke. Bearer-only auth, не cookie.
 - [ ] **device-id spoof + IP rate-limit** — UUID regex недостаточно. HMAC-bind device-id с server-side secret при первом контакте + cf-connecting-ip rate-limit /16.
 - [x] **panic hook** — backtrace в `~/Library/Logs/app.wotold.desktop/panic.log` + prev_hook chain.
 - [x] **single-instance plugin** — `tauri-plugin-single-instance` v2 с feature deep-link, callback поднимает существующее окно.
@@ -252,9 +252,9 @@
 ### UX / CX (P2)
 
 - [ ] **Coachmarks на первом запуске** — explain где Звонки/Контакты/Настройки.
-- [ ] **macOS app menu** — File / Edit / View / Window через Tauri 2 Menu API.
+- [x] **macOS app menu** — Tauri 2 MenuBuilder с Wotold/Edit/View/Window submenus. Native Cut/Copy/Paste теперь работают в webview.
 - [x] **Window min-size 760x560** — поднят с 640x480 в tauri.conf.json.
-- [ ] **macOS toast при сохранении settings** — subtle saved checkmark.
+- [x] **macOS toast при сохранении settings** — pill «✓ Сохранено» 1.5s, fade-in/out, reduced-motion respect.
 - [ ] **Toolbar поддержка subtitle + sticky positioning** — расширить API.
 
 ### Visual / Design (P0)
