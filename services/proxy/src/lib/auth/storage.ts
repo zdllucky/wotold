@@ -51,6 +51,11 @@ export interface StateRecord {
    * - 'deeplink' — HTTP 302 redirect на `wotold://auth/callback?session=...` (Tauri auto-перехват)
    */
   redirectMode?: 'json' | 'deeplink';
+  /**
+   * [B16 audit P0]: ms-timestamp когда state был consumed. Используется как
+   * tombstone для best-effort single-use enforcement (см. consumeState).
+   */
+  consumedAt?: number;
 }
 
 // ----- key prefixes -----
@@ -117,10 +122,33 @@ export async function putState(env: Env, id: string, record: StateRecord): Promi
   });
 }
 
-/** Single-use: state consumed после первого consumeState и удаляется. */
+/**
+ * Single-use: state consumed после первого consumeState и помечается.
+ *
+ * [B16 audit P0]: best-effort CAS через writeback маркера consumedAt и re-read.
+ * Workers KV не имеет нативного CAS — две параллельные consume могут оба
+ * вернуть rec в race window между get+put. Митигируем:
+ *   1. читаем; если уже consumedAt → null
+ *   2. пишем consumedAt = Date.now() обратно
+ *   3. re-read — если consumedAt совпадает с нашим → мы выиграли
+ *   4. иначе race — отдаём null (тот кто выиграл уже processs)
+ * Race window ~50ms между put и re-read. Для defense-in-depth достаточно;
+ * полный atomic CAS требует Durable Object — follow-up если security audit
+ * найдёт реальный exploit.
+ */
 export async function consumeState(env: Env, id: string): Promise<StateRecord | null> {
   const raw = await env.AUTH.get(K_STATE + id);
   if (!raw) return null;
-  await env.AUTH.delete(K_STATE + id);
-  return JSON.parse(raw) as StateRecord;
+  const rec = JSON.parse(raw) as StateRecord;
+  if (rec.consumedAt) return null;
+  const marker = Date.now();
+  const stamped: StateRecord = { ...rec, consumedAt: marker };
+  // Сохраняем tombstone с коротким TTL чтобы предотвратить повторное consume.
+  await env.AUTH.put(K_STATE + id, JSON.stringify(stamped), { expirationTtl: 300 });
+  // Re-read: если не наш marker — race lost.
+  const reread = await env.AUTH.get(K_STATE + id);
+  if (!reread) return null;
+  const verify = JSON.parse(reread) as StateRecord;
+  if (verify.consumedAt !== marker) return null;
+  return verify;
 }

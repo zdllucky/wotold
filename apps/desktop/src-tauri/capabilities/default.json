@@ -17,11 +17,11 @@
     {
       "identifier": "shell:allow-open",
       "allow": [
-        { "url": "https://accounts.google.com/**" },
-        { "url": "https://appleid.apple.com/**" },
-        { "url": "https://login.microsoftonline.com/**" },
-        { "url": "https://wotold-proxy-staging.animereader.workers.dev/**" },
-        { "url": "https://wotold-proxy.animereader.workers.dev/**" }
+        { "url": "https://accounts.google.com/o/oauth2/**" },
+        { "url": "https://appleid.apple.com/auth/**" },
+        { "url": "https://login.microsoftonline.com/**/oauth2/**" },
+        { "url": "https://wotold-proxy-staging.animereader.workers.dev/v1/auth/**" },
+        { "url": "https://wotold-proxy.animereader.workers.dev/v1/auth/**" }
       ]
     }
   ]
