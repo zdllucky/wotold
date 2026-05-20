@@ -9,14 +9,14 @@
 //   - кнопка "Подтвердить" / "Отвязать"
 
 import { useEffect, useState } from 'react';
-import { listContacts, type Contact } from '../api/contacts';
+import { createContact, listContacts, type Contact } from '../api/contacts';
 import {
   confirmCallSpeaker,
   listCallSpeakers,
   unbindCallSpeaker,
   type CallSpeakerView,
 } from '../api/speakers';
-import { Badge, Button, Card, Empty } from '../ui';
+import { Badge, Button, Card, Empty, InputField } from '../ui';
 
 interface SpeakersSectionProps {
   callId: string;
@@ -41,6 +41,37 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
   const [error, setError] = useState<string | null>(null);
   // Выбор контакта для каждой строки до клика "Подтвердить".
   const [pickFor, setPickFor] = useState<Record<string, string>>({});
+  // [B11]: inline-форма «+ Добавить как контакт» открыта для конкретного speaker_id.
+  const [addingFor, setAddingFor] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const [newConsent, setNewConsent] = useState(false);
+  const [busyAdd, setBusyAdd] = useState(false);
+
+  const handleAddAsContact = async (s: CallSpeakerView) => {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      setError('Введи имя контакта.');
+      return;
+    }
+    setBusyAdd(true);
+    setError(null);
+    try {
+      const contact = await createContact({
+        display_name: trimmed,
+        identifiers: [],
+        attributes: newConsent ? { consent_voice: 'true' } : {},
+      });
+      await confirmCallSpeaker(s.id, contact.id);
+      setAddingFor(null);
+      setNewName('');
+      setNewConsent(false);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusyAdd(false);
+    }
+  };
 
   const refresh = async () => {
     try {
@@ -128,7 +159,7 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
 
               {!s.confirmed && (
                 <>
-                  {s.suggestion_contact_id && (
+                  {s.suggestion_contact_id ? (
                     <p className="text-subtle" style={{ fontSize: 'var(--text-xs)' }}>
                       Подсказка:{' '}
                       <strong>{s.suggestion_contact_display_name ?? '—'}</strong>
@@ -136,6 +167,10 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
                       <span className="text-muted">{sourceLabel(s.suggestion_source)}</span>
                       {' · '}
                       <span className="text-muted">{formatScore(s.suggestion_score)}</span>
+                    </p>
+                  ) : (
+                    <p className="text-subtle" style={{ fontSize: 'var(--text-xs)' }}>
+                      Анонимный спикер — кто это? Выбери контакт или добавь нового.
                     </p>
                   )}
                   <label className="speaker-pick-label">
@@ -156,6 +191,64 @@ export function SpeakersSection({ callId }: SpeakersSectionProps) {
                       ))}
                     </select>
                   </label>
+                  {addingFor === s.id ? (
+                    <div className="speaker-add-form">
+                      <InputField
+                        label="Имя нового контакта"
+                        type="text"
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        autoFocus
+                        placeholder="Иван Петров"
+                      />
+                      <label className="consent-row" style={{ fontSize: 'var(--text-sm)' }}>
+                        <input
+                          type="checkbox"
+                          checked={newConsent}
+                          onChange={(e) => setNewConsent(e.target.checked)}
+                        />
+                        <span>Накапливать голосовой профиль (C2)</span>
+                      </label>
+                      <div className="form-actions" style={{ marginTop: 'var(--space-1)' }}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setAddingFor(null);
+                            setNewName('');
+                            setNewConsent(false);
+                          }}
+                          disabled={busyAdd}
+                        >
+                          Отмена
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          onClick={() => void handleAddAsContact(s)}
+                          disabled={busyAdd || !newName.trim()}
+                          busy={busyAdd}
+                        >
+                          {busyAdd ? 'Добавляем…' : 'Добавить и привязать'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setAddingFor(s.id);
+                        setNewName('');
+                        setNewConsent(false);
+                      }}
+                    >
+                      + Добавить как контакт
+                    </Button>
+                  )}
                 </>
               )}
             </Card>

@@ -11,7 +11,7 @@ export interface ActionItem {
   done: boolean;
 }
 
-export type CallArtifactKind = 'recap' | 'transcript';
+export type CallArtifactKind = 'recap' | 'transcript' | 'raw_stt';
 
 export function getCall(id: string): Promise<Call | null> {
   return invoke<Call | null>('get_call', { id });

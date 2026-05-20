@@ -14,6 +14,7 @@ import {
 import { listContacts, type Contact } from '../api/contacts';
 import type { Call } from '../api/recording';
 import { Button, Card, Empty, Pill, Tabs } from '../ui';
+import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakersSection } from './SpeakersSection';
 
 type Tab = 'recap' | 'transcript' | 'tasks' | 'speakers';
@@ -28,6 +29,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [tab, setTab] = useState<Tab>('recap');
   const [recap, setRecap] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string | null>(null);
+  const [rawStt, setRawStt] = useState<string | null>(null);
   const [tasks, setTasks] = useState<ActionItem[] | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -40,13 +42,15 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       getCall(callId),
       readCallArtifact(callId, 'recap'),
       readCallArtifact(callId, 'transcript'),
+      readCallArtifact(callId, 'raw_stt'),
       listCallActionItems(callId),
       listContacts(),
     ])
-      .then(([c, r, t, ai, cs]) => {
+      .then(([c, r, t, raw, ai, cs]) => {
         setCall(c);
         setRecap(r);
         setTranscript(t);
+        setRawStt(raw);
         setTasks(ai);
         setContacts(cs);
       })
@@ -71,14 +75,16 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       await reprocessCall(call.id);
       // Pipeline:finished event на бекенде сам триггерит refresh где надо;
       // здесь явно перечитаем артефакты.
-      const [fresh, freshTranscript, freshTasks, freshCall] = await Promise.all([
+      const [fresh, freshTranscript, freshRaw, freshTasks, freshCall] = await Promise.all([
         readCallArtifact(call.id, 'recap'),
         readCallArtifact(call.id, 'transcript'),
+        readCallArtifact(call.id, 'raw_stt'),
         listCallActionItems(call.id),
         getCall(call.id),
       ]);
       setRecap(fresh);
       setTranscript(freshTranscript);
+      setRawStt(freshRaw);
       setTasks(freshTasks);
       setCall(freshCall);
     } catch (e) {
@@ -220,7 +226,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           <MdPanel md={recap} emptyHint="Рекап ещё не сгенерирован." />
         </Tabs.Panel>
         <Tabs.Panel value="transcript">
-          <MdPanel md={transcript} emptyHint="Транскрипт ещё не готов." />
+          <InteractiveTranscript rawSttJson={rawStt} fallbackMd={transcript} />
         </Tabs.Panel>
         <Tabs.Panel value="tasks">
           <TasksPanel tasks={tasks ?? []} contacts={contacts} />

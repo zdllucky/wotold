@@ -268,6 +268,22 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
         log::warn!("auto_bind_owner_speaker {} failed: {e}", ctx.call_id);
     }
 
+    // [B11]: добавить placeholder rows для всех distinct speaker_tag из транскрипта
+    // (кроме owner, у которого уже confirmed). UI покажет даже анонимных «S1/S2»,
+    // юзер сможет привязать через select или «+ Добавить как контакт».
+    let mut seen_tags: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for seg in &merged {
+        if seg.speaker_tag != OWNER_TAG && !seg.speaker_tag.is_empty() {
+            seen_tags.insert(seg.speaker_tag.clone());
+        }
+    }
+    let tags_vec: Vec<String> = seen_tags.into_iter().collect();
+    if !tags_vec.is_empty() {
+        if let Err(e) = db::ensure_call_speakers_present(pool, &ctx.call_id, &tags_vec).await {
+            log::warn!("ensure_call_speakers_present {} failed: {e}", ctx.call_id);
+        }
+    }
+
     // M4 chain: транскрипт → LLM рекап. Ошибки рекапа НЕ роняют пайплайн —
     // транскрипт сохранён, рекап можно регенерировать вручную (M4.5).
     let transcript_md = render_transcript_md(&merged);
