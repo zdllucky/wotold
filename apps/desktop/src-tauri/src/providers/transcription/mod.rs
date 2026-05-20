@@ -55,7 +55,9 @@ pub enum TranscriptionError {
 }
 
 mod gladia;
+mod retry;
 mod soniox;
 
 pub use gladia::GladiaProvider;
+pub use retry::{failure_reason, transcribe_with_fallback, with_backoff, RetryConfig};
 pub use soniox::SonioxProvider;

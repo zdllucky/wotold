@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 
 import { renameOwnerContact } from '../api/contacts';
 import { setSetting, SETTINGS_KEYS } from '../api/settings';
+import { Button, InputField } from '../ui';
 
 interface OnboardingPageProps {
   onComplete: () => void;
@@ -35,7 +36,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
         {step === 1 && (
           <>
             <h1>Wotold</h1>
-            <p>
+            <p className="text-muted">
               Десктоп-утилита для записи звонков с транскрипцией и диаризацией. Всё локально на
               твоём устройстве.
             </p>
@@ -46,9 +47,9 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               <li>Локальный MCP для подключения к Claude</li>
             </ul>
             <div className="form-actions">
-              <button type="button" className="primary" onClick={() => setStep(2)}>
+              <Button variant="primary" onClick={() => setStep(2)}>
                 Начнём
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -56,7 +57,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
           <form onSubmit={submit}>
             <h1>Как тебя называть?</h1>
             <p className="hint">Имя владельца. Прикрепляется к твоей дорожке в каждой записи.</p>
-            <input
+            <InputField
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -66,12 +67,12 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
             />
             {error && <p className="error">{error}</p>}
             <div className="form-actions">
-              <button type="button" onClick={() => setStep(1)} disabled={saving}>
+              <Button variant="ghost" type="button" onClick={() => setStep(1)} disabled={saving}>
                 Назад
-              </button>
-              <button type="submit" disabled={saving || !name.trim()}>
+              </Button>
+              <Button variant="primary" type="submit" disabled={saving || !name.trim()} busy={saving}>
                 {saving ? 'Сохраняем…' : 'Готово'}
-              </button>
+              </Button>
             </div>
           </form>
         )}

@@ -11,6 +11,15 @@ import {
   type ContactIdentifierInput,
   type ContactInput,
 } from '../api/contacts';
+import {
+  Badge,
+  Button,
+  Card,
+  Empty,
+  InputField,
+  TextareaField,
+  Toolbar,
+} from '../ui';
 
 export function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
@@ -69,50 +78,56 @@ export function ContactsPage() {
   if (!contacts) return <p className="hint">Загрузка…</p>;
 
   return (
-    <section className="contacts-list">
-      <div className="contacts-header">
-        <h2>Контакты</h2>
-        <button
-          type="button"
-          className="primary"
-          onClick={() => {
-            setShowAddForm((v) => !v);
-            setEditingId(null);
-          }}
-        >
-          {showAddForm ? 'Отмена' : '+ Добавить'}
-        </button>
-      </div>
+    <section className="contacts">
+      <Toolbar
+        title="Контакты"
+        actions={
+          <Button
+            variant={showAddForm ? 'ghost' : 'primary'}
+            size="sm"
+            onClick={() => {
+              setShowAddForm((v) => !v);
+              setEditingId(null);
+            }}
+          >
+            {showAddForm ? 'Отмена' : '+ Добавить'}
+          </Button>
+        }
+      />
 
       {showAddForm && (
-        <ContactForm
-          submitLabel="Создать"
-          onSubmit={handleCreate}
-          onCancel={() => setShowAddForm(false)}
-        />
+        <Card>
+          <ContactForm
+            submitLabel="Создать"
+            onSubmit={handleCreate}
+            onCancel={() => setShowAddForm(false)}
+          />
+        </Card>
       )}
       {error && <p className="error">{error}</p>}
 
       {contacts.length === 0 ? (
-        <p className="hint">Контактов нет.</p>
+        <Empty title="Контактов нет" description="Добавь первый — кнопка справа." />
       ) : (
-        <ul>
+        <ul className="contact-list">
           {contacts.map((c) =>
             editingId === c.id ? (
               <li key={c.id}>
-                <ContactForm
-                  submitLabel="Сохранить"
-                  initial={c}
-                  onSubmit={(input) => handleUpdate(c.id, input)}
-                  onCancel={() => setEditingId(null)}
-                />
+                <Card>
+                  <ContactForm
+                    submitLabel="Сохранить"
+                    initial={c}
+                    onSubmit={(input) => handleUpdate(c.id, input)}
+                    onCancel={() => setEditingId(null)}
+                  />
+                </Card>
               </li>
             ) : (
-              <li key={c.id} className={c.is_owner ? 'contact owner' : 'contact'}>
-                <div className="name">
+              <li key={c.id} className="contact-row">
+                <div className="contact-row-head">
                   <button
                     type="button"
-                    className="name-text edit-trigger"
+                    className="contact-name-button"
                     onClick={() => {
                       setEditingId(c.id);
                       setShowAddForm(false);
@@ -121,11 +136,11 @@ export function ContactsPage() {
                   >
                     {c.display_name}
                   </button>
-                  {c.is_owner && <span className="badge">владелец</span>}
+                  {c.is_owner && <Badge tone="accent">владелец</Badge>}
                   {!c.is_owner && (
                     <button
                       type="button"
-                      className="delete"
+                      className="contact-delete"
                       title="Удалить"
                       aria-label={`Удалить ${c.display_name}`}
                       onClick={() => handleDelete(c.id, c.display_name)}
@@ -135,14 +150,14 @@ export function ContactsPage() {
                   )}
                 </div>
                 {(c.org ?? c.role) && (
-                  <div className="meta">
+                  <div className="contact-secondary">
                     {c.role}
                     {c.role && c.org && ' · '}
                     {c.org}
                   </div>
                 )}
                 {c.identifiers.length > 0 && (
-                  <ul className="identifiers">
+                  <ul className="contact-identifiers">
                     {c.identifiers.map((id) => (
                       <li key={id.id}>
                         <span className="kind">{id.kind}:</span> {id.value}
@@ -151,7 +166,7 @@ export function ContactsPage() {
                   </ul>
                 )}
                 {Object.keys(c.attributes).length > 0 && (
-                  <ul className="attributes">
+                  <ul className="contact-attributes">
                     {Object.entries(c.attributes).map(([k, v]) => (
                       <li key={k}>
                         <span className="kind">{k}:</span> {String(v)}
@@ -159,7 +174,7 @@ export function ContactsPage() {
                     ))}
                   </ul>
                 )}
-                {c.notes && <p className="notes">{c.notes}</p>}
+                {c.notes && <p className="contact-notes">{c.notes}</p>}
               </li>
             ),
           )}
@@ -231,35 +246,39 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
 
   return (
     <form className="contact-form" onSubmit={submit}>
-      <label>
-        Имя
-        <input
-          type="text"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          autoFocus
-          required
-        />
-      </label>
-      <label>
-        Должность / роль
-        <input type="text" value={role} onChange={(e) => setRole(e.target.value)} />
-      </label>
-      <label>
-        Организация
-        <input type="text" value={org} onChange={(e) => setOrg(e.target.value)} />
-      </label>
-      <label>
-        Заметки
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-      </label>
+      <InputField
+        label="Имя"
+        type="text"
+        value={displayName}
+        onChange={(e) => setDisplayName(e.target.value)}
+        autoFocus
+        required
+      />
+      <InputField
+        label="Должность / роль"
+        type="text"
+        value={role}
+        onChange={(e) => setRole(e.target.value)}
+      />
+      <InputField
+        label="Организация"
+        type="text"
+        value={org}
+        onChange={(e) => setOrg(e.target.value)}
+      />
+      <TextareaField
+        label="Заметки"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        rows={3}
+      />
 
       <div className="row-group">
         <div className="row-group-head">
-          <span>Идентификаторы</span>
-          <button type="button" className="row-add" onClick={addIdentifier}>
+          <span className="row-group-title">Идентификаторы</span>
+          <Button type="button" size="sm" variant="ghost" onClick={addIdentifier}>
             + строку
-          </button>
+          </Button>
         </div>
         {identifiers.length === 0 && (
           <p className="row-empty">Телефоны, мейлы, мессенджеры.</p>
@@ -267,6 +286,7 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
         {identifiers.map((it, idx) => (
           <div key={idx} className="row">
             <select
+              className="ds-select"
               value={it.kind}
               onChange={(e) => setIdentifierKind(idx, e.target.value)}
             >
@@ -277,24 +297,31 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
               ))}
             </select>
             <input
+              className="ds-input"
               type="text"
               placeholder="значение"
               value={it.value}
               onChange={(e) => setIdentifierValue(idx, e.target.value)}
             />
-            <button type="button" className="row-remove" onClick={() => removeIdentifier(idx)}>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              onClick={() => removeIdentifier(idx)}
+              aria-label="Удалить строку"
+            >
               ×
-            </button>
+            </Button>
           </div>
         ))}
       </div>
 
       <div className="row-group">
         <div className="row-group-head">
-          <span>Расширяемые поля</span>
-          <button type="button" className="row-add" onClick={addAttribute}>
+          <span className="row-group-title">Расширяемые поля</span>
+          <Button type="button" size="sm" variant="ghost" onClick={addAttribute}>
             + строку
-          </button>
+          </Button>
         </div>
         {attributes.length === 0 && (
           <p className="row-empty">Любые ключ/значение — birthday, linkedin, любые.</p>
@@ -302,29 +329,39 @@ function ContactForm({ submitLabel, initial, onSubmit, onCancel }: ContactFormPr
         {attributes.map((it, idx) => (
           <div key={idx} className="row">
             <input
+              className="ds-input"
               type="text"
               placeholder="ключ"
               value={it.key}
               onChange={(e) => setAttrKey(idx, e.target.value)}
             />
             <input
+              className="ds-input"
               type="text"
               placeholder="значение"
               value={it.value}
               onChange={(e) => setAttrValue(idx, e.target.value)}
             />
-            <button type="button" className="row-remove" onClick={() => removeAttribute(idx)}>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              onClick={() => removeAttribute(idx)}
+              aria-label="Удалить строку"
+            >
               ×
-            </button>
+            </Button>
           </div>
         ))}
       </div>
 
       <div className="form-actions">
-        <button type="submit">{submitLabel}</button>
-        <button type="button" onClick={onCancel}>
+        <Button type="button" variant="ghost" onClick={onCancel}>
           Отмена
-        </button>
+        </Button>
+        <Button type="submit" variant="primary">
+          {submitLabel}
+        </Button>
       </div>
     </form>
   );

@@ -1,0 +1,23 @@
+# Test-only wrangler config для vitest-pool-workers / миниframe.
+# Никаких реальных TODO_KV_NAMESPACE_ID — миниframe держит KV/R2 in-memory.
+
+name = "wotold-proxy-test"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "QUOTA"
+id = "test-quota"
+
+[[r2_buckets]]
+binding = "STT_STAGING"
+bucket_name = "wotold-stt-staging-test"
+
+[vars]
+TIER = "free"
+QUOTA_STT_SECONDS_PER_DAY = "300"
+QUOTA_LLM_TOKENS_PER_DAY = "5000"
+STAGING_PRESIGN_TTL_SECONDS = "900"
+STT_STAGING_BUCKET = "wotold-stt-staging-test"
+ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6"

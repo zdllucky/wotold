@@ -9,6 +9,7 @@ import {
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
 import type { Call } from '../api/recording';
+import { Card, Empty, Pill, Tabs } from '../ui';
 
 type Tab = 'recap' | 'transcript' | 'tasks';
 
@@ -59,53 +60,66 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   };
 
   return (
-    <section className="call-detail">
-      <button type="button" className="back" onClick={onBack}>
+    <section className="call-detail-section">
+      <button type="button" className="call-detail-back" onClick={onBack}>
         ← к списку
       </button>
 
       <header className="call-detail-header">
-        <h2>{call.title ?? `Звонок ${call.id.slice(0, 8)}`}</h2>
-        <div className="meta">
-          {formatStarted(call.started_at)}
-          {' · '}
-          {formatDuration(call.duration_sec)}
-          {' · '}
-          <span className={`status-pill status-${call.status}`}>{call.status}</span>
-          {call.provider && ` · ${call.provider}`}
-          {call.lang_detected && ` · ${call.lang_detected}`}
+        <h2 className="call-detail-title">
+          {call.title ?? `Звонок ${call.id.slice(0, 8)}`}
+        </h2>
+        <div className="call-detail-meta">
+          <span>{formatStarted(call.started_at)}</span>
+          <span>·</span>
+          <span>{formatDuration(call.duration_sec)}</span>
+          <Pill tone={statusTone(call.status)}>{call.status}</Pill>
+          {call.provider && <span>· {call.provider}</span>}
+          {call.lang_detected && <span>· {call.lang_detected}</span>}
         </div>
       </header>
 
-      <div className="tabs" role="tablist">
-        {(['recap', 'transcript', 'tasks'] as Tab[]).map((t) => (
-          <button
-            type="button"
-            key={t}
-            role="tab"
-            aria-selected={tab === t}
-            className={tab === t ? 'active' : ''}
-            onClick={() => setTab(t)}
-          >
-            {tabLabel(t)}
-            {!tabHasContent[t] && <span className="tab-empty"> · ∅</span>}
-          </button>
-        ))}
-      </div>
+      {call.status === 'failed' && call.failed_reason && (
+        <Card className="call-failed-banner" variant="default">
+          <div className="call-failed-head">
+            <span className="call-failed-icon" aria-hidden>
+              ⚠
+            </span>
+            <span className="call-failed-title">Транскрипция не удалась</span>
+          </div>
+          <p className="call-failed-reason">{call.failed_reason}</p>
+        </Card>
+      )}
 
-      <div className="tab-panel">
-        {tab === 'recap' && <MdPanel md={recap} emptyHint="Рекап ещё не сгенерирован." />}
-        {tab === 'transcript' && (
+      <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
+        <Tabs.List>
+          {(['recap', 'transcript', 'tasks'] as Tab[]).map((t) => (
+            <Tabs.Trigger
+              key={t}
+              value={t}
+              counter={!tabHasContent[t] ? '∅' : undefined}
+            >
+              {tabLabel(t)}
+            </Tabs.Trigger>
+          ))}
+        </Tabs.List>
+
+        <Tabs.Panel value="recap">
+          <MdPanel md={recap} emptyHint="Рекап ещё не сгенерирован." />
+        </Tabs.Panel>
+        <Tabs.Panel value="transcript">
           <MdPanel md={transcript} emptyHint="Транскрипт ещё не готов." />
-        )}
-        {tab === 'tasks' && <TasksPanel tasks={tasks ?? []} contacts={contacts} />}
-      </div>
+        </Tabs.Panel>
+        <Tabs.Panel value="tasks">
+          <TasksPanel tasks={tasks ?? []} contacts={contacts} />
+        </Tabs.Panel>
+      </Tabs>
     </section>
   );
 }
 
 function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
-  if (!md) return <p className="hint">{emptyHint}</p>;
+  if (!md) return <Empty description={emptyHint} />;
   return (
     <div className="markdown">
       <ReactMarkdown>{md}</ReactMarkdown>
@@ -115,7 +129,7 @@ function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
 
 function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contact[] }) {
   if (tasks.length === 0) {
-    return <p className="hint">Action items пусты.</p>;
+    return <Empty description="Action items пусты." />;
   }
   const nameById = new Map(contacts.map((c) => [c.id, c.display_name]));
   return (
@@ -123,7 +137,7 @@ function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contac
       {tasks.map((t) => {
         const owner = t.owner_contact_id ? nameById.get(t.owner_contact_id) : null;
         return (
-          <li key={t.id} className={t.done ? 'task done' : 'task'}>
+          <li key={t.id} className="task-row" data-done={t.done ? 'true' : 'false'}>
             <span className="task-check" aria-hidden>
               {t.done ? '☑' : '☐'}
             </span>
@@ -135,6 +149,21 @@ function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contac
       })}
     </ul>
   );
+}
+
+function statusTone(status: string): 'accent' | 'success' | 'warning' | 'danger' | 'neutral' {
+  switch (status) {
+    case 'recording':
+      return 'danger';
+    case 'processing':
+      return 'accent';
+    case 'ready':
+      return 'success';
+    case 'failed':
+      return 'danger';
+    default:
+      return 'neutral';
+  }
 }
 
 function tabLabel(t: Tab): string {

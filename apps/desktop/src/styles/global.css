@@ -1,0 +1,183 @@
+/* Global base — reset, body, common layout primitives. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-system);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0 0 var(--space-3);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+}
+
+h1 {
+  font-size: var(--text-display);
+}
+
+h2 {
+  font-size: var(--text-xl);
+}
+
+h3 {
+  font-size: var(--text-lg);
+}
+
+p {
+  margin: 0 0 var(--space-3);
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+/* Topnav — chrome above .app. */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in oklch, var(--color-surface) 80%, transparent);
+  backdrop-filter: blur(var(--blur-overlay));
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topnav-spacer {
+  flex: 1;
+}
+
+.app {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-7) var(--space-4);
+  width: 100%;
+}
+
+.app > * {
+  width: 100%;
+  max-width: var(--layout-max-wide);
+}
+
+.app--center {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.text-muted {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.text-subtle {
+  color: var(--color-text-subtle);
+  font-size: var(--text-sm);
+}
+
+.text-mono {
+  font-family: var(--font-mono);
+}
+
+.markdown {
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+}
+
+.markdown h1 {
+  font-size: var(--text-2xl);
+  margin: 0 0 var(--space-3);
+}
+
+.markdown h2 {
+  font-size: var(--text-lg);
+  margin: var(--space-5) 0 var(--space-2);
+}
+
+.markdown h3 {
+  font-size: var(--text-base);
+  margin: var(--space-4) 0 var(--space-2);
+  font-weight: 600;
+}
+
+.markdown p {
+  margin: var(--space-2) 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: var(--space-5);
+  margin: var(--space-2) 0;
+}
+
+.markdown li {
+  margin: var(--space-1) 0;
+}
+
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--color-surface-sunken);
+  padding: 0.08rem var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.markdown pre {
+  background: var(--color-surface-sunken);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+
+.markdown strong {
+  font-weight: 600;
+}

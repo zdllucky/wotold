@@ -8,6 +8,7 @@ import {
   type ProviderPath,
   type SttProvider,
 } from '../api/settings';
+import { Card, InputField, SelectField, Toolbar } from '../ui';
 import { PermissionsSection } from './PermissionsSection';
 
 function isSttProvider(v: string | null): v is SttProvider {
@@ -57,17 +58,22 @@ export function SettingsPage() {
 
   return (
     <section className="settings">
-      <h2>Настройки</h2>
+      <Toolbar title="Настройки" />
 
       {error && <p className="error">{error}</p>}
 
-      <PermissionsSection />
+      <div className="settings-section">
+        <h3 className="settings-section-title">Системные разрешения</h3>
+        <Card compact>
+          <PermissionsSection />
+        </Card>
+      </div>
 
-      <fieldset>
-        <legend>Транскрипция</legend>
-        <label>
-          Провайдер
-          <select
+      <div className="settings-section">
+        <h3 className="settings-section-title">Транскрипция</h3>
+        <Card compact>
+          <SelectField
+            label="Провайдер"
             value={sttProvider}
             onChange={(e) => {
               const v = e.target.value as SttProvider;
@@ -78,15 +84,15 @@ export function SettingsPage() {
             <option value="auto">Auto (Soniox → Gladia)</option>
             <option value="soniox">Soniox</option>
             <option value="gladia">Gladia</option>
-          </select>
-        </label>
-      </fieldset>
+          </SelectField>
+        </Card>
+      </div>
 
-      <fieldset>
-        <legend>LLM</legend>
-        <label>
-          Модель Anthropic
-          <input
+      <div className="settings-section">
+        <h3 className="settings-section-title">LLM</h3>
+        <Card compact>
+          <InputField
+            label="Модель Anthropic"
             type="text"
             value={llmModel}
             onChange={(e) => setLlmModel(e.target.value)}
@@ -96,43 +102,46 @@ export function SettingsPage() {
               void persist(SETTINGS_KEYS.LLM_MODEL, trimmed);
             }}
           />
-        </label>
-      </fieldset>
+        </Card>
+      </div>
 
-      <fieldset>
-        <legend>Доставка партнёрских вызовов</legend>
-        <label className="radio">
-          <input
-            type="radio"
-            name="path"
-            value="managed"
-            checked={providerPath === 'managed'}
-            onChange={() => {
-              setProviderPath('managed');
-              void persist(SETTINGS_KEYS.PROVIDER_PATH, 'managed');
-            }}
-          />
-          <span>
-            <strong>Managed</strong> — через прокси с квотой Free-тира
-          </span>
-        </label>
-        <label className="radio">
-          <input
-            type="radio"
-            name="path"
-            value="byo"
-            checked={providerPath === 'byo'}
-            onChange={() => {
-              setProviderPath('byo');
-              void persist(SETTINGS_KEYS.PROVIDER_PATH, 'byo');
-            }}
-          />
-          <span>
-            <strong>BYO</strong> — свои ключи напрямую
-            <span className="hint"> · хранение ключей в keychain — #47</span>
-          </span>
-        </label>
-      </fieldset>
+      <div className="settings-section">
+        <h3 className="settings-section-title">Доставка партнёрских вызовов</h3>
+        <Card compact>
+          <label className="radio-row">
+            <input
+              type="radio"
+              name="path"
+              value="managed"
+              checked={providerPath === 'managed'}
+              onChange={() => {
+                setProviderPath('managed');
+                void persist(SETTINGS_KEYS.PROVIDER_PATH, 'managed');
+              }}
+            />
+            <span className="radio-row-text">
+              <strong>Managed</strong>
+              <span className="radio-row-hint">через прокси с квотой Free-тира</span>
+            </span>
+          </label>
+          <label className="radio-row">
+            <input
+              type="radio"
+              name="path"
+              value="byo"
+              checked={providerPath === 'byo'}
+              onChange={() => {
+                setProviderPath('byo');
+                void persist(SETTINGS_KEYS.PROVIDER_PATH, 'byo');
+              }}
+            />
+            <span className="radio-row-text">
+              <strong>BYO</strong>
+              <span className="radio-row-hint">свои ключи напрямую · keychain — #47</span>
+            </span>
+          </label>
+        </Card>
+      </div>
 
       <p className="hint">Все изменения сохраняются автоматически.</p>
     </section>

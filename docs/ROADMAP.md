@@ -29,7 +29,11 @@
 - [x] **#22** Pipeline: mic+system merge + raw_stt.json + transcript.md (M2.4-2.5) — [`4b0970b`](#)
 - [x] startup sweep застрявших recording/processing + status tooltips — [`ddee420`](#)
 - [x] **#28** Recap pipeline (M4.2-4.4) — LLM auto-chain → recap.md + action_items — [`3e1246c`](#)
+- [x] **#19** Proxy vitest + миниframe integration tests (STT routes + partner unit tests, 42 теста)
+- [x] **#23** STT robustness: retry/backoff (Network only), auto-fallback Soniox→Gladia, UX-readable `failed_reason`, banner на CallDetail
 - [x] **#31** Call detail tabs (Рекап/Расшифровка/Задачи, без speaker bindings) — [`195ad91`](#)
+- [x] **[B6]** Design system + dev-only DS showcase — tokens.css, ui/*, refactor пагов на DS
+- [x] **[B7]** Test infra — vitest (desktop+proxy), cargo-llvm-cov, CI tests+coverage, 21 Rust + 31 TS test, TDD hook + ECC enforcement в CLAUDE.md
 
 ---
 
@@ -42,11 +46,11 @@
 ## STT · Этап 3 / M2 + Этап 8 follow-up
 
 - [x] **#18** Proxy: Soniox + Gladia partner relay (см. «Готово»)
-- [ ] **#19** Proxy: vitest + miniflare integration tests → #18
+- [x] **#19** Proxy: vitest + miniflare integration tests — STT routes (device-id, quota, R2 head, bad inputs) + partner unit tests (Soniox+Gladia happy/error paths, normalize)
 - [x] **#20** M2.2 `SonioxProvider` (см. «Готово»)
 - [x] **#21** M2.2 `GladiaProvider` (см. «Готово»)
 - [x] **#22** M2.4-2.5 Pipeline (см. «Готово»)
-- [ ] **#23** M2.6-2.7 Lang autodetect → `calls.lang_detected` + retries/backoff + UX errors. Сейчас lang_detected пишется как есть от провайдера, без auto-fallback Soniox→Gladia
+- [x] **#23** M2.6-2.7 Lang autodetect + retries/backoff + auto-fallback Soniox→Gladia + UX-readable `calls.failed_reason` (migration 0002, retry module 11 тестов, banner на CallDetail, tooltip в Calls list)
 
 ## Идентификация · Этап 4 / M3
 
@@ -100,7 +104,7 @@
 
 ## Что можно стартовать сразу (без зависимостей)
 
-`#19` · `#23` · `#24` · `#37` · `#42` · `#43` · `#44` · `#45` · `#47` · `[B6]`
+`#24` · `#37` · `#42` · `#43` · `#44` · `#45` · `#47`
 
 ## Backlog (кандидаты на доработку)
 
@@ -111,30 +115,9 @@
 - **[B3] STT job-resume при retry.** Когда воркер таймаутит на 25-секундном polling-бюджете (длинная запись), клиент теряет partner job_id и при повторе создаёт новый job → двойная оплата у Soniox/Gladia. Решение: кэшировать `r2Key → partner_provider:job_id` в Workers KV с TTL ≈30 мин; на retry — резюмировать polling по существующему id. Связано с #18.
 - **[B4] Proxy URL input в Settings.** Pipeline managed-режима требует непустой `proxy_base_url`, но в UI его ввести нельзя — только через прямую правку settings table. Добавить field в SettingsPage после X3 (когда задеплоенный URL прокси будет известен).
 - **[B5] Realtime событие «транскрипция готова».** Сейчас клиент узнаёт о статусе ready/failed только через ручной refresh Calls list. Поднять Tauri event `pipeline:finished {call_id, status}` из `pipeline::run` финала, во фронте слушать через `listen()` и обновлять список без перезагрузки.
-- **[B6] Design system + dev-only Components showcase. PRIORITY — следующая задача.**
+- ~~**[B6] Design system + dev-only Components showcase.**~~ Закрыто — `apps/desktop/src/styles/tokens.css` + `ui/*` (Button/Badge/Pill/StatusDot/Field/Tabs/Card/Empty/Toolbar) + рефакторинг всех экранов + `pages/DesignSystemPage.tsx` (гейт `import.meta.env.DEV`, таб «🛠 DS» в навбаре только в dev).
 
-  Цель: единая token-based DS под Wotold (macOS-flavored, не копирует Liquid Glass — WebKit не достаёт), которой обязаны пользоваться все экраны. Не хватает компонента или токена — расширяем DS, не лепим inline.
-
-  Объём:
-  1. **CSS-токены** в `apps/desktop/src/styles/tokens.css`:
-     - Цвета: `--color-bg / surface / border / text / text-muted / accent / danger / success / warning`, light + dark через `prefers-color-scheme`
-     - Spacing: 4-step scale `--space-1` … `--space-8`
-     - Radius: `--radius-sm / md / lg / pill`
-     - Type: `--text-xs / sm / base / lg / xl / 2xl` + `--font-system / --font-mono`
-     - Elevation: 3 уровня теней + один уровень backdrop-blur
-     - Motion: `--duration-fast / normal` + `--ease-out-expo`
-  2. **Базовые компоненты** в `apps/desktop/src/ui/`: `Button`, `Badge`, `Field` (label+input/select/textarea), `Tabs`, `Card`, `Empty` (пустое состояние), `Pill`, `StatusDot`, `Toolbar`. По мере необходимости — `Dialog`/`Popover` через Radix primitives. Всё типизировано, props минимальны.
-  3. **Рефакторинг существующих экранов** (Home, Calls, CallDetail, Contacts, Settings, Onboarding, Permissions) на эти компоненты + токены. Inline `oklch(...)` и magic gaps удаляются.
-  4. **Dev-only Showcase-страница** (`apps/desktop/src/pages/DesignSystemPage.tsx`):
-     - Превью всех токенов (color swatches, type scale, spacing/radius scale, motion демо)
-     - Все компоненты в каждом состоянии (default/hover/active/disabled, light/dark)
-     - Гейт видимости: `import.meta.env.DEV` (Vite — true только в `tauri dev`). Если когда-то появится staging — добавим vite-env `MODE === 'staging' | 'development'`. В production-сборке таб «🛠 Dev» в навбаре отсутствует.
-     - Открывается как обычная страница через топ-нав, скрытая в проде.
-  5. **Правило проекта**: новые экраны/фичи **обязаны** использовать DS-компоненты + токены. Если чего-то не хватает — сначала PR в DS (новый компонент или токен), потом фича.
-
-  Эстетика: спокойная, нейтральная, mac-friendly. Системный шрифт (`-apple-system`), средние радиусы (10–14px), тонкие 1px разделители, один акцент (синий или нейтральный графит), сдержанная типографика. Никаких градиентов и Liquid-эффектов.
-
-  После [B6] — все будущие фичи UI идут через эту систему, и при ревью отлавливаем inline-стили.
+  **Правило проекта**: новые экраны/фичи **обязаны** использовать DS-компоненты + токены. Если чего-то не хватает — сначала PR в DS (новый компонент или токен), потом фича. Inline `oklch(...)` и magic gaps отлавливаем при ревью.
 
 ## Принятые ограничения (НЕ «чинить» в MVP)
 

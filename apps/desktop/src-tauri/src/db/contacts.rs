@@ -404,3 +404,102 @@ fn serialize_attributes(value: &serde_json::Value) -> Result<String, AppError> {
     }
     Ok(serde_json::to_string(value)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_support::fresh_db;
+    use serde_json::json;
+
+    fn empty_input(name: &str) -> ContactInput {
+        ContactInput {
+            display_name: name.into(),
+            org: None,
+            role: None,
+            notes: None,
+            identifiers: vec![],
+            attributes: serde_json::Value::Null,
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_owner_creates_then_returns_existing() {
+        let db = fresh_db().await;
+        let a = ensure_owner_contact(&db.pool).await.unwrap();
+        let b = ensure_owner_contact(&db.pool).await.unwrap();
+        assert_eq!(a.id, b.id);
+        assert_eq!(a.display_name, OWNER_DEFAULT_NAME);
+    }
+
+    #[tokio::test]
+    async fn rename_owner_updates_name_and_rejects_empty() {
+        let db = fresh_db().await;
+        ensure_owner_contact(&db.pool).await.unwrap();
+
+        let renamed = rename_owner_contact(&db.pool, "Damir").await.unwrap();
+        assert_eq!(renamed.display_name, "Damir");
+
+        let err = rename_owner_contact(&db.pool, "   ").await;
+        assert!(err.is_err(), "empty name must error");
+    }
+
+    #[tokio::test]
+    async fn create_contact_persists_identifiers_and_attributes() {
+        let db = fresh_db().await;
+        let input = ContactInput {
+            display_name: "Ivan".into(),
+            org: Some("Acme".into()),
+            role: Some("CTO".into()),
+            notes: Some("VIP".into()),
+            identifiers: vec![ContactIdentifierInput {
+                kind: "email".into(),
+                value: "ivan@acme.kz".into(),
+            }],
+            attributes: json!({"linkedin": "ivan"}),
+        };
+        let created = create_contact(&db.pool, input).await.unwrap();
+        assert_eq!(created.display_name, "Ivan");
+        assert_eq!(created.identifiers.len(), 1);
+        assert_eq!(created.identifiers[0].value, "ivan@acme.kz");
+        assert_eq!(created.attributes["linkedin"], "ivan");
+        assert!(!created.is_owner);
+    }
+
+    #[tokio::test]
+    async fn list_contacts_includes_owner_first() {
+        let db = fresh_db().await;
+        ensure_owner_contact(&db.pool).await.unwrap();
+        create_contact(&db.pool, empty_input("Bob")).await.unwrap();
+        let all = list_contacts(&db.pool).await.unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all[0].is_owner, "owner first per ordering");
+    }
+
+    #[tokio::test]
+    async fn delete_contact_removes_row_but_not_owner() {
+        let db = fresh_db().await;
+        let owner = ensure_owner_contact(&db.pool).await.unwrap();
+        let c = create_contact(&db.pool, empty_input("Bob")).await.unwrap();
+
+        delete_contact(&db.pool, &c.id).await.unwrap();
+        let after = list_contacts(&db.pool).await.unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].id, owner.id);
+    }
+
+    #[test]
+    fn parse_attributes_handles_null_and_invalid() {
+        let v = parse_attributes(None);
+        assert!(v.is_object());
+        let v = parse_attributes(Some("not json"));
+        assert!(v.is_object());
+        let v = parse_attributes(Some("{\"k\":\"v\"}"));
+        assert_eq!(v["k"], "v");
+    }
+
+    #[test]
+    fn serialize_attributes_handles_null() {
+        let s = serialize_attributes(&serde_json::Value::Null).unwrap();
+        assert_eq!(s, "{}");
+    }
+}
