@@ -73,6 +73,7 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
       lang_detected: null,
       failed_reason:
         'Квота STT исчерпана. Подожди до следующих суток или переключись на BYO.',
+      recap_failed_reason: null,
     },
   ];
 

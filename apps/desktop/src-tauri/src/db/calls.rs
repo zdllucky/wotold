@@ -16,6 +16,9 @@ pub struct Call {
     pub lang_detected: Option<String>,
     /// M2.7 (#23): UX-readable причина при status=failed.
     pub failed_reason: Option<String>,
+    /// [B16]: причина если recap LLM упал. Звонок остаётся 'ready' (транскрипт
+    /// есть), но UI знает что саммари нужно пересоздать.
+    pub recap_failed_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -47,6 +50,7 @@ pub async fn insert_recording(pool: &SqlitePool, path_label: &str) -> Result<Cal
         path_label: path_label.into(),
         lang_detected: None,
         failed_reason: None,
+        recap_failed_reason: None,
         created_at: now.clone(),
         updated_at: now,
     })
@@ -80,6 +84,24 @@ pub async fn finish_recording(
     get_call(pool, call_id)
         .await?
         .ok_or_else(|| AppError::Other(format!("call {call_id} disappeared")))
+}
+
+/// [B16]: записать причину recap-fail. Звонок остаётся 'ready' (транскрипт
+/// сохранён), но UI знает что саммари недоступно. None → очистить
+/// (например после успешного regenerate).
+pub async fn set_recap_failed_reason(
+    pool: &SqlitePool,
+    call_id: &str,
+    reason: Option<&str>,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query("UPDATE calls SET recap_failed_reason = ?1, updated_at = ?2 WHERE id = ?3")
+        .bind(reason)
+        .bind(&now)
+        .bind(call_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Перевести запись в финальный статус `ready` после успешного pipeline'а.
@@ -170,7 +192,7 @@ pub async fn fail_recording_with_reason(
 
 pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, AppError> {
     let row: Option<Call> = sqlx::query_as(
-        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, created_at, updated_at
+        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, created_at, updated_at
          FROM calls WHERE id = ?1",
     )
     .bind(call_id)
@@ -183,7 +205,7 @@ pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, 
 /// подключится в #30 follow-up когда они начнут писаться (#22, #28).
 pub async fn list_calls(pool: &SqlitePool) -> Result<Vec<Call>, AppError> {
     let rows: Vec<Call> = sqlx::query_as(
-        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, created_at, updated_at
+        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, created_at, updated_at
          FROM calls
          ORDER BY started_at DESC",
     )

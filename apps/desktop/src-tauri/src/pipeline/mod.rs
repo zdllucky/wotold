@@ -223,7 +223,19 @@ pub async fn regenerate_recap(
         model_override,
     };
 
-    recap::run(pool, recap_ctx).await
+    match recap::run(pool, recap_ctx).await {
+        Ok(()) => {
+            // [B16]: clear recap_failed_reason после успешной регенерации.
+            let _ = db::set_recap_failed_reason(pool, call_id, None).await;
+            Ok(())
+        }
+        Err(e) => {
+            // Persist для UI + пробросываем (regenerate explicit user-action,
+            // надо показать ошибку прямо в кнопке).
+            let _ = db::set_recap_failed_reason(pool, call_id, Some(&e.to_string())).await;
+            Err(e)
+        }
+    }
 }
 
 async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError> {
@@ -322,7 +334,18 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
         model_override,
     };
     if let Err(e) = recap::run(pool, recap_ctx).await {
-        log::warn!("recap {} skipped: {e}", ctx.call_id);
+        let reason = e.to_string();
+        log::warn!("recap {} skipped: {reason}", ctx.call_id);
+        // [B16]: persist recap failure для UI banner. status='ready' остаётся —
+        // транскрипт есть, юзер видит «не получилось саммари: ...» + кнопка retry.
+        if let Err(e2) =
+            db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await
+        {
+            log::error!("set_recap_failed_reason {} failed: {e2}", ctx.call_id);
+        }
+    } else {
+        // Очищаем если был старый recap_failed_reason (например после reprocess).
+        let _ = db::set_recap_failed_reason(pool, &ctx.call_id, None).await;
     }
 
     Ok(())
