@@ -9,6 +9,7 @@ import {
   type SttProvider,
 } from '../api/settings';
 import { Card, InputField, SelectField, Toolbar } from '../ui';
+import { ByoKeysSection } from './ByoKeysSection';
 import { PermissionsSection } from './PermissionsSection';
 
 function isSttProvider(v: string | null): v is SttProvider {
@@ -137,9 +138,16 @@ export function SettingsPage() {
             />
             <span className="radio-row-text">
               <strong>BYO</strong>
-              <span className="radio-row-hint">свои ключи напрямую · keychain — #47</span>
+              <span className="radio-row-hint">свои ключи напрямую (хранятся в Keychain)</span>
             </span>
           </label>
+        </Card>
+      </div>
+
+      <div className="settings-section">
+        <h3 className="settings-section-title">BYO API ключи</h3>
+        <Card compact>
+          <ByoKeysSection />
         </Card>
       </div>
 
