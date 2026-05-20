@@ -155,6 +155,21 @@
   - В UI ошибки рекапа показывать с кнопкой «Повторить» (current «↻ Пересоздать рекап» уже почти оно — добавить hint «бесплатный Groq иногда лимитит, подожди 5 сек и попробуй ещё»).
   - Acceptance: 502 на первом запросе с переход на retry за 1.5s даёт 200; счётчик usage тикает только за фактически использованные токены.
 
+- [ ] **[B13] Предпочитаемый язык — системная настройка.** Сейчас Soniox/Gladia auto-detect (с биасом ru/en/kk — [Lang-tuning]), а LLM пишет рекап/действия на языке детектированного транскрипта (`Output language: {lang_detected}` в `recap.rs::build_system_prompt`). Если детект ошибся или транскрипт мульти-язычный — рекап получается в случайном языке. Требование:
+  - Новый setting `preferred_language: BCP47 | 'auto'` (default `'auto'`). UI — `SelectField` в Settings → LLM section с пресетами: auto / Русский / English / Қазақша / Other (BCP47 input).
+  - Пробрасывать в `recap::run` как `lang_hint_override`. Если `preferred_language != 'auto'` — `build_system_prompt` использует его (override над `lang_detected`).
+  - **НЕ форсить** в Soniox/Gladia — auto-detect остаётся (см. [Lang-tuning]) чтобы корректно распознавать речь на любом языке. Только LLM-output bias.
+  - Action items: тоже на preferred_language (поле `lang_hint` в `replace_action_items` или просто в system_prompt).
+  - Acceptance: при `preferred_language='ru'` рекап звонка с английским транскриптом — на русском; на `'auto'` поведение не меняется.
+
+- [ ] **[B14] Live recording level meter (M7.1 follow-up).** Во время записи в `HomePage` пока только pulse-dot. Не видно, есть ли вход с микрофона / системного аудио. Требование:
+  - Расширить Swift sidecar протокол: эмит'ить `{mic_rms: f32, system_rms: f32}` каждые 100ms через stdout (NDJSON line `{"kind":"level","mic":0.12,"system":0.34}`).
+  - Tauri parsing: новый event `audio:level` с двумя float'ами (нормализованы 0..1).
+  - DS-компонент `<LevelMeter mic={...} system={...} />` — две вертикальные/горизонтальные «лесенки» с 8-12 LED'ами, заполняются по RMS. Цвет: зелёный <-12dB, жёлтый -12..-3dB, красный >-3dB.
+  - Anti-clip indicator: если значение > 0.95 хотя бы 100ms — мигает красный «CLIP» badge.
+  - При записи на HomePage: показывать meter вместо/рядом с pulse-dot. При остановке — fade out.
+  - Acceptance: говорим в микрофон — mic-meter растёт. Включаем YouTube/Zoom — system-meter растёт. Меняем громкость — meter реагирует в реальном времени.
+
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
 См. раздел 12 паспорта. Здесь только маркеры — детали и причины там.
