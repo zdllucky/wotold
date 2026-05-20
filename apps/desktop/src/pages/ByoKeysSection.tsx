@@ -7,7 +7,7 @@ import {
   setByoKey,
   type ByoProvider,
 } from '../api/secrets';
-import { Badge, Button, InputField } from '../ui';
+import { Button } from '../ui';
 
 interface ProviderMeta {
   id: ByoProvider;
@@ -170,82 +170,80 @@ export function ByoKeysSection() {
           часть pipeline (STT primary / fallback / recap) работать не будет.
         </p>
       )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
         {PROVIDERS.map((p) => {
           const present = statuses.get(p.id) ?? false;
           const draftValue = drafts.get(p.id) ?? '';
           const isBusy = busy === p.id;
+          const inputId = `byo-${p.id}`;
           return (
-            <div
-              key={p.id}
-              style={{
-                padding: '14px 0',
-                borderBottom: '1px solid var(--line-soft)',
-              }}
-            >
+            <div key={p.id} className="field">
               <div
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
                   marginBottom: 4,
                 }}
               >
+                <label className="field-label" htmlFor={inputId}>
+                  {p.label}
+                </label>
                 <span
                   style={{
-                    fontFamily: 'var(--font-serif)',
-                    fontSize: 17,
-                    color: 'var(--ink)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10.5,
+                    color: present ? 'var(--accent)' : 'var(--muted)',
+                    letterSpacing: '0.14em',
+                    textTransform: 'uppercase',
                   }}
                 >
-                  {p.label}
+                  ● {present ? 'подключён' : 'пусто'}
                 </span>
-                {present ? (
-                  <Badge tone="success">сохранён</Badge>
-                ) : (
-                  <Badge tone="neutral">пусто</Badge>
-                )}
               </div>
-              <p
+              <input
+                id={inputId}
+                type="password"
+                className="input"
+                placeholder={
+                  present ? '••••• (введи, чтобы заменить)' : p.placeholder
+                }
+                value={draftValue}
+                onChange={(e) => setDraft(p.id, e.target.value)}
+                autoComplete="off"
+                disabled={isBusy}
+              />
+              <span
                 className="muted"
-                style={{ fontSize: 12, margin: '0 0 8px' }}
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontStyle: 'italic',
+                  fontSize: 13,
+                  marginTop: 6,
+                }}
               >
                 {p.hint}
-              </p>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 200 }}>
-                  <InputField
-                    type="password"
-                    placeholder={
-                      present ? '••••• (введи, чтобы заменить)' : p.placeholder
-                    }
-                    value={draftValue}
-                    onChange={(e) => setDraft(p.id, e.target.value)}
-                    autoComplete="off"
-                    disabled={isBusy}
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: 6, paddingBottom: 8 }}>
+              </span>
+              <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => onSave(p.id)}
+                  disabled={isBusy || !draftValue.trim()}
+                  busy={isBusy}
+                >
+                  Сохранить
+                </Button>
+                {present && (
                   <Button
-                    variant="primary"
+                    variant="danger"
                     size="sm"
-                    onClick={() => onSave(p.id)}
-                    disabled={isBusy || !draftValue.trim()}
-                    busy={isBusy}
+                    onClick={() => onDelete(p.id)}
+                    disabled={isBusy}
                   >
-                    Сохранить
+                    Удалить
                   </Button>
-                  {present && (
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => onDelete(p.id)}
-                      disabled={isBusy}
-                    >
-                      Удалить
-                    </Button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           );
