@@ -122,6 +122,7 @@ export function ByoKeysSection() {
       </p>
       {error && (
         <p
+          role="alert"
           style={{
             color: 'var(--signal)',
             fontFamily: 'var(--font-sans)',

@@ -158,7 +158,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   if (loading) return <p className="muted">Загрузка…</p>;
   if (error)
     return (
-      <p style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+      <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
         {error}
       </p>
     );

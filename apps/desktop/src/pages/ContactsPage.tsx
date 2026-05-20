@@ -84,7 +84,7 @@ export function ContactsPage() {
 
   if (error && !contacts)
     return (
-      <p style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+      <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
         {error}
       </p>
     );
@@ -136,6 +136,7 @@ export function ContactsPage() {
 
       {error && (
         <p
+          role="alert"
           style={{
             color: 'var(--signal)',
             fontFamily: 'var(--font-sans)',

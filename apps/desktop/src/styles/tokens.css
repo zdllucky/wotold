@@ -98,7 +98,10 @@
 
   --ink:          #14151A;
   --ink-2:        #2A2B30;
-  --muted:        #6B6C72;
+  /* [B17 a11y] --muted bumped from #6B6C72 → #5E5F65.
+     Old: 4.56:1 on --bg, failed at --text-xs (11.5px) .small-caps /
+     .eyebrow / mono timestamps. New: ~5.4:1, safe at small caps. */
+  --muted:        #5E5F65;
   --subtle:       #9C9D9F;
 
   /* Accent — default Bordeaux (oxblood wine) */
@@ -107,8 +110,10 @@
   --accent-soft:  #F2DCDF;
   --accent-fg:    #FFFFFF;
 
-  /* Signal — record / danger. Always red, both themes. */
-  --signal:       #DC2626;
+  /* Signal — record / danger. Always red, both themes.
+     [B17 a11y] light bumped #DC2626 → #BF1C1C (was 4.40:1, failed SC 1.4.3
+     4.5:1). New ratio ≈ 5.6:1. */
+  --signal:       #BF1C1C;
   --signal-soft:  #FCE7E7;
   --signal-fg:    #FFFFFF;
 

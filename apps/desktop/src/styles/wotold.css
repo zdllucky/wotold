@@ -525,6 +525,25 @@ textarea:focus-visible,
   50%      { opacity: 1;   transform: scale(1.15); }
 }
 
+/* [B17 a11y] prefers-reduced-motion — отключаем вестибулярно-чувствительные
+ * анимации. Dot остаётся видимым (opacity:1), но не пульсирует. Rec-btn
+ * hover/active scale тоже выключается. */
+@media (prefers-reduced-motion: reduce) {
+  .dot--pulse {
+    animation: none;
+    opacity: 1;
+  }
+  .rec-btn,
+  .rec-btn:hover,
+  .rec-btn:active {
+    transition: none;
+    transform: none;
+  }
+  .conf-fill {
+    transition: none;
+  }
+}
+
 /* ═══ Empty state ═══════════════════════════════════════ */
 .empty {
   display: flex;
