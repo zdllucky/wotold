@@ -301,7 +301,7 @@
 - [x] **Cargo.toml `[lints]`** — unsafe_code = forbid, clippy::unwrap_used/expect_used/panic = warn.
 - [ ] **Split db/calls.rs** (769 строк) на calls_lifecycle.rs + calls_speakers.rs + calls_meta.rs.
 - [ ] **Extract managed_stt_request helper** — duplicated между soniox.rs и gladia.rs (~100 строк).
-- [ ] **audio_io::extract_segment** — открывает WAV file заново для каждого segment. На 100 segments 100x чтение. Open once + slice.
+- [x] **audio_io::extract_segments_batch** — single WAV open + slice. Будет использоваться в #25 ONNX wire-up. +2 теста.
 - [x] **Soniox text concat без пробелов** — needsSpaceBefore() вставляет пробел между letter-bordered tokens (anti-склейка ru/kk).
 - [ ] **LIKE wildcards escape в MCP db.ts** — `searchCalls` raw `LIKE '%query%'` не экранирует `%` и `_`.
 - [ ] **PRAGMA busy_timeout** — `db/init` добавить `busy_timeout = 5000` для concurrent writes.
