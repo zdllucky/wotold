@@ -117,10 +117,23 @@ impl Embedder for StubEmbedder {
 /// 5. Integration test против reference embedding (Python WeSpeaker output
 ///    для известного WAV) — баг в preprocessing незаметен без этого.
 pub fn try_load_onnx_embedder(_model_path: &Path) -> Option<Box<dyn Embedder>> {
-    // [B3.6 scaffold] Дефолтная сборка не тянет ort/ndarray — экономия
-    // ~50-100MB ONNX Runtime libs + ~30s build time. Реальная имплементация
-    // приедет в B3.7 за `#[cfg(feature = "voice-onnx")]`.
-    None
+    #[cfg(feature = "voice-onnx")]
+    {
+        match crate::embeddings_onnx::OnnxEmbedder::load(_model_path) {
+            Ok(e) => Some(Box::new(e)),
+            Err(e) => {
+                log::warn!("OnnxEmbedder load failed ({}): fallback на StubEmbedder", e);
+                None
+            }
+        }
+    }
+    #[cfg(not(feature = "voice-onnx"))]
+    {
+        // Дефолтная сборка не тянет ort/ndarray — экономия ~50-100MB ONNX
+        // Runtime libs + ~30s build time. Включается `--features voice-onnx`.
+        let _ = _model_path;
+        None
+    }
 }
 
 /// Сериализовать embedding в little-endian f32 байты для записи в `voice_samples.embedding BLOB`.
