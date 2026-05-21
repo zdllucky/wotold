@@ -36,7 +36,7 @@ anyhow = "1"
 thiserror = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 semver = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "multipart"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "multipart", "stream"] }
 keyring = { version = "3.6.3", features = ["apple-native"] }
 tauri-plugin-deep-link = "^2"
 # [B16 audit P0]: предотвращаем second instance — иначе wotold:// deep-link
@@ -44,6 +44,10 @@ tauri-plugin-deep-link = "^2"
 # одной SQLite БД (corruption).
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 hound = "3.5.1"
+# [B3.7c] SHA256 для verify скачанной voice-embedder модели.
+sha2 = "0.10"
+# Streaming HTTP body для download прогресса (reqwest::Response::bytes_stream).
+futures-util = "0.3"
 
 # [B3.7] Voice biometric ONNX inference — optional. Включается через
 # `--features voice-onnx`. Используем официальный `sherpa-onnx` Rust crate
