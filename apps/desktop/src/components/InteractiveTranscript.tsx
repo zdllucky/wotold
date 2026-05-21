@@ -8,7 +8,7 @@
 // Fallback: если raw_stt.json отсутствует (старые звонки до B10) —
 // рендер ReactMarkdown оригинального transcript.md.
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { CallSpeakerView } from '../api/speakers';
 import { Empty } from '../ui';
@@ -104,6 +104,11 @@ interface Props {
   fallbackMd: string | null;
   /** Список call_speakers — для display_name override на бейджах. Опционально. */
   speakers?: CallSpeakerView[];
+  /** [B17 V3.2] Текущая позиция аудио (sec). Если в [groupStart, groupEnd]
+   *  → блок подсвечивается. */
+  currentTime?: number;
+  /** Клик по блоку → seek в начало этого блока. */
+  onSeek?: (seconds: number) => void;
 }
 
 /** speaker_tag → label для бейджа. Confirmed-contact → display_name,
@@ -119,13 +124,45 @@ function buildLabelMap(speakers?: CallSpeakerView[]): Map<string, string> {
   return m;
 }
 
-export function InteractiveTranscript({ rawSttJson, fallbackMd, speakers }: Props) {
+export function InteractiveTranscript({
+  rawSttJson,
+  fallbackMd,
+  speakers,
+  currentTime,
+  onSeek,
+}: Props) {
   const labels = useMemo(() => buildLabelMap(speakers), [speakers]);
   const segments: Segment[] | null = useMemo(() => {
     if (!rawSttJson) return null;
     const parsed = parseRawStt(rawSttJson);
     return parsed?.merged ?? null;
   }, [rawSttJson]);
+
+  const groups = useMemo(
+    () => (segments ? groupBySpeaker(segments) : []),
+    [segments],
+  );
+
+  // [B17 V3.2] Index of group containing currentTime, or -1.
+  const activeIdx = useMemo(() => {
+    if (currentTime == null || groups.length === 0) return -1;
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i]!;
+      const start = g.segments[0]?.start ?? 0;
+      const end = g.segments[g.segments.length - 1]?.end ?? start;
+      if (currentTime >= start && currentTime <= end) return i;
+    }
+    return -1;
+  }, [currentTime, groups]);
+
+  // Auto-scroll active row into view (smooth, only when user not interacting).
+  const activeRowRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (activeIdx < 0) return;
+    const el = activeRowRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [activeIdx]);
 
   if (!segments || segments.length === 0) {
     if (fallbackMd) {
@@ -138,15 +175,11 @@ export function InteractiveTranscript({ rawSttJson, fallbackMd, speakers }: Prop
     return <Empty description="Транскрипт ещё не готов." />;
   }
 
-  const groups = groupBySpeaker(segments);
-
   return (
     <div className="transcript">
       {groups.map((g, idx) => {
         const start = g.segments[0]?.start ?? 0;
         const color = colorVarFor(g.tag);
-        // [B17] Per artboard §5: speaker column shows ONE word — first
-        // name (uppercased via CSS). Owner → "Я". Unknown tag → tag.
         const fullName =
           labels.get(g.tag) ?? (g.tag === OWNER_TAG ? 'Я' : g.tag);
         const firstName = fullName.split(/\s+/)[0] ?? fullName;
@@ -154,8 +187,39 @@ export function InteractiveTranscript({ rawSttJson, fallbackMd, speakers }: Prop
           .map((s) => s.text.trim())
           .filter(Boolean)
           .join(' ');
+        const isActive = idx === activeIdx;
+        const isClickable = !!onSeek;
         return (
-          <div className="transcript-row" key={`${g.tag}-${idx}`}>
+          <div
+            key={`${g.tag}-${idx}`}
+            ref={isActive ? activeRowRef : undefined}
+            className="transcript-row"
+            onClick={isClickable ? () => onSeek!(start) : undefined}
+            style={{
+              cursor: isClickable ? 'pointer' : 'default',
+              background: isActive ? 'var(--accent-soft)' : 'transparent',
+              borderLeft: isActive
+                ? `3px solid ${color}`
+                : '3px solid transparent',
+              paddingLeft: 9,
+              marginLeft: -12,
+              borderRadius: 'var(--radius-sm)',
+              transition:
+                'background var(--duration-fast), border-color var(--duration-fast)',
+            }}
+            role={isClickable ? 'button' : undefined}
+            tabIndex={isClickable ? 0 : undefined}
+            onKeyDown={
+              isClickable
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSeek!(start);
+                    }
+                  }
+                : undefined
+            }
+          >
             <div className="transcript-speaker" style={{ color }}>
               {firstName}
             </div>

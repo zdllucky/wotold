@@ -18,6 +18,7 @@ import type { Call } from '../api/recording';
 import { Empty, Pill, Tabs } from '../ui';
 import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
+import { useCallAudio } from '../hooks/useCallAudio';
 import { SpeakersSection } from './SpeakersSection';
 
 type Tab = 'recap' | 'transcript' | 'tasks' | 'speakers';
@@ -38,6 +39,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [speakersLite, setSpeakersLite] = useState<CallSpeakerView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // [B17 V3.2] Single audio source — shared между AudioScrubber и
+  // InteractiveTranscript (для highlight current + click-to-seek).
+  const audio = useCallAudio(callId, call?.duration_sec ?? 0);
 
   useEffect(() => {
     setLoading(true);
@@ -314,6 +319,11 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             rawSttJson={rawStt}
             fallbackMd={transcript}
             speakers={speakersLite}
+            currentTime={audio.currentTime}
+            onSeek={(s) => {
+              audio.seek(s);
+              if (!audio.playing && audio.ready) audio.togglePlay();
+            }}
           />
         </Tabs.Panel>
         <Tabs.Panel value="tasks">
@@ -328,12 +338,18 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           контентом любого активного таба (transcript / recap / tasks /
           speakers). Скрыта только при status='failed'. */}
       <AudioScrubber
-        callId={callId}
-        durationSec={call.duration_sec ?? 0}
+        audio={audio}
+        seed={hashCallId(callId)}
         enabled={call.status !== 'failed'}
       />
     </section>
   );
+}
+
+function hashCallId(id: string): number {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  return Math.abs(h) % 1000;
 }
 
 function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
