@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::json;
@@ -7,7 +7,9 @@ use tauri::{AppHandle, Emitter};
 
 use crate::{
     db,
-    pipeline::merge::OWNER_TAG,
+    embeddings::{self, StubEmbedder},
+    matching,
+    pipeline::{clusters::extract_clusters, merge::OWNER_TAG},
     providers::{
         transcription::{
             failure_reason, transcribe_with_fallback, DiarizedTranscript, GladiaProvider,
@@ -20,6 +22,7 @@ use crate::{
     AppError,
 };
 
+pub mod clusters;
 pub mod merge;
 pub mod recap;
 
@@ -323,6 +326,25 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
         }
     }
 
+    // [B3.3-3.4] Voice cluster extraction + matching → suggestion. Embedder
+    // сейчас Stub (no-op до B3.6), pipeline ничего не извлекает. После B3.6
+    // → реальный OnnxEmbedder и flow заработает на existing звонках через
+    // `regenerate_recap` (M4.5) + новых через эту ветку.
+    if let Err(e) = run_cluster_pipeline(
+        pool,
+        &ctx.call_id,
+        &merged,
+        &ctx.mic_path,
+        &ctx.system_path,
+    )
+    .await
+    {
+        log::warn!(
+            "cluster pipeline {} failed (non-fatal — skip voice match): {e}",
+            ctx.call_id
+        );
+    }
+
     // M4 chain: транскрипт → LLM рекап. Ошибки рекапа НЕ роняют пайплайн —
     // транскрипт сохранён, рекап можно регенерировать вручную (M4.5).
     let transcript_md = render_transcript_md(&merged);
@@ -443,6 +465,68 @@ fn build_providers(
 /// Сообщение попадёт в `calls.failed_reason` (M2.7 / #23).
 fn stt_to_app_error(e: TranscriptionError) -> AppError {
     AppError::Other(failure_reason(&e))
+}
+
+/// [B3.3-3.4] Извлекает voice clusters per speaker_tag, persist'ит в DB,
+/// запускает matching против consenting voice_samples, populate'ит
+/// suggestion_contact_id/score/source. Non-fatal: ошибки сюда логятся
+/// и пропускаются (recap всё равно сгенерируется).
+async fn run_cluster_pipeline(
+    pool: &SqlitePool,
+    call_id: &str,
+    merged: &[crate::providers::transcription::TranscriptSegment],
+    mic_path: &Path,
+    system_path: &Path,
+) -> Result<(), AppError> {
+    let embedder = StubEmbedder; // B3.6 swaps на OnnxEmbedder.
+    let clusters = extract_clusters(merged, mic_path, system_path, &embedder)?;
+    if clusters.is_empty() {
+        // Stub embedder возвращает empty → нет clusters. Это OK pre-B3.6.
+        log::debug!("cluster pipeline {call_id}: no clusters (stub embedder)");
+        return Ok(());
+    }
+
+    // [B3.4] Загружаем существующие voice_samples всех consenting контактов
+    // ОДИН раз перед циклом — matching::list_consenting_samples делает join.
+    let consenting = matching::list_consenting_samples(pool).await?;
+
+    for (tag, vector) in &clusters {
+        let blob = embeddings::embedding_to_bytes(vector);
+        if blob.is_empty() {
+            continue;
+        }
+        if let Err(e) = db::set_call_speaker_cluster(pool, call_id, tag, &blob).await {
+            log::warn!("set_call_speaker_cluster {tag}: {e}");
+            continue;
+        }
+        // Owner-тег не matching'им — он привязан к owner-contact автоматически.
+        if tag == OWNER_TAG {
+            continue;
+        }
+        // Top-1 кандидат с min_score 0.5 (M3.4 default).
+        let ranked = matching::rank_candidates(vector, &consenting, 0.5, 1);
+        if let Some(top) = ranked.into_iter().next() {
+            if let Err(e) = db::set_call_speaker_suggestion(
+                pool,
+                call_id,
+                tag,
+                Some(&top.contact_id),
+                Some(top.score as f64),
+                Some("embedding"),
+            )
+            .await
+            {
+                log::warn!("set_call_speaker_suggestion {tag}: {e}");
+            } else {
+                log::info!(
+                    "voice match {tag} → {} ({:.3})",
+                    top.display_name,
+                    top.score
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn persist_artifacts(
