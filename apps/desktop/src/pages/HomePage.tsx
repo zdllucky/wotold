@@ -16,8 +16,7 @@ import {
 } from '../api/recording';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import { listCallSpeakers } from '../api/speakers';
-import { LiveWaveform, SyntheticWaveform } from '../components/LiveWaveform';
-import { LeveledWaveform } from '../components/LeveledWaveform';
+import { DualWaveform } from '../components/DualWaveform';
 import { useAudioLevel } from '../hooks/useAudioLevel';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
@@ -305,86 +304,45 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
             minHeight: 280,
           }}
         >
-          <div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginBottom: 8,
-              }}
-            >
-              <span className="small-caps">Вы · микрофон</span>
-              <span
-                className="mono muted"
-                style={{ fontSize: 11, letterSpacing: '0.04em' }}
-              >
-                {audioLevels.connected
-                  ? formatDb(audioLevels.mic[audioLevels.mic.length - 1] ?? 0)
-                  : fakeLevelDb(elapsed, 'mic')}
-              </span>
-            </div>
-            <div className="wave-lane" style={{ height: 110, color: 'var(--ink)' }}>
-              {audioLevels.connected ? (
-                <LeveledWaveform
-                  data={audioLevels.mic}
-                  color="var(--ink)"
-                  height={110}
-                />
-              ) : (
-                // [B14] Fallback на Web Audio AnalyserNode пока sidecar level
-                // event не пришёл (первые ~200ms либо если IPC не работает).
-                <LiveWaveform
-                  active={!recordingExiting}
-                  color="var(--ink)"
-                  height={110}
-                />
-              )}
-            </div>
+          {/* [B17 V3.0] Объединённая stereo-split waveform — визуально одна
+              дорожка, под капотом два канала. Mic вверх от центра (ink),
+              System вниз (accent). Тишина = flat линия (никаких суррогатов). */}
+          <div style={{ position: 'relative', minHeight: 220 }}>
+            <DualWaveform mic={audioLevels.mic} system={audioLevels.system} />
           </div>
 
+          {/* dB labels справа column для обоих каналов. */}
           <div
             style={{
-              height: 1,
-              background: 'var(--line-soft)',
-              margin: '0 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 24,
+              fontSize: 11,
             }}
-          />
-
-          <div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginBottom: 8,
-              }}
-            >
-              <span className="small-caps" style={{ color: 'var(--accent)' }}>
-                Собеседник · системный звук
-              </span>
-              <span
-                className="mono muted"
-                style={{ fontSize: 11, letterSpacing: '0.04em' }}
-              >
-                {audioLevels.connected
-                  ? formatDb(audioLevels.system[audioLevels.system.length - 1] ?? 0)
-                  : fakeLevelDb(elapsed, 'sys')}
-              </span>
-            </div>
-            <div className="wave-lane" style={{ height: 110, color: 'var(--accent)' }}>
-              {audioLevels.connected ? (
-                <LeveledWaveform
-                  data={audioLevels.system}
-                  color="var(--accent)"
-                  height={110}
-                />
-              ) : (
-                <SyntheticWaveform
-                  active={!recordingExiting}
-                  color="var(--accent)"
-                  height={110}
-                />
-              )}
-            </div>
+          >
+            <ChannelLabel
+              label="Вы · микрофон"
+              colorVar="var(--ink)"
+              db={
+                audioLevels.connected
+                  ? formatDb(audioLevels.mic[audioLevels.mic.length - 1] ?? 0)
+                  : '—'
+              }
+              connected={audioLevels.connected}
+            />
+            <ChannelLabel
+              label="Собеседник · системный звук"
+              colorVar="var(--accent)"
+              db={
+                audioLevels.connected
+                  ? formatDb(
+                      audioLevels.system[audioLevels.system.length - 1] ?? 0,
+                    )
+                  : '—'
+              }
+              connected={audioLevels.connected}
+            />
           </div>
         </div>
 
@@ -733,15 +691,6 @@ function formatHMS(sec: number, padHours = false): string {
   return `${m}:${ss}`;
 }
 
-// [B17] Mock dB indicator — fallback пока sidecar level event не пришёл.
-// Deterministic oscillation +-3 dB около baseline.
-function fakeLevelDb(elapsed: number, track: 'mic' | 'sys'): string {
-  const baseline = track === 'mic' ? -12 : -18;
-  const osc = Math.sin((elapsed / (track === 'mic' ? 2.7 : 4.1)) * Math.PI) * 3;
-  const v = Math.round(baseline + osc);
-  return `${v} dB`;
-}
-
 // [B14] RMS (0..1) → dBFS approximation. -∞ → "−∞", clamp -60 на min.
 // 20·log10(rms). Real signal at -12 dB ≈ rms 0.25, -3 dB ≈ rms 0.71.
 function formatDb(rms: number): string {
@@ -749,6 +698,60 @@ function formatDb(rms: number): string {
   const db = 20 * Math.log10(rms);
   const clamped = Math.max(-60, Math.min(0, db));
   return `${clamped.toFixed(0)} dB`;
+}
+
+// Channel label aside DualWaveform — coloured dot + small-caps name + mono dB.
+function ChannelLabel({
+  label,
+  colorVar,
+  db,
+  connected,
+}: {
+  label: string;
+  colorVar: string;
+  db: string;
+  connected: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        flex: 1,
+        minWidth: 0,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span
+          className="dot"
+          style={{ background: colorVar, width: 8, height: 8, flexShrink: 0 }}
+          aria-hidden
+        />
+        <span
+          className="small-caps"
+          style={{
+            fontSize: 10,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {label}
+        </span>
+      </div>
+      <div
+        className="mono"
+        style={{
+          fontSize: 13,
+          letterSpacing: '0.04em',
+          color: connected ? 'var(--ink)' : 'var(--subtle)',
+        }}
+      >
+        {db}
+      </div>
+    </div>
+  );
 }
 
 function formatRuDate(d: Date): string {
