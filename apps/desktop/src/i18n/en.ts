@@ -414,6 +414,15 @@ export const en: TranslationStrings = {
     hotkeyPauseLabel: 'Hotkey · pause/resume',
     hotkeyPauseHint:
       'Only active during recording. Default ⌘⇧P.',
+    callDetectLabel: 'Auto-suggest recording',
+    callDetectCheckboxLabel:
+      'When the system detects a call (microphone is in use by another app + Zoom/Teams/Meet/FaceTime/Discord/Telegram is frontmost), Wotold shows a "Record?" notification. Works even when the window is minimized. Uses macOS Core Audio + app list only; no other app’s audio stream is read.',
+    callDetectHint:
+      'When off, Wotold never suggests recording on its own — only via ⌘⇧R or click. Disabled is recommended for privacy (R3 of passport).',
+    callDetectCooldownLabel: 'Do not suggest again for',
+    callDetectCooldownOption: '{n} min',
+    callDetectCooldownHint:
+      'If you dismiss a suggestion, the same app won’t prompt again for at least this long. Cooldown resets on each Wotold restart.',
     pathTitle: 'Service source.',
     pathLede:
       'By default Wotold uses our proxy with a daily free quota. Plug in your own keys — requests go direct, no limits.',

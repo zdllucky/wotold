@@ -16,12 +16,14 @@ import { humanError } from '../api/errors';
 
 import {
   AUTO_BIND_THRESHOLDS,
+  CALL_DETECT_COOLDOWNS,
   getSetting,
   setSetting,
   PREFERRED_LANGUAGES,
   SETTINGS_DEFAULTS,
   SETTINGS_KEYS,
   type AutoBindThreshold,
+  type CallDetectCooldown,
   type PreferredLanguage,
   type ProviderPath,
   type SttProvider,
@@ -89,6 +91,12 @@ export function SettingsPage() {
   const [autoBindThreshold, setAutoBindThreshold] = useState<AutoBindThreshold>(
     SETTINGS_DEFAULTS.AUTO_BIND_THRESHOLD,
   );
+  const [callDetectEnabled, setCallDetectEnabled] = useState<boolean>(
+    SETTINGS_DEFAULTS.CALL_DETECT_ENABLED,
+  );
+  const [callDetectCooldown, setCallDetectCooldown] = useState<CallDetectCooldown>(
+    SETTINGS_DEFAULTS.CALL_DETECT_COOLDOWN_MIN,
+  );
   const [proxyUrl, setProxyUrl] = useState<string>('');
   const [proxyUrlError, setProxyUrlError] = useState<string | null>(null);
   // [W1] Hotkey settings — canonical string format ('Cmd+Shift+KeyR'). Пустая
@@ -110,6 +118,8 @@ export function SettingsPage() {
           autoBindT,
           toggleHk,
           pauseHk,
+          cdEnabled,
+          cdCooldown,
         ] = await Promise.all([
           getSetting(SETTINGS_KEYS.STT_PROVIDER),
           getSetting(SETTINGS_KEYS.PROVIDER_PATH),
@@ -120,6 +130,8 @@ export function SettingsPage() {
           getSetting(SETTINGS_KEYS.AUTO_BIND_THRESHOLD),
           getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE),
           getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE),
+          getSetting(SETTINGS_KEYS.CALL_DETECT_ENABLED),
+          getSetting(SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN),
         ]);
         if (isSttProvider(stt)) setSttProvider(stt);
         if (isProviderPath(path)) setProviderPath(path);
@@ -132,6 +144,10 @@ export function SettingsPage() {
         }
         if (toggleHk) setToggleHotkey(toggleHk);
         if (pauseHk) setPauseHotkey(pauseHk);
+        setCallDetectEnabled(cdEnabled === '1');
+        if (cdCooldown && (['3', '5', '10', '15'] as const).includes(cdCooldown as CallDetectCooldown)) {
+          setCallDetectCooldown(cdCooldown as CallDetectCooldown);
+        }
       } catch (e) {
         setError(humanError(e));
       } finally {
@@ -463,6 +479,96 @@ export function SettingsPage() {
                     {t('settings.hotkeyPauseHint')}
                   </span>
                 </div>
+              </div>
+
+              {/* [S1] Auto-detect call popup — opt-in R3 deviation. */}
+              <div
+                style={{
+                  marginTop: 8,
+                  paddingTop: 18,
+                  borderTop: '1px solid var(--line-soft)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 18,
+                }}
+              >
+                <div className="field">
+                  <label className="field-label">
+                    {t('settings.callDetectLabel')}
+                  </label>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 12,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={callDetectEnabled}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        setCallDetectEnabled(v);
+                        void persist(
+                          SETTINGS_KEYS.CALL_DETECT_ENABLED,
+                          v ? '1' : '0',
+                        );
+                      }}
+                      style={{ marginTop: 4 }}
+                    />
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-serif)',
+                        fontSize: 14,
+                        color: 'var(--ink-2)',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {t('settings.callDetectCheckboxLabel')}
+                    </span>
+                  </label>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--subtle)',
+                      marginTop: 6,
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    {t('settings.callDetectHint')}
+                  </span>
+                </div>
+                {callDetectEnabled && (
+                  <div className="field">
+                    <label className="field-label">
+                      {t('settings.callDetectCooldownLabel')}
+                    </label>
+                    <Select<CallDetectCooldown>
+                      value={callDetectCooldown}
+                      options={CALL_DETECT_COOLDOWNS.map((n) => ({
+                        value: n,
+                        label: t('settings.callDetectCooldownOption', { n }),
+                      }))}
+                      onChange={(v) => {
+                        setCallDetectCooldown(v);
+                        void persist(
+                          SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN,
+                          v,
+                        );
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--subtle)',
+                        marginTop: 2,
+                      }}
+                    >
+                      {t('settings.callDetectCooldownHint')}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </SectionShell>
