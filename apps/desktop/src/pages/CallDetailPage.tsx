@@ -694,8 +694,20 @@ function MenuItem({
 }
 
 // Participants row — sp chips для confirmed speakers + "· N участника".
+// [V5.2] Dedupe по contact_id — STT может одного человека разбить на S1+S2,
+// показываем только уникальных людей.
 function ParticipantsRow({ speakers }: { speakers: CallSpeakerView[] }) {
-  const named = speakers.filter((s) => s.confirmed && s.contact_display_name);
+  const namedAll = speakers.filter((s) => s.confirmed && s.contact_display_name);
+  // Уникальные по contact_id (если есть; иначе fallback на speaker.id).
+  const seen = new Set<string>();
+  const named: CallSpeakerView[] = [];
+  for (const s of namedAll) {
+    const key = s.contact_id ?? `__sp_${s.id}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      named.push(s);
+    }
+  }
   if (named.length === 0) return null;
   const SP = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
   const initials = (name: string) =>

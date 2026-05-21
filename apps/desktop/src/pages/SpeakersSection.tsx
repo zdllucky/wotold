@@ -37,10 +37,8 @@ function initials(name: string): string {
   );
 }
 
-function speakerColorIdx(s: CallSpeakerView, idx: number): number {
-  if (s.speaker_tag === OWNER_TAG || s.speaker_tag === 'S0') return 0;
-  return (idx + 1) % 5;
-}
+// [V5.2] speakerColorIdx больше не нужен — merged-confirmed list использует
+// порядок группы (i) напрямую для палитры.
 
 interface SpeakersSectionProps {
   callId: string;
@@ -170,6 +168,29 @@ export function SpeakersSection({
   const unconfirmed = speakers.filter((s) => !s.confirmed);
   const confirmed = speakers.filter((s) => s.confirmed);
 
+  // [V5.2] Группируем confirmed по contact_id — STT диаризация может одного
+  // человека разбить на 2+ speaker_tag (S1+S2) при смене громкости/тона.
+  // Юзер хочет видеть «одного человека = одна карточка» с пометкой что
+  // STT нашёл N голосов под него. Каждый отдельный отвязывается per-tag.
+  const mergedConfirmed: Array<{
+    contactId: string;
+    speakers: CallSpeakerView[];
+  }> = [];
+  {
+    const byContact = new Map<string, CallSpeakerView[]>();
+    for (const s of confirmed) {
+      const cid = s.contact_id ?? `__no_contact_${s.id}`;
+      const arr = byContact.get(cid) ?? [];
+      arr.push(s);
+      byContact.set(cid, arr);
+    }
+    for (const [contactId, arr] of byContact.entries()) {
+      // Сортируем speaker_tag для стабильного отображения «S0, S1, owner».
+      arr.sort((a, b) => a.speaker_tag.localeCompare(b.speaker_tag));
+      mergedConfirmed.push({ contactId, speakers: arr });
+    }
+  }
+
   return (
     <div>
       {error && (
@@ -220,14 +241,20 @@ export function SpeakersSection({
       {confirmed.length > 0 && (
         <div style={{ marginTop: unconfirmed.length > 0 ? 36 : 0 }}>
           <div className="small-caps" style={{ marginBottom: 14 }}>
-            Подтверждены · {confirmed.length}
+            Подтверждены · {mergedConfirmed.length}
+            {mergedConfirmed.length !== confirmed.length && (
+              <span style={{ color: 'var(--muted)', textTransform: 'none', marginLeft: 8 }}>
+                ({confirmed.length} голосов объединены)
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {confirmed.map((s, i) => {
-              const color = SP_COLORS[speakerColorIdx(s, i) % SP_COLORS.length];
+            {mergedConfirmed.map((group, i) => {
+              const color = SP_COLORS[i % SP_COLORS.length];
+              const first = group.speakers[0]!;
               return (
                 <div
-                  key={s.id}
+                  key={group.contactId}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '40px 1fr auto',
@@ -241,7 +268,7 @@ export function SpeakersSection({
                     className="sp-avatar"
                     style={{ background: color, width: 36, height: 36, fontSize: 12 }}
                   >
-                    {initials(s.contact_display_name ?? s.speaker_tag)}
+                    {initials(first.contact_display_name ?? first.speaker_tag)}
                   </span>
                   <div>
                     <div
@@ -252,19 +279,31 @@ export function SpeakersSection({
                         color: 'var(--ink)',
                       }}
                     >
-                      {s.contact_display_name}
+                      {first.contact_display_name}
                     </div>
                     <div className="muted" style={{ fontSize: 12 }}>
-                      Голос {s.speaker_tag}
+                      {group.speakers.length === 1
+                        ? `Голос ${first.speaker_tag}`
+                        : `Голоса ${group.speakers
+                            .map((s) => s.speaker_tag)
+                            .join(', ')} · STT разделил на ${group.speakers.length}`}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="btn btn--quiet btn--sm"
-                    onClick={() => void handleUnbind(s)}
-                  >
-                    Отвязать
-                  </button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {group.speakers.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="btn btn--quiet btn--sm"
+                        onClick={() => void handleUnbind(s)}
+                        title={`Отвязать голос ${s.speaker_tag}`}
+                      >
+                        {group.speakers.length === 1
+                          ? 'Отвязать'
+                          : `Отвязать ${s.speaker_tag}`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               );
             })}
