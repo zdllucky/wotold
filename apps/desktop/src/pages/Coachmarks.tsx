@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useI18n } from '../i18n';
 
 interface CoachStep {
   eyebrow: string;
@@ -15,30 +16,30 @@ interface CoachStep {
   body: string;
 }
 
-const STEPS: CoachStep[] = [
-  {
-    eyebrow: 'Шаг 01',
-    title: 'Главная',
-    body: 'Жмёшь красный кружок когда созваниваешься. Hotkey ⌘⇧R, если кнопка не на виду. После остановки звонок попадает во вкладку «Звонки».',
-  },
-  {
-    eyebrow: 'Шаг 02',
-    title: 'Звонки',
-    body: 'Все записи группируются по датам. Внутри каждого звонка — четыре вкладки: Саммари, Расшифровка, Задачи, Участники.',
-  },
-  {
-    eyebrow: 'Шаг 03',
-    title: 'Контакты',
-    body: 'Добавляешь людей сюда, потом в звонках подтверждаешь «этот спикер = Иван». Wotold запоминает голос и подсказывает в следующий раз. Биометрия — только с opt-in.',
-  },
-  {
-    eyebrow: 'Шаг 04',
-    title: 'Настройки',
-    body: 'Переключаешь STT/LLM-провайдеров, привязываешь свои ключи, видишь квоты тарифа и можешь стереть все данные одной кнопкой. Там же — тема и акцент.',
-  },
-];
-
 export function Coachmarks() {
+  const { t } = useI18n();
+  const STEPS: CoachStep[] = [
+    {
+      eyebrow: t('coachmarks.step01'),
+      title: t('coachmarks.homeTitle'),
+      body: t('coachmarks.homeBody'),
+    },
+    {
+      eyebrow: t('coachmarks.step02'),
+      title: t('coachmarks.callsTitle'),
+      body: t('coachmarks.callsBody'),
+    },
+    {
+      eyebrow: t('coachmarks.step03'),
+      title: t('coachmarks.contactsTitle'),
+      body: t('coachmarks.contactsBody'),
+    },
+    {
+      eyebrow: t('coachmarks.step04'),
+      title: t('coachmarks.settingsTitle'),
+      body: t('coachmarks.settingsBody'),
+    },
+  ];
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
@@ -94,7 +95,7 @@ export function Coachmarks() {
     >
       <div className="index-card">
         <div className="small-caps" style={{ marginBottom: 10 }}>
-          {current.eyebrow} из 0{STEPS.length}
+          {t('coachmarks.stepOf', { step: current.eyebrow, total: STEPS.length })}
         </div>
         <h3
           id="coach-title"
@@ -129,7 +130,7 @@ export function Coachmarks() {
             className="btn btn--quiet"
             onClick={() => void dismiss()}
           >
-            Пропустить
+            {t('common.skip')}
           </button>
           {step > 0 && (
             <button
@@ -137,7 +138,7 @@ export function Coachmarks() {
               className="btn btn--ghost"
               onClick={() => setStep(step - 1)}
             >
-              ← Назад
+              {t('common.back')}
             </button>
           )}
           {!isLast ? (
@@ -146,7 +147,7 @@ export function Coachmarks() {
               className="btn btn--primary"
               onClick={() => setStep(step + 1)}
             >
-              Дальше →
+              {t('common.next')}
             </button>
           ) : (
             <button
@@ -154,7 +155,7 @@ export function Coachmarks() {
               className="btn btn--primary"
               onClick={() => void dismiss()}
             >
-              Понятно ✓
+              {t('common.gotIt')}
             </button>
           )}
           <div
@@ -163,7 +164,7 @@ export function Coachmarks() {
               display: 'flex',
               gap: 6,
             }}
-            aria-label="Прогресс"
+            aria-label={t('coachmarks.progressAria')}
           >
             {STEPS.map((_, i) => (
               <span

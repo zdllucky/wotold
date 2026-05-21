@@ -12,6 +12,7 @@ import {
   type ContactIdentifierInput,
   type ContactInput,
 } from '../api/contacts';
+import { useI18n } from '../i18n';
 import { InputField, Select, TextareaField } from '../ui';
 import { VoiceSamplesSection } from './VoiceSamplesSection';
 
@@ -30,6 +31,7 @@ export function ContactForm({
   onSubmit,
   onCancel,
 }: ContactFormProps) {
+  const { t } = useI18n();
   const [displayName, setDisplayName] = useState(initial?.display_name ?? '');
   const [org, setOrg] = useState(initial?.org ?? '');
   const [role, setRole] = useState(initial?.role ?? '');
@@ -88,7 +90,7 @@ export function ContactForm({
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <InputField
-        label="Имя"
+        label={t('contacts.fieldName')}
         type="text"
         value={displayName}
         onChange={(e) => setDisplayName(e.target.value)}
@@ -96,19 +98,19 @@ export function ContactForm({
         required
       />
       <InputField
-        label="Должность / роль"
+        label={t('contacts.fieldRole')}
         type="text"
         value={role}
         onChange={(e) => setRole(e.target.value)}
       />
       <InputField
-        label="Организация"
+        label={t('contacts.fieldOrg')}
         type="text"
         value={org}
         onChange={(e) => setOrg(e.target.value)}
       />
       <TextareaField
-        label="Заметки"
+        label={t('contacts.fieldNotes')}
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
         rows={3}
@@ -139,19 +141,17 @@ export function ContactForm({
           }}
         >
           <strong style={{ fontWeight: 500 }}>
-            Запоминать голос для авто-определения
+            {t('contacts.rememberVoiceTitle')}
           </strong>
           <span className="muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
-            При подтверждении этого человека в звонке Wotold сохранит короткий
-            образец голоса — чтобы в будущем определять его автоматически. Сними
-            галку, чтобы отключить.
+            {t('contacts.rememberVoiceHint')}
           </span>
         </span>
       </label>
 
       <RowGroup
-        title="Идентификаторы"
-        emptyHint="Телефоны, мейлы, мессенджеры."
+        title={t('contacts.identifiers')}
+        emptyHint={t('contacts.identifiersHint')}
         items={identifiers}
         onAdd={addIdentifier}
         renderItem={(it, idx) => (
@@ -167,7 +167,7 @@ export function ContactForm({
               className="input input--box"
               style={{ flex: 1 }}
               type="text"
-              placeholder="значение"
+              placeholder={t('contacts.identifierValue')}
               value={it.value}
               onChange={(e) => setIdentifierValue(idx, e.target.value)}
             />
@@ -175,8 +175,8 @@ export function ContactForm({
               type="button"
               className="btn btn--quiet"
               onClick={() => removeIdentifier(idx)}
-              aria-label="Удалить строку"
-              title="Удалить"
+              aria-label={t('contacts.removeRowAria')}
+              title={t('contacts.removeRowTitle')}
             >
               ×
             </button>
@@ -185,8 +185,8 @@ export function ContactForm({
       />
 
       <RowGroup
-        title="Расширяемые поля"
-        emptyHint="Любые ключ/значение — birthday, linkedin, любые."
+        title={t('contacts.customFields')}
+        emptyHint={t('contacts.customFieldsHint')}
         items={attributes}
         onAdd={addAttribute}
         renderItem={(it, idx) => (
@@ -195,7 +195,7 @@ export function ContactForm({
               className="input input--box"
               style={{ flex: '0 0 140px' }}
               type="text"
-              placeholder="ключ"
+              placeholder={t('contacts.identifierKey')}
               value={it.key}
               onChange={(e) => setAttrKey(idx, e.target.value)}
             />
@@ -203,7 +203,7 @@ export function ContactForm({
               className="input input--box"
               style={{ flex: 1 }}
               type="text"
-              placeholder="значение"
+              placeholder={t('contacts.identifierValue')}
               value={it.value}
               onChange={(e) => setAttrValue(idx, e.target.value)}
             />
@@ -211,8 +211,8 @@ export function ContactForm({
               type="button"
               className="btn btn--quiet"
               onClick={() => removeAttribute(idx)}
-              aria-label="Удалить строку"
-              title="Удалить"
+              aria-label={t('contacts.removeRowAria')}
+              title={t('contacts.removeRowTitle')}
             >
               ×
             </button>
@@ -234,7 +234,7 @@ export function ContactForm({
         }}
       >
         <button type="button" className="btn btn--ghost" onClick={onCancel}>
-          Отмена
+          {t('common.cancel')}
         </button>
         <button type="submit" className="btn btn--primary">
           {submitLabel}
@@ -253,6 +253,7 @@ interface RowGroupProps<T> {
 }
 
 function RowGroup<T>({ title, emptyHint, items, onAdd, renderItem }: RowGroupProps<T>) {
+  const { t } = useI18n();
   return (
     <div style={{ marginTop: 12 }}>
       <div
@@ -270,7 +271,7 @@ function RowGroup<T>({ title, emptyHint, items, onAdd, renderItem }: RowGroupPro
           onClick={onAdd}
           style={{ padding: '4px 8px' }}
         >
-          + строку
+          {t('contacts.addRow')}
         </button>
       </div>
       {items.length === 0 && (

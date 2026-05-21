@@ -7,6 +7,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCallAudioPath } from '../api/calls';
 import { Button } from '../ui';
 import { humanError } from '../api/errors';
+import { useI18n } from '../i18n';
 
 interface Props {
   callId: string;
@@ -15,6 +16,7 @@ interface Props {
 type Track = 'mic' | 'system';
 
 export function CallAudioPlayer({ callId }: Props) {
+  const { t } = useI18n();
   const [active, setActive] = useState<Track>('system');
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +68,7 @@ export function CallAudioPlayer({ callId }: Props) {
     >
       <div
         role="group"
-        aria-label="Дорожка"
+        aria-label={t('scrubber.trackGroup')}
         style={{ display: 'flex', gap: 6, flexShrink: 0 }}
       >
         <Button
@@ -74,18 +76,18 @@ export function CallAudioPlayer({ callId }: Props) {
           size="sm"
           onClick={() => setActive('system')}
           disabled={missingSystem}
-          title="Звук собеседника (системный аудио)"
+          title={t('scrubber.trackSystemTitle')}
         >
-          Собеседник
+          {t('scrubber.trackSystemLabel')}
         </Button>
         <Button
           variant={active === 'mic' ? 'primary' : 'ghost'}
           size="sm"
           onClick={() => setActive('mic')}
           disabled={missingMic}
-          title="Звук с твоего микрофона"
+          title={t('scrubber.trackMicTitle')}
         >
-          Я
+          {t('scrubber.trackMicLabel')}
         </Button>
       </div>
       {src ? (
@@ -98,7 +100,7 @@ export function CallAudioPlayer({ callId }: Props) {
         />
       ) : (
         <p className="muted" style={{ margin: 0 }}>
-          {error ? `Не удалось загрузить аудио: ${error}` : 'Загружаем…'}
+          {error ? t('scrubber.audioLoadFailed', { error }) : t('scrubber.loadingAudio')}
         </p>
       )}
     </div>

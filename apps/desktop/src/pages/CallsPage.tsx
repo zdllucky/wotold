@@ -16,6 +16,7 @@ import { listCalls, type Call } from '../api/recording';
 import { listCallSpeakers } from '../api/speakers';
 import { List, type RowComponentProps } from 'react-window';
 import { CallRowSkeleton, Empty } from '../ui';
+import { bcp47, useI18n } from '../i18n';
 
 const VIRTUALIZATION_THRESHOLD = 200;
 const ROW_HEIGHT = 78;
@@ -40,11 +41,14 @@ interface MonthGroup {
   calls: Call[];
 }
 
-function monthLabel(d: Date): string {
-  return d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+function monthLabel(d: Date, locale: string): string {
+  return d.toLocaleDateString(bcp47(locale as Parameters<typeof bcp47>[0]), {
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
-function groupByMonth(calls: Call[]): MonthGroup[] {
+function groupByMonth(calls: Call[], locale: string): MonthGroup[] {
   const map = new Map<string, MonthGroup>();
   for (const c of calls) {
     const dt = new Date(c.started_at);
@@ -52,7 +56,7 @@ function groupByMonth(calls: Call[]): MonthGroup[] {
     const key = `${dt.getFullYear()}-${dt.getMonth()}`;
     let g = map.get(key);
     if (!g) {
-      g = { label: capitalize(monthLabel(dt)), calls: [] };
+      g = { label: capitalize(monthLabel(dt, locale)), calls: [] };
       map.set(key, g);
     }
     g.calls.push(c);
@@ -107,6 +111,7 @@ interface PipelineFinishedEvent {
 }
 
 export function CallsPage({ onOpen }: CallsPageProps) {
+  const { locale, t } = useI18n();
   const [calls, setCalls] = useState<Call[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -175,7 +180,7 @@ export function CallsPage({ onOpen }: CallsPageProps) {
     return (
       <section>
         <div className="title" style={{ fontSize: 36, marginBottom: 20 }}>
-          Звонки
+          {t('calls.title')}
         </div>
         <ul style={{ listStyle: 'none', padding: 0 }} aria-busy="true">
           {Array.from({ length: 5 }, (_, i) => (
@@ -199,9 +204,15 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   const totalHours = totalDurationSec / 3600;
 
   const FILTERS: Array<{ id: StatusFilter; label: string }> = [
-    { id: 'all', label: 'Все' },
-    { id: 'today', label: 'Сегодня' },
-    { id: 'week', label: 'Неделя' },
+    { id: 'all', label: t('calls.filterAll') },
+    { id: 'today', label: t('calls.filterToday') },
+    { id: 'week', label: t('calls.filterWeek') },
+  ];
+
+  const pluralForms: [string, string, string] = [
+    t('calls.callsForm1'),
+    t('calls.callsForm2'),
+    t('calls.callsForm5'),
   ];
 
   return (
@@ -216,7 +227,7 @@ export function CallsPage({ onOpen }: CallsPageProps) {
         }}
       >
         <div className="title" style={{ fontSize: 36 }}>
-          Звонки
+          {t('calls.title')}
         </div>
         <div
           style={{
@@ -227,10 +238,10 @@ export function CallsPage({ onOpen }: CallsPageProps) {
         >
           <input
             className="input"
-            placeholder="Найти в расшифровках…"
+            placeholder={t('calls.search')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Поиск звонков"
+            aria-label={t('calls.searchAria')}
             style={{ borderBottom: 'none', fontSize: 15, padding: 0 }}
           />
         </div>
@@ -253,33 +264,34 @@ export function CallsPage({ onOpen }: CallsPageProps) {
       {calls.length > 0 && (
         <div className="small-caps" style={{ marginBottom: 18 }}>
           {filtered.length !== calls.length
-            ? `${filtered.length} из ${calls.length} ${declinePlural(calls.length, ['звонка', 'звонков', 'звонков'])}`
-            : `${calls.length} ${declinePlural(calls.length, ['звонок', 'звонка', 'звонков'])}`}
-          {totalDurationSec > 0 && ` · ${totalHours.toFixed(0)} ч`}
+            ? t('calls.filteredOf', {
+                filtered: filtered.length,
+                total: calls.length,
+                plural: declinePlural(calls.length, pluralForms),
+              })
+            : t('calls.countOf', {
+                n: calls.length,
+                plural: declinePlural(calls.length, pluralForms),
+              })}
+          {totalDurationSec > 0 && ` ${t('calls.hoursSuffix', { n: totalHours.toFixed(0) })}`}
         </div>
       )}
 
       {calls.length === 0 ? (
-        <Empty
-          title="Звонков пока нет"
-          description="Начни запись на «Главной» — звонок появится здесь сразу после остановки."
-        />
+        <Empty title={t('calls.emptyTitle')} description={t('calls.emptyBody')} />
       ) : filtered.length === 0 ? (
-        <Empty
-          title="Ничего не нашлось"
-          description="Сбрось фильтры или измени запрос."
-        />
+        <Empty title={t('calls.notFoundTitle')} description={t('calls.notFoundBody')} />
       ) : filtered.length >= VIRTUALIZATION_THRESHOLD ? (
         <List
           rowComponent={VirtualCallRow}
           rowCount={filtered.length}
           rowHeight={ROW_HEIGHT}
-          rowProps={{ calls: filtered, onOpen, speakerInitials }}
+          rowProps={{ calls: filtered, onOpen, speakerInitials, locale, t }}
           defaultHeight={VIRTUAL_LIST_HEIGHT}
         />
       ) : (
         <>
-          {groupByMonth(filtered).map((g) => (
+          {groupByMonth(filtered, locale).map((g) => (
             <div key={g.label} style={{ marginBottom: 32 }}>
               <div
                 style={{
@@ -308,6 +320,8 @@ export function CallsPage({ onOpen }: CallsPageProps) {
                       onOpen={onOpen}
                       hasBorder={idx > 0}
                       speakers={speakerInitials.get(c.id)}
+                      locale={locale}
+                      t={t}
                     />
                   ))}
                 </div>
@@ -320,6 +334,8 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   );
 }
 
+type TFn = ReturnType<typeof useI18n>['t'];
+
 interface CallRowProps {
   call: Call;
   onOpen: (id: string) => void;
@@ -327,15 +343,17 @@ interface CallRowProps {
   /** Initials of confirmed speakers (computed parent-side). Falls back
    *  to deterministic hash placeholder if missing. */
   speakers?: string[];
+  locale: string;
+  t: TFn;
 }
 
-function CallRow({ call, onOpen, hasBorder, speakers }: CallRowProps) {
+function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
   const list = speakers && speakers.length > 0 ? speakers : inferSpeakers(call);
   return (
     <button
       type="button"
       onClick={() => onOpen(call.id)}
-      title={statusTooltip(call.status, call.failed_reason)}
+      title={statusTooltip(call.status, call.failed_reason, t)}
       style={{
         display: 'grid',
         gridTemplateColumns: '64px 1fr 200px 70px',
@@ -375,7 +393,7 @@ function CallRow({ call, onOpen, hasBorder, speakers }: CallRowProps) {
             flexWrap: 'wrap',
           }}
         >
-          {call.title ?? `Звонок ${call.id.slice(0, 8)}`}
+          {call.title ?? t('calls.fallbackCallTitle', { short: call.id.slice(0, 8) })}
           {call.status === 'processing' && (
             <span
               className="mono"
@@ -389,7 +407,7 @@ function CallRow({ call, onOpen, hasBorder, speakers }: CallRowProps) {
                 textTransform: 'uppercase',
               }}
             >
-              распознаём
+              {t('calls.badgeProcessing')}
             </span>
           )}
           {call.status === 'failed' && (
@@ -405,7 +423,7 @@ function CallRow({ call, onOpen, hasBorder, speakers }: CallRowProps) {
                 textTransform: 'uppercase',
               }}
             >
-              ошибка
+              {t('calls.badgeFailed')}
             </span>
           )}
           {call.status === 'recording' && (
@@ -421,7 +439,7 @@ function CallRow({ call, onOpen, hasBorder, speakers }: CallRowProps) {
                 textTransform: 'uppercase',
               }}
             >
-              ● запись
+              {t('calls.badgeRecording')}
             </span>
           )}
         </div>
@@ -490,6 +508,8 @@ interface VirtualRowProps {
   calls: Call[];
   onOpen: (id: string) => void;
   speakerInitials: Map<string, string[]>;
+  locale: string;
+  t: TFn;
 }
 
 function VirtualCallRow({
@@ -498,6 +518,8 @@ function VirtualCallRow({
   calls,
   onOpen,
   speakerInitials,
+  locale,
+  t,
 }: RowComponentProps<VirtualRowProps>) {
   const c = calls[index]!;
   return (
@@ -507,6 +529,8 @@ function VirtualCallRow({
         onOpen={onOpen}
         hasBorder={index > 0}
         speakers={speakerInitials.get(c.id)}
+        locale={locale}
+        t={t}
       />
     </div>
   );
@@ -543,17 +567,17 @@ function initials(name: string): string {
   );
 }
 
-function statusTooltip(status: string, failedReason: string | null): string {
+function statusTooltip(status: string, failedReason: string | null, t: TFn): string {
   const base = (() => {
     switch (status) {
       case 'recording':
-        return 'Идёт запись прямо сейчас.';
+        return t('calls.tooltipRecording');
       case 'processing':
-        return 'Запись завершена, идёт транскрипция через STT.';
+        return t('calls.tooltipProcessing');
       case 'ready':
-        return 'Готово — есть transcript.md и raw_stt.json.';
+        return t('calls.tooltipReady');
       case 'failed':
-        return 'Звонок не доведён до transcript. Аудио всё ещё на диске.';
+        return t('calls.tooltipFailed');
       default:
         return status;
     }

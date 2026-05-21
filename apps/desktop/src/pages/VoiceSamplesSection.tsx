@@ -14,6 +14,7 @@ import {
   listVoiceSamples,
   type VoiceSampleView,
 } from '../api/voiceSamples';
+import { bcp47, useI18n } from '../i18n';
 
 interface VoiceSamplesSectionProps {
   contactId: string;
@@ -21,9 +22,9 @@ interface VoiceSamplesSectionProps {
   alwaysShow?: boolean;
 }
 
-function formatCreatedAt(iso: string): string {
+function formatCreatedAt(iso: string, locale: string): string {
   try {
-    return new Date(iso).toLocaleString('ru-RU', {
+    return new Date(iso).toLocaleString(bcp47(locale as Parameters<typeof bcp47>[0]), {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -41,6 +42,7 @@ function formatQuality(q: number | null): string {
 }
 
 export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSectionProps) {
+  const { locale, t } = useI18n();
   const [samples, setSamples] = useState<VoiceSampleView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,8 +61,13 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
 
   const handleDelete = async (s: VoiceSampleView) => {
     const ok = await ask(
-      `Удалить voice sample от ${formatCreatedAt(s.created_at)}?\n\nЭто навсегда удалит embedding из профиля контакта. Биометрия не восстанавливается.`,
-      { title: 'Wotold', kind: 'warning', okLabel: 'Удалить', cancelLabel: 'Отмена' },
+      t('voiceSamples.deleteConfirmBody', { created: formatCreatedAt(s.created_at, locale) }),
+      {
+        title: 'Wotold',
+        kind: 'warning',
+        okLabel: t('common.delete'),
+        cancelLabel: t('common.cancel'),
+      },
     );
     if (!ok) return;
     try {
@@ -72,7 +79,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   };
 
   if (samples === null && !error) {
-    return <p className="muted">Загрузка…</p>;
+    return <p className="muted">{t('common.loading')}</p>;
   }
 
   const empty = !samples || samples.length === 0;
@@ -88,7 +95,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
           marginBottom: 10,
         }}
       >
-        <span className="small-caps">Голосовые семплы</span>
+        <span className="small-caps">{t('voiceSamples.title')}</span>
         {samples && samples.length > 0 && (
           <Badge tone="neutral">{samples.length}</Badge>
         )}
@@ -107,8 +114,8 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
       )}
       {empty ? (
         <Empty
-          title="Образцов голоса пока нет"
-          description="Подтверди этого человека в любом звонке — Wotold начнёт сохранять короткие образцы голоса для авто-определения в будущем. Требует включённой опции «Запоминать голос»."
+          title={t('voiceSamples.emptyTitle')}
+          description={t('voiceSamples.emptyBody')}
         />
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
@@ -136,17 +143,17 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
                   className="mono"
                   style={{ fontSize: 12, color: 'var(--ink)' }}
                 >
-                  {formatCreatedAt(s.created_at)}
+                  {formatCreatedAt(s.created_at, locale)}
                 </span>
                 <span className="muted" style={{ fontSize: 12 }}>
-                  качество {formatQuality(s.quality)}
+                  {t('voiceSamples.quality', { pct: formatQuality(s.quality) })}
                 </span>
                 <span className="subtle" style={{ fontSize: 11 }}>
-                  {s.embedding_bytes} байт
+                  {t('voiceSamples.embedBytes', { n: s.embedding_bytes })}
                 </span>
                 {s.source_call && (
                   <span className="subtle mono" style={{ fontSize: 10 }}>
-                    call:{s.source_call.slice(0, 8)}
+                    {t('voiceSamples.callTag', { short: s.source_call.slice(0, 8) })}
                   </span>
                 )}
               </div>
@@ -155,7 +162,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
                 variant="danger"
                 size="sm"
                 onClick={() => void handleDelete(s)}
-                aria-label="Удалить семпл"
+                aria-label={t('voiceSamples.deleteAria')}
               >
                 ×
               </Button>

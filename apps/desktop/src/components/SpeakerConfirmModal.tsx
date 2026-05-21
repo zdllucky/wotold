@@ -11,6 +11,7 @@ import {
 } from '../api/speakers';
 import { createContact, type Contact } from '../api/contacts';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useI18n } from '../i18n';
 
 import { SpeakerCard, type SpeakerSample } from './SpeakerCard';
 
@@ -30,6 +31,7 @@ export function SpeakerConfirmModal({
   onClose,
   onConfirmed,
 }: SpeakerConfirmModalProps) {
+  const { t } = useI18n();
   const [pickedContactId, setPickedContactId] = useState<string>(
     speaker.suggestion_contact_id ?? '',
   );
@@ -55,7 +57,7 @@ export function SpeakerConfirmModal({
   const handleConfirm = async (contactId?: string) => {
     const picked = contactId ?? pickedContactId;
     if (!picked) {
-      setError('Сначала выбери контакт.');
+      setError(t('speakers.needContactSelect'));
       return;
     }
     try {
@@ -70,7 +72,7 @@ export function SpeakerConfirmModal({
   const handleSubmitNewContact = async () => {
     const trimmed = newName.trim();
     if (!trimmed) {
-      setError('Введи имя контакта.');
+      setError(t('speakers.needContactName'));
       return;
     }
     setBusyAdd(true);
@@ -99,7 +101,7 @@ export function SpeakerConfirmModal({
       }}
       role="dialog"
       aria-modal="true"
-      aria-label="Подтверждение голоса"
+      aria-label={t('speakers.confirmModalAria')}
     >
       <div ref={ref} style={{ width: 'min(560px, 90vw)' }}>
         {error && (

@@ -19,6 +19,7 @@ import { listCallSpeakers } from '../api/speakers';
 import { DualWaveform } from '../components/DualWaveform';
 import { useAudioLevel } from '../hooks/useAudioLevel';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { bcp47, useI18n } from '../i18n';
 
 interface AvailableUpdate {
   version: string;
@@ -33,6 +34,7 @@ interface HomePageProps {
 }
 
 export function HomePage({ onOpenCall }: HomePageProps = {}) {
+  const { locale, t } = useI18n();
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
   const [installing, setInstalling] = useState(false);
 
@@ -250,7 +252,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
               className="eyebrow"
               style={{ marginBottom: 10, color: 'var(--signal)' }}
             >
-              ● Идёт запись · Локально
+              {t('home.eyebrowRecording')}
             </div>
             <div
               style={{
@@ -284,7 +286,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
             className="rec-btn rec-btn--stop"
             onClick={onStop}
             disabled={busy}
-            aria-label="Остановить запись"
+            aria-label={t('home.stopAria')}
           />
         </div>
 
@@ -322,22 +324,23 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
             }}
           >
             <ChannelLabel
-              label="Вы · микрофон"
+              label={t('home.channelMic')}
               colorVar="var(--ink)"
               db={
                 audioLevels.connected
-                  ? formatDb(audioLevels.mic[audioLevels.mic.length - 1] ?? 0)
+                  ? formatDb(audioLevels.mic[audioLevels.mic.length - 1] ?? 0, t)
                   : '—'
               }
               connected={audioLevels.connected}
             />
             <ChannelLabel
-              label="Собеседник · системный звук"
+              label={t('home.channelSystem')}
               colorVar="var(--accent)"
               db={
                 audioLevels.connected
                   ? formatDb(
                       audioLevels.system[audioLevels.system.length - 1] ?? 0,
+                      t,
                     )
                   : '—'
               }
@@ -359,7 +362,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
             className="mono muted"
             style={{ fontSize: 11, letterSpacing: '0.06em' }}
           >
-            16 кГц моно · WAV · {formatHMS(elapsed, true)}
+            {t('home.waveformFmt', { time: formatHMS(elapsed, true) })}
           </div>
           <div
             style={{
@@ -369,7 +372,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
               fontSize: 13,
             }}
           >
-            Расшифровка начнётся автоматически
+            {t('home.transcriptionWillStart')}
           </div>
         </div>
       </section>
@@ -382,14 +385,13 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   return (
     <section className="idle-enter">
       <div className="eyebrow" style={{ marginBottom: 18 }}>
-        {formatRuDate(new Date())}
+        {formatLocaleDate(new Date(), locale)}
       </div>
       <div className="display" style={{ marginBottom: 12 }}>
-        Готов записывать.
+        {t('home.readyHeadline')}
       </div>
       <p className="subtitle" style={{ maxWidth: 540, marginBottom: 38 }}>
-        Нажмите красный кружок когда начнёте звонок. Расшифровка приходит через
-        10–30 секунд.
+        {t('home.subtitle')}
       </p>
 
       <div
@@ -405,8 +407,8 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
           className="rec-btn rec-btn--breathing"
           onClick={onStart}
           disabled={busy}
-          aria-label={busy ? 'Запускаем' : 'Начать запись'}
-          title="Горячая клавиша: ⌘⇧R"
+          aria-label={busy ? t('home.startingAria') : t('home.startAria')}
+          title={t('home.hotkeyTitle')}
         />
         <div>
           <div className="small-caps" style={{ marginBottom: 4 }}>
@@ -422,7 +424,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
               lineHeight: 1.45,
             }}
           >
-            {busy ? 'Запускаем…' : 'Или просто нажмите горячую клавишу'}
+            {busy ? t('home.starting') : t('home.hotkeyHint')}
           </div>
         </div>
       </div>
@@ -446,10 +448,9 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
           style={{ marginBottom: 28, display: 'flex', gap: 16, alignItems: 'center' }}
         >
           <div style={{ flex: 1 }}>
-            <strong style={{ fontFamily: 'var(--font-sans)' }}>✓ Звонок сохранён</strong>
+            <strong style={{ fontFamily: 'var(--font-sans)' }}>{t('home.savedTitle')}</strong>
             <p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
-              Длительность: {lastCall.duration_sec ?? 0} сек. Распознавание идёт в фоне —
-              обычно занимает 10–30 секунд.
+              {t('home.savedHint', { sec: lastCall.duration_sec ?? 0 })}
             </p>
           </div>
           {onOpenCall && (
@@ -458,7 +459,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
               className="btn btn--primary"
               onClick={() => onOpenCall(lastCall.id)}
             >
-              Открыть
+              {t('common.open')}
             </button>
           )}
         </div>
@@ -468,18 +469,18 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
         <div style={{ display: 'flex', marginBottom: 36 }}>
           <div className="stat">
             <span className="stat-value">{totalCount}</span>
-            <span className="stat-label">Звонков · всего</span>
+            <span className="stat-label">{t('home.statTotal')}</span>
           </div>
           <div className="stat">
             <span className="stat-value">{weekCount}</span>
-            <span className="stat-label">За неделю</span>
+            <span className="stat-label">{t('home.statWeek')}</span>
           </div>
           <div className="stat">
             <span className="stat-value">
               {totalHours.toFixed(0)}
-              <span style={{ fontSize: 18, marginLeft: 4 }}>ч</span>
+              <span style={{ fontSize: 18, marginLeft: 4 }}>{t('home.hoursAbbr')}</span>
             </span>
-            <span className="stat-label">В архиве</span>
+            <span className="stat-label">{t('home.statArchive')}</span>
           </div>
           {/* [B17] Always show 4 stats per artboard §2 — visual symmetry.
               При pendingSpeakers === 0 рендерим как muted '0'. */}
@@ -492,7 +493,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
             >
               {pendingSpeakers}
             </span>
-            <span className="stat-label">Ждут подтверждения</span>
+            <span className="stat-label">{t('home.statPending')}</span>
           </div>
         </div>
       )}
@@ -507,7 +508,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
               marginBottom: 14,
             }}
           >
-            <span className="small-caps">Недавно</span>
+            <span className="small-caps">{t('home.recentTitle')}</span>
             <div
               style={{ flex: 1, height: 1, background: 'var(--line-soft)' }}
             />
@@ -518,7 +519,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 style={{ padding: 0, fontSize: 13 }}
                 onClick={() => onOpenCall(recentCalls[0]!.id)}
               >
-                Все звонки →
+                {t('home.allCalls')}
               </button>
             )}
           </div>
@@ -545,7 +546,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 className="mono muted"
                 style={{ fontSize: 12, letterSpacing: '0.04em' }}
               >
-                {formatWhen(c.started_at)}
+                {formatWhen(c.started_at, locale, t)}
               </div>
               <div>
                 <div
@@ -557,7 +558,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                     color: 'var(--ink)',
                   }}
                 >
-                  {c.title ?? `Звонок ${c.id.slice(0, 8)}`}
+                  {c.title ?? t('home.fallbackCallTitle', { short: c.id.slice(0, 8) })}
                 </div>
                 {c.failed_reason && (
                   <div
@@ -593,23 +594,20 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
         >
           <div className="index-card">
             <div className="eyebrow" style={{ marginBottom: 10 }}>
-              Согласие на запись
+              {t('home.consentEyebrow')}
             </div>
             <h3
               id="consent-title"
               className="title"
               style={{ marginBottom: 14 }}
             >
-              Перед стартом
+              {t('home.consentTitle')}
             </h3>
             <p style={{ fontFamily: 'var(--font-serif)', fontSize: 16, lineHeight: 1.55 }}>
-              Wotold будет записывать звук с микрофона и системный аудиовыход. Перед
-              началом убедись, что собеседник предупреждён и согласен на запись. По
-              закону РФ/РК запись переговоров без уведомления другой стороны может
-              быть нарушением.
+              {t('home.consentBody')}
             </p>
             <p className="muted" style={{ marginTop: 8 }}>
-              Это окно появляется один раз. В дальнейшем будем доверять твоему решению.
+              {t('home.consentSubnote')}
             </p>
             <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
               <button
@@ -618,7 +616,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 onClick={() => setShowConsent(false)}
                 disabled={busy}
               >
-                Отмена
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
@@ -626,7 +624,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 onClick={onAcceptConsent}
                 disabled={busy}
               >
-                Согласен, начать
+                {t('home.consentAccept')}
               </button>
             </div>
           </div>
@@ -636,8 +634,10 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       {update && (
         <div className="card card--raised" style={{ marginTop: 28 }}>
           <p style={{ fontFamily: 'var(--font-sans)' }}>
-            Доступна версия <strong>{update.version}</strong> (сейчас{' '}
-            {update.current_version}).
+            {t('home.updateAvailable', {
+              version: update.version,
+              current: update.current_version,
+            })}
           </p>
           {update.notes && (
             <pre
@@ -664,7 +664,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
               onClick={applyUpdate}
               disabled={installing}
             >
-              {installing ? 'Устанавливаем…' : 'Обновить сейчас'}
+              {installing ? t('home.updateInstalling') : t('home.updateInstall')}
             </button>
             <button
               type="button"
@@ -672,7 +672,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
               onClick={() => setUpdate(null)}
               disabled={installing}
             >
-              Позже
+              {t('common.later')}
             </button>
           </div>
         </div>
@@ -691,10 +691,12 @@ function formatHMS(sec: number, padHours = false): string {
   return `${m}:${ss}`;
 }
 
-// [B14] RMS (0..1) → dBFS approximation. -∞ → "−∞", clamp -60 на min.
+type TFn = ReturnType<typeof useI18n>['t'];
+
+// [B14] RMS (0..1) → dBFS approximation. -∞ → локализованный, clamp -60 на min.
 // 20·log10(rms). Real signal at -12 dB ≈ rms 0.25, -3 dB ≈ rms 0.71.
-function formatDb(rms: number): string {
-  if (rms <= 1e-6) return '−∞ dB';
+function formatDb(rms: number, t: TFn): string {
+  if (rms <= 1e-6) return t('home.dbInf');
   const db = 20 * Math.log10(rms);
   const clamped = Math.max(-60, Math.min(0, db));
   return `${clamped.toFixed(0)} dB`;
@@ -754,9 +756,9 @@ function ChannelLabel({
   );
 }
 
-function formatRuDate(d: Date): string {
+function formatLocaleDate(d: Date, locale: string): string {
   try {
-    return d.toLocaleDateString('ru-RU', {
+    return d.toLocaleDateString(bcp47(locale as Parameters<typeof bcp47>[0]), {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -766,21 +768,29 @@ function formatRuDate(d: Date): string {
   }
 }
 
-// "Сегодня · 11:24" / "Вчера · 16:02" / "15 мая · 10:00"
-function formatWhen(iso: string): string {
+// "Сегодня · 11:24" / "Вчера · 16:02" / "15 мая · 10:00" — на ru/kk/en
+// «Сегодня»/«Вчера» приходит через Intl.RelativeTimeFormat-free fallback,
+// чтобы не зависеть от availability в jsdom.
+function formatWhen(iso: string, locale: string, t: TFn): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return iso;
+  const bcp = bcp47(locale as Parameters<typeof bcp47>[0]);
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const startOfYesterday = new Date(startOfToday);
   startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-  const time = date.toLocaleTimeString('ru-RU', {
+  const time = date.toLocaleTimeString(bcp, {
     hour: '2-digit',
     minute: '2-digit',
   });
-  if (date >= startOfToday) return `Сегодня · ${time}`;
-  if (date >= startOfYesterday) return `Вчера · ${time}`;
-  const day = date.toLocaleDateString('ru-RU', {
+  const todayLabel = locale === 'ru' ? 'Сегодня' : locale === 'kk' ? 'Бүгін' : 'Today';
+  const yestLabel = locale === 'ru' ? 'Вчера' : locale === 'kk' ? 'Кеше' : 'Yesterday';
+  // t-arg not used directly here — kept in signature so call sites stay
+  // future-proof if we move labels into the dictionary.
+  void t;
+  if (date >= startOfToday) return `${todayLabel} · ${time}`;
+  if (date >= startOfYesterday) return `${yestLabel} · ${time}`;
+  const day = date.toLocaleDateString(bcp, {
     day: 'numeric',
     month: 'long',
   });

@@ -7,6 +7,8 @@
 
 import { useSyncExternalStore, type CSSProperties } from 'react';
 
+import { bcp47, useI18n } from '../i18n';
+
 type Tone = 'ok' | 'warning' | 'danger';
 
 interface UsageBarProps {
@@ -68,7 +70,10 @@ function useReducedMotion(): boolean {
 }
 
 export function UsageBar({ label, used, limit, format }: UsageBarProps) {
-  const fmt = format ?? ((v: number) => v.toLocaleString('ru-RU'));
+  const { locale, t } = useI18n();
+  const fmt =
+    format ??
+    ((v: number) => v.toLocaleString(bcp47(locale as Parameters<typeof bcp47>[0])));
   const safeLimit = limit > 0 ? limit : 0;
   const pct = safeLimit === 0 ? 0 : Math.min(100, Math.round((used / safeLimit) * 100));
   const tone = pickTone(pct);
@@ -102,7 +107,7 @@ export function UsageBar({ label, used, limit, format }: UsageBarProps) {
           }}
         >
           {safeLimit === 0 ? (
-            <span title="лимит не настроен">{fmt(used)} / ∞</span>
+            <span title={t('usage.noLimit')}>{fmt(used)} / ∞</span>
           ) : (
             <>
               {fmt(used)} / {fmt(safeLimit)}{' '}

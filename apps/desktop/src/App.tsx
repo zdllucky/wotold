@@ -10,6 +10,7 @@ import { HomePage } from './pages/HomePage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, SETTINGS_KEYS } from './api/settings';
+import { I18nProvider, useI18n } from './i18n';
 import { ThemeProvider } from './theme/useTheme';
 
 type Page = 'home' | 'calls' | 'contacts' | 'settings' | 'ds';
@@ -17,11 +18,11 @@ type Bootstrap = 'loading' | 'onboarding' | 'app';
 
 // [B17] Atelier v2: text-only nav rail (handoff §1). Active-indicator bar
 // carries the affordance — see `.nav-item--active::before` in wotold.css.
-const NAV: Array<{ id: Page; label: string }> = [
-  { id: 'home', label: 'Главная' },
-  { id: 'calls', label: 'Звонки' },
-  { id: 'contacts', label: 'Контакты' },
-  { id: 'settings', label: 'Настройки' },
+const NAV_IDS: ReadonlyArray<Exclude<Page, 'ds'>> = [
+  'home',
+  'calls',
+  'contacts',
+  'settings',
 ];
 
 const IS_DEV = import.meta.env.DEV;
@@ -37,11 +38,25 @@ function initialPage(): Page {
 }
 
 function AppShell() {
+  const { t } = useI18n();
   const [bootstrap, setBootstrap] = useState<Bootstrap>('loading');
   const [page, setPage] = useState<Page>(initialPage);
   const [detailCallId, setDetailCallId] = useState<string | null>(null);
   // [B16] Counter активных pipeline-задач. Subtle indicator в app-rail foot.
   const [activePipelines, setActivePipelines] = useState(0);
+
+  const navLabel = (id: Exclude<Page, 'ds'>): string => {
+    switch (id) {
+      case 'home':
+        return t('nav.home');
+      case 'calls':
+        return t('nav.calls');
+      case 'contacts':
+        return t('nav.contacts');
+      case 'settings':
+        return t('nav.settings');
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -104,24 +119,27 @@ function AppShell() {
     return <OnboardingPage onComplete={() => setBootstrap('app')} />;
   }
 
+  const pipelinePlural =
+    activePipelines === 1 ? t('nav.callsPluralOne') : t('nav.callsPluralMany');
+
   return (
     <div className="app-shell">
-      <aside className="app-rail" aria-label="Главная навигация">
+      <aside className="app-rail" aria-label={t('nav.main')}>
         <div className="app-brand" aria-hidden="true">
           Wotold
           <span className="app-brand-dot">.</span>
         </div>
-        {NAV.map((item) => {
-          const active = page === item.id;
+        {NAV_IDS.map((id) => {
+          const active = page === id;
           return (
             <button
-              key={item.id}
+              key={id}
               type="button"
               className={`nav-item${active ? ' nav-item--active' : ''}`}
-              onClick={() => setPage(item.id)}
+              onClick={() => setPage(id)}
               aria-current={active ? 'page' : undefined}
             >
-              {item.label}
+              {navLabel(id)}
             </button>
           );
         })}
@@ -133,14 +151,17 @@ function AppShell() {
             title="Design system showcase (dev only)"
             style={{ marginTop: 12 }}
           >
-            DS · dev
+            {t('nav.ds')}
           </button>
         )}
         {activePipelines > 0 && (
           <div
             role="status"
             aria-live="polite"
-            title={`Обработка ${activePipelines} ${activePipelines === 1 ? 'звонка' : 'звонков'}…`}
+            title={t('nav.processingTitle', {
+              n: activePipelines,
+              plural: pipelinePlural,
+            })}
             style={{
               marginTop: 'auto',
               padding: '10px 6px',
@@ -157,13 +178,15 @@ function AppShell() {
           >
             <span className="dot dot--accent dot--pulse" aria-hidden />
             <span>
-              {activePipelines === 1 ? 'обрабатываем' : `обрабатываем · ${activePipelines}`}
+              {activePipelines === 1
+                ? t('nav.processingOne')
+                : t('nav.processingMany', { n: activePipelines })}
             </span>
           </div>
         )}
         <div className="app-rail-foot">
           v1.0.0<br />
-          Локально · macOS
+          {t('nav.brandFooter')}
         </div>
       </aside>
 
@@ -199,8 +222,10 @@ function AppShell() {
 
 export function App() {
   return (
-    <ThemeProvider>
-      <AppShell />
-    </ThemeProvider>
+    <I18nProvider>
+      <ThemeProvider>
+        <AppShell />
+      </ThemeProvider>
+    </I18nProvider>
   );
 }

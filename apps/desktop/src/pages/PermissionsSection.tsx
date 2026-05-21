@@ -9,34 +9,35 @@ import {
   type PermissionStatus,
   type SystemPane,
 } from '../api/permissions';
+import { useI18n } from '../i18n';
 import { Badge, Button } from '../ui';
 
 type Target = 'microphone' | 'screen_recording';
 
 interface Row {
   target: Target;
-  label: string;
-  description: string;
   pane: SystemPane;
+  labelKey: 'permissions.rowMic' | 'permissions.rowScreen';
+  descKey: 'permissions.rowMicDesc' | 'permissions.rowScreenDesc';
 }
 
 const ROWS: Row[] = [
   {
     target: 'microphone',
-    label: 'Микрофон',
-    description: 'Записывает то, что говоришь ты.',
     pane: 'microphone',
+    labelKey: 'permissions.rowMic',
+    descKey: 'permissions.rowMicDesc',
   },
   {
     target: 'screen_recording',
-    label: 'Запись экрана (системный звук)',
-    description:
-      'Записывает то, что говорит собеседник через Zoom/Meet/Telegram. После того как разрешишь — перезапусти Wotold.',
     pane: 'screen_recording',
+    labelKey: 'permissions.rowScreen',
+    descKey: 'permissions.rowScreenDesc',
   },
 ];
 
 export function PermissionsSection() {
+  const { t } = useI18n();
   const [status, setStatus] = useState<PermissionsStatus | null>(null);
   const [busy, setBusy] = useState<Target | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +117,7 @@ export function PermissionsSection() {
                     color: 'var(--ink)',
                   }}
                 >
-                  {row.label}
+                  {t(row.labelKey)}
                 </span>
                 <PermBadge status={current} />
               </div>
@@ -124,7 +125,7 @@ export function PermissionsSection() {
                 className="muted"
                 style={{ fontSize: 13, margin: 0, lineHeight: 1.45 }}
               >
-                {row.description}
+                {t(row.descKey)}
               </p>
             </div>
             <div
@@ -141,9 +142,13 @@ export function PermissionsSection() {
                 onClick={() => onRequest(row.target)}
                 disabled={isBusy}
                 busy={isBusy}
-                title="Показать macOS-диалог запроса"
+                title={t('permissions.requestTitle')}
               >
-                {isBusy ? '…' : current === 'granted' ? 'Перезапросить' : 'Запросить'}
+                {isBusy
+                  ? t('common.loadingShort')
+                  : current === 'granted'
+                    ? t('permissions.requestAgain')
+                    : t('permissions.request')}
               </Button>
               {current !== 'granted' && (
                 <Button
@@ -151,9 +156,9 @@ export function PermissionsSection() {
                   variant="ghost"
                   onClick={() => onOpen(row.pane)}
                   disabled={isBusy}
-                  title="Открыть System Settings → Privacy & Security"
+                  title={t('permissions.openSettingsTitle')}
                 >
-                  Настройки
+                  {t('permissions.openSettings')}
                 </Button>
               )}
               <Button
@@ -161,8 +166,8 @@ export function PermissionsSection() {
                 variant="ghost"
                 onClick={() => onRefresh(row.target)}
                 disabled={isBusy}
-                title="Перечитать текущий статус"
-                aria-label="Обновить статус"
+                title={t('permissions.refreshStatusTitle')}
+                aria-label={t('permissions.refreshStatusAria')}
               >
                 ↻
               </Button>
@@ -175,7 +180,8 @@ export function PermissionsSection() {
 }
 
 function PermBadge({ status }: { status: PermissionStatus }) {
-  const meta = badgeMeta(status);
+  const { t } = useI18n();
+  const meta = badgeMeta(status, t);
   return (
     <Badge tone={meta.tone} title={meta.title}>
       {meta.label}
@@ -185,30 +191,42 @@ function PermBadge({ status }: { status: PermissionStatus }) {
 
 type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
 
-function badgeMeta(status: PermissionStatus): { label: string; title: string; tone: Tone } {
+type TFn = ReturnType<typeof useI18n>['t'];
+
+function badgeMeta(
+  status: PermissionStatus,
+  t: TFn,
+): { label: string; title: string; tone: Tone } {
   switch (status) {
     case 'granted':
-      return { label: 'выдано', title: 'Доступ разрешён', tone: 'success' };
+      return {
+        label: t('permissions.granted'),
+        title: t('permissions.grantedTitle'),
+        tone: 'success',
+      };
     case 'denied':
       return {
-        label: 'отказано',
-        title:
-          'Пользователь отказал или ещё не давал доступ. Запроси заново или открой Настройки.',
+        label: t('permissions.denied'),
+        title: t('permissions.deniedTitle'),
         tone: 'danger',
       };
     case 'not_determined':
       return {
-        label: 'не запрошено',
-        title: 'Ещё не запрашивали. Жми «Запросить».',
+        label: t('permissions.notDetermined'),
+        title: t('permissions.notDeterminedTitle'),
         tone: 'warning',
       };
     case 'restricted':
       return {
-        label: 'заблок. системой',
-        title: 'Системная политика (MDM / родительский контроль) запретила.',
+        label: t('permissions.restricted'),
+        title: t('permissions.restrictedTitle'),
         tone: 'danger',
       };
     default:
-      return { label: '?', title: 'Статус неизвестен', tone: 'neutral' };
+      return {
+        label: t('permissions.unknown'),
+        title: t('permissions.unknownTitle'),
+        tone: 'neutral',
+      };
   }
 }

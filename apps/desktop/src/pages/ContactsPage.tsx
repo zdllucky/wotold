@@ -23,6 +23,7 @@ import {
 import { listCalls } from '../api/recording';
 import { listCallSpeakers } from '../api/speakers';
 import { Badge, Empty } from '../ui';
+import { useI18n } from '../i18n';
 import { ContactForm } from './ContactForm';
 import { VoiceSamplesSection } from './VoiceSamplesSection';
 
@@ -63,6 +64,7 @@ function alphabetBucket(name: string): 'a-m' | 'n-z' | 'other' {
 }
 
 export function ContactsPage() {
+  const { t } = useI18n();
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'empty' });
@@ -149,11 +151,11 @@ export function ContactsPage() {
   };
 
   const handleDelete = async (c: Contact) => {
-    const ok = await ask(`Удалить контакт «${c.display_name}»?`, {
+    const ok = await ask(t('contacts.deleteConfirmBody', { name: c.display_name }), {
       title: 'Wotold',
       kind: 'warning',
-      okLabel: 'Удалить',
-      cancelLabel: 'Отмена',
+      okLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
     });
     if (!ok) return;
     try {
@@ -209,7 +211,7 @@ export function ContactsPage() {
       </p>
     );
   }
-  if (!contacts) return <p className="muted">Загрузка…</p>;
+  if (!contacts) return <p className="muted">{t('common.loading')}</p>;
 
   const activeContact =
     mode.kind === 'view' || mode.kind === 'edit'
@@ -245,13 +247,13 @@ export function ContactsPage() {
           }}
         >
           <div className="title" style={{ fontSize: 24 }}>
-            Контакты
+            {t('contacts.title')}
           </div>
           <button
             type="button"
             className={`btn btn--quiet${mode.kind === 'add' ? '' : ''}`}
             onClick={() => setMode({ kind: 'add' })}
-            aria-label="Добавить контакт"
+            aria-label={t('contacts.addAria')}
             style={{ padding: 0, fontSize: 18, lineHeight: 1 }}
           >
             +
@@ -260,7 +262,7 @@ export function ContactsPage() {
         <input
           className="input"
           type="search"
-          placeholder="Поиск…"
+          placeholder={t('contacts.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ marginBottom: 20, fontSize: 14 }}
@@ -268,31 +270,31 @@ export function ContactsPage() {
 
         {contacts.length === 0 ? (
           <Empty
-            title="Контактов нет"
-            description="Жми «+» — добавь первого."
+            title={t('contacts.emptyTitle')}
+            description={t('contacts.emptyAddFirst')}
           />
         ) : filtered.length === 0 ? (
           <Empty
-            title="Ничего не нашлось"
-            description={`По запросу «${search.trim()}» нет контактов.`}
+            title={t('contacts.notFoundTitle')}
+            description={t('contacts.notFoundBody', { query: search.trim() })}
           />
         ) : (
           <>
             <ContactGroup
-              label="А — М"
+              label={t('contacts.sectionAm')}
               items={groups.am}
               activeId={activeId}
               onSelect={(id) => setMode({ kind: 'view', contactId: id })}
             />
             <ContactGroup
-              label="Н — Я"
+              label={t('contacts.sectionNz')}
               items={groups.nz}
               activeId={activeId}
               onSelect={(id) => setMode({ kind: 'view', contactId: id })}
             />
             {groups.other.length > 0 && (
               <ContactGroup
-                label="Прочее"
+                label={t('contacts.sectionOther')}
                 items={groups.other}
                 activeId={activeId}
                 onSelect={(id) => setMode({ kind: 'view', contactId: id })}
@@ -327,14 +329,14 @@ export function ContactsPage() {
         {mode.kind === 'add' && (
           <>
             <div className="small-caps" style={{ marginBottom: 12 }}>
-              Новый контакт
+              {t('contacts.newContact')}
             </div>
             <h1 className="display" style={{ fontSize: 38, marginBottom: 20 }}>
-              Добавить.
+              {t('contacts.addTitle')}
             </h1>
             <div style={{ maxWidth: 640 }}>
               <ContactForm
-                submitLabel="Создать"
+                submitLabel={t('contacts.submitCreate')}
                 onSubmit={handleCreate}
                 onCancel={() =>
                   setMode(
@@ -351,14 +353,14 @@ export function ContactsPage() {
         {mode.kind === 'edit' && activeContact && (
           <>
             <div className="small-caps" style={{ marginBottom: 12 }}>
-              Редактирование
+              {t('contacts.editEyebrow')}
             </div>
             <h1 className="display" style={{ fontSize: 38, marginBottom: 20 }}>
               {activeContact.display_name}
             </h1>
             <div style={{ maxWidth: 640 }}>
               <ContactForm
-                submitLabel="Сохранить"
+                submitLabel={t('contacts.submitSave')}
                 initial={activeContact}
                 onSubmit={(input) => handleUpdate(activeContact.id, input)}
                 onCancel={() =>
@@ -383,8 +385,8 @@ export function ContactsPage() {
 
         {mode.kind === 'empty' && contacts.length === 0 && (
           <Empty
-            title="Контактов нет"
-            description="Добавь первый — кнопка «+» слева сверху. Контакты помогают Wotold подписывать спикеров в расшифровках."
+            title={t('contacts.emptyTitle')}
+            description={t('contacts.emptyAddCue')}
           />
         )}
       </div>
@@ -402,6 +404,7 @@ interface ContactGroupProps {
 }
 
 function ContactGroup({ label, items, activeId, onSelect }: ContactGroupProps) {
+  const { t } = useI18n();
   if (items.length === 0) return null;
   return (
     <>
@@ -467,7 +470,7 @@ function ContactGroup({ label, items, activeId, onSelect }: ContactGroupProps) {
                   textOverflow: 'ellipsis',
                 }}
               >
-                {c.role ?? c.org ?? (c.is_owner ? 'владелец' : '—')}
+                {c.role ?? c.org ?? (c.is_owner ? t('contacts.owner') : t('contacts.roleNone'))}
               </div>
             </div>
           </button>
@@ -494,6 +497,7 @@ function ContactView({
   onEdit,
   onDelete,
 }: ContactViewProps) {
+  const { t } = useI18n();
   const color = contact.is_owner ? SP_COLORS[0] : SP_COLORS[colorIdx % SP_COLORS.length];
   const consentVoice = String(contact.attributes['consent_voice'] ?? '') === 'true';
   return (
@@ -507,10 +511,10 @@ function ContactView({
           marginBottom: 12,
         }}
       >
-        <div className="small-caps">Контакт</div>
+        <div className="small-caps">{t('contacts.contactEyebrow')}</div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="btn btn--ghost btn--sm" onClick={onEdit}>
-            Редактировать
+            {t('common.edit')}
           </button>
           {!contact.is_owner && (
             <button
@@ -519,7 +523,7 @@ function ContactView({
               onClick={onDelete}
               style={{ color: 'var(--signal)' }}
             >
-              Удалить
+              {t('common.delete')}
             </button>
           )}
         </div>
@@ -555,33 +559,33 @@ function ContactView({
             className="subtitle"
             style={{ fontSize: 15, fontStyle: 'normal' }}
           >
-            {contact.role ?? contact.org ?? (contact.is_owner ? 'Владелец' : '—')}
+            {contact.role ?? contact.org ?? (contact.is_owner ? t('contacts.sourceOwnerLabel') : t('contacts.roleNone'))}
             {contact.org && contact.role && ` · ${contact.org}`}
           </div>
         </div>
-        {contact.is_owner && <Badge tone="accent">владелец</Badge>}
+        {contact.is_owner && <Badge tone="accent">{t('contacts.owner')}</Badge>}
       </div>
 
       <div style={{ display: 'flex', gap: 18, marginBottom: 32 }}>
         <div className="stat" style={{ padding: '0 24px 0 0' }}>
           <span className="stat-value">{stats?.callCount ?? 0}</span>
-          <span className="stat-label">Звонков</span>
+          <span className="stat-label">{t('contacts.statCalls')}</span>
         </div>
         <div className="stat">
           <span className="stat-value">
-            {formatRecordedDuration(stats?.totalSec ?? 0)}
+            {formatRecordedDuration(stats?.totalSec ?? 0, t)}
           </span>
-          <span className="stat-label">Записано</span>
+          <span className="stat-label">{t('contacts.statRecorded')}</span>
         </div>
         <div className="stat">
           <span className="stat-value">
             {consentVoice ? (
-              <span style={{ color: 'var(--accent)' }}>opt-in</span>
+              <span style={{ color: 'var(--accent)' }}>{t('contacts.voiceOptIn')}</span>
             ) : (
-              '—'
+              t('contacts.voiceOff')
             )}
           </span>
-          <span className="stat-label">Голосовые семплы</span>
+          <span className="stat-label">{t('contacts.statVoiceSamples')}</span>
         </div>
       </div>
 
@@ -590,7 +594,7 @@ function ContactView({
           .length > 0) && (
         <div style={{ marginBottom: 28 }}>
           <div className="small-caps" style={{ marginBottom: 14 }}>
-            Контакты
+            {t('contacts.contactsBlock')}
           </div>
           <div
             style={{
@@ -640,7 +644,7 @@ function ContactView({
       {contact.notes && (
         <div style={{ marginBottom: 28 }}>
           <div className="small-caps" style={{ marginBottom: 10 }}>
-            Заметки
+            {t('contacts.notes')}
           </div>
           <p
             style={{
@@ -662,23 +666,25 @@ function ContactView({
   );
 }
 
-function formatRecordedDuration(sec: number): ReactNode {
-  if (sec === 0) return '0';
+type TFn = ReturnType<typeof useI18n>['t'];
+
+function formatRecordedDuration(sec: number, t: TFn): ReactNode {
+  if (sec === 0) return t('contacts.durationZero');
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
-  if (h === 0) return `${m}м`;
+  if (h === 0) return t('contacts.durationM', { m });
   if (m === 0) {
     return (
       <>
         {h}
-        <span style={{ fontSize: 18, marginLeft: 4 }}>ч</span>
+        <span style={{ fontSize: 18, marginLeft: 4 }}>{t('contacts.durationH')}</span>
       </>
     );
   }
   return (
     <>
       {h}
-      <span style={{ fontSize: 18, marginLeft: 4 }}>ч {m}м</span>
+      <span style={{ fontSize: 18, marginLeft: 4 }}>{t('contacts.durationHM', { m })}</span>
     </>
   );
 }

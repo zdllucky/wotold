@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MiniWave } from './Waveform';
 import type { Contact } from '../api/contacts';
 import type { CallSpeakerView } from '../api/speakers';
+import { useI18n } from '../i18n';
 import { Select } from '../ui';
 import { humanSpeakerLabel, shortSpeakerLabel } from '../utils/callMeta';
 
@@ -84,6 +85,7 @@ export function SpeakerCard({
   onChangeNewConsent,
   onSubmitNewContact,
 }: SpeakerCardProps) {
+  const { t } = useI18n();
   const color = SP_COLORS[speakerColorIdx(speaker, idx) % SP_COLORS.length];
   const suggestionContactName = speaker.suggestion_contact_display_name;
   const suggestionScore = speaker.suggestion_score ?? 0;
@@ -196,13 +198,13 @@ export function SpeakerCard({
         }}
       >
         <div className="small-caps">
-          Голос {idx + 1} из {total}
+          {t('speakers.cardEyebrow', { idx: idx + 1, total })}
         </div>
         <div className="small-caps muted">{humanSpeakerLabel(speaker.speaker_tag)}</div>
       </div>
 
       <div className="title" style={{ fontSize: 28, marginBottom: 28 }}>
-        Кто этот голос?
+        {t('speakers.cardTitle')}
       </div>
 
       {/* Sample bubble row */}
@@ -252,7 +254,7 @@ export function SpeakerCard({
               overflow: 'hidden',
             }}
           >
-            «{sample?.text ?? 'голос распознан · послушать сэмпл'}»
+            «{sample?.text ?? t('speakers.cardSampleFallback')}»
           </div>
           <div style={{ height: 22, color }}>
             <MiniWave
@@ -270,14 +272,14 @@ export function SpeakerCard({
           style={{ padding: '8px 12px', fontSize: 12, flexShrink: 0 }}
           onClick={handleToggleSample}
           disabled={!sample}
-          aria-label={playing ? 'Остановить сэмпл' : 'Послушать сэмпл'}
-          title={!sample ? 'Аудиосэмпл недоступен' : undefined}
+          aria-label={playing ? t('speakers.sampleStopAria') : t('speakers.samplePlayAria')}
+          title={!sample ? t('speakers.sampleUnavailable') : undefined}
         >
           {playing
-            ? '◼ стоп'
+            ? t('speakers.sampleStop')
             : sample
-              ? `▶ ${sampleDurationSec ?? '·'} сек`
-              : '▶ сэмпл'}
+              ? t('speakers.samplePlay', { sec: sampleDurationSec ?? '·' })
+              : t('speakers.samplePlayFallback')}
         </button>
         {/* Hidden audio element — один на карточку, srcset by sample.src. */}
         {sample?.src && (
@@ -294,7 +296,7 @@ export function SpeakerCard({
       {suggestionName && (
         <>
           <div className="small-caps" style={{ marginBottom: 10 }}>
-            Похоже на
+            {t('speakers.suggestion')}
           </div>
           <div
             style={{
@@ -328,9 +330,9 @@ export function SpeakerCard({
                 {suggestionName}
               </div>
               <div className="muted" style={{ fontSize: 12 }}>
-                {suggestedContact?.role ?? '—'}
+                {suggestedContact?.role ?? t('speakers.suggestionRoleNone')}
                 {speaker.suggestion_source &&
-                  ` · ${sourceLabel(speaker.suggestion_source)}`}
+                  ` · ${sourceLabel(speaker.suggestion_source, t)}`}
               </div>
             </div>
             <div style={{ width: 120 }}>
@@ -342,7 +344,7 @@ export function SpeakerCard({
                   fontSize: 11,
                 }}
               >
-                <span className="small-caps">Уверенность</span>
+                <span className="small-caps">{t('speakers.confidence')}</span>
                 <span className="mono">{Math.round(suggestionScore * 100)}%</span>
               </div>
               <div className="conf">
@@ -360,15 +362,15 @@ export function SpeakerCard({
       {showPicker && (
         <div className="field" style={{ marginBottom: 18 }}>
           <label className="field-label" htmlFor={`speaker-${speaker.id}-pick`}>
-            Выбрать контакт
+            {t('speakers.pickContact')}
           </label>
           <Select
             id={`speaker-${speaker.id}-pick`}
             value={pickedContactId}
             searchable={contacts.length > 5}
-            searchPlaceholder="Имя, организация, роль…"
+            searchPlaceholder={t('speakers.pickPlaceholder')}
             options={[
-              { value: '', label: '— не выбран —' },
+              { value: '', label: t('speakers.pickerNone') },
               ...contacts.map((c) => {
                 const detailParts = [c.role, c.org].filter(
                   (s): s is string => !!s && s.trim().length > 0,
@@ -380,7 +382,7 @@ export function SpeakerCard({
                 return {
                   value: c.id,
                   label: c.is_owner
-                    ? `${c.display_name} (владелец)`
+                    ? `${c.display_name} (${t('contacts.owner')})`
                     : c.display_name,
                   description,
                   searchText,
@@ -404,7 +406,7 @@ export function SpeakerCard({
         >
           <div className="field" style={{ marginBottom: 10 }}>
             <label className="field-label" htmlFor={`speaker-${speaker.id}-new`}>
-              Имя нового контакта
+              {t('speakers.newContactName')}
             </label>
             <input
               id={`speaker-${speaker.id}-new`}
@@ -431,7 +433,7 @@ export function SpeakerCard({
               checked={newConsent}
               onChange={(e) => onChangeNewConsent(e.target.checked)}
             />
-            <span>Запоминать голос для авто-определения</span>
+            <span>{t('speakers.rememberVoice')}</span>
           </label>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
@@ -440,7 +442,7 @@ export function SpeakerCard({
               onClick={onCancelAdd}
               disabled={busyAdd}
             >
-              Отмена
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -448,7 +450,7 @@ export function SpeakerCard({
               onClick={onSubmitNewContact}
               disabled={busyAdd || !newName.trim()}
             >
-              {busyAdd ? 'Добавляем…' : 'Добавить и привязать'}
+              {busyAdd ? t('speakers.addingAndBinding') : t('speakers.addAndBind')}
             </button>
           </div>
         </div>
@@ -475,12 +477,11 @@ export function SpeakerCard({
           }}
           disabled={!primaryTarget}
         >
-          ✓{' '}
           {primaryTarget
-            ? `Да, это ${primaryTarget.name}`
+            ? t('speakers.confirmYes', { name: primaryTarget.name })
             : showPicker
-              ? 'Выбери контакт ниже'
-              : 'Добавь новый контакт'}
+              ? t('speakers.confirmPickBelow')
+              : t('speakers.confirmAddNew')}
         </button>
         {suggestionName && (
           <button
@@ -494,29 +495,29 @@ export function SpeakerCard({
               onReject();
             }}
           >
-            Не он/она
+            {t('speakers.notHimHer')}
           </button>
         )}
         {!adding && (
           <button type="button" className="btn btn--ghost" onClick={onStartAdd}>
-            Новый контакт
+            {t('speakers.newContact')}
           </button>
         )}
       </div>
 
       <div style={{ marginTop: 14, textAlign: 'center', fontSize: 12 }}>
-        <span className="muted">
-          Подтверждение сохранит голос в профиль контакта (если включена опция){' '}
-        </span>
+        <span className="muted">{t('speakers.finePrint')}</span>
       </div>
     </div>
   );
 }
 
-function sourceLabel(s: string | null): string {
+type TFn = ReturnType<typeof useI18n>['t'];
+
+function sourceLabel(s: string | null, t: TFn): string {
   if (!s) return '';
-  if (s === 'both') return 'голос + LLM';
-  if (s === 'embedding') return 'голос';
-  if (s === 'llm') return 'LLM';
+  if (s === 'both') return t('speakers.sourceVoiceLlm');
+  if (s === 'embedding') return t('speakers.sourceVoice');
+  if (s === 'llm') return t('speakers.sourceLlm');
   return s;
 }

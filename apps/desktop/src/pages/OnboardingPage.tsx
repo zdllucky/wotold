@@ -22,6 +22,7 @@ import {
 } from '../api/contacts';
 import { setSetting, SETTINGS_KEYS } from '../api/settings';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useI18n } from '../i18n';
 import { PermissionsSection } from './PermissionsSection';
 
 interface OnboardingPageProps {
@@ -31,25 +32,25 @@ interface OnboardingPageProps {
 type Step = 1 | 2 | 3;
 
 const STEP_TOTAL = 3;
-const STEP_LABEL: Record<Step, string> = {
-  1: 'Знакомство',
-  2: 'Владелец',
-  3: 'Разрешения и согласие',
-};
-
-const HEADLINE: Record<Step, string> = {
-  1: 'Диктофон  со смыслом.',
-  2: 'Ваш голос —\nпервый.',
-  3: 'Готовы? \nДва разрешения и старт.',
-};
-
-const LEDE: Record<Step, string> = {
-  1: 'Записывает звонки и встречи на твоём Mac, расшифровывает речь и кратко пересказывает что обсуждалось. Всё хранится локально — в облако ничего не утекает.',
-  2: 'Wotold отделяет вашу речь от речи собеседника. Расскажите, кто вы — мы запомним ваш голос и больше не будем спрашивать.',
-  3: 'Wotold нужны два разрешения macOS, чтобы записывать звонки. Дай доступ — без них запись не пойдёт. Записи остаются локально на твоём диске.',
-};
 
 export function OnboardingPage({ onComplete }: OnboardingPageProps) {
+  const { t } = useI18n();
+  const STEP_LABEL: Record<Step, string> = {
+    1: t('onboarding.step1Label'),
+    2: t('onboarding.step2Label'),
+    3: t('onboarding.step3Label'),
+  };
+  const HEADLINE: Record<Step, string> = {
+    1: t('onboarding.step1Headline'),
+    2: t('onboarding.step2Headline'),
+    3: t('onboarding.step3Headline'),
+  };
+  const LEDE: Record<Step, string> = {
+    1: t('onboarding.step1Lede'),
+    2: t('onboarding.step2Lede'),
+    3: t('onboarding.step3Lede'),
+  };
+
   const [step, setStep] = useState<Step>(1);
   const [owner, setOwner] = useState<Contact | null>(null);
   const [name, setName] = useState('');
@@ -79,7 +80,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
     if (!owner) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      throw new Error('Введи имя.');
+      throw new Error(t('onboarding.enterName'));
     }
     await updateContact(owner.id, {
       display_name: trimmed,
@@ -146,7 +147,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
     >
       <div style={{ width: 540, maxWidth: '90vw', padding: '40px 4px' }}>
         <div className="eyebrow" style={{ marginBottom: 14 }}>
-          Шаг 0{step} из 0{STEP_TOTAL} · {STEP_LABEL[step]}
+          {t('onboarding.stepLabel', { step, total: STEP_TOTAL, label: STEP_LABEL[step] })}
         </div>
 
         <h1
@@ -177,10 +178,10 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               color: 'var(--ink-2)',
             }}
           >
-            <li>— Запись микрофона и системного звука раздельно</li>
-            <li>— Расшифровка с распознаванием участников</li>
-            <li>— Авто-саммари и список задач</li>
-            <li>— Поиск по разговорам прямо в Claude через MCP</li>
+            <li>{t('onboarding.feature1')}</li>
+            <li>{t('onboarding.feature2')}</li>
+            <li>{t('onboarding.feature3')}</li>
+            <li>{t('onboarding.feature4')}</li>
           </ul>
         )}
 
@@ -196,7 +197,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
           >
             <div className="field">
               <label className="field-label" htmlFor="onboarding-name">
-                Имя
+                {t('onboarding.fieldName')}
               </label>
               <input
                 id="onboarding-name"
@@ -205,19 +206,19 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
                 required
-                placeholder="Айдар Жунусов"
+                placeholder={t('onboarding.namePlaceholder')}
               />
             </div>
             <div className="field">
               <label className="field-label" htmlFor="onboarding-role">
-                Роль
+                {t('onboarding.fieldRole')}
               </label>
               <input
                 id="onboarding-role"
                 className="input"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                placeholder="Co-founder, Wotold"
+                placeholder={t('onboarding.rolePlaceholder')}
               />
             </div>
             <div className="field" style={{ gridColumn: '1 / -1' }}>
@@ -225,20 +226,20 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
                 className="field-label"
                 htmlFor="onboarding-greeting"
               >
-                Краткое представление
+                {t('onboarding.fieldGreeting')}
               </label>
               <input
                 id="onboarding-greeting"
                 className="input"
                 value={greeting}
                 onChange={(e) => setGreeting(e.target.value)}
-                placeholder="как вы здороваетесь"
+                placeholder={t('onboarding.greetingPlaceholder')}
               />
               <span
                 className="muted"
                 style={{ fontSize: 12, marginTop: 6, fontStyle: 'italic' }}
               >
-                Поможет распознать вас на старте звонка.
+                {t('onboarding.greetingHint')}
               </span>
             </div>
           </form>
@@ -258,10 +259,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
                 maxWidth: 480,
               }}
             >
-              Wotold будет записывать твой микрофон и звук собеседника во время
-              звонков. Перед началом убедись, что собеседник предупреждён о
-              записи. По закону РФ/РК запись переговоров без уведомления может
-              быть нарушением.
+              {t('onboarding.consentBody')}
             </p>
           </div>
         )}
@@ -296,11 +294,11 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
           >
             {step === 3
               ? saving
-                ? 'Сохраняем…'
-                : 'Готово'
+                ? t('onboarding.saving')
+                : t('onboarding.finishBtn')
               : saving
-                ? '…'
-                : 'Дальше →'}
+                ? t('common.loadingShort')
+                : t('common.next')}
           </button>
           {step < STEP_TOTAL && (
             <button
@@ -309,7 +307,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               onClick={() => void skip()}
               disabled={saving}
             >
-              Пропустить
+              {t('common.skip')}
             </button>
           )}
           <div
@@ -318,7 +316,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               display: 'flex',
               gap: 6,
             }}
-            aria-label={`Шаг ${step} из ${STEP_TOTAL}`}
+            aria-label={t('onboarding.stepAria', { step, total: STEP_TOTAL })}
           >
             {[1, 2, 3].map((i) => (
               <span
