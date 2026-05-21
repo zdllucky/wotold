@@ -11,7 +11,7 @@
 // restore the main window, the user's session continues on CallDetailPage.
 
 import { invoke } from '@tauri-apps/api/core';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import { useRef, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { useI18n } from '../i18n';
 
@@ -20,6 +20,11 @@ import { RecMiniButton } from './RecMiniButton';
 import { formatElapsed, useRecording } from './RecordingContext';
 
 const STOP_INTERACTIVE_SELECTOR = 'button, [data-rec-no-restore]';
+// [S7] Distance threshold (screen px) below which mouseup is treated as a
+// click. `data-tauri-drag-region` fires drag at a smaller native threshold,
+// but the click event still bubbles back to React once the drag ends — so we
+// need our own movement check before we call restore_main_window.
+const CLICK_DRAG_THRESHOLD_PX = 6;
 
 async function restoreMain(): Promise<void> {
   try {
@@ -41,9 +46,30 @@ export function RecFloat() {
   const isActive = rec.status.kind !== 'idle';
   const isPaused = rec.status.kind === 'paused';
 
+  // [S7] Capture mousedown screen coordinates so onClick can distinguish a
+  // tap (restore main window) from a drag (Tauri moved the window via the
+  // `data-tauri-drag-region`). Without this, finishing a drag would also
+  // bounce the user back into the main window.
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+
+  const onMouseDownBody = (e: ReactMouseEvent<HTMLDivElement>) => {
+    downPos.current = { x: e.screenX, y: e.screenY };
+  };
+
   const onClickBody = (e: ReactMouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement | null;
     if (target?.closest(STOP_INTERACTIVE_SELECTOR)) return;
+    const start = downPos.current;
+    downPos.current = null;
+    if (start) {
+      const dx = e.screenX - start.x;
+      const dy = e.screenY - start.y;
+      if (dx * dx + dy * dy > CLICK_DRAG_THRESHOLD_PX * CLICK_DRAG_THRESHOLD_PX) {
+        // User dragged the widget — swallow the click so the main window
+        // doesn't pop up unexpectedly.
+        return;
+      }
+    }
     void restoreMain();
   };
 
@@ -76,6 +102,7 @@ export function RecFloat() {
       data-tauri-drag-region
       data-paused={isPaused ? 'true' : 'false'}
       data-active={isActive ? 'true' : 'false'}
+      onMouseDown={onMouseDownBody}
       onClick={onClickBody}
     >
       <div className="rec-float-eq" data-tauri-drag-region>

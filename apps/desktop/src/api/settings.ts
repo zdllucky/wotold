@@ -44,6 +44,11 @@ export const SETTINGS_KEYS = {
   /** [S1] Cooldown в минутах — не предлагать снова для того же app
    *  в течение N минут после dismiss или start. Default '5'. */
   CALL_DETECT_COOLDOWN_MIN: 'call_detect.cooldown_min',
+  /** [S7] Last logical X/Y position floating recording widget (RecFloat).
+   *  Сохраняется при window Moved event, читается при show_recording_widget.
+   *  Если пусто — fallback на top-right primary monitor. */
+  RECORDING_WIDGET_X: 'recording.widget.x',
+  RECORDING_WIDGET_Y: 'recording.widget.y',
 } as const;
 
 export const SETTINGS_DEFAULTS = {

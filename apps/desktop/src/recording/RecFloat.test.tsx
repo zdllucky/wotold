@@ -156,6 +156,78 @@ describe('RecFloat', () => {
     expect(calls).toContain('restore_main_window');
   });
 
+  test('mousedown+click after drag does NOT trigger restore', async () => {
+    // [S7] Drag detection: mousedown at one screen position, mouseup/click at
+    // another far enough away → onClickBody должен пропустить restore.
+    const startedAt = new Date(Date.now() - 3_000).toISOString();
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_recording_state')
+        return Promise.resolve({
+          call_id: 'call-drag',
+          started_at: startedAt,
+          paused_at: null,
+          paused_total_ms: 0,
+        });
+      return Promise.resolve(null);
+    });
+
+    render(
+      <I18nProvider>
+        <RecordingProvider>
+          <RecFloat />
+        </RecordingProvider>
+      </I18nProvider>,
+    );
+    await flush();
+
+    const pill = document.querySelector('.rec-float') as HTMLElement;
+    expect(pill).not.toBeNull();
+    mockInvoke.mockClear();
+
+    fireEvent.mouseDown(pill, { screenX: 100, screenY: 100 });
+    // Simulate user releasing 50px away — drag distance.
+    fireEvent.click(pill, { screenX: 150, screenY: 150 });
+    await flush();
+
+    const calls = mockInvoke.mock.calls.map((c) => c[0]);
+    expect(calls).not.toContain('restore_main_window');
+  });
+
+  test('mousedown+click без движения triggers restore', async () => {
+    const startedAt = new Date(Date.now() - 3_000).toISOString();
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_recording_state')
+        return Promise.resolve({
+          call_id: 'call-tap',
+          started_at: startedAt,
+          paused_at: null,
+          paused_total_ms: 0,
+        });
+      return Promise.resolve(null);
+    });
+
+    render(
+      <I18nProvider>
+        <RecordingProvider>
+          <RecFloat />
+        </RecordingProvider>
+      </I18nProvider>,
+    );
+    await flush();
+
+    const pill = document.querySelector('.rec-float') as HTMLElement;
+    expect(pill).not.toBeNull();
+    mockInvoke.mockClear();
+
+    fireEvent.mouseDown(pill, { screenX: 200, screenY: 200 });
+    // Same screen coords — well under threshold (6px).
+    fireEvent.click(pill, { screenX: 202, screenY: 201 });
+    await flush();
+
+    const calls = mockInvoke.mock.calls.map((c) => c[0]);
+    expect(calls).toContain('restore_main_window');
+  });
+
   test('clicking an action button does NOT trigger restore', async () => {
     const startedAt = new Date(Date.now() - 4_000).toISOString();
     mockInvoke.mockImplementation((cmd: string) => {

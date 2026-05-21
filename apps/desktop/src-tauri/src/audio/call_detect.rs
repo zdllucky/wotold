@@ -254,9 +254,7 @@ async fn maybe_emit(app: &AppHandle, bundle_id: &str, app_name: &str, reason: &s
     // когда окно активно. Reopen окна по клику делается через `tauri-plugin-
     // single-instance` deep-link, который мы прокидываем из notification
     // body link'ом (см. ниже).
-    let body = format!(
-        "{app_name}: открыли микрофон. Открой Wotold чтобы начать запись."
-    );
+    let body = format!("{app_name}: открыли микрофон. Открой Wotold чтобы начать запись.");
     if let Err(e) = app
         .notification()
         .builder()
