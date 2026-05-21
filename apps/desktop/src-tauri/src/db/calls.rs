@@ -413,6 +413,11 @@ pub async fn auto_bind_owner_speaker(
 /// M3.5 (#26): R2 паспорта — финальная привязка спикер↔контакт ТОЛЬКО через
 /// явное подтверждение пользователя. Этот метод вызывается из Tauri-команды,
 /// никогда из pipeline. confirmed = 1.
+///
+/// [B3.5] Если у contact есть `consent_voice='true'` И у call_speaker есть
+/// cluster_embedding — INSERT в voice_samples (source_call=call_id,
+/// embedding=cluster, quality=suggestion_score|1.0). Это автоматически
+/// накапливает образцы голоса для будущего matching между звонками.
 pub async fn confirm_call_speaker(
     pool: &SqlitePool,
     call_speaker_id: &str,
@@ -420,25 +425,131 @@ pub async fn confirm_call_speaker(
 ) -> Result<(), AppError> {
     // Контакт должен существовать. FK contacts(id) уже это гарантирует, но
     // вернём явный AppError а не SQL-ошибку для UX.
-    let exists: Option<String> = sqlx::query_scalar("SELECT id FROM contacts WHERE id = ?1")
-        .bind(contact_id)
-        .fetch_optional(pool)
-        .await?;
-    if exists.is_none() {
+    let contact_row: Option<(String, String, String)> = sqlx::query_as(
+        "SELECT id, attributes, COALESCE(NULL, '') FROM contacts WHERE id = ?1",
+    )
+    .bind(contact_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some((_, attributes_json, _)) = contact_row else {
         return Err(AppError::Other(format!("contact {contact_id} not found")));
-    }
+    };
 
+    // Перед UPDATE достаём cluster_embedding и call_id для возможного
+    // voice_sample insert.
+    let speaker_meta: Option<(String, Option<Vec<u8>>, Option<f64>)> = sqlx::query_as(
+        "SELECT call_id, cluster_embedding, suggestion_score
+         FROM call_speakers WHERE id = ?1",
+    )
+    .bind(call_speaker_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let mut tx = pool.begin().await?;
     let updated =
         sqlx::query("UPDATE call_speakers SET contact_id = ?1, confirmed = 1 WHERE id = ?2")
             .bind(contact_id)
             .bind(call_speaker_id)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     if updated.rows_affected() == 0 {
         return Err(AppError::Other(format!(
             "call_speaker {call_speaker_id} not found"
         )));
     }
+
+    // C2 (#40): копируем cluster в voice_samples только если контакт opt-in
+    // дал consent_voice='true'.
+    let consent_voice = serde_json::from_str::<serde_json::Value>(&attributes_json)
+        .ok()
+        .and_then(|v| {
+            v.get("consent_voice")
+                .and_then(|c| c.as_str())
+                .map(|s| s == "true")
+        })
+        .unwrap_or(false);
+
+    if consent_voice {
+        if let Some((call_id, Some(embedding_blob), score)) = speaker_meta {
+            // [B3.5] embedding должен быть non-empty BLOB (256 × 4 = 1024 байта
+            // для current EMBEDDING_DIM). Принимаем any BLOB → matching сам
+            // обработает invalid размер через safe cosine_similarity = 0.0.
+            if !embedding_blob.is_empty() {
+                let voice_sample_id = uuid::Uuid::new_v4().to_string();
+                let now = chrono::Utc::now().to_rfc3339();
+                let quality = score.unwrap_or(1.0);
+                sqlx::query(
+                    "INSERT INTO voice_samples
+                       (id, contact_id, embedding, source_call, quality, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                )
+                .bind(&voice_sample_id)
+                .bind(contact_id)
+                .bind(&embedding_blob)
+                .bind(&call_id)
+                .bind(quality)
+                .bind(&now)
+                .execute(&mut *tx)
+                .await?;
+                log::info!(
+                    "voice_sample saved: contact={contact_id} call={call_id} quality={quality:.3}"
+                );
+            }
+        }
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+/// [B3.1] Persist извлечённого pipeline'ом cluster embedding в call_speakers.
+/// Безопасно для NULL — embedding=None очистит поле. Сохраняем little-endian
+/// f32 blob (см. embedding_to_bytes в embeddings.rs).
+#[allow(dead_code)] // wired в B3.3
+pub async fn set_call_speaker_cluster(
+    pool: &SqlitePool,
+    call_id: &str,
+    speaker_tag: &str,
+    embedding_blob: &[u8],
+) -> Result<(), AppError> {
+    sqlx::query(
+        "UPDATE call_speakers
+         SET cluster_embedding = ?1
+         WHERE call_id = ?2 AND speaker_tag = ?3",
+    )
+    .bind(embedding_blob)
+    .bind(call_id)
+    .bind(speaker_tag)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// [B3.4] Persist suggestion (contact_id, score, source) к существующему
+/// call_speaker — заменяет старую при перезапуске matching pipeline.
+#[allow(dead_code)] // wired в B3.4
+pub async fn set_call_speaker_suggestion(
+    pool: &SqlitePool,
+    call_id: &str,
+    speaker_tag: &str,
+    suggestion_contact_id: Option<&str>,
+    suggestion_score: Option<f64>,
+    suggestion_source: Option<&str>,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "UPDATE call_speakers
+         SET suggestion_contact_id = ?1,
+             suggestion_score = ?2,
+             suggestion_source = ?3
+         WHERE call_id = ?4 AND speaker_tag = ?5",
+    )
+    .bind(suggestion_contact_id)
+    .bind(suggestion_score)
+    .bind(suggestion_source)
+    .bind(call_id)
+    .bind(speaker_tag)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

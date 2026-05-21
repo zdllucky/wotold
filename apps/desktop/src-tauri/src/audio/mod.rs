@@ -45,6 +45,10 @@ pub mod macos;
 #[cfg(target_os = "macos")]
 pub mod permissions;
 
+// [B3.2] WAV chunk reader — используется в pipeline для извлечения voice
+// embedding chunks per speaker_tag. Платформо-независимый (hound crate).
+pub mod wav_chunker;
+
 #[cfg(target_os = "windows")]
 pub mod windows;
 
