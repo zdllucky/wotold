@@ -388,7 +388,7 @@
 
 ### Tests (P1)
 
-- [ ] **voice_samples cascade test** — verify `ON DELETE CASCADE` для samples.
+- [x] **voice_samples cascade test** — `delete_contact_cascades_voice_samples` + `delete_call_sets_source_call_null_keeps_sample` (db/voice_samples.rs). Подтверждают что `ON DELETE CASCADE` на `voice_samples.contact_id` (миграция 0001) действительно срабатывает в SQLite + `ON DELETE SET NULL` на `voice_samples.source_call` (миграция 0003) сохраняет семпл при удалении звонка.
 - [ ] **delete_call_and_samples** — test для action_items + call_speakers cleanup.
 - [ ] **pipeline::run/reprocess_call/regenerate_recap** — нет unit тестов. Cover happy + missing audio + recap fail.
 - [ ] **STT KV-resume happy path** integration test.
