@@ -333,7 +333,7 @@
 - [x] **OIDC ID token claims validation** — `decodeIdTokenPayload` теперь проверяет exp/iss/aud (GoogleAdapter передаёт expected). JWKS signature — follow-up.
 - [x] **consumeState CAS race** — best-effort через consumedAt tombstone + re-read verify. Full atomic CAS = DO follow-up.
 - [x] **CORS /v1/*** — origin allowlist (tauri://localhost, http://tauri.localhost, http://localhost:5173, http://127.0.0.1:5173). /, /health открыты для smoke. Bearer-only auth, не cookie.
-- [ ] **device-id spoof + IP rate-limit** — UUID regex недостаточно. HMAC-bind device-id с server-side secret при первом контакте + cf-connecting-ip rate-limit /16.
+- [~] **device-id spoof + IP rate-limit** — частично: **/16 IP rate-limit middleware** (`middleware/ip-rate-limit.ts` + `enforceIp16RateLimit` wired on `/v1/*` в `index.ts`). `cf-connecting-ip` → `ip16Prefix` (v4: первые 2 октета; v6: первый hex-блок). KV-counter `rl:ip16:{prefix}:{minute_bucket}`, лимит 120 req/min/16 default. 429 `rate_limited` при превышении; `/` + `/health` исключены. 8 unit + 3 workers integration теста (включая IPv4 / IPv6 / compressed / malformed edge cases). **Остаётся (B3.7-style scaffold для HMAC)**: HMAC-bind device-id с server-side secret при первом контакте — это контракт-change для клиента (хранить bound-token), вынесено в отдельный пункт.
 - [x] **panic hook** — backtrace в `~/Library/Logs/app.wotold.desktop/panic.log` + prev_hook chain.
 - [x] **single-instance plugin** — `tauri-plugin-single-instance` v2 с feature deep-link, callback поднимает существующее окно.
 - [x] **log rotation** — `max_file_size(5MB).rotation(KeepOne)` в tauri_plugin_log.
@@ -444,8 +444,8 @@
 - [x] **voice_samples cascade test** — `delete_contact_cascades_voice_samples` + `delete_call_sets_source_call_null_keeps_sample` (db/voice_samples.rs). Подтверждают что `ON DELETE CASCADE` на `voice_samples.contact_id` (миграция 0001) действительно срабатывает в SQLite + `ON DELETE SET NULL` на `voice_samples.source_call` (миграция 0003) сохраняет семпл при удалении звонка.
 - [x] **delete_call_and_samples** — 3 sqlx-теста в `db/calls.rs::tests`: `delete_call_removes_row_and_voice_samples` (cascade на voice_samples с source_call=id), `delete_call_handles_missing_id_silently` (idempotent), `delete_call_cascades_action_items_and_speakers` (ON DELETE CASCADE на action_items + call_speakers по migration 0001).
 - [ ] **pipeline::run/reprocess_call/regenerate_recap** — нет unit тестов. Cover happy + missing audio + recap fail.
-- [ ] **STT KV-resume happy path** integration test.
-- [ ] **OIDC ID-token signature negative tests** после P0 fix.
+- [x] **STT KV-resume happy path** integration test — 2 workers-теста в `stt.integration.test.ts`: (1) resume branch — pre-seeded KV cache `stt_job:soniox:{r2Key}` → mock fetch с invariant `POST /transcriptions` НЕ вызывается, после completion кэш очищен; (2) no-cache branch — POST /transcriptions создаёт job, jobId сохраняется в KV. Dummy R2 + SONIOX_API_KEY creds в wrangler.test.toml (presign без сетевого вызова, partner fetch мокается).
+- [x] **OIDC ID-token signature negative tests** — добавлены 12 negative/edge тестов в `providers.test.ts::decodeIdTokenPayload`: invalid JSON в payload, non-base64 chars, empty iss, case-sensitive iss compare, aud=[], exp=0/boundary/non-numeric, missing aud/exp acceptance (Apple semantics), и **known-gap test** документирующий что tampered payload пока принимается (JWKS verification — следующая итерация). Когда JWKS landed → этот тест перевернётся на `.toThrow(/signature/i)`. 32 теста проходят (было 20).
 - [x] **MCP prompt-injection content** — pass-through test (M8.3). `services/mcp/src/tools.test.ts` +2 vitest'а: `get_transcript` возвращает «SYSTEM: Ignore all previous instructions» + HTML-comment injection as-is, `search_calls('%')` → 0 совпадений (LIKE escape regression).
 
 ---
