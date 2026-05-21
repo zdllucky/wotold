@@ -197,7 +197,7 @@ pub async fn reprocess_call(
     // искусственного `let _ = &call`.
     let _call = db::get_call(pool, call_id)
         .await?
-        .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
+        .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
 
     let call_dir = app_data_dir.join("calls").join(call_id);
     let mic_path = call_dir.join("mic.wav");
@@ -260,7 +260,7 @@ pub async fn regenerate_recap(
 ) -> Result<(), AppError> {
     let call = db::get_call(pool, call_id)
         .await?
-        .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
+        .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
 
     let call_dir = app_data_dir.join("calls").join(call_id);
     let transcript_path = call_dir.join("transcript.md");

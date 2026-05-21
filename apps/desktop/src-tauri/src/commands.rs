@@ -162,7 +162,7 @@ pub async fn export_call_markdown(
     }
     let call = crate::db::get_call(&state.db, &call_id)
         .await?
-        .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
+        .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
 
     let call_dir = state.app_data_dir.join("calls").join(&call_id);
     let recap_path = call_dir.join("recap.md");
@@ -593,7 +593,7 @@ pub async fn reprocess_call(
     // для UI (а не silent failure в spawn'нутом task).
     let _call = crate::db::get_call(&state.db, &call_id)
         .await?
-        .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
+        .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
 
     // Если уже бежит pipeline для этого звонка — abort'аем старый и стартуем
     // новый (юзер дважды кликнул Reprocess).

@@ -139,6 +139,53 @@ mod tests {
     }
 
     #[test]
+    fn merge_drops_segments_with_nan_start_time() {
+        // [Phase 1 / B16 audit P2] STT-провайдер может вернуть NaN для
+        // broken-segment edge cases. partial_cmp возвращает None →
+        // sort_by default Equal → нестабильная сортировка. Дропаем.
+        let mic = diarized(
+            "soniox",
+            vec![
+                ts(0.0, 1.0, "valid mic", "Speaker 0"),
+                ts(f64::NAN, 2.0, "broken mic", "Speaker 0"),
+            ],
+        );
+        let system = diarized(
+            "soniox",
+            vec![
+                ts(f64::NAN, 3.0, "broken sys", "Speaker 0"),
+                ts(1.5, 2.5, "valid sys", "Speaker 1"),
+            ],
+        );
+
+        let merged = merge_tracks(&mic, &system);
+
+        assert_eq!(
+            merged.len(),
+            2,
+            "оба NaN-сегмента должны быть отфильтрованы"
+        );
+        // Порядок: только valid сегменты остались, сортировка по start.
+        assert_eq!(merged[0].text, "valid mic");
+        assert_eq!(merged[0].speaker_tag, "owner");
+        assert_eq!(merged[1].text, "valid sys");
+        // Все starts финитны.
+        for seg in &merged {
+            assert!(seg.start.is_finite(), "non-finite start: {}", seg.start);
+        }
+    }
+
+    #[test]
+    fn merge_handles_all_nan_input_returns_empty() {
+        // Crash-bait: оба track'а целиком из NaN. Должен вернуть пустой Vec,
+        // не паниковать на sort.
+        let mic = diarized("soniox", vec![ts(f64::NAN, f64::NAN, "x", "Speaker 0")]);
+        let system = diarized("soniox", vec![ts(f64::NAN, f64::NAN, "y", "Speaker 0")]);
+        let merged = merge_tracks(&mic, &system);
+        assert!(merged.is_empty());
+    }
+
+    #[test]
     fn render_md_groups_consecutive_same_speaker_under_one_header() {
         let segs = vec![
             ts(0.0, 1.0, "hi", "owner"),
