@@ -30,6 +30,12 @@ export const SETTINGS_KEYS = {
   AUTO_BIND_ENABLED: 'auto_bind_enabled',
   /** [V7] Min similarity для auto-bind (90 | 95 | 98). Default '95'. */
   AUTO_BIND_THRESHOLD: 'auto_bind_threshold',
+  /** [W1] Configurable hotkey для recording toggle (start↔stop).
+   *  Format: `Cmd+Shift+KeyR` (см. utils/hotkey.ts serializeHotkey).
+   *  Empty value = use DEFAULT_TOGGLE_HOTKEY. */
+  RECORDING_HOTKEY_TOGGLE: 'recording.hotkey.toggle',
+  /** [W1] Configurable hotkey для pause↔resume (W2 wires the action). */
+  RECORDING_HOTKEY_PAUSE: 'recording.hotkey.pause',
 } as const;
 
 export const SETTINGS_DEFAULTS = {

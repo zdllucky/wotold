@@ -400,6 +400,12 @@ export const en: TranslationStrings = {
     autoBindThresholdOption: '{n}%',
     autoBindThresholdHint:
       'Higher = fewer mistakes but fires less often. 95% is the default balance.',
+    hotkeyToggleLabel: 'Hotkey · start/stop',
+    hotkeyToggleHint:
+      'Click "Capture" and press your combo (e.g. ⌘⇧R). Esc cancels. System shortcuts (⌘W, ⌘C…) are blocked.',
+    hotkeyPauseLabel: 'Hotkey · pause/resume',
+    hotkeyPauseHint:
+      'Only active during recording. Default ⌘⇧P.',
     pathTitle: 'Service source.',
     pathLede:
       'By default Wotold uses our proxy with a daily free quota. Plug in your own keys — requests go direct, no limits.',
