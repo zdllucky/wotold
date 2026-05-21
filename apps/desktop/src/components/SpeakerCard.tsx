@@ -13,6 +13,7 @@ import { MiniWave } from './Waveform';
 import type { Contact } from '../api/contacts';
 import type { CallSpeakerView } from '../api/speakers';
 import { Select } from '../ui';
+import { humanSpeakerLabel, shortSpeakerLabel } from '../utils/callMeta';
 
 const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
 
@@ -197,7 +198,7 @@ export function SpeakerCard({
         <div className="small-caps">
           Голос {idx + 1} из {total}
         </div>
-        <div className="small-caps muted">{speaker.speaker_tag}</div>
+        <div className="small-caps muted">{humanSpeakerLabel(speaker.speaker_tag)}</div>
       </div>
 
       <div className="title" style={{ fontSize: 28, marginBottom: 28 }}>
@@ -233,7 +234,7 @@ export function SpeakerCard({
             flexShrink: 0,
           }}
         >
-          {speaker.speaker_tag}
+          {shortSpeakerLabel(speaker.speaker_tag)}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
@@ -364,12 +365,27 @@ export function SpeakerCard({
           <Select
             id={`speaker-${speaker.id}-pick`}
             value={pickedContactId}
+            searchable={contacts.length > 5}
+            searchPlaceholder="Имя, организация, роль…"
             options={[
               { value: '', label: '— не выбран —' },
-              ...contacts.map((c) => ({
-                value: c.id,
-                label: c.is_owner ? `${c.display_name} (владелец)` : c.display_name,
-              })),
+              ...contacts.map((c) => {
+                const detailParts = [c.role, c.org].filter(
+                  (s): s is string => !!s && s.trim().length > 0,
+                );
+                const description = detailParts.join(' · ') || undefined;
+                const searchText = [c.display_name, c.role, c.org]
+                  .filter(Boolean)
+                  .join(' ');
+                return {
+                  value: c.id,
+                  label: c.is_owner
+                    ? `${c.display_name} (владелец)`
+                    : c.display_name,
+                  description,
+                  searchText,
+                };
+              }),
             ]}
             onChange={(v) => onPick(v)}
           />

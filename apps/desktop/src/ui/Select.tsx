@@ -32,6 +32,9 @@ export interface SelectOption<V extends string = string> {
   label: ReactNode;
   /** Опциональный hint справа от label. */
   hint?: ReactNode;
+  /** [V5.3] Вторая строка под label (мелкая, muted). Например org / role
+   *  для контакта. Учитывается в search query (если оно поднято). */
+  description?: ReactNode;
   /** Тег для keyboard-typeahead (если label — ReactNode). По умолчанию = stringified label. */
   searchText?: string;
   disabled?: boolean;
@@ -51,6 +54,11 @@ interface SelectProps<V extends string = string> {
   className?: string;
   style?: CSSProperties;
   ariaLabel?: string;
+  /** [V5.3] Visible search input в верхушке dropdown'а. Фильтрует по
+   *  `searchText` (или stringified label) + по `description`. */
+  searchable?: boolean;
+  /** Placeholder для search input'а (если searchable=true). */
+  searchPlaceholder?: string;
 }
 
 export function Select<V extends string = string>({
@@ -64,31 +72,72 @@ export function Select<V extends string = string>({
   className,
   style,
   ariaLabel,
+  searchable = false,
+  searchPlaceholder = 'Поиск…',
 }: SelectProps<V>) {
   const generatedId = useId();
   const triggerId = id ?? `select-${generatedId}`;
   const listboxId = `${triggerId}-listbox`;
+  const searchInputId = `${triggerId}-search`;
 
   const [open, setOpen] = useState(false);
-  const [highlight, setHighlight] = useState<number>(() =>
-    Math.max(0, options.findIndex((o) => o.value === value)),
-  );
+  const [highlight, setHighlight] = useState<number>(0);
+  const [query, setQuery] = useState('');
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const typeaheadRef = useRef<{ buf: string; t: number }>({ buf: '', t: 0 });
+
+  // [V5.3] Filtered options если searchable + query. Поиск по
+  // searchText/label + description (case-insensitive). Пустой query = все.
+  const visibleOptions = useMemo(() => {
+    if (!searchable || !query.trim()) return options;
+    const q = query.trim().toLowerCase();
+    return options.filter((opt) => {
+      const haystack = [
+        opt.searchText,
+        typeof opt.label === 'string' ? opt.label : '',
+        typeof opt.description === 'string' ? opt.description : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [options, query, searchable]);
 
   const selected = useMemo(
     () => options.find((o) => o.value === value) ?? null,
     [options, value],
   );
 
-  // Reset highlight to selected when opening.
+  // Reset highlight to selected (in visibleOptions) when opening / query
+  // changes.
   useEffect(() => {
     if (open) {
-      const idx = options.findIndex((o) => o.value === value);
+      const idx = visibleOptions.findIndex((o) => o.value === value);
       setHighlight(idx >= 0 ? idx : 0);
     }
-  }, [open, options, value]);
+  }, [open, visibleOptions, value]);
+
+  // [V5.3] Reset highlight to 0 при каждом изменении query (текущий highlight
+  // мог выйти за пределы visibleOptions).
+  useEffect(() => {
+    setHighlight(0);
+  }, [query]);
+
+  // [V5.3] Reset query когда закрываем (иначе при следующем open покажется
+  // прошлый поиск).
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
+
+  // [V5.3] Focus search input при открытии (если searchable).
+  useEffect(() => {
+    if (open && searchable) {
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }, [open, searchable]);
 
   // Outside click closes.
   useEffect(() => {
@@ -117,28 +166,29 @@ export function Select<V extends string = string>({
 
   const commit = useCallback(
     (idx: number) => {
-      const opt = options[idx];
+      const opt = visibleOptions[idx];
       if (!opt || opt.disabled) return;
       onChange(opt.value);
       setOpen(false);
       // Restore focus to trigger after select.
       requestAnimationFrame(() => triggerRef.current?.focus());
     },
-    [options, onChange],
+    [visibleOptions, onChange],
   );
 
   const moveHighlight = useCallback(
     (dir: 1 | -1) => {
       setHighlight((prev) => {
+        if (visibleOptions.length === 0) return 0;
         let next = prev;
-        for (let i = 0; i < options.length; i++) {
-          next = (next + dir + options.length) % options.length;
-          if (!options[next]?.disabled) return next;
+        for (let i = 0; i < visibleOptions.length; i++) {
+          next = (next + dir + visibleOptions.length) % visibleOptions.length;
+          if (!visibleOptions[next]?.disabled) return next;
         }
         return prev;
       });
     },
-    [options],
+    [visibleOptions],
   );
 
   const handleTypeahead = useCallback(
@@ -149,10 +199,11 @@ export function Select<V extends string = string>({
       state.buf += key.toLowerCase();
       state.t = now;
       const buf = state.buf;
-      const startIdx = (highlight + 1) % options.length;
-      for (let off = 0; off < options.length; off++) {
-        const idx = (startIdx + off) % options.length;
-        const opt = options[idx];
+      if (visibleOptions.length === 0) return;
+      const startIdx = (highlight + 1) % visibleOptions.length;
+      for (let off = 0; off < visibleOptions.length; off++) {
+        const idx = (startIdx + off) % visibleOptions.length;
+        const opt = visibleOptions[idx];
         if (!opt || opt.disabled) continue;
         const text = (opt.searchText ?? String(opt.label ?? '')).toLowerCase();
         if (text.startsWith(buf)) {
@@ -161,7 +212,7 @@ export function Select<V extends string = string>({
         }
       }
     },
-    [options, highlight],
+    [visibleOptions, highlight],
   );
 
   const onTriggerKey = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -198,13 +249,13 @@ export function Select<V extends string = string>({
     }
     if (e.key === 'Home') {
       e.preventDefault();
-      setHighlight(options.findIndex((o) => !o.disabled));
+      setHighlight(visibleOptions.findIndex((o) => !o.disabled));
       return;
     }
     if (e.key === 'End') {
       e.preventDefault();
-      for (let i = options.length - 1; i >= 0; i--) {
-        if (!options[i]?.disabled) {
+      for (let i = visibleOptions.length - 1; i >= 0; i--) {
+        if (!visibleOptions[i]?.disabled) {
           setHighlight(i);
           break;
         }
@@ -215,9 +266,37 @@ export function Select<V extends string = string>({
       setOpen(false);
       return;
     }
-    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    // Typeahead отключён когда searchable=true (search input ловит letters).
+    if (!searchable && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
       handleTypeahead(e.key);
     }
+  };
+
+  // [V5.3] Keyboard handling для search input — ↑↓ навигация + Enter commit,
+  // буквы остаются в input для фильтра. Esc закрывает.
+  const onSearchKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit(highlight);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveHighlight(1);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveHighlight(-1);
+      return;
+    }
+    // Прочее (буквы) — нативный input обрабатывает.
   };
 
   const triggerStyle: CSSProperties = {
@@ -296,14 +375,61 @@ export function Select<V extends string = string>({
             borderRadius: 'var(--radius-md)',
             boxShadow: 'var(--shadow-2)',
             padding: 4,
-            maxHeight: 280,
+            maxHeight: 340,
             overflowY: 'auto',
             outline: 'none',
-            // Edit mode focus ring через :focus-within ловится по CSS — но
-            // здесь focus остаётся на trigger, panel сама не фокусится.
           }}
         >
-          {options.map((opt, idx) => {
+          {searchable && (
+            <div
+              style={{
+                padding: '6px 6px 8px',
+                borderBottom: '1px solid var(--line-soft)',
+                marginBottom: 4,
+                position: 'sticky',
+                top: 0,
+                background: 'var(--paper)',
+              }}
+            >
+              <input
+                ref={searchInputRef}
+                id={searchInputId}
+                type="text"
+                role="searchbox"
+                aria-label={searchPlaceholder}
+                aria-controls={listboxId}
+                placeholder={searchPlaceholder}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onSearchKey}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  border: '1px solid var(--line-soft)',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--surface)',
+                  color: 'var(--ink)',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              />
+            </div>
+          )}
+          {visibleOptions.length === 0 && (
+            <div
+              style={{
+                padding: '12px 14px',
+                fontSize: 13,
+                color: 'var(--subtle)',
+                fontFamily: 'var(--font-sans)',
+                fontStyle: 'italic',
+              }}
+            >
+              Ничего не найдено
+            </div>
+          )}
+          {visibleOptions.map((opt, idx) => {
             const isSelected = opt.value === value;
             const isHighlight = idx === highlight;
             return (
@@ -345,21 +471,45 @@ export function Select<V extends string = string>({
                   aria-hidden
                   style={{
                     width: 3,
-                    height: 14,
+                    height: opt.description ? 28 : 14,
                     borderRadius: 2,
-                    background: isSelected
-                      ? 'var(--accent)'
-                      : 'transparent',
+                    background: isSelected ? 'var(--accent)' : 'transparent',
+                    alignSelf: opt.description ? 'flex-start' : 'center',
+                    marginTop: opt.description ? 4 : 0,
                   }}
                 />
                 <span
                   style={{
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    minWidth: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
                   }}
                 >
-                  {opt.label}
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {opt.label}
+                  </span>
+                  {opt.description && (
+                    <span
+                      className="muted"
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 400,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {opt.description}
+                    </span>
+                  )}
                 </span>
                 {opt.hint && (
                   <span
