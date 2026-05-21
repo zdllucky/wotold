@@ -80,6 +80,18 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
+/// [B3.3] Stub embedder — no-op pre-B3.6. Returns empty Vec → pipeline
+/// extract_clusters обнаруживает empty embedding → не persist'ит cluster.
+/// Заменяется на `OnnxEmbedder` в B3.6 когда WeSpeaker model bundled.
+#[derive(Default)]
+pub struct StubEmbedder;
+
+impl Embedder for StubEmbedder {
+    fn extract(&self, _samples: &[f32], _sample_rate: u32) -> Result<Vec<f32>, AppError> {
+        Ok(Vec::new())
+    }
+}
+
 /// Сериализовать embedding в little-endian f32 байты для записи в `voice_samples.embedding BLOB`.
 pub fn embedding_to_bytes(embedding: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(embedding.len() * 4);
