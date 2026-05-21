@@ -17,13 +17,20 @@ import { listContacts, type Contact } from '../api/contacts';
 import { listCallSpeakers, type CallSpeakerView } from '../api/speakers';
 import type { Call } from '../api/recording';
 import { Empty, Tabs } from '../ui';
-import { AudioScrubber, type CurrentSpeakerInfo } from '../components/AudioScrubber';
+import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
 import { useCallAudio } from '../hooks/useCallAudio';
 import { SpeakersSection, extractSamples } from './SpeakersSection';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCallAudioPath } from '../api/calls';
+import {
+  findSpeakerAtTime,
+  formatHeaderMeta,
+  hashCallId,
+  pluralParticipants,
+  simpleDateTitle,
+} from '../utils/callMeta';
 
 type Tab = 'recap' | 'transcript' | 'tasks' | 'speakers';
 
@@ -56,10 +63,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
   // [B17 V3.3] Current speaker info — derived from rawStt segments + audio
   // currentTime. Используется в AudioScrubber SpeakerChip.
-  const currentSpeaker = useCurrentSpeaker(
-    rawStt,
-    speakersLite,
-    audio.currentTime,
+  const currentSpeaker = useMemo(
+    () => findSpeakerAtTime(rawStt, speakersLite, audio.currentTime),
+    [rawStt, speakersLite, audio.currentTime],
   );
 
   useEffect(() => {
@@ -441,68 +447,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   );
 }
 
-function hashCallId(id: string): number {
-  let h = 0;
-  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
-  return Math.abs(h) % 1000;
-}
-
-// [B17 V3.3] Compute current speaker info из rawStt + speakers state.
-// Возвращает null если currentTime попадает в pause (нет сегмента в range).
-function useCurrentSpeaker(
-  rawSttJson: string | null,
-  speakers: CallSpeakerView[],
-  currentTime: number,
-): CurrentSpeakerInfo | null {
-  return useMemo(
-    () => findSpeakerAtTime(rawSttJson, speakers, currentTime),
-    [rawSttJson, speakers, currentTime],
-  );
-}
-
-function findSpeakerAtTime(
-  rawSttJson: string | null,
-  speakers: CallSpeakerView[],
-  currentTime: number,
-): CurrentSpeakerInfo | null {
-  if (!rawSttJson || !Number.isFinite(currentTime)) return null;
-  try {
-    const data = JSON.parse(rawSttJson) as {
-      merged?: Array<{
-        start?: number;
-        end?: number;
-        speakerTag?: string;
-      }>;
-    };
-    if (!Array.isArray(data.merged)) return null;
-    // Compute unique speaker_tag order для color index assignment.
-    const tagOrder: string[] = [];
-    for (const seg of data.merged) {
-      if (typeof seg?.speakerTag !== 'string') continue;
-      if (!tagOrder.includes(seg.speakerTag)) tagOrder.push(seg.speakerTag);
-    }
-    for (const seg of data.merged) {
-      const tag = seg?.speakerTag;
-      const start = seg?.start ?? 0;
-      const end = seg?.end ?? start;
-      if (typeof tag !== 'string') continue;
-      if (currentTime >= start && currentTime <= end + 0.25) {
-        // 250ms slack для smooth-transitions между сегментами.
-        const labelMatch = speakers.find(
-          (s) => s.confirmed && s.contact_display_name && s.speaker_tag === tag,
-        );
-        const displayName =
-          labelMatch?.contact_display_name ?? (tag === 'owner' ? 'Я' : tag);
-        const colorIdx = tagOrder.indexOf(tag);
-        return { tag, displayName, colorIdx: Math.max(0, colorIdx) };
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
   if (!md) return <Empty description={emptyHint} />;
   return (
@@ -591,62 +535,6 @@ function tabLabel(t: Tab): string {
       return 'Задачи';
     case 'speakers':
       return 'Участники';
-  }
-}
-
-// [B17 V3.9] Human-readable meta line per reference §5:
-//   ВТОРНИК · 19 МАЯ · 11:24 · 32 МИН 14 СЕК
-// Без provider/lang noise — те детали в Recap sidebar metadata.
-function formatHeaderMeta(call: Call): string {
-  try {
-    const d = new Date(call.started_at);
-    if (Number.isNaN(d.getTime())) return call.started_at;
-    const weekday = d.toLocaleDateString('ru-RU', { weekday: 'long' });
-    const date = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-    const time = d.toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    const parts = [capitalize(weekday), date, time];
-    if (call.duration_sec && call.duration_sec > 0) {
-      parts.push(humanDuration(call.duration_sec));
-    }
-    return parts.join(' · ');
-  } catch {
-    return call.started_at;
-  }
-}
-
-function humanDuration(sec: number): string {
-  if (sec < 60) return `${sec} сек`;
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  if (m < 60) {
-    return s > 0 ? `${m} мин ${s} сек` : `${m} мин`;
-  }
-  const h = Math.floor(m / 60);
-  const rm = m % 60;
-  return rm > 0 ? `${h} ч ${rm} мин` : `${h} ч`;
-}
-
-function capitalize(s: string): string {
-  if (!s) return s;
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-// Fallback title когда LLM ещё не сгенерировал call.title — простой
-// "Звонок · 20 мая". Никаких production "Сергей +3" auto-derivations.
-function simpleDateTitle(call: Call): string {
-  try {
-    const d = new Date(call.started_at);
-    if (Number.isNaN(d.getTime())) return `Звонок ${call.id.slice(0, 8)}`;
-    const date = d.toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-    });
-    return `Звонок · ${date}`;
-  } catch {
-    return `Звонок ${call.id.slice(0, 8)}`;
   }
 }
 
@@ -845,10 +733,3 @@ function ParticipantsRow({ speakers }: { speakers: CallSpeakerView[] }) {
   );
 }
 
-function pluralParticipants(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'участник';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'участника';
-  return 'участников';
-}

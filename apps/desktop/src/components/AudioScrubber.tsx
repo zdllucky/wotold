@@ -6,18 +6,13 @@
 //   [▶] [00:04] [combined peaks waveform] [SpeakerChip|пауза] [01:11]
 
 import type { CallAudioHandle } from '../hooks/useCallAudio';
+import type { CurrentSpeakerInfo } from '../utils/callMeta';
 import { Waveform } from './Waveform';
 
 const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
 
-export interface CurrentSpeakerInfo {
-  /** Internal speaker_tag (e.g. "S1", "owner"). */
-  tag: string;
-  /** Display name (first name preferred) для chip. */
-  displayName: string;
-  /** Index 0..4 для SP_COLORS palette. */
-  colorIdx: number;
-}
+// Re-export для удобства callers'ов (CallDetailPage).
+export type { CurrentSpeakerInfo };
 
 interface AudioScrubberProps {
   audio: CallAudioHandle;
