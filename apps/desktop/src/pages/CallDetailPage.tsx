@@ -293,9 +293,12 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         {/* Action overflow — kebab menu top-right с reprocess/export/delete */}
         <HeaderActions
           onReprocess={() => void onReprocess()}
+          onRegenerateRecap={() => void onRegenerateRecap()}
           onExport={() => void onExportMarkdown()}
           onDelete={onDelete}
           reprocessing={reprocessing}
+          regenerating={regenerating}
+          regenerateDisabled={!transcript}
           exporting={exporting}
           deleting={deleting}
         />
@@ -378,23 +381,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         </Tabs.List>
 
         <Tabs.Panel value="recap">
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              marginBottom: 14,
-            }}
-          >
-            <button
-              type="button"
-              className="btn btn--ghost btn--sm"
-              onClick={() => void onRegenerateRecap()}
-              disabled={regenerating || !transcript}
-              title={!transcript ? 'Нет транскрипта для регенерации' : undefined}
-            >
-              {regenerating ? 'Пересоздаём…' : '↻ Пересоздать саммари'}
-            </button>
-          </div>
+          {/* [V5.4] Кнопка «↻ Пересоздать саммари» перенесена в kebab
+              menu (HeaderActions) — было два «обращения» к одной операции,
+              UI clutter. Failed-banner внизу всё ещё имеет inline CTA
+              для retry, потому что там это критичный fix-state. */}
           <MdPanel md={recap} emptyHint="Саммари ещё не сгенерировано." />
         </Tabs.Panel>
         <Tabs.Panel value="transcript">
@@ -538,19 +528,26 @@ function tabLabel(t: Tab): string {
   }
 }
 
-// Action overflow menu — kebab top-right с reprocess + export + delete.
+// Action overflow menu — kebab top-right с reprocess + regenerate-recap
+// + export + delete.
 function HeaderActions({
   onReprocess,
+  onRegenerateRecap,
   onExport,
   onDelete,
   reprocessing,
+  regenerating,
+  regenerateDisabled,
   exporting,
   deleting,
 }: {
   onReprocess: () => void;
+  onRegenerateRecap: () => void;
   onExport: () => void;
   onDelete: () => void;
   reprocessing: boolean;
+  regenerating: boolean;
+  regenerateDisabled: boolean;
   exporting: boolean;
   deleting: boolean;
 }) {
@@ -581,7 +578,7 @@ function HeaderActions({
         aria-label="Действия со звонком"
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={reprocessing || deleting || exporting}
+        disabled={reprocessing || deleting || exporting || regenerating}
         style={{
           width: 32,
           height: 32,
@@ -621,16 +618,26 @@ function HeaderActions({
               setOpen(false);
               onReprocess();
             }}
-            disabled={reprocessing || deleting || exporting}
+            disabled={reprocessing || deleting || exporting || regenerating}
           >
-            {reprocessing ? 'Переобработка…' : '↻ Переобработать'}
+            {reprocessing ? 'Переобработка…' : '↻ Переобработать целиком'}
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onRegenerateRecap();
+            }}
+            disabled={regenerating || regenerateDisabled || reprocessing || deleting || exporting}
+            title={regenerateDisabled ? 'Нет транскрипта для регенерации' : undefined}
+          >
+            {regenerating ? 'Пересоздаём…' : '↻ Пересоздать саммари'}
           </MenuItem>
           <MenuItem
             onClick={() => {
               setOpen(false);
               onExport();
             }}
-            disabled={exporting || reprocessing || deleting}
+            disabled={exporting || reprocessing || deleting || regenerating}
           >
             {exporting ? 'Сохраняем…' : '↓ Скачать .md'}
           </MenuItem>
@@ -655,11 +662,13 @@ function MenuItem({
   onClick,
   disabled,
   danger,
+  title,
 }: {
   children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
+  title?: string;
 }) {
   return (
     <button
@@ -667,6 +676,7 @@ function MenuItem({
       role="menuitem"
       onClick={onClick}
       disabled={disabled}
+      title={title}
       style={{
         display: 'block',
         width: '100%',
