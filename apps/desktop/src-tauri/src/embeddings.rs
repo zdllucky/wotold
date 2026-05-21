@@ -267,4 +267,67 @@ mod tests {
         assert_eq!(out, fixed);
         assert_eq!(out.len(), EMBEDDING_DIM);
     }
+
+    // ============================================================
+    // [Phase 6] proptest — property-based invariants for cosine_similarity
+    // ============================================================
+
+    use proptest::prelude::*;
+
+    /// Strategy: vector of finite f32 в [-1e3, 1e3], length 1..=32.
+    /// Ограничиваем диапазон чтобы избежать overflow в sum-of-squares.
+    /// Real ONNX embedding output обычно в [-1, 1] L2-normalized.
+    fn finite_vec(max_len: usize) -> impl Strategy<Value = Vec<f32>> {
+        prop::collection::vec(-1e3_f32..1e3_f32, 1..=max_len)
+    }
+
+    proptest! {
+        /// `cosine_similarity(v, v) == 1.0` для любого ненулевого finite `v`.
+        /// Защита от NaN propagation / numeric stability bugs в нормализации.
+        #[test]
+        fn cosine_self_similarity_is_one(v in finite_vec(32)) {
+            // Skip near-zero vectors — там cosine sane возвращает 0.0
+            let norm_sq: f32 = v.iter().map(|x| x * x).sum();
+            prop_assume!(norm_sq > 1e-6);
+            let sim = cosine_similarity(&v, &v);
+            prop_assert!(
+                (sim - 1.0).abs() < 1e-4,
+                "cosine(v, v) = {sim}, expected ~1.0 for v={:?}",
+                v
+            );
+        }
+
+        /// `cosine_similarity` всегда в [-1.0, 1.0] (+ ε) для finite inputs.
+        /// Если выйдет за пределы — баг в normalize / dot product overflow.
+        /// Используем shared-length strategy чтобы не отбрасывать generated
+        /// пары (raw prop_assume на equal-len → too-many-rejects).
+        #[test]
+        fn cosine_bounded_for_finite_inputs(
+            pair in (1usize..=32).prop_flat_map(|n| {
+                (
+                    prop::collection::vec(-1e3_f32..1e3_f32, n),
+                    prop::collection::vec(-1e3_f32..1e3_f32, n),
+                )
+            })
+        ) {
+            let (a, b) = pair;
+            let sim = cosine_similarity(&a, &b);
+            prop_assert!(
+                sim.is_finite() && (-1.001..=1.001).contains(&sim),
+                "cosine out of bounds: {sim} for len={}",
+                a.len()
+            );
+        }
+
+        /// Длина различается → 0.0 (defensive). Раньше fixture-only.
+        #[test]
+        fn cosine_different_lengths_always_zero(
+            a in finite_vec(16),
+            extra in 1usize..16,
+        ) {
+            let mut b = a.clone();
+            b.extend(vec![1.0_f32; extra]);
+            prop_assert_eq!(cosine_similarity(&a, &b), 0.0);
+        }
+    }
 }
