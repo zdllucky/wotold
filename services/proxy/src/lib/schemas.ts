@@ -17,12 +17,15 @@ export const uuidSchema = z
 
 // ─── LLM ────────────────────────────────────────────────────────────
 
-/** /v1/llm POST body. system + input required; model + maxTokens optional. */
+/** /v1/llm POST body. system + input required; model + maxTokens optional.
+ *  nullable + optional: Rust serde по умолчанию сериализует `Option::None`
+ *  как `null` (не omit), поэтому принимаем оба варианта чтобы не сломать
+ *  совместимость с pre-V5 клиентами. */
 export const llmRequestSchema = z.object({
   system: z.string().min(1, 'system required'),
   input: z.string().min(1, 'input required'),
-  model: z.string().optional(),
-  maxTokens: z.number().int().positive().max(32_000).optional(),
+  model: z.string().nullish(),
+  maxTokens: z.number().int().positive().max(32_000).nullish(),
 });
 
 export type LlmRequestParsed = z.infer<typeof llmRequestSchema>;
@@ -42,16 +45,18 @@ export const sttRequestSchema = z.object({
   opts: z.object({
     provider: z.enum(['soniox', 'gladia']),
     lang: z.string().min(1, 'opts.lang required (use "auto")'),
-    diarization: z.boolean().optional(),
+    // nullish: Rust serde Option::None → null (не omit), accept оба.
+    diarization: z.boolean().nullish(),
   }),
 });
 
 // ─── Auth ───────────────────────────────────────────────────────────
 
-/** /v1/auth/:provider/start POST body. deviceId должен быть UUID если задан. */
+/** /v1/auth/:provider/start POST body. deviceId должен быть UUID если задан.
+ *  nullish для optional fields — Rust serde мапит Option::None в null. */
 export const authStartRequestSchema = z.object({
-  deviceId: uuidSchema.optional(),
-  redirectMode: z.enum(['json', 'deeplink']).optional(),
+  deviceId: uuidSchema.nullish(),
+  redirectMode: z.enum(['json', 'deeplink']).nullish(),
 });
 
 // ─── Helper ─────────────────────────────────────────────────────────

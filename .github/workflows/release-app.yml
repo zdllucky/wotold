@@ -116,6 +116,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop/src-tauri
+          # [B3.7] Production .dmg всегда собирается с voice-onnx feature —
+          # биометрический матчинг включён сразу после того как юзер
+          # скачает модель в Settings (без перезапуска / переустановки).
+          # Dev build без этой фичи (default features = empty) для
+          # быстрой итерации; см. CLAUDE.md / Cargo.toml [features].
+          args: --features voice-onnx
           tagName: ${{ github.ref_name }}
           releaseName: 'Wotold ${{ github.ref_name }}'
           releaseBody: |

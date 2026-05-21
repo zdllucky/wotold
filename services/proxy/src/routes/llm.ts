@@ -26,8 +26,11 @@ llmRoutes.post('/', async (c) => {
   const result = await callLlm(c.env, {
     system: body.system,
     input: body.input,
-    model: body.model,
-    maxTokens: body.maxTokens,
+    // nullish (null | undefined) → undefined для downstream (callLlm
+    // ожидает Optional<string>, не nullable). Backwards compat: Rust
+    // serde Option::None → JSON null, мы принимаем оба и нормализуем.
+    model: body.model ?? undefined,
+    maxTokens: body.maxTokens ?? undefined,
   });
 
   if (!result.ok) {
