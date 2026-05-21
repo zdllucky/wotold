@@ -28,6 +28,8 @@ import {
 } from '../api/settings';
 import { useI18n } from '../i18n';
 import { InputField, Select, Skeleton } from '../ui';
+import { HotkeyCapture } from '../components/HotkeyCapture';
+import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
 import { ByoKeysSection } from './ByoKeysSection';
@@ -89,12 +91,26 @@ export function SettingsPage() {
   );
   const [proxyUrl, setProxyUrl] = useState<string>('');
   const [proxyUrlError, setProxyUrlError] = useState<string | null>(null);
+  // [W1] Hotkey settings — canonical string format ('Cmd+Shift+KeyR'). Пустая
+  // = default из hotkey.ts. UI label/preview через HotkeyCapture.
+  const [toggleHotkey, setToggleHotkey] = useState<string>('');
+  const [pauseHotkey, setPauseHotkey] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const [stt, path, model, proxy, lang, autoBind, autoBindT] = await Promise.all([
+        const [
+          stt,
+          path,
+          model,
+          proxy,
+          lang,
+          autoBind,
+          autoBindT,
+          toggleHk,
+          pauseHk,
+        ] = await Promise.all([
           getSetting(SETTINGS_KEYS.STT_PROVIDER),
           getSetting(SETTINGS_KEYS.PROVIDER_PATH),
           getSetting(SETTINGS_KEYS.LLM_MODEL),
@@ -102,6 +118,8 @@ export function SettingsPage() {
           getSetting(SETTINGS_KEYS.PREFERRED_LANGUAGE),
           getSetting(SETTINGS_KEYS.AUTO_BIND_ENABLED),
           getSetting(SETTINGS_KEYS.AUTO_BIND_THRESHOLD),
+          getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE),
+          getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE),
         ]);
         if (isSttProvider(stt)) setSttProvider(stt);
         if (isProviderPath(path)) setProviderPath(path);
@@ -112,6 +130,8 @@ export function SettingsPage() {
         if (autoBindT && AUTO_BIND_THRESHOLDS.includes(autoBindT as AutoBindThreshold)) {
           setAutoBindThreshold(autoBindT as AutoBindThreshold);
         }
+        if (toggleHk) setToggleHotkey(toggleHk);
+        if (pauseHk) setPauseHotkey(pauseHk);
       } catch (e) {
         setError(humanError(e));
       } finally {
@@ -387,6 +407,63 @@ export function SettingsPage() {
                   </span>
                 </div>
               )}
+
+              {/* [W1] Configurable recording hotkeys. */}
+              <div
+                style={{
+                  marginTop: 8,
+                  paddingTop: 18,
+                  borderTop: '1px solid var(--line-soft)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 18,
+                }}
+              >
+                <div className="field">
+                  <label className="field-label">
+                    {t('settings.hotkeyToggleLabel')}
+                  </label>
+                  <HotkeyCapture
+                    value={toggleHotkey}
+                    defaultHotkey={DEFAULT_TOGGLE_HOTKEY}
+                    onChange={(v) => {
+                      setToggleHotkey(v);
+                      void persist(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE, v);
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--subtle)',
+                      marginTop: 6,
+                    }}
+                  >
+                    {t('settings.hotkeyToggleHint')}
+                  </span>
+                </div>
+                <div className="field">
+                  <label className="field-label">
+                    {t('settings.hotkeyPauseLabel')}
+                  </label>
+                  <HotkeyCapture
+                    value={pauseHotkey}
+                    defaultHotkey={DEFAULT_PAUSE_HOTKEY}
+                    onChange={(v) => {
+                      setPauseHotkey(v);
+                      void persist(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE, v);
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--subtle)',
+                      marginTop: 6,
+                    }}
+                  >
+                    {t('settings.hotkeyPauseHint')}
+                  </span>
+                </div>
+              </div>
             </div>
           </SectionShell>
         )}

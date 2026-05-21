@@ -20,6 +20,11 @@ import { DualWaveform } from '../components/DualWaveform';
 import { useAudioLevel } from '../hooks/useAudioLevel';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { bcp47, useI18n } from '../i18n';
+import {
+  DEFAULT_TOGGLE_HOTKEY,
+  matchEvent,
+  parseHotkey,
+} from '../utils/hotkey';
 
 interface AvailableUpdate {
   version: string;
@@ -186,24 +191,25 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
     }
   };
 
-  // [B16] Hotkey ⌘⇧R: start/stop без клика.
+  // [W1] Configurable hotkey — раньше ⌘⇧R был захардкожен с manual ru-layout
+  // mapping ('к'). Теперь читаем из настроек на mount + используем layout-
+  // independent `e.code === 'KeyR'`. Empty setting → DEFAULT_TOGGLE_HOTKEY.
   useEffect(() => {
+    let parsed = DEFAULT_TOGGLE_HOTKEY;
+    void getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE).then((raw) => {
+      const fromDb = parseHotkey(raw);
+      if (fromDb) parsed = fromDb;
+    });
     const handler = (e: KeyboardEvent) => {
-      const isCmd = e.metaKey || e.ctrlKey;
       const target = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
       if (target === 'input' || target === 'textarea' || target === 'select') return;
-      if (
-        isCmd &&
-        e.shiftKey &&
-        (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К')
-      ) {
-        e.preventDefault();
-        if (busy) return;
-        if (recording) {
-          void onStop();
-        } else {
-          void onStart();
-        }
+      if (!matchEvent(e, parsed)) return;
+      e.preventDefault();
+      if (busy) return;
+      if (recording) {
+        void onStop();
+      } else {
+        void onStart();
       }
     };
     window.addEventListener('keydown', handler);
