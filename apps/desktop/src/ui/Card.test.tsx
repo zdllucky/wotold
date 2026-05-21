@@ -33,18 +33,11 @@ describe('Card — variants', () => {
     const card = screen.getByText('compact').closest('div')!;
     expect(card.style.padding).toBeTruthy();
   });
-
-  test('extra className is forwarded', () => {
-    render(<Card className="my-custom">child</Card>);
-    const card = screen.getByText('child').closest('div')!;
-    expect(card.className).toContain('my-custom');
-  });
-
-  test('children render inside card', () => {
-    render(<Card><span data-testid="inner">hello</span></Card>);
-    expect(screen.getByTestId('inner')).toBeInTheDocument();
-  });
 });
+
+// Phase 5: dropped vanity tests
+// - "extra className is forwarded" — React {...rest} idiom, not behavior
+// - "children render inside card" — React.children default, not behavior
 
 describe('Card.Header', () => {
   test('renders children with flex layout', () => {
@@ -70,14 +63,5 @@ describe('Card.Title', () => {
     expect(h3).toHaveTextContent('My Title');
     expect(h3.className).toContain('title');
   });
-
-  test('custom className is appended', () => {
-    render(
-      <Card>
-        <Card.Title className="extra">Title</Card.Title>
-      </Card>,
-    );
-    const h3 = screen.getByRole('heading', { level: 3 });
-    expect(h3.className).toContain('extra');
-  });
+  // Phase 5: dropped "custom className is appended" — pure prop passthrough.
 });
