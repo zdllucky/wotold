@@ -13,6 +13,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useRef, type MouseEvent as ReactMouseEvent } from 'react';
 
+import { useAudioLevel } from '../hooks/useAudioLevel';
 import { useI18n } from '../i18n';
 
 import { RecEq } from './RecEq';
@@ -20,10 +21,10 @@ import { RecMiniButton } from './RecMiniButton';
 import { formatElapsed, useRecording } from './RecordingContext';
 
 const STOP_INTERACTIVE_SELECTOR = 'button, [data-rec-no-restore]';
-// [S7] Distance threshold (screen px) below which mouseup is treated as a
-// click. `data-tauri-drag-region` fires drag at a smaller native threshold,
-// but the click event still bubbles back to React once the drag ends — so we
-// need our own movement check before we call restore_main_window.
+// [S8] Movement threshold (screen px) для отличить click от drag-and-release.
+// data-tauri-drag-region запускает window move на mousedown с тиным native
+// threshold; React click срабатывает только если cursor не сдвинулся. Если
+// сдвинулся (drag finished) — мы swallow'аем click чтобы не открыть main.
 const CLICK_DRAG_THRESHOLD_PX = 6;
 
 async function restoreMain(): Promise<void> {
@@ -46,10 +47,15 @@ export function RecFloat() {
   const isActive = rec.status.kind !== 'idle';
   const isPaused = rec.status.kind === 'paused';
 
-  // [S7] Capture mousedown screen coordinates so onClick can distinguish a
-  // tap (restore main window) from a drag (Tauri moved the window via the
-  // `data-tauri-drag-region`). Without this, finishing a drag would also
-  // bounce the user back into the main window.
+  // [S8] Real audio levels — same source как DualWaveform на главном.
+  // Sidecar шлёт audio:level каждые 100ms; subscribe только когда виджет
+  // активен (active=isActive && !paused), unsubscribe иначе.
+  const audio = useAudioLevel(isActive && !isPaused);
+
+  // [S8] Capture mousedown screen coordinates. Tauri's data-tauri-drag-region
+  // starts window drag on mousedown; if user releases without movement, React's
+  // click event still fires and we restore main. If user dragged, distance
+  // check swallows the click.
   const downPos = useRef<{ x: number; y: number } | null>(null);
 
   const onMouseDownBody = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -65,8 +71,6 @@ export function RecFloat() {
       const dx = e.screenX - start.x;
       const dy = e.screenY - start.y;
       if (dx * dx + dy * dy > CLICK_DRAG_THRESHOLD_PX * CLICK_DRAG_THRESHOLD_PX) {
-        // User dragged the widget — swallow the click so the main window
-        // doesn't pop up unexpectedly.
         return;
       }
     }
@@ -94,35 +98,42 @@ export function RecFloat() {
     })();
   };
 
+  // [S8] Hybrid drag: data-tauri-drag-region на root → весь widget кроме
+  // actions is draggable via NSWindow. `="false"` на actions выключает
+  // drag для области кнопок (Tauri 2 traverses closest() и respects override).
   return (
     <div
       className="rec-float"
       role={isActive ? 'status' : 'presentation'}
       aria-live="polite"
-      data-tauri-drag-region
       data-paused={isPaused ? 'true' : 'false'}
       data-active={isActive ? 'true' : 'false'}
+      data-tauri-drag-region
       onMouseDown={onMouseDownBody}
       onClick={onClickBody}
     >
       <div className="rec-float-eq" data-tauri-drag-region>
-        <RecEq paused={isPaused} />
+        <RecEq paused={isPaused} levels={audio.mic} />
       </div>
       <div className="rec-float-body" data-tauri-drag-region>
-        <span className="rec-float-timer">
+        <span className="rec-float-timer" data-tauri-drag-region>
           {formatElapsed(rec.elapsedSec)}
         </span>
-        <span className="rec-float-label">
+        <span className="rec-float-label" data-tauri-drag-region>
           {isPaused
             ? t('recording.stripPaused')
             : t('recording.stripRecording')}
         </span>
       </div>
-      <div className="rec-float-actions" data-rec-no-restore>
+      <div
+        className="rec-float-actions"
+        data-rec-no-restore
+        data-tauri-drag-region="false"
+      >
         <RecMiniButton
           variant={isPaused ? 'play' : 'pause'}
           onClick={onTogglePause}
-          disabled={rec.busy || !isActive}
+          disabled={rec.busy}
           ariaLabel={
             isPaused ? t('recording.resumeAction') : t('recording.pauseAction')
           }
@@ -130,7 +141,7 @@ export function RecFloat() {
         <RecMiniButton
           variant="stop"
           onClick={onStop}
-          disabled={rec.busy || !isActive}
+          disabled={rec.busy}
           ariaLabel={t('recording.stopAction')}
         />
       </div>

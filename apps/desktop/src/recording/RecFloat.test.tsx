@@ -23,6 +23,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async () => () => {}),
 }));
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: () => ({ startDragging: vi.fn(async () => {}) }),
+}));
 
 import { invoke } from '@tauri-apps/api/core';
 import { I18nProvider } from '../i18n';
@@ -185,7 +188,9 @@ describe('RecFloat', () => {
     mockInvoke.mockClear();
 
     fireEvent.mouseDown(pill, { screenX: 100, screenY: 100 });
-    // Simulate user releasing 50px away — drag distance.
+    // [S8] Tauri's native drag-region handles actual window move. React click
+    // только fires если final position ≠ start position (= drag happened) —
+    // мы swallow'аем чтобы не open main window. Test simulates это.
     fireEvent.click(pill, { screenX: 150, screenY: 150 });
     await flush();
 

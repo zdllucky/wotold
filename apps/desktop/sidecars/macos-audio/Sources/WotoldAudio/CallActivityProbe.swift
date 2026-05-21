@@ -49,7 +49,10 @@ final class CallActivityProbe {
     private let queue = DispatchQueue(label: "app.wotold.macos-audio.call-probe")
     private var timer: DispatchSourceTimer?
     private var state: State = .idle
-    private let pollInterval: DispatchTimeInterval = .milliseconds(1500)
+    private let pollInterval: DispatchTimeInterval = .milliseconds(1000)
+    /// [S8 diag] Last logged state — чтобы не спамить stderr одной и той же тривией
+    /// (мы хотим видеть transitions, не каждый tick).
+    private var lastLoggedSig: String = ""
 
     func start(emit: @escaping (_ dict: [String: Any]) -> Void) {
         stop()
@@ -69,8 +72,26 @@ final class CallActivityProbe {
     }
 
     private func tick(emit: @escaping (_ dict: [String: Any]) -> Void) {
-        let micBusy = currentInputDeviceBusy()
+        let micBusy = anyInputDeviceBusy()
         let frontmost = currentFrontmostWhitelisted()
+        let frontmostBundleAny = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
+
+        // [S8 diag] Edge log: emit stderr only on signature change, чтобы не
+        // спамить логи. Rust forwarder проводит stderr в tauri-plugin-log
+        // (см. call_detect dispatcher).
+        let stateStr: String
+        switch state {
+        case .idle: stateStr = "idle"
+        case .detected: stateStr = "detected"
+        case .suggested(let b): stateStr = "suggested(\(b))"
+        }
+        let sig = "\(stateStr)|mic=\(micBusy)|front=\(frontmostBundleAny)"
+        if sig != lastLoggedSig {
+            lastLoggedSig = sig
+            FileHandle.standardError.write(
+                ("call-probe tick: " + sig + "\n").data(using: .utf8) ?? Data()
+            )
+        }
 
         switch state {
         case .idle:
@@ -110,43 +131,72 @@ final class CallActivityProbe {
         }
     }
 
-    /// kAudioDevicePropertyDeviceIsRunningSomewhere на default input device.
-    /// 1 ⇒ кто-то (мы или сторонний процесс) активно читает с этого устройства.
-    /// Не различает "мы" vs "сторонний" — Rust-сторона учитывает что наша
-    /// собственная запись (recording session) тоже сделает mic busy, поэтому
-    /// probe должен быть выключен пока recording == active.
-    private func currentInputDeviceBusy() -> Bool {
-        var deviceID = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+    /// [S8] Check ALL audio input devices — не только default. Teams/Zoom/etc
+    /// могут переключаться на USB headset / virtual device, и default input
+    /// при этом останется "MacBook Pro Microphone" idle. Iterate `kAudioHardware
+    /// PropertyDevices`, фильтр по input streams (HasProperty на input scope),
+    /// возвращаем true как только нашли busy.
+    private func anyInputDeviceBusy() -> Bool {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0, nil,
-            &size,
-            &deviceID
+        var dataSize: UInt32 = 0
+        var status = AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &dataSize
         )
-        guard status == noErr, deviceID != 0 else { return false }
+        guard status == noErr else { return false }
+        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        guard count > 0 else { return false }
 
-        var running = UInt32(0)
-        var runningSize = UInt32(MemoryLayout<UInt32>.size)
-        var runningAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
+        var devices = [AudioDeviceID](repeating: 0, count: count)
+        status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &dataSize, &devices
         )
-        let runStatus = AudioObjectGetPropertyData(
-            deviceID,
-            &runningAddress,
-            0, nil,
-            &runningSize,
-            &running
-        )
-        return runStatus == noErr && running == 1
+        guard status == noErr else { return false }
+
+        for dev in devices {
+            // Skip output-only devices: ask for input streams via
+            // `kAudioDevicePropertyStreamConfiguration` на input scope; если
+            // 0 streams — output-only (наушники, динамики, виртуальный output).
+            var streamCfgAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreamConfiguration,
+                mScope: kAudioObjectPropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var streamSize: UInt32 = 0
+            status = AudioObjectGetPropertyDataSize(
+                dev, &streamCfgAddr, 0, nil, &streamSize
+            )
+            if status != noErr || streamSize == 0 { continue }
+            let bufList = UnsafeMutablePointer<AudioBufferList>.allocate(
+                capacity: Int(streamSize)
+            )
+            defer { bufList.deallocate() }
+            status = AudioObjectGetPropertyData(
+                dev, &streamCfgAddr, 0, nil, &streamSize, bufList
+            )
+            if status != noErr { continue }
+            let buffers = UnsafeMutableAudioBufferListPointer(bufList)
+            let channels = buffers.reduce(0) { $0 + Int($1.mNumberChannels) }
+            if channels == 0 { continue }
+
+            var running = UInt32(0)
+            var runningSize = UInt32(MemoryLayout<UInt32>.size)
+            var runningAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            status = AudioObjectGetPropertyData(
+                dev, &runningAddr, 0, nil, &runningSize, &running
+            )
+            if status == noErr, running == 1 {
+                return true
+            }
+        }
+        return false
     }
 
     /// (bundle_id, displayName) если frontmost app в whitelist'е, иначе nil.

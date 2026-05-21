@@ -48,6 +48,23 @@ mod voice_model;
 
 pub use error::AppError;
 
+/// [S9] Show main window + unminimise + focus. Used by tray icon click and
+/// "Открыть Wotold" menu item. Idempotent — silent if window absent.
+fn bring_main_to_front(app: &tauri::AppHandle) {
+    let Some(main) = tauri::Manager::get_webview_window(app, "main") else {
+        return;
+    };
+    if let Err(e) = main.unminimize() {
+        log::warn!("tray bring-to-front unminimize: {e}");
+    }
+    if let Err(e) = main.show() {
+        log::warn!("tray bring-to-front show: {e}");
+    }
+    if let Err(e) = main.set_focus() {
+        log::warn!("tray bring-to-front set_focus: {e}");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 // [CI clippy] `.expect()` на `.run()` — идиоматично для tauri::Builder
 // (паника на unrecoverable startup error из-за невалидного `tauri.conf.json`
@@ -124,6 +141,13 @@ pub fn run() {
             let state = tauri::async_runtime::block_on(state::init(handle.clone()))?;
             tauri::Manager::manage(app, state);
 
+            // [S9] Shared flag: "пользователь явно нажал Выход через tray-меню /
+            // ⌘Q / app menu". Без этого CloseRequested от красного крестика
+            // сворачивает окно в трей; с флагом — даёт нашему graceful-stop
+            // pipeline пути отработать и завершить процесс.
+            let quitting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            tauri::Manager::manage(app, quitting.clone());
+
             // [S2] Если CALL_DETECT_ENABLED == "1" с прошлой сессии — поднимаем
             // probe автоматически. Иначе sidecar спит до toggle'а юзером.
             #[cfg(target_os = "macos")]
@@ -158,7 +182,15 @@ pub fn run() {
             // не работают (стандартные ⌘C/⌘V). Add File/Edit/View/Window submenus.
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{MenuBuilder, SubmenuBuilder};
+                use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+
+                // [S9] Custom Quit item with ⌘Q accelerator. Tauri's
+                // PredefinedMenuItem::quit() calls app.exit() напрямую и
+                // обходит наш CloseRequested → graceful-stop. Здесь мы вместо
+                // exit ставим quitting=true и просим окно закрыться.
+                let app_quit = MenuItemBuilder::with_id("app:quit", "Выход Wotold")
+                    .accelerator("CmdOrCtrl+Q")
+                    .build(app)?;
 
                 let app_menu = SubmenuBuilder::new(&handle, "Wotold")
                     .about(None)
@@ -167,7 +199,7 @@ pub fn run() {
                     .hide_others()
                     .show_all()
                     .separator()
-                    .quit()
+                    .item(&app_quit)
                     .build()?;
 
                 let edit_menu = SubmenuBuilder::new(&handle, "Edit")
@@ -193,6 +225,22 @@ pub fn run() {
                     .items(&[&app_menu, &edit_menu, &view_menu, &window_menu])
                     .build()?;
                 app.set_menu(menu)?;
+
+                // [S9] Catch the custom "app:quit" item. Tray menu has its own
+                // handler (on_menu_event на TrayIconBuilder), но app-menu items
+                // эмитят через app-level menu event.
+                let quitting_for_app_menu = quitting.clone();
+                app.on_menu_event(move |app, event| {
+                    if event.id().as_ref() == "app:quit" {
+                        quitting_for_app_menu.store(true, std::sync::atomic::Ordering::Relaxed);
+                        if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
+                            let _ = main.show();
+                            let _ = main.close();
+                        } else {
+                            app.exit(0);
+                        }
+                    }
+                });
             }
 
             // [B9]: подписка на wotold:// deep-link. Прокси редиректит сюда после OIDC.
@@ -232,44 +280,122 @@ pub fn run() {
                 });
             }
 
+            // [S9] System tray icon + меню. Click по иконке (left-click на macOS)
+            // показывает + поднимает main; "Выход" из меню ставит quitting=true
+            // и просит окно закрыться, что прогоняет existing graceful-stop путь
+            // через CloseRequested. "Открыть Wotold" вызывает то же что и tray
+            // click. Tray live даже когда main скрыто — приложение остаётся
+            // в фоне, recording продолжается.
+            {
+                use tauri::menu::{MenuBuilder, MenuItemBuilder};
+                use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+                let open_item =
+                    MenuItemBuilder::with_id("tray:open", "Открыть Wotold").build(app)?;
+                let quit_item = MenuItemBuilder::with_id("tray:quit", "Выход").build(app)?;
+                let tray_menu = MenuBuilder::new(app)
+                    .items(&[&open_item, &quit_item])
+                    .build()?;
+
+                let quitting_for_menu = quitting.clone();
+                let _tray = TrayIconBuilder::with_id("wotold-tray")
+                    .icon(
+                        app.default_window_icon()
+                            .cloned()
+                            .ok_or_else(|| std::io::Error::other("default_window_icon missing"))?,
+                    )
+                    .icon_as_template(true)
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(move |app, event| match event.id.as_ref() {
+                        "tray:open" => bring_main_to_front(app),
+                        "tray:quit" => {
+                            quitting_for_menu.store(true, std::sync::atomic::Ordering::Relaxed);
+                            // Trigger close — CloseRequested handler с
+                            // quitting=true прогонит graceful-stop путь.
+                            if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
+                                if let Err(e) = main.show() {
+                                    log::warn!("tray quit: main.show failed: {e}");
+                                }
+                                if let Err(e) = main.close() {
+                                    log::warn!("tray quit: main.close failed: {e}");
+                                }
+                            } else {
+                                // Окно уже сожжено → просто exit.
+                                app.exit(0);
+                            }
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            bring_main_to_front(tray.app_handle());
+                        }
+                    })
+                    .build(app)?;
+            }
+
             // [B2]: graceful stop при window close. Если идёт запись —
             // префлайт-stop через pipeline, потом exit. Иначе sidecar получает
             // SIGHUP, последние ≤5s могут не успеть flush, calls row висит recording.
             if let Some(window) = tauri::Manager::get_webview_window(app, "main") {
                 let app_for_event = handle.clone();
-                // [W4] Track previous minimized state so we emit `main-window:minimized`
-                // / `main-window:restored` only on edge transitions. macOS fires
-                // `Resized` on many unrelated mutations (titlebar overlay churn,
-                // monitor changes) — without an edge filter the frontend would
-                // toggle the widget on every paint.
-                let prev_minimized = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-                let main_window_for_event = window.clone();
-                let prev_for_event = prev_minimized.clone();
+                let quitting_for_close = quitting.clone();
+                // [W4 + S8] Edge-trigger widget show/hide. Originally we listened
+                // only to `Resized` + is_minimized() to catch dock minimisation —
+                // but on macOS that misses every other "user не смотрит на нас":
+                // Cmd+Tab to other app, swipe to another Space, click on Finder,
+                // hide-others. Widget should appear in all those cases.
+                //
+                // `WindowEvent::Focused(bool)` fires for all four scenarios above
+                // (lose focus → show widget; gain focus → hide). Edge-filter via
+                // `prev_focused` because Tauri also emits Focused(true) on init
+                // and on each window event burst — we'd thrash the widget without
+                // it.
+                let prev_focused = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+                let prev_for_event = prev_focused.clone();
                 window.on_window_event(move |event| {
-                    // [W4] Edge-trigger widget show/hide on minimize/restore.
-                    // We listen to `Resized` because macOS does not surface a
-                    // dedicated "minimized" WindowEvent in Tauri 2 — minimize
-                    // ends up as a Resize with `is_minimized()==true`.
-                    if matches!(event, tauri::WindowEvent::Resized(_)) {
-                        let is_min = main_window_for_event.is_minimized().unwrap_or(false);
-                        let was_min =
-                            prev_for_event.swap(is_min, std::sync::atomic::Ordering::Relaxed);
-                        if is_min && !was_min {
-                            if let Err(e) =
-                                tauri::Emitter::emit(&app_for_event, "main-window:minimized", ())
-                            {
-                                log::warn!("emit main-window:minimized failed: {e}");
-                            }
-                        } else if !is_min && was_min {
-                            if let Err(e) =
-                                tauri::Emitter::emit(&app_for_event, "main-window:restored", ())
-                            {
-                                log::warn!("emit main-window:restored failed: {e}");
-                            }
+                    if let tauri::WindowEvent::Focused(focused) = event {
+                        let was_focused =
+                            prev_for_event.swap(*focused, std::sync::atomic::Ordering::Relaxed);
+                        if was_focused == *focused {
+                            return; // no edge
+                        }
+                        let name = if *focused {
+                            "main-window:restored"
+                        } else {
+                            "main-window:minimized"
+                        };
+                        if let Err(e) = tauri::Emitter::emit(&app_for_event, name, ()) {
+                            log::warn!("emit {name} failed: {e}");
                         }
                     }
 
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        let is_quitting =
+                            quitting_for_close.load(std::sync::atomic::Ordering::Relaxed);
+
+                        // [S9] Если юзер просто нажал красный X — сворачиваем
+                        // в трей, recording продолжается. Real exit идёт только
+                        // через tray-menu "Выход" / ⌘Q, который ставит флаг
+                        // перед закрытием.
+                        if !is_quitting {
+                            api.prevent_close();
+                            if let Some(main) =
+                                tauri::Manager::get_webview_window(&app_for_event, "main")
+                            {
+                                if let Err(e) = main.hide() {
+                                    log::warn!("hide main on close: {e}");
+                                }
+                            }
+                            return;
+                        }
+
                         let state = tauri::Manager::state::<state::AppState>(&app_for_event);
                         let has_active = tauri::async_runtime::block_on(async {
                             state.recording.lock().await.is_some()
@@ -330,6 +456,18 @@ pub fn run() {
                 });
             }
 
+            // [S8] WKWebView на macOS рисует opaque белый фон даже при
+            // `transparent: true` на NSWindow. Без явного set webview
+            // background to RGBA(0,0,0,0) пилл-окно выглядит как
+            // прозрачный pill ВНУТРИ непрозрачного 320×84 прямоугольника.
+            if let Some(widget) = tauri::Manager::get_webview_window(app, "recording-widget") {
+                if let Err(e) = widget.set_background_color(Some(tauri::webview::Color(
+                    0, 0, 0, 0,
+                ))) {
+                    log::warn!("widget set_background_color transparent failed: {e}");
+                }
+            }
+
             // [S7] Persist floating-widget position when user drags it. We
             // debounce via a tokio task that resets a 400ms timer on each
             // `Moved` event — Tauri fires `Moved` ~per-frame during drag, and
@@ -388,8 +526,13 @@ pub fn run() {
                                 *g = None;
                             }
                             let state = tauri::Manager::state::<state::AppState>(&app_for_task);
-                            if let Err(e) =
-                                commands::widget::persist_widget_position(&state.db, x, y).await
+                            if let Err(e) = commands::widget::persist_widget_position(
+                                &app_for_task,
+                                &state.db,
+                                x,
+                                y,
+                            )
+                            .await
                             {
                                 log::warn!("persist widget position: {e}");
                             }

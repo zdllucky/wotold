@@ -7,6 +7,7 @@ use crate::{
     audio::macos as audio_macos,
     audio::permissions::{self, PermissionsStatus},
     db::Call,
+    events::EventBus,
     services::pipeline_runner::PipelineRunner,
     state::AppState,
     AppError,
@@ -89,6 +90,7 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     match audio_macos::start(&app, call.id.clone(), mic_path, system_path).await {
         Ok(session) => {
             *guard = Some(session);
+            EventBus::new(Some(&app)).recording_state_changed();
             Ok(call)
         }
         Err(e) => {
@@ -117,9 +119,12 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
         Ok(r) => crate::db::finish_recording(&state.db, &call_id, r.duration_sec).await?,
         Err(e) => {
             let _ = crate::db::fail_recording(&state.db, &call_id).await;
+            EventBus::new(Some(&app)).recording_state_changed();
             return Err(e);
         }
     };
+
+    EventBus::new(Some(&app)).recording_state_changed();
 
     // M2.4-2.5: транскрипция в фоне. Возвращаем клиенту calls row сразу
     // (status=processing), статус подтянется через list_calls когда pipeline
@@ -149,7 +154,10 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
 /// AudioRecorder.swift получит pause/resume API. Сейчас sidecar не знает о
 /// паузе, frames продолжают писаться. Это безопасный default для MVP.
 #[tauri::command]
-pub async fn pause_recording(state: State<'_, AppState>) -> Result<RecordingState, AppError> {
+pub async fn pause_recording(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<RecordingState, AppError> {
     let (call_id, started_at) = {
         let guard = state.recording.lock().await;
         let session = guard
@@ -160,6 +168,7 @@ pub async fn pause_recording(state: State<'_, AppState>) -> Result<RecordingStat
 
     crate::db::pause_call(&state.db, &call_id).await?;
     let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
+    EventBus::new(Some(&app)).recording_state_changed();
     Ok(RecordingState {
         call_id,
         started_at,
@@ -172,7 +181,10 @@ pub async fn pause_recording(state: State<'_, AppState>) -> Result<RecordingStat
 /// Идемпотентно: если запись не была на паузе — вернёт текущий state без
 /// изменений.
 #[tauri::command]
-pub async fn resume_recording(state: State<'_, AppState>) -> Result<RecordingState, AppError> {
+pub async fn resume_recording(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<RecordingState, AppError> {
     let (call_id, started_at) = {
         let guard = state.recording.lock().await;
         let session = guard
@@ -183,6 +195,7 @@ pub async fn resume_recording(state: State<'_, AppState>) -> Result<RecordingSta
 
     crate::db::resume_call(&state.db, &call_id).await?;
     let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
+    EventBus::new(Some(&app)).recording_state_changed();
     Ok(RecordingState {
         call_id,
         started_at,

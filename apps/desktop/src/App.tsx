@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { ask } from '@tauri-apps/plugin-dialog';
-
 import { CallDetailPage } from './pages/CallDetailPage';
 import { CallsPage } from './pages/CallsPage';
 import { Coachmarks } from './pages/Coachmarks';
@@ -165,58 +163,12 @@ function AppShell() {
     return () => document.removeEventListener('contextmenu', onContextMenu);
   }, []);
 
-  // [W5] Cmd+W / Cmd+Q with active recording → confirm before close.
-  // Rust side (lib.rs) уже делает graceful stop при CloseRequested, но без
-  // подтверждения. Мы перехватываем keydown проактивно: если запись идёт —
-  // показываем native ask(). Cancel → absorb keystroke; OK → stop + let
-  // OS обработать close нормально. Не пересекается с Rust handler потому
-  // что rec.stop() уже завершит запись до того как окно закроется.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handler = async (e: KeyboardEvent) => {
-      if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
-      const isCloseKey =
-        e.code === 'KeyW' || e.code === 'KeyQ';
-      if (!isCloseKey) return;
-      // Idle — пусть OS закроет окно нормально.
-      if (rec.status.kind === 'idle') return;
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        const ok = await ask(t('home.closeWhileRecordingBody'), {
-          title: t('home.closeWhileRecordingTitle'),
-          kind: 'warning',
-          okLabel: t('home.closeWhileRecordingOk'),
-          cancelLabel: t('common.cancel'),
-        });
-        if (!ok) return;
-        // Stop the recording cleanly before letting Rust shut down. После
-        // stop'а rec.status.kind === 'idle' и Rust handler сходит с no-op.
-        try {
-          await rec.stop();
-        } catch (err) {
-          console.warn('stop on close failed', err);
-        }
-        // Имитируем повторное нажатие — на этот раз без перехвата.
-        const reissue = new KeyboardEvent('keydown', {
-          key: e.key,
-          code: e.code,
-          metaKey: true,
-          shiftKey: false,
-          altKey: false,
-          ctrlKey: false,
-        });
-        window.dispatchEvent(reissue);
-      } catch (err) {
-        console.warn('close confirmation failed', err);
-      }
-    };
-    // capture=true — get the event before page handlers (HomePage hotkey)
-    // could absorb it. matchEvent в HomePage не матчит Cmd+W/Q (хоткей это
-    // Cmd+Shift+R/P), но capture лишним не будет.
-    window.addEventListener('keydown', handler, { capture: true });
-    return () => window.removeEventListener('keydown', handler, { capture: true });
-  }, [rec, t]);
+  // [S9] Closed → tray (Rust hides main window on CloseRequested if quitting
+  // flag is false). Recording продолжается в фоне. Real exit идёт через
+  // tray-menu "Выход" / app-menu "Выход Wotold" (⌘Q) — оба ставят flag и
+  // прогоняют graceful-stop путь. Раньше тут был frontend Cmd+W/Q
+  // interceptor с ask() диалогом; теперь не нужен — close-to-tray
+  // безопасен по умолчанию (audio не теряется, pipeline продолжает).
 
   // [W4] Show the floating recording widget when the main window is
   // minimised AND a recording is active. Rust side emits edge-triggered
