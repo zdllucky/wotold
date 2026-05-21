@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { humanError } from '../api/errors';
 import ReactMarkdown from 'react-markdown';
 import { ask } from '@tauri-apps/plugin-dialog';
@@ -15,7 +15,7 @@ import {
 import { listContacts, type Contact } from '../api/contacts';
 import { listCallSpeakers, type CallSpeakerView } from '../api/speakers';
 import type { Call } from '../api/recording';
-import { Empty, Pill, Tabs } from '../ui';
+import { Empty, Tabs } from '../ui';
 import { AudioScrubber, type CurrentSpeakerInfo } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { useCallAudio } from '../hooks/useCallAudio';
@@ -30,7 +30,8 @@ interface CallDetailPageProps {
 
 export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [call, setCall] = useState<Call | null>(null);
-  const [tab, setTab] = useState<Tab>('recap');
+  // [B17 V3.9] Default tab → transcript (per artboard §5 reference).
+  const [tab, setTab] = useState<Tab>('transcript');
   const [recap, setRecap] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string | null>(null);
   const [rawStt, setRawStt] = useState<string | null>(null);
@@ -198,47 +199,32 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         ← Все звонки
       </button>
 
-      <header style={{ marginBottom: 24 }}>
+      <header style={{ marginBottom: 22, position: 'relative' }}>
+        {/* Meta — human Russian per reference §5: ВТОРНИК · 19 МАЯ · 11:24 · 32 МИН 14 СЕК */}
         <div className="small-caps" style={{ marginBottom: 8 }}>
-          {formatStarted(call.started_at)} · {formatDuration(call.duration_sec)}
-          {call.provider ? ` · ${call.provider}` : ''}
-          {call.lang_detected ? ` · ${call.lang_detected.toUpperCase()}` : ''}
+          {formatHeaderMeta(call)}
         </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 18,
-            flexWrap: 'wrap',
-            marginBottom: 8,
-          }}
+
+        {/* Title — LLM-generated если есть, иначе простой fallback "Звонок · 20 мая" */}
+        <h1
+          className="title"
+          style={{ fontSize: 36, margin: 0, marginBottom: 14 }}
         >
-          <h1 className="title" style={{ fontSize: 36, flex: 1, minWidth: 240 }}>
-            {call.title ?? deriveAutoTitle(call, speakersLite)}
-          </h1>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Pill tone={statusTone(call.status)}>{call.status}</Pill>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              className="btn btn--ghost btn--sm"
-              onClick={() => void onReprocess()}
-              disabled={reprocessing || deleting}
-              title="Заново прогнать STT + recap на существующих аудио"
-            >
-              {reprocessing ? 'Переобработка…' : '↻ Переобработать'}
-            </button>
-            <button
-              type="button"
-              className="btn btn--danger btn--sm"
-              onClick={onDelete}
-              disabled={deleting || reprocessing}
-            >
-              {deleting ? 'Удаляем…' : 'Удалить'}
-            </button>
-          </div>
-        </div>
+          {call.title?.trim() || simpleDateTitle(call)}
+        </h1>
+
+        {/* Action overflow — kebab menu top-right с reprocess/delete */}
+        <HeaderActions
+          onReprocess={() => void onReprocess()}
+          onDelete={onDelete}
+          reprocessing={reprocessing}
+          deleting={deleting}
+        />
+
+        {/* Participants chips — same row после title */}
+        {speakersLite.length > 0 && (
+          <ParticipantsRow speakers={speakersLite} />
+        )}
       </header>
 
       {call.status === 'failed' && call.failed_reason && (
@@ -508,21 +494,6 @@ function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contac
   );
 }
 
-function statusTone(status: string): 'accent' | 'success' | 'warning' | 'danger' | 'neutral' {
-  switch (status) {
-    case 'recording':
-      return 'danger';
-    case 'processing':
-      return 'accent';
-    case 'ready':
-      return 'success';
-    case 'failed':
-      return 'danger';
-    default:
-      return 'neutral';
-  }
-}
-
 function tabLabel(t: Tab): string {
   switch (t) {
     case 'recap':
@@ -536,52 +507,248 @@ function tabLabel(t: Tab): string {
   }
 }
 
-function formatStarted(iso: string): string {
+// [B17 V3.9] Human-readable meta line per reference §5:
+//   ВТОРНИК · 19 МАЯ · 11:24 · 32 МИН 14 СЕК
+// Без provider/lang noise — те детали в Recap sidebar metadata.
+function formatHeaderMeta(call: Call): string {
   try {
-    const d = new Date(iso);
-    return d.toLocaleString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
+    const d = new Date(call.started_at);
+    if (Number.isNaN(d.getTime())) return call.started_at;
+    const weekday = d.toLocaleDateString('ru-RU', { weekday: 'long' });
+    const date = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    const time = d.toLocaleTimeString('ru-RU', {
       hour: '2-digit',
       minute: '2-digit',
     });
+    const parts = [capitalize(weekday), date, time];
+    if (call.duration_sec && call.duration_sec > 0) {
+      parts.push(humanDuration(call.duration_sec));
+    }
+    return parts.join(' · ');
   } catch {
-    return iso;
+    return call.started_at;
   }
 }
 
-function formatDuration(sec: number | null): string {
-  if (sec == null) return '—';
+function humanDuration(sec: number): string {
+  if (sec < 60) return `${sec} сек`;
   const m = Math.floor(sec / 60);
   const s = sec % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  if (m < 60) {
+    return s > 0 ? `${m} мин ${s} сек` : `${m} мин`;
+  }
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h} ч ${rm} мин` : `${h} ч`;
 }
 
-// [B16] Auto-name для звонка без title — берём имя первого confirmed
-// контакта (не owner) + дату. Так список перестаёт выглядеть как
-// «Звонок a0f3…», «Звонок 5d21…», начинают читаться по существу.
-function deriveAutoTitle(call: Call, speakers: CallSpeakerView[]): string {
-  const dateStr = (() => {
-    try {
-      return new Date(call.started_at).toLocaleDateString('ru-RU', {
-        day: '2-digit',
-        month: 'short',
-      });
-    } catch {
-      return '';
-    }
-  })();
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
-  const namedSpeakers = speakers
-    .filter((s) => s.confirmed && s.contact_display_name)
-    .map((s) => s.contact_display_name!);
-
-  if (namedSpeakers.length > 0) {
-    const primary = namedSpeakers[0];
-    const suffix = namedSpeakers.length > 1 ? ` +${namedSpeakers.length - 1}` : '';
-    return dateStr ? `${primary}${suffix} · ${dateStr}` : `${primary}${suffix}`;
+// Fallback title когда LLM ещё не сгенерировал call.title — простой
+// "Звонок · 20 мая". Никаких production "Сергей +3" auto-derivations.
+function simpleDateTitle(call: Call): string {
+  try {
+    const d = new Date(call.started_at);
+    if (Number.isNaN(d.getTime())) return `Звонок ${call.id.slice(0, 8)}`;
+    const date = d.toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+    });
+    return `Звонок · ${date}`;
+  } catch {
+    return `Звонок ${call.id.slice(0, 8)}`;
   }
+}
 
-  return dateStr ? `Звонок · ${dateStr}` : `Звонок ${call.id.slice(0, 8)}`;
+// Action overflow menu — kebab top-right с reprocess + delete.
+function HeaderActions({
+  onReprocess,
+  onDelete,
+  reprocessing,
+  deleting,
+}: {
+  onReprocess: () => void;
+  onDelete: () => void;
+  reprocessing: boolean;
+  deleting: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'absolute',
+        top: 0,
+        right: 0,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Действия со звонком"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={reprocessing || deleting}
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 'var(--radius-sm)',
+          border: 'none',
+          background: open ? 'var(--bg-2)' : 'transparent',
+          color: 'var(--muted)',
+          cursor: 'pointer',
+          fontSize: 18,
+          lineHeight: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        title="Действия"
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            right: 0,
+            zIndex: 30,
+            background: 'var(--paper)',
+            border: '1px solid var(--line)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: 'var(--shadow-2)',
+            padding: 4,
+            minWidth: 180,
+          }}
+        >
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onReprocess();
+            }}
+            disabled={reprocessing || deleting}
+          >
+            {reprocessing ? 'Переобработка…' : '↻ Переобработать'}
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+            disabled={deleting || reprocessing}
+            danger
+          >
+            {deleting ? 'Удаляем…' : 'Удалить'}
+          </MenuItem>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({
+  children,
+  onClick,
+  disabled,
+  danger,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'block',
+        width: '100%',
+        textAlign: 'left',
+        padding: '8px 12px',
+        border: 'none',
+        background: 'transparent',
+        color: danger ? 'var(--signal)' : 'var(--ink)',
+        fontSize: 13.5,
+        fontFamily: 'var(--font-sans)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        borderRadius: 'var(--radius-sm)',
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.background = 'var(--bg-2)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'transparent';
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Participants row — sp chips для confirmed speakers + "· N участника".
+function ParticipantsRow({ speakers }: { speakers: CallSpeakerView[] }) {
+  const named = speakers.filter((s) => s.confirmed && s.contact_display_name);
+  if (named.length === 0) return null;
+  const SP = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
+  const initials = (name: string) =>
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? '')
+      .join('');
+  const declN = pluralParticipants(named.length);
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+      }}
+    >
+      {named.map((s, i) => (
+        <span className="sp" key={s.id}>
+          <span
+            className="sp-avatar"
+            style={{ background: SP[i % SP.length] }}
+          >
+            {initials(s.contact_display_name ?? '')}
+          </span>
+          {s.contact_display_name}
+        </span>
+      ))}
+      <span className="muted" style={{ fontSize: 12, marginLeft: 4 }}>
+        · {named.length} {declN}
+      </span>
+    </div>
+  );
+}
+
+function pluralParticipants(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'участник';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'участника';
+  return 'участников';
 }
