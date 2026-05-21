@@ -633,6 +633,11 @@ export const en: TranslationStrings = {
     pauseAction: 'Pause recording',
     resumeAction: 'Resume recording',
     stopAction: 'Stop recording',
+    suggestTitle: 'Looks like a call in {app}',
+    suggestBody:
+      'Wotold detected an active microphone. Start a recording now?',
+    suggestStart: 'Start recording',
+    suggestDismiss: 'Dismiss',
   },
 
   callState: {

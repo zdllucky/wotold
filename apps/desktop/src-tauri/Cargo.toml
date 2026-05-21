@@ -16,6 +16,9 @@ tauri-build = { version = "2.6.2", features = [] }
 tauri = { version = "2.11.2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-log = "2"
+# [S4] Native macOS notification — поднимаем баннер с «Старт» action когда
+# auto-detect probe (S2/S3) видит начало звонка.
+tauri-plugin-notification = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
 

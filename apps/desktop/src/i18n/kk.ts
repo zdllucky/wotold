@@ -627,6 +627,11 @@ export const kk: TranslationStrings = {
     pauseAction: 'Жазуды кідірту',
     resumeAction: 'Жазуды жалғастыру',
     stopAction: 'Жазуды тоқтату',
+    suggestTitle: '{app} ішінде қоңырау сияқты',
+    suggestBody:
+      'Wotold микрофонның белсенді екенін көрді. Қазір жазуды бастайық па?',
+    suggestStart: 'Жазуды бастау',
+    suggestDismiss: 'Жасыру',
   },
 
   callState: {

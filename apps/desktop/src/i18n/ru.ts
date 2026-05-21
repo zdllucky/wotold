@@ -666,6 +666,12 @@ const ruInternal = {
     pauseAction: 'Поставить на паузу',
     resumeAction: 'Продолжить запись',
     stopAction: 'Остановить запись',
+    // [S5] SuggestBanner — поднимается когда S2-probe видит начавшийся звонок.
+    suggestTitle: 'Похоже на звонок в {app}',
+    suggestBody:
+      'Wotold заметил активный микрофон. Начать запись прямо сейчас?',
+    suggestStart: 'Начать запись',
+    suggestDismiss: 'Скрыть',
   },
 
   // ── [V6.1] Async pipeline states (CallStateTag, PipelineStrip etc) ──────
