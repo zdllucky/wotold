@@ -13,8 +13,58 @@ permissions:
   contents: read
 
 jobs:
+  # [Cost] Path-based change detection. Без этого каждый push в main гонял
+  # 6 jobs (2 на macOS × $0.08/min) = ~$1.70 за commit. С фильтрами docs-only
+  # коммит запускает 1 ubuntu job (~$0.05), а Rust-changes-only пропускает TS.
+  # На моих типичных commit'ах экономия ~70%.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      ts: ${{ steps.filter.outputs.ts }}
+      migrations: ${{ steps.filter.outputs.migrations }}
+      versions: ${{ steps.filter.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'apps/desktop/src-tauri/**'
+              - 'apps/desktop/sidecars/**'
+              - 'scripts/build-audio-sidecar.sh'
+              - '.github/workflows/ci.yml'
+            ts:
+              - 'apps/desktop/src/**'
+              - 'apps/desktop/package.json'
+              - 'apps/desktop/vite.config.ts'
+              - 'apps/desktop/vitest.config.ts'
+              - 'apps/desktop/tsconfig*.json'
+              - 'services/proxy/**'
+              - 'services/mcp/**'
+              - 'packages/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - '.github/workflows/ci.yml'
+            migrations:
+              - 'apps/desktop/src-tauri/migrations/**'
+              - 'scripts/check-migrations.mjs'
+              - '.github/workflows/ci.yml'
+            versions:
+              - 'apps/desktop/src-tauri/Cargo.toml'
+              - 'apps/desktop/src-tauri/tauri.conf.json'
+              - 'apps/desktop/package.json'
+              - 'package.json'
+              - 'scripts/check-versions.mjs'
+              - '.github/workflows/ci.yml'
+
   version-sync:
     name: Version sync (M11.5)
+    needs: changes
+    if: needs.changes.outputs.versions == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +76,8 @@ jobs:
 
   typescript:
     name: TypeScript typecheck
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +98,8 @@ jobs:
 
   ts-tests:
     name: TS tests + coverage
+    needs: changes
+    if: needs.changes.outputs.ts == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,12 +131,9 @@ jobs:
 
   check-migrations:
     name: SQLx migrations filename verification
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
-    # Lightweight: проверяет что migrations 0001..N последовательны без gap'ов
-    # и дубликатов. Реальное применение SQL к свежей SQLite через
-    # sqlx::migrate!() покрыто rust-tests job (cargo test db::tests на macOS,
-    # т.к. tauri-build тащит gtk/webkit на Linux что слишком дорого
-    # ради двух тестов).
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -91,9 +142,21 @@ jobs:
       - name: Verify migration filename ordering
         run: node scripts/check-migrations.mjs
 
-  rust:
-    name: Rust check + clippy + fmt
-    runs-on: macos-latest
+  # [Cost] Rust fmt + check + clippy теперь на Linux (×1 minute cost vs
+  # macOS ×10). cfg(target_os="macos") модули скипаются автоматически —
+  # cargo не компилирует их под Linux target, что нам нужно: проверяем
+  # портабельный код в дешёвом runner'е. macOS-only ветки покрывает
+  # rust-tests job.
+  #
+  # Tauri-build (build script) требует:
+  #   1. WebKit2GTK + GTK dev libs (apt) — для wry runtime crate
+  #   2. Stub sidecar binary в `binaries/wotold-audio-<target-triple>` —
+  #      build.rs валидирует externalBin existence, не содержимое.
+  rust-lint:
+    name: Rust fmt + check + clippy (Linux)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -102,10 +165,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'apps/desktop/src-tauri -> target'
-      # tauri.conf.json объявляет externalBin = binaries/wotold-audio;
-      # без сборки sidecar'а tauri-build падает с "resource path doesn't exist".
-      - name: Build Swift audio sidecar
-        run: ./scripts/build-audio-sidecar.sh
+      - name: Install Tauri Linux deps (libwebkit2gtk + gtk3)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+      - name: Stub sidecar binary (Linux fast lint — Swift sidecar собирается на macOS test job)
+        run: |
+          TARGET="x86_64-unknown-linux-gnu"
+          mkdir -p apps/desktop/src-tauri/binaries
+          touch "apps/desktop/src-tauri/binaries/wotold-audio-${TARGET}"
+          chmod +x "apps/desktop/src-tauri/binaries/wotold-audio-${TARGET}"
       - name: cargo fmt --check
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --all -- --check
@@ -116,8 +189,16 @@ jobs:
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
+  # [Cost] Rust tests остаются на macOS-latest:
+  #   - cfg(target_os="macos") модули audio/macos.rs + audio/permissions.rs
+  #     не компилируются на Linux → их тесты на Linux недостижимы
+  #   - sqlx integration с Swift sidecar (используется в pipeline tests)
+  #   - cargo-llvm-cov генерация lcov.info
+  # Coverage и polyfill реальный — без macOS не пропустим.
   rust-tests:
-    name: Rust tests + coverage
+    name: Rust tests + coverage (macOS)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
