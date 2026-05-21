@@ -21,11 +21,7 @@ use crate::AppError;
 ///  - WAV не открывается (path missing / corrupt)
 ///  - Spec не PCM (мы пишем PCM int16, другие формы — fail-fast)
 ///  - end_sec < start_sec (контракт)
-pub fn read_wav_segment(
-    path: &Path,
-    start_sec: f32,
-    end_sec: f32,
-) -> Result<WavSegment, AppError> {
+pub fn read_wav_segment(path: &Path, start_sec: f32, end_sec: f32) -> Result<WavSegment, AppError> {
     if end_sec < start_sec {
         return Err(AppError::Other(format!(
             "wav_chunker: end_sec ({end_sec}) < start_sec ({start_sec})"
@@ -55,10 +51,8 @@ pub fn read_wav_segment(
     // start_frame, end_frame в frames (не samples — для multi-channel WAV
     // 1 frame = `channels` samples).
     let total_frames = reader.duration() as u64;
-    let start_frame =
-        ((start_sec.max(0.0) as f64) * sample_rate as f64).round() as u64;
-    let end_frame =
-        ((end_sec.max(0.0) as f64) * sample_rate as f64).round() as u64;
+    let start_frame = ((start_sec.max(0.0) as f64) * sample_rate as f64).round() as u64;
+    let end_frame = ((end_sec.max(0.0) as f64) * sample_rate as f64).round() as u64;
     let start_frame = start_frame.min(total_frames);
     let end_frame = end_frame.min(total_frames);
     if end_frame <= start_frame {
@@ -135,7 +129,9 @@ mod tests {
     #[test]
     fn reads_full_segment() {
         let path = temp_path("full");
-        let samples: Vec<i16> = (0..16_000).map(|i| ((i as f32 * 0.01).sin() * 16_000.0) as i16).collect();
+        let samples: Vec<i16> = (0..16_000)
+            .map(|i| ((i as f32 * 0.01).sin() * 16_000.0) as i16)
+            .collect();
         write_test_wav(&path, 16_000, &samples);
 
         let seg = read_wav_segment(&path, 0.0, 1.0).unwrap();

@@ -172,8 +172,7 @@ pub async fn export_call_markdown(
     let transcript = tokio::fs::read_to_string(&transcript_path).await.ok();
     if recap.is_none() && transcript.is_none() {
         return Err(AppError::Other(
-            "Ни recap, ни транскрипт ещё не готовы — нечего экспортировать."
-                .to_string(),
+            "Ни recap, ни транскрипт ещё не готовы — нечего экспортировать.".to_string(),
         ));
     }
 
@@ -403,7 +402,11 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
         tasks.lock().await.remove(&call_id_for_task);
     });
     // [B16 audit P0]: регистрируем handle чтобы graceful shutdown мог дождаться.
-    state.pipeline_tasks.lock().await.insert(call_id.clone(), handle);
+    state
+        .pipeline_tasks
+        .lock()
+        .await
+        .insert(call_id.clone(), handle);
 
     Ok(call)
 }

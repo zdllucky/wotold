@@ -88,7 +88,10 @@ async fn quick_integrity_check(path: &Path) -> Result<(), AppError> {
         .await?;
     pool.close().await;
     if row.0 != "ok" {
-        return Err(AppError::Other(format!("integrity_check returned: {}", row.0)));
+        return Err(AppError::Other(format!(
+            "integrity_check returned: {}",
+            row.0
+        )));
     }
     Ok(())
 }

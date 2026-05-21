@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use sqlx::SqlitePool;
-use tauri::{AppHandle, Manager};
 use tauri::async_runtime::JoinHandle;
+use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 use crate::{audio::macos::RecordingSession, db, device, AppError};

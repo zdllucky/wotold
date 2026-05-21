@@ -128,14 +128,11 @@ fn net(e: reqwest::Error) -> TranscriptionError {
 
 fn proxy_status(e: reqwest::Error) -> TranscriptionError {
     let status = e.status();
-    if matches!(status, Some(StatusCode::TOO_MANY_REQUESTS)) {
-        TranscriptionError::QuotaExceeded
-    } else if matches!(
-        status,
-        Some(StatusCode::UNAUTHORIZED) | Some(StatusCode::FORBIDDEN)
-    ) {
-        TranscriptionError::Auth(format!("proxy {}", status.unwrap()))
-    } else {
-        TranscriptionError::Provider(format!("proxy {e}"))
+    match status {
+        Some(StatusCode::TOO_MANY_REQUESTS) => TranscriptionError::QuotaExceeded,
+        Some(s @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)) => {
+            TranscriptionError::Auth(format!("proxy {s}"))
+        }
+        _ => TranscriptionError::Provider(format!("proxy {e}")),
     }
 }

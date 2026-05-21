@@ -145,11 +145,7 @@ pub async fn set_call_meta(
 /// после успешной генерации JSON. Frontend reads через get_call → renders
 /// в header вместо fallback "Звонок · 20 мая". Empty/blank title не
 /// перезаписывает существующий.
-pub async fn set_call_title(
-    pool: &SqlitePool,
-    call_id: &str,
-    title: &str,
-) -> Result<(), AppError> {
+pub async fn set_call_title(pool: &SqlitePool, call_id: &str, title: &str) -> Result<(), AppError> {
     let trimmed = title.trim();
     if trimmed.is_empty() {
         return Ok(());
@@ -425,12 +421,11 @@ pub async fn confirm_call_speaker(
 ) -> Result<(), AppError> {
     // Контакт должен существовать. FK contacts(id) уже это гарантирует, но
     // вернём явный AppError а не SQL-ошибку для UX.
-    let contact_row: Option<(String, String, String)> = sqlx::query_as(
-        "SELECT id, attributes, COALESCE(NULL, '') FROM contacts WHERE id = ?1",
-    )
-    .bind(contact_id)
-    .fetch_optional(pool)
-    .await?;
+    let contact_row: Option<(String, String, String)> =
+        sqlx::query_as("SELECT id, attributes, COALESCE(NULL, '') FROM contacts WHERE id = ?1")
+            .bind(contact_id)
+            .fetch_optional(pool)
+            .await?;
     let Some((_, attributes_json, _)) = contact_row else {
         return Err(AppError::Other(format!("contact {contact_id} not found")));
     };
@@ -952,13 +947,15 @@ mod tests {
         let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
         assert_eq!(speakers.len(), 2);
         assert!(
-            speakers.iter().any(|s| s.speaker_tag == "owner" && s.confirmed),
+            speakers
+                .iter()
+                .any(|s| s.speaker_tag == "owner" && s.confirmed),
             "owner row должен пережить insert_speaker_suggestions"
         );
         assert!(
-            speakers
-                .iter()
-                .any(|s| s.speaker_tag == "S1" && s.suggestion_contact_id.as_deref() == Some(&alice)),
+            speakers.iter().any(
+                |s| s.speaker_tag == "S1" && s.suggestion_contact_id.as_deref() == Some(&alice)
+            ),
             "новый suggestion должен быть записан"
         );
     }

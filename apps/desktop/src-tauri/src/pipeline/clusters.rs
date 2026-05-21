@@ -50,7 +50,11 @@ pub fn extract_clusters(
         if dur < MIN_SEGMENT_SEC {
             continue;
         }
-        let path = if tag == OWNER_TAG { mic_path } else { system_path };
+        let path = if tag == OWNER_TAG {
+            mic_path
+        } else {
+            system_path
+        };
         let seg_end = seg.start as f32 + dur.min(MAX_SEGMENT_SEC);
         let wav = match read_wav_segment(path, seg.start as f32, seg_end) {
             Ok(w) => w,
@@ -155,8 +159,7 @@ mod tests {
     }
     impl Embedder for CountingEmbedder {
         fn extract(&self, samples: &[f32], _sr: u32) -> Result<Vec<f32>, AppError> {
-            self.calls
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             // 4-dim det vector based on basic stats — non-zero чтобы pass
             // normalize check.
             let len = samples.len() as f32;
@@ -206,8 +209,7 @@ mod tests {
             ts(2.0, 4.0, "S1"),
             ts(4.0, 5.0, OWNER_TAG),
         ];
-        let clusters =
-            extract_clusters(&merged, &mic, &sys, &embedder).unwrap();
+        let clusters = extract_clusters(&merged, &mic, &sys, &embedder).unwrap();
         assert_eq!(clusters.len(), 2);
         assert!(clusters.contains_key(OWNER_TAG));
         assert!(clusters.contains_key("S1"));
@@ -224,8 +226,7 @@ mod tests {
         let embedder = CountingEmbedder::new();
         // 0.2s segments → отбрасываются (< MIN_SEGMENT_SEC).
         let merged = vec![ts(0.0, 0.2, "S1"), ts(0.2, 0.4, "S1")];
-        let clusters =
-            extract_clusters(&merged, &mic, &sys, &embedder).unwrap();
+        let clusters = extract_clusters(&merged, &mic, &sys, &embedder).unwrap();
         assert!(clusters.is_empty());
         assert_eq!(embedder.call_count(), 0);
         let _ = std::fs::remove_file(&mic);
@@ -238,8 +239,7 @@ mod tests {
         let sys = temp_wav("sys-c", 3.0);
         let embedder = CountingEmbedder::new();
         let merged = vec![ts(0.0, 2.0, "S1")];
-        let clusters =
-            extract_clusters(&merged, &mic, &sys, &embedder).unwrap();
+        let clusters = extract_clusters(&merged, &mic, &sys, &embedder).unwrap();
         let cluster = clusters.get("S1").unwrap();
         let norm: f32 = cluster.iter().map(|x| x * x).sum::<f32>().sqrt();
         assert!((norm - 1.0).abs() < 1e-5, "norm = {norm}");
