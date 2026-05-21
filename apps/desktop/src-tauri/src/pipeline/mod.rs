@@ -37,6 +37,10 @@ const SETTING_PROXY_BASE_URL: &str = "proxy_base_url";
 /// детектированный STT, иначе BCP47 (ru, en, kk, ...). НЕ влияет на STT
 /// auto-detect — STT остаётся multi-lang biased (см. proxy/lib/partners).
 const SETTING_PREFERRED_LANGUAGE: &str = "preferred_language";
+/// [V7] Opt-in auto-bind speakers с suggestion_score >= threshold/100.
+/// '1' = enabled, иначе off. Default OFF (R2 паспорта).
+const SETTING_AUTO_BIND_ENABLED: &str = "auto_bind_enabled";
+const SETTING_AUTO_BIND_THRESHOLD: &str = "auto_bind_threshold";
 
 /// Default proxy URL — debug-сборки (cargo run / tauri dev) целятся на staging,
 /// release — на production. User override через Settings → Прокси → Advanced.
@@ -428,6 +432,13 @@ async fn run_inner(
     }
     emit_progress(pool, app, &ctx.call_id, 3, 100, None, None).await;
 
+    // [V7] Opt-in auto-bind: только если юзер явно включил в Settings.
+    // Non-fatal: ошибки логируются и пропускаются (suggestion остаётся,
+    // юзер может вручную подтвердить). Эмитим event с количеством для UI.
+    if let Err(e) = run_auto_bind(pool, app, &ctx.call_id).await {
+        log::warn!("auto_bind {} failed (non-fatal): {e}", ctx.call_id);
+    }
+
     // M4 chain: транскрипт → LLM рекап. Ошибки рекапа НЕ роняют пайплайн —
     // транскрипт сохранён, рекап можно регенерировать вручную (M4.5).
     let transcript_md = render_transcript_md(&merged);
@@ -470,6 +481,52 @@ async fn run_inner(
     }
     emit_progress(pool, app, &ctx.call_id, 5, 100, None, None).await;
 
+    Ok(())
+}
+
+/// [V7] Auto-bind speakers с suggestion_score >= threshold/100 при включенной
+/// настройке Settings → Транскрипция → «Автоматически привязывать собеседника».
+///
+/// Default OFF (R2 паспорта). Threshold: 90 / 95 / 98 (default 95 если
+/// enabled). Emit'ит `call:auto_bound` event с count для UI banner.
+async fn run_auto_bind(
+    pool: &SqlitePool,
+    app: Option<&AppHandle>,
+    call_id: &str,
+) -> Result<(), AppError> {
+    let enabled = read_setting(pool, SETTING_AUTO_BIND_ENABLED, "").await?;
+    if enabled != "1" {
+        return Ok(());
+    }
+    let threshold_raw = read_setting(pool, SETTING_AUTO_BIND_THRESHOLD, "95").await?;
+    let threshold_pct: f64 = threshold_raw.parse().unwrap_or(95.0);
+    // Whitelisted (UI ограничен 90/95/98); защита от мусорных значений.
+    let threshold_pct = threshold_pct.clamp(80.0, 100.0);
+    let threshold = threshold_pct / 100.0;
+
+    let count = db::auto_bind_high_confidence_speakers(pool, call_id, threshold).await?;
+    if count == 0 {
+        return Ok(());
+    }
+    log::info!("auto-bound {count} speaker(s) for call {call_id} (threshold {threshold_pct}%)");
+    if let Some(handle) = app {
+        #[derive(Clone, serde::Serialize)]
+        struct AutoBoundEvent {
+            call_id: String,
+            count: u64,
+            threshold_pct: u8,
+        }
+        if let Err(e) = handle.emit(
+            "call:auto_bound",
+            AutoBoundEvent {
+                call_id: call_id.to_string(),
+                count,
+                threshold_pct: threshold_pct as u8,
+            },
+        ) {
+            log::warn!("emit call:auto_bound failed: {e}");
+        }
+    }
     Ok(())
 }
 

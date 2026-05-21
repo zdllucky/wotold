@@ -95,6 +95,17 @@
 - **V6.4** CallDetailPage processing — `PipelineStrip defaultOpen` с stage-метка + caret + ETA + 5-step body + reassurance строка «Можно закрыть окно — мы сохраним прогресс» + ghost-rows skeleton транскрипта + per-page `call:progress` listener.
 - **V6.5** CallDetailPage error — `ErrorScreen` (calm explanation + 3 retry actions включая alt-provider hint + diagnostics `<details>` с code/provider/last_at/quota) + AudioScrubber теперь enabled для failed (аудио всегда доступно).
 - **V6.6** Cleanup — i18n keys (`callState.*`, `pipeline.*`, `calls.activityStrip*`, `callDetail.reassureCanClose`, `callDetail.errorTitle/errorAudioSaved/errorRetry/errorRetryProvider/errorOpenSettings/errorDiagnostics*`) на ru/kk/en; cargo fmt + clippy clean; 231/231 vitest + 135/135 cargo passing.
+- **V6.7** DS page — §14 секция «Async states (V6)» с live снимками всех новых компонентов (CallStateTag 6 variants + detail-suffix, ProgressRail determinate/indeterminate, PipelineStrip step 3/5, CallErrorRow, activity-strip, transcript-row--ghost). Реагируют на theme×accent.
+
+### V7 · Auto-bind speaker по голосу (opt-in)
+- **R2 deviation согласована**: opt-in toggle = «оптовое подтверждение» юзера, не нарушает паспорт.
+- **Migration 0009** — `call_speakers.auto_bound_at TEXT` (RFC3339, NULL = ручное; не-NULL = авто-привязано).
+- **`db::auto_bind_high_confidence_speakers(pool, call_id, threshold)`** — guardrails: speaker != owner AND confirmed=0 AND contact_id NULL AND suggestion_score ≥ threshold AND contact has `consent_voice='true'` AND contact has ≥ 2 voice_samples. Never overwrites existing binding. 7 cargo tests (high-score happy path + 5 negative scenarios + unbind-clears-auto_bound_at).
+- **Pipeline wiring** — `run_auto_bind` after cluster matching, читает settings (default OFF, threshold 90/95/98 default 95), emit'ит `call:auto_bound` event `{ call_id, count, threshold_pct }`.
+- **Settings UI** — Транскрипция → checkbox «Авто-привязка по голосу» + threshold Select (показывается только когда enabled). i18n keys ru/kk/en.
+- **CallDetailPage AutoBoundBanner** — `.activity-strip` стиль + «↩ Отменить» кнопка, unbind'ит все автопривязки одним кликом. Listener on `call:auto_bound` event для live refresh.
+- **API extensions** — `CallSpeakerView.auto_bound_at`, `CallAutoBoundEvent` типы.
+- `unbind_call_speaker` теперь очищает `auto_bound_at` тоже — повторное ручное подтверждение даст clean state без auto provenance.
 
 ### Hardening
 - M8.3 prompt-injection pass-through + LIKE escape regression тесты (MCP).

@@ -35,6 +35,7 @@ function mkSpeaker(
     suggestion_score: null,
     suggestion_source: null,
     confirmed,
+    auto_bound_at: null,
   };
 }
 

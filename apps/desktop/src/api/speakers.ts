@@ -17,6 +17,19 @@ export interface CallSpeakerView {
   /** 'embedding' | 'llm' | 'both' — источник signal для UI debug-вью. */
   suggestion_source: string | null;
   confirmed: boolean;
+  /** [V7] RFC3339 timestamp если speaker был привязан автоматически
+   *  (suggestion_score >= threshold). NULL = ручное подтверждение или
+   *  pending. UI рендерит «↩ отменить» баннер для свежих авто-привязок. */
+  auto_bound_at: string | null;
+}
+
+/** [V7] Событие `call:auto_bound` — после pipeline matching auto-bind
+ *  обнаружил N speaker'ов с score ≥ threshold. UI рендерит баннер
+ *  «Авто-привязано: N собеседник(ов) (≥{threshold}%)» с undo-кнопкой. */
+export interface CallAutoBoundEvent {
+  call_id: string;
+  count: number;
+  threshold_pct: number;
 }
 
 export function listCallSpeakers(callId: string): Promise<CallSpeakerView[]> {
