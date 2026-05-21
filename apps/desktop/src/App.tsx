@@ -11,7 +11,7 @@ import { HomePage } from './pages/HomePage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, SETTINGS_KEYS } from './api/settings';
-import { listCalls } from './api/recording';
+import { getActivePipelineCount } from './api/calls';
 import { I18nProvider, useI18n } from './i18n';
 import { RecordingProvider, useRecording } from './recording/RecordingContext';
 import { RecStrip } from './recording/RecStrip';
@@ -85,13 +85,15 @@ function AppShell() {
   useEffect(() => {
     const resync = async () => {
       try {
-        const calls = await listCalls();
-        const n = calls.filter(
-          (c) => c.status === 'recording' || c.status === 'processing',
-        ).length;
+        // [V9] Источник правды — in-memory pipeline_tasks registry, а не
+        // DB filter. Раньше counter показывал «3» при одной активной
+        // обработке потому что DB содержал zombie processing rows от
+        // прошлых crashed sessions (sweep_stale_calls пометил их failed
+        // только на следующем startup). Сейчас точный realtime count.
+        const n = await getActivePipelineCount();
         setActivePipelines(n);
       } catch (e) {
-        console.warn('listCalls for activity counter failed:', e);
+        console.warn('getActivePipelineCount failed:', e);
       }
     };
     void resync();
