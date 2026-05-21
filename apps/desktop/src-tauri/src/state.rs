@@ -7,12 +7,16 @@ use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
-use crate::{audio::macos::RecordingSession, db, device, AppError};
+use crate::{audio::macos::RecordingSession, call_store::CallStore, db, device, AppError};
 
 pub struct AppState {
     pub db: SqlitePool,
     pub device_id: Arc<str>,
     pub app_data_dir: PathBuf,
+    /// [Phase 4 R10] Filesystem-репо для `calls/<id>/*` артефактов. Все
+    /// callsite'ы, которые раньше делали `app_data_dir.join("calls").join(...)`,
+    /// теперь идут через `state.store.xxx(...)`. Cheap to clone (Arc).
+    pub store: Arc<CallStore>,
     pub recording: Arc<Mutex<Option<RecordingSession>>>,
     // [B16 audit P0]: храним JoinHandle от pipeline tasks per-call_id, чтобы
     // при shutdown окна можно было ждать завершения (или хотя бы знать какие
@@ -43,10 +47,13 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         log::warn!("sweep_stale_calls: {swept} зависших звонков → failed");
     }
 
+    let store = Arc::new(CallStore::new(app_data_dir.clone()));
+
     Ok(AppState {
         db: pool,
         device_id: Arc::from(device_id.as_str()),
         app_data_dir,
+        store,
         recording: Arc::new(Mutex::new(None)),
         pipeline_tasks: Arc::new(Mutex::new(HashMap::new())),
     })
