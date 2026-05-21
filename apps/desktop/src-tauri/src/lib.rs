@@ -38,6 +38,10 @@ mod providers;
 mod secrets;
 mod state;
 mod updater;
+// [B3.7c] Voice embedder model — runtime download + SHA256 verify. Всегда
+// компилируется (download independent от sherpa-onnx); реально использует
+// модель только voice-onnx build через embeddings_onnx::OnnxEmbedder.
+mod voice_model;
 
 pub use error::AppError;
 
@@ -303,6 +307,10 @@ pub fn run() {
             commands::reprocess_call,
             commands::get_call_audio_path,
             commands::export_call_markdown,
+            commands::voice_model_status,
+            commands::voice_model_download,
+            commands::voice_model_delete,
+            commands::voice_model_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

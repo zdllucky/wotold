@@ -30,6 +30,7 @@ import { AppearanceSection } from './AppearanceSection';
 import { ByoKeysSection } from './ByoKeysSection';
 import { PermissionsSection } from './PermissionsSection';
 import { UsageSection } from './UsageSection';
+import { VoiceModelSection } from './VoiceModelSection';
 
 type SectionId =
   | 'account'
@@ -40,6 +41,7 @@ type SectionId =
   | 'keys'
   | 'proxy'
   | 'usage'
+  | 'voice'
   | 'privacy';
 
 interface SectionMeta {
@@ -131,6 +133,7 @@ export function SettingsPage() {
     { id: 'keys', label: 'Ключи (BYO)', hidden: providerPath !== 'byo' },
     { id: 'proxy', label: 'Сервер Wotold', hidden: providerPath !== 'managed' },
     { id: 'usage', label: 'Использование', hidden: providerPath !== 'managed' },
+    { id: 'voice', label: 'Распознавание голоса' },
     { id: 'privacy', label: 'Конфиденциальность' },
   ];
 
@@ -409,6 +412,15 @@ export function SettingsPage() {
             lede="Дневная квота managed-режима — STT-минуты и LLM-токены. Сбрасывается каждые 24 часа. В BYO-режиме счётчик не действует."
           >
             <UsageSection />
+          </SectionShell>
+        )}
+
+        {section === 'voice' && (
+          <SectionShell
+            title="Распознавание голоса."
+            lede="Wotold может предлагать кто говорит на основе совпадения голоса — но только после скачивания биометрической модели (25 МБ, опционально). Финальное подтверждение всегда за тобой (R2 паспорта)."
+          >
+            <VoiceModelSection />
           </SectionShell>
         )}
 
