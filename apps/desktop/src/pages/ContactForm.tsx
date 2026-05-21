@@ -12,7 +12,7 @@ import {
   type ContactIdentifierInput,
   type ContactInput,
 } from '../api/contacts';
-import { InputField, TextareaField } from '../ui';
+import { InputField, Select, TextareaField } from '../ui';
 import { VoiceSamplesSection } from './VoiceSamplesSection';
 
 interface ContactFormProps {
@@ -156,18 +156,13 @@ export function ContactForm({
         onAdd={addIdentifier}
         renderItem={(it, idx) => (
           <>
-            <select
-              className="input input--box"
-              style={{ fontFamily: 'var(--font-sans)', flex: '0 0 140px' }}
-              value={it.kind}
-              onChange={(e) => setIdentifierKind(idx, e.target.value)}
-            >
-              {IDENTIFIER_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
+            <div style={{ flex: '0 0 140px' }}>
+              <Select
+                value={it.kind}
+                options={IDENTIFIER_KINDS.map((k) => ({ value: k, label: k }))}
+                onChange={(v) => setIdentifierKind(idx, v)}
+              />
+            </div>
             <input
               className="input input--box"
               style={{ flex: 1 }}

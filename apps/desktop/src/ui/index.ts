@@ -4,6 +4,7 @@ export { Card } from './Card';
 export { Empty } from './Empty';
 export { InputField, SelectField, TextareaField } from './Field';
 export { Pill } from './Pill';
+export { Select, type SelectOption } from './Select';
 export { StatusDot } from './StatusDot';
 export { Tabs } from './Tabs';
 export { Skeleton, CallRowSkeleton } from './Skeleton';

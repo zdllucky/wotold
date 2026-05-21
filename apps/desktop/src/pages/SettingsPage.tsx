@@ -24,7 +24,7 @@ import {
   type ProviderPath,
   type SttProvider,
 } from '../api/settings';
-import { InputField, SelectField } from '../ui';
+import { InputField, Select } from '../ui';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
 import { ByoKeysSection } from './ByoKeysSection';
@@ -231,35 +231,38 @@ export function SettingsPage() {
             lede="Поставщик STT и язык вывода для рекапа. Auto переключается между Soniox и Gladia при сбоях."
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 540 }}>
-              <SelectField
-                label="Провайдер"
-                value={sttProvider}
-                onChange={(e) => {
-                  const v = e.target.value as SttProvider;
-                  setSttProvider(v);
-                  void persist(SETTINGS_KEYS.STT_PROVIDER, v);
-                }}
-              >
-                <option value="auto">Auto (Soniox → Gladia)</option>
-                <option value="soniox">Soniox</option>
-                <option value="gladia">Gladia</option>
-              </SelectField>
-              <SelectField
-                label="Язык рекапа и задач"
-                value={preferredLanguage}
-                onChange={(e) => {
-                  const v = e.target.value as PreferredLanguage;
-                  setPreferredLanguage(v);
-                  void persist(SETTINGS_KEYS.PREFERRED_LANGUAGE, v);
-                }}
-                hint="На каком языке писать рекап и задачи. 'Авто' = язык распознанной речи. Не влияет на сам STT."
-              >
-                {PREFERRED_LANGUAGES.map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.label}
-                  </option>
-                ))}
-              </SelectField>
+              <div className="field">
+                <label className="field-label">Провайдер</label>
+                <Select<SttProvider>
+                  value={sttProvider}
+                  options={[
+                    { value: 'auto', label: 'Auto (Soniox → Gladia)' },
+                    { value: 'soniox', label: 'Soniox' },
+                    { value: 'gladia', label: 'Gladia' },
+                  ]}
+                  onChange={(v) => {
+                    setSttProvider(v);
+                    void persist(SETTINGS_KEYS.STT_PROVIDER, v);
+                  }}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">Язык рекапа и задач</label>
+                <Select<PreferredLanguage>
+                  value={preferredLanguage}
+                  options={PREFERRED_LANGUAGES.map((l) => ({
+                    value: l.code,
+                    label: l.label,
+                  }))}
+                  onChange={(v) => {
+                    setPreferredLanguage(v);
+                    void persist(SETTINGS_KEYS.PREFERRED_LANGUAGE, v);
+                  }}
+                />
+                <span style={{ fontSize: 12, color: 'var(--subtle)', marginTop: 2 }}>
+                  На каком языке писать рекап и задачи. 'Авто' = язык распознанной речи. Не влияет на сам STT.
+                </span>
+              </div>
               <InputField
                 label="LLM-модель (опционально)"
                 type="text"
