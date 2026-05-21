@@ -27,6 +27,8 @@ import {
   type ReactNode,
 } from 'react';
 
+import { useI18n } from '../i18n';
+
 export interface SelectOption<V extends string = string> {
   value: V;
   label: ReactNode;
@@ -65,7 +67,7 @@ export function Select<V extends string = string>({
   value,
   options,
   onChange,
-  placeholder = '— не выбран —',
+  placeholder,
   disabled = false,
   id,
   width = '100%',
@@ -73,8 +75,11 @@ export function Select<V extends string = string>({
   style,
   ariaLabel,
   searchable = false,
-  searchPlaceholder = 'Поиск…',
+  searchPlaceholder,
 }: SelectProps<V>) {
+  const { t } = useI18n();
+  const resolvedPlaceholder = placeholder ?? t('common.selectNone');
+  const resolvedSearchPlaceholder = searchPlaceholder ?? t('common.selectSearch');
   const generatedId = useId();
   const triggerId = id ?? `select-${generatedId}`;
   const listboxId = `${triggerId}-listbox`;
@@ -353,7 +358,7 @@ export function Select<V extends string = string>({
             color: selected ? 'var(--ink)' : 'var(--subtle)',
           }}
         >
-          {selected ? selected.label : placeholder}
+          {selected ? selected.label : resolvedPlaceholder}
         </span>
         <Caret open={open} />
       </button>
@@ -396,9 +401,9 @@ export function Select<V extends string = string>({
                 id={searchInputId}
                 type="text"
                 role="searchbox"
-                aria-label={searchPlaceholder}
+                aria-label={resolvedSearchPlaceholder}
                 aria-controls={listboxId}
-                placeholder={searchPlaceholder}
+                placeholder={resolvedSearchPlaceholder}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onSearchKey}

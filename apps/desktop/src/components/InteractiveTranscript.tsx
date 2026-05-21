@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { CallSpeakerView } from '../api/speakers';
 import { Empty } from '../ui';
+import { useI18n } from '../i18n';
 import { humanSpeakerLabel } from '../utils/callMeta';
 
 interface Segment {
@@ -145,6 +146,7 @@ export function InteractiveTranscript({
   onSeek,
   onIdentifySpeaker,
 }: Props) {
+  const { t } = useI18n();
   const labels = useMemo(() => buildLabelMap(speakers), [speakers]);
   const unconfirmed = useMemo(() => buildUnconfirmedSet(speakers), [speakers]);
   const segments: Segment[] | null = useMemo(() => {
@@ -187,7 +189,7 @@ export function InteractiveTranscript({
         </div>
       );
     }
-    return <Empty description="Транскрипт ещё не готов." />;
+    return <Empty description={t('callDetail.emptyTranscript')} />;
   }
 
   return (
@@ -250,10 +252,10 @@ export function InteractiveTranscript({
                     onIdentifySpeaker(g.tag);
                   }}
                   className="transcript-identify-chip"
-                  title="Кто это? Подтвердить голос"
-                  aria-label={`Кто это? Подтвердить голос ${g.tag}`}
+                  title={t('speakers.transcriptIdentifyTitle')}
+                  aria-label={t('speakers.transcriptIdentifyAria', { tag: g.tag })}
                 >
-                  ? кто это
+                  {t('speakers.transcriptIdentifyChip')}
                 </button>
               )}
             </div>

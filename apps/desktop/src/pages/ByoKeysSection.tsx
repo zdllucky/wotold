@@ -7,13 +7,14 @@ import {
   setByoKey,
   type ByoProvider,
 } from '../api/secrets';
+import { useI18n } from '../i18n';
 import { Button } from '../ui';
 
 interface ProviderMeta {
   id: ByoProvider;
   label: string;
   placeholder: string;
-  hint: string;
+  hintKey: 'settings.keySonioxHint' | 'settings.keyGladiaHint' | 'settings.keyAnthropicHint';
 }
 
 const PROVIDERS: ProviderMeta[] = [
@@ -21,23 +22,24 @@ const PROVIDERS: ProviderMeta[] = [
     id: 'soniox',
     label: 'Soniox',
     placeholder: 'sk_...',
-    hint: 'STT primary. Получить ключ — soniox.com/console.',
+    hintKey: 'settings.keySonioxHint',
   },
   {
     id: 'gladia',
     label: 'Gladia',
     placeholder: 'gl_...',
-    hint: 'STT fallback. Получить ключ — app.gladia.io/api.',
+    hintKey: 'settings.keyGladiaHint',
   },
   {
     id: 'anthropic',
     label: 'Anthropic',
     placeholder: 'sk-ant-...',
-    hint: 'LLM рекап. Получить ключ — console.anthropic.com.',
+    hintKey: 'settings.keyAnthropicHint',
   },
 ];
 
 export function ByoKeysSection() {
+  const { t } = useI18n();
   const [statuses, setStatuses] = useState<Map<ByoProvider, boolean>>(new Map());
   const [drafts, setDrafts] = useState<Map<ByoProvider, string>>(new Map());
   const [busy, setBusy] = useState<ByoProvider | null>(null);
@@ -70,7 +72,7 @@ export function ByoKeysSection() {
   const onSave = async (provider: ByoProvider) => {
     const value = drafts.get(provider)?.trim() ?? '';
     if (!value) {
-      setError('Введи значение ключа.');
+      setError(t('settings.keyNeedValue'));
       return;
     }
     setBusy(provider);
@@ -118,7 +120,7 @@ export function ByoKeysSection() {
           marginBottom: 14,
         }}
       >
-        Ключи хранятся в системном Keychain. Не пишутся в БД, логи или телеметрию.
+        {t('settings.keysStored')}
       </p>
       {error && (
         <p
@@ -151,8 +153,7 @@ export function ByoKeysSection() {
               fontSize: 13,
             }}
           >
-            ⚠ Ни один ключ не задан. Записи будут падать с ошибкой авторизации —
-            либо добавь ключи, либо переключись на «Через Wotold» в выборе режима.
+            {t('settings.keysEmptyAll')}
           </p>
         </div>
       )}
@@ -166,8 +167,7 @@ export function ByoKeysSection() {
             marginBottom: 12,
           }}
         >
-          ⓘ Не заданы: {missingProviders.map((p) => p.label).join(', ')}. Без них
-          часть pipeline (STT primary / fallback / recap) работать не будет.
+          {t('settings.keysSomeMissing', { names: missingProviders.map((p) => p.label).join(', ') })}
         </p>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
@@ -198,7 +198,7 @@ export function ByoKeysSection() {
                     textTransform: 'uppercase',
                   }}
                 >
-                  ● {present ? 'подключён' : 'пусто'}
+                  {present ? t('settings.keyConnected') : t('settings.keyEmpty')}
                 </span>
               </div>
               <input
@@ -206,7 +206,7 @@ export function ByoKeysSection() {
                 type="password"
                 className="input"
                 placeholder={
-                  present ? '••••• (введи, чтобы заменить)' : p.placeholder
+                  present ? t('settings.keyReplacePlaceholder') : p.placeholder
                 }
                 value={draftValue}
                 onChange={(e) => setDraft(p.id, e.target.value)}
@@ -222,7 +222,7 @@ export function ByoKeysSection() {
                   marginTop: 6,
                 }}
               >
-                {p.hint}
+                {t(p.hintKey)}
               </span>
               <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
                 <Button
@@ -232,7 +232,7 @@ export function ByoKeysSection() {
                   disabled={isBusy || !draftValue.trim()}
                   busy={isBusy}
                 >
-                  Сохранить
+                  {t('common.save')}
                 </Button>
                 {present && (
                   <Button
@@ -241,7 +241,7 @@ export function ByoKeysSection() {
                     onClick={() => onDelete(p.id)}
                     disabled={isBusy}
                   >
-                    Удалить
+                    {t('common.delete')}
                   </Button>
                 )}
               </div>

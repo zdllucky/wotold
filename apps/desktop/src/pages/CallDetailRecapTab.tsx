@@ -9,6 +9,7 @@ import type { Contact } from '../api/contacts';
 import type { Call } from '../api/recording';
 import type { CallSpeakerView } from '../api/speakers';
 import { Empty } from '../ui';
+import { bcp47, useI18n } from '../i18n';
 import { SP_COLORS, initials } from './CallDetailUtils';
 
 interface RecapTabProps {
@@ -30,6 +31,7 @@ export function RecapTab({
   onRegenerate,
   regenerating,
 }: RecapTabProps) {
+  const { locale, t } = useI18n();
   const parsed = parseRecap(recap);
   const participants = speakers.filter(
     (s) => s.confirmed && s.contact_display_name,
@@ -49,7 +51,7 @@ export function RecapTab({
         {parsed.summary ? (
           <section style={{ marginBottom: 32 }}>
             <div className="small-caps" style={{ marginBottom: 8 }}>
-              Резюме
+              {t('recap.summary')}
             </div>
             <div
               style={{
@@ -81,7 +83,7 @@ export function RecapTab({
         {parsed.keyPoints.length > 0 && (
           <section style={{ marginBottom: 32 }}>
             <div className="small-caps" style={{ marginBottom: 12 }}>
-              Ключевые моменты
+              {t('recap.keyPoints')}
             </div>
             <ol
               style={{
@@ -129,7 +131,7 @@ export function RecapTab({
               marginBottom: 12,
             }}
           >
-            <div className="small-caps">Задачи · {tasks.length}</div>
+            <div className="small-caps">{t('recap.tasksCount', { n: tasks.length })}</div>
             <button
               type="button"
               className="btn btn--quiet"
@@ -137,14 +139,14 @@ export function RecapTab({
               onClick={onRegenerate}
               disabled={regenerating}
             >
-              {regenerating ? 'Пересоздаём…' : '↻ Пересоздать'}
+              {regenerating ? t('recap.regenerating') : t('recap.regenerate')}
             </button>
           </div>
           {tasks.length === 0 ? (
-            <Empty description="Wotold не нашёл задач в этом звонке." />
+            <Empty description={t('recap.emptyTasks')} />
           ) : (
-            tasks.map((t, i) => (
-              <TaskRow key={t.id ?? i} task={t} nameById={nameById} idx={i} />
+            tasks.map((task, i) => (
+              <TaskRow key={task.id ?? i} task={task} nameById={nameById} idx={i} />
             ))
           )}
         </section>
@@ -152,7 +154,7 @@ export function RecapTab({
         {!parsed.summary && !parsed.keyPoints.length && recap && (
           <section style={{ marginBottom: 32 }}>
             <div className="small-caps" style={{ marginBottom: 8 }}>
-              Саммари
+              {t('recap.summaryAlt')}
             </div>
             <div className="markdown">
               <ReactMarkdown>{recap}</ReactMarkdown>
@@ -160,7 +162,7 @@ export function RecapTab({
           </section>
         )}
 
-        {!recap && <Empty description="Саммари ещё не сгенерировано." />}
+        {!recap && <Empty description={t('recap.emptyRecap')} />}
       </div>
 
       {/* Sidebar */}
@@ -174,7 +176,7 @@ export function RecapTab({
           }}
         >
           <div className="small-caps" style={{ marginBottom: 10 }}>
-            Метаданные
+            {t('recap.metadata')}
           </div>
           <div
             style={{
@@ -184,7 +186,7 @@ export function RecapTab({
               fontSize: 12,
             }}
           >
-            {sidebarMeta(call).map(([k, v]) => (
+            {sidebarMeta(call, locale, t).map(([k, v]) => (
               <div
                 key={k}
                 style={{ display: 'flex', justifyContent: 'space-between' }}
@@ -199,7 +201,7 @@ export function RecapTab({
         {participants.length > 0 && (
           <>
             <div className="small-caps" style={{ marginBottom: 12 }}>
-              Участники
+              {t('recap.participants')}
             </div>
             <div
               style={{
@@ -231,7 +233,7 @@ export function RecapTab({
             style={{ width: '100%', justifyContent: 'center' }}
             onClick={() => exportMd(call, recap)}
           >
-            Экспорт в MD
+            {t('recap.exportMd')}
           </button>
         )}
       </aside>
@@ -248,6 +250,7 @@ export function TaskRow({
   nameById: Map<string, string>;
   idx: number;
 }) {
+  const { t } = useI18n();
   const owner = task.owner_contact_id
     ? nameById.get(task.owner_contact_id) ?? null
     : null;
@@ -295,7 +298,7 @@ export function TaskRow({
         </div>
         {task.due && (
           <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-            до {task.due}
+            {t('recap.taskDue', { date: task.due })}
           </div>
         )}
       </div>
@@ -352,25 +355,27 @@ function parseRecap(md: string | null): ParsedRecap {
   return out;
 }
 
-function sidebarMeta(call: Call): Array<[string, string]> {
+type TFn = ReturnType<typeof useI18n>['t'];
+
+function sidebarMeta(call: Call, locale: string, t: TFn): Array<[string, string]> {
   const items: Array<[string, string]> = [];
   try {
     const d = new Date(call.started_at);
     items.push([
-      'Дата',
-      d.toLocaleDateString('ru-RU', {
+      t('recap.metaDate'),
+      d.toLocaleDateString(bcp47(locale as Parameters<typeof bcp47>[0]), {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
       }),
     ]);
   } catch {
-    items.push(['Дата', call.started_at]);
+    items.push([t('recap.metaDate'), call.started_at]);
   }
-  if (call.provider) items.push(['Провайдер', call.provider]);
-  if (call.lang_detected) items.push(['Язык', call.lang_detected]);
-  items.push(['Длительность', formatDur(call.duration_sec ?? 0)]);
-  items.push(['ID', call.id.slice(0, 8)]);
+  if (call.provider) items.push([t('recap.metaProvider'), call.provider]);
+  if (call.lang_detected) items.push([t('recap.metaLang'), call.lang_detected]);
+  items.push([t('recap.metaDuration'), formatDur(call.duration_sec ?? 0)]);
+  items.push([t('recap.metaId'), call.id.slice(0, 8)]);
   return items;
 }
 

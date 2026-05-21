@@ -22,6 +22,7 @@ import {
   SpeakerCard,
   type SpeakerSample,
 } from '../components/SpeakerCard';
+import { useI18n } from '../i18n';
 import { humanSpeakerLabel } from '../utils/callMeta';
 
 const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
@@ -52,6 +53,7 @@ export function SpeakersSection({
   callId,
   onSpeakersChanged,
 }: SpeakersSectionProps) {
+  const { t } = useI18n();
   const [speakers, setSpeakers] = useState<CallSpeakerView[] | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +105,7 @@ export function SpeakersSection({
   const handleAddAsContact = async (s: CallSpeakerView) => {
     const trimmed = newName.trim();
     if (!trimmed) {
-      setError('Введи имя контакта.');
+      setError(t('speakers.needContactName'));
       return;
     }
     setBusyAdd(true);
@@ -129,7 +131,7 @@ export function SpeakersSection({
   const handleConfirm = async (s: CallSpeakerView, contactId?: string) => {
     const picked = contactId ?? pickFor[s.id] ?? s.suggestion_contact_id ?? '';
     if (!picked) {
-      setError('Сначала выбери контакт из списка.');
+      setError(t('speakers.needContactFirst'));
       return;
     }
     try {
@@ -155,13 +157,13 @@ export function SpeakersSection({
   };
 
   if (speakers === null) {
-    return <p className="muted">Загрузка…</p>;
+    return <p className="muted">{t('common.loading')}</p>;
   }
   if (speakers.length === 0) {
     return (
       <Empty
-        title="Участники не распознаны"
-        description="В этом звонке не обнаружено отдельных голосов, либо обработка ещё идёт."
+        title={t('speakers.emptyTitle')}
+        description={t('speakers.emptyBody')}
       />
     );
   }
@@ -242,10 +244,10 @@ export function SpeakersSection({
       {confirmed.length > 0 && (
         <div style={{ marginTop: unconfirmed.length > 0 ? 36 : 0 }}>
           <div className="small-caps" style={{ marginBottom: 14 }}>
-            Подтверждены · {mergedConfirmed.length}
+            {t('speakers.confirmedTitle', { n: mergedConfirmed.length })}
             {mergedConfirmed.length !== confirmed.length && (
               <span style={{ color: 'var(--muted)', textTransform: 'none', marginLeft: 8 }}>
-                ({confirmed.length} голосов объединены)
+                {t('speakers.mergedVoices', { n: confirmed.length })}
               </span>
             )}
           </div>
@@ -285,9 +287,12 @@ export function SpeakersSection({
                     <div className="muted" style={{ fontSize: 12 }}>
                       {group.speakers.length === 1
                         ? humanSpeakerLabel(first.speaker_tag)
-                        : `${group.speakers
-                            .map((s) => humanSpeakerLabel(s.speaker_tag))
-                            .join(' + ')} · распознавание разделило на ${group.speakers.length}`}
+                        : t('speakers.voiceMergedNote', {
+                            tags: group.speakers
+                              .map((s) => humanSpeakerLabel(s.speaker_tag))
+                              .join(' + '),
+                            n: group.speakers.length,
+                          })}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -297,11 +302,13 @@ export function SpeakersSection({
                         type="button"
                         className="btn btn--quiet btn--sm"
                         onClick={() => void handleUnbind(s)}
-                        title={`Отвязать ${humanSpeakerLabel(s.speaker_tag)}`}
+                        title={t('speakers.unbindAria', { label: humanSpeakerLabel(s.speaker_tag) })}
                       >
                         {group.speakers.length === 1
-                          ? 'Отвязать'
-                          : `Отвязать ${humanSpeakerLabel(s.speaker_tag)}`}
+                          ? t('speakers.unbindOne')
+                          : t('speakers.unbindLabeled', {
+                              label: humanSpeakerLabel(s.speaker_tag),
+                            })}
                       </button>
                     ))}
                   </div>

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { UsageResponse } from '@wotold/contracts';
 import { Badge, Button, Card, UsageBar } from '../ui';
 import { fetchUsage } from '../api/usage';
+import { bcp47, useI18n } from '../i18n';
 
 type State =
   | { kind: 'idle' }
@@ -14,10 +15,12 @@ type State =
   | { kind: 'ready'; data: UsageResponse; loadedAt: number }
   | { kind: 'error'; message: string };
 
-function formatResetAt(iso: string): string {
+type TFn = ReturnType<typeof useI18n>['t'];
+
+function formatResetAt(iso: string, locale: string): string {
   try {
     const d = new Date(iso);
-    return d.toLocaleString('ru-RU', {
+    return d.toLocaleString(bcp47(locale as Parameters<typeof bcp47>[0]), {
       day: '2-digit',
       month: 'short',
       hour: '2-digit',
@@ -29,14 +32,15 @@ function formatResetAt(iso: string): string {
   }
 }
 
-function formatSeconds(n: number): string {
-  if (n < 60) return `${n} сек`;
+function formatSeconds(n: number, t: TFn): string {
+  if (n < 60) return t('usage.secAbbr', { n });
   const mins = Math.floor(n / 60);
   const secs = n % 60;
-  return secs === 0 ? `${mins} мин` : `${mins} мин ${secs} сек`;
+  return secs === 0 ? t('usage.minAbbr', { n: mins }) : t('usage.minSecAbbr', { m: mins, s: secs });
 }
 
 export function UsageSection() {
+  const { locale, t } = useI18n();
   const [state, setState] = useState<State>({ kind: 'idle' });
 
   const load = useCallback(async () => {
@@ -67,7 +71,7 @@ export function UsageSection() {
       >
         <div style={{ display: 'flex', gap: 8 }}>
           {state.kind === 'ready' && (
-            <Badge tone="success">tier: {state.data.tier}</Badge>
+            <Badge tone="success">{t('usage.tier', { name: state.data.tier })}</Badge>
           )}
         </div>
         <Button
@@ -76,19 +80,18 @@ export function UsageSection() {
           onClick={() => void load()}
           disabled={state.kind === 'loading'}
         >
-          {state.kind === 'loading' ? '…' : '↻ Обновить'}
+          {state.kind === 'loading' ? t('usage.refreshing') : t('usage.refreshLabel')}
         </Button>
       </div>
 
       {(state.kind === 'idle' || state.kind === 'loading') && (
-        <p className="muted">Загружаем данные…</p>
+        <p className="muted">{t('usage.loading')}</p>
       )}
 
       {state.kind === 'error' && (
         <div>
           <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-            Не удалось получить данные использования. Это нормально если ты
-            offline или прокси не настроен.
+            {t('usage.errorIntro')}
           </p>
           <p
             className="subtle mono"
@@ -102,19 +105,23 @@ export function UsageSection() {
       {state.kind === 'ready' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <UsageBar
-            label="STT (распознавание речи)"
+            label={t('usage.sttLabel')}
             used={state.data.sttSecondsUsed}
             limit={state.data.sttSecondsLimit}
-            format={formatSeconds}
+            format={(n) => formatSeconds(n, t)}
           />
           <UsageBar
-            label="LLM (рекапы, нудж-вопросы)"
+            label={t('usage.llmLabel')}
             used={state.data.llmTokensUsed}
             limit={state.data.llmTokensLimit}
-            format={(v) => `${v.toLocaleString('ru-RU')} токенов`}
+            format={(v) =>
+              t('usage.tokens', {
+                n: v.toLocaleString(bcp47(locale as Parameters<typeof bcp47>[0])),
+              })
+            }
           />
           <p className="subtle" style={{ fontSize: 12, margin: 0 }}>
-            Сброс счётчиков: {formatResetAt(state.data.periodResetAt)}
+            {t('usage.resetAt', { date: formatResetAt(state.data.periodResetAt, locale) })}
           </p>
         </div>
       )}

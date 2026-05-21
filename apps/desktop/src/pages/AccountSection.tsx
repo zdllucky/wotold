@@ -12,6 +12,7 @@ import {
   type AccountIdentity,
   type OidcProvider,
 } from '../api/auth';
+import { bcp47, useI18n } from '../i18n';
 import { Badge, Button, Card, InputField } from '../ui';
 
 interface AuthDeepLinkPayload {
@@ -42,6 +43,7 @@ type State =
   | { kind: 'signed_in'; identity: AccountIdentity; expiresAt: string };
 
 export function AccountSection() {
+  const { locale, t } = useI18n();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [pasteValue, setPasteValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -108,9 +110,7 @@ export function AccountSection() {
       // компрометированный прокси мог бы вернуть javascript:/file:/custom
       // scheme и выполнить произвольный URL handler.
       if (!/^https:\/\//i.test(authorizeUrl)) {
-        throw new Error(
-          `Прокси вернул небезопасный authorize URL (не https://): ${authorizeUrl.slice(0, 64)}…`,
-        );
+        throw new Error(t('account.insecureAuthUrl', { url: authorizeUrl.slice(0, 64) }));
       }
       await openExternal(authorizeUrl);
       setState({ kind: 'pending_paste', provider, authorizeUrl });
@@ -124,7 +124,7 @@ export function AccountSection() {
   const onCompletePaste = async () => {
     const trimmed = pasteValue.trim();
     if (!trimmed) {
-      setError('Введи session token из браузера.');
+      setError(t('account.needSessionToken'));
       return;
     }
     setBusy(true);
@@ -167,7 +167,7 @@ export function AccountSection() {
   };
 
   if (state.kind === 'loading') {
-    return <p className="muted">Загрузка…</p>;
+    return <p className="muted">{t('common.loading')}</p>;
   }
 
   return (
@@ -182,8 +182,7 @@ export function AccountSection() {
           marginBottom: 14,
         }}
       >
-        Облачная синхронизация скоро. Сейчас вход в аккаунт ничего не
-        разблокирует — Wotold полностью работает локально без логина.
+        {t('account.intro')}
       </p>
       {error && (
         <p
@@ -204,6 +203,7 @@ export function AccountSection() {
           expiresAt={state.expiresAt}
           busy={busy}
           onSignOut={onSignOut}
+          locale={locale}
         />
       )}
 
@@ -231,12 +231,15 @@ function SignedInView({
   expiresAt,
   busy,
   onSignOut,
+  locale,
 }: {
   identity: AccountIdentity;
   expiresAt: string;
   busy: boolean;
   onSignOut: () => void;
+  locale: string;
 }) {
+  const { t } = useI18n();
   return (
     <Card variant="sunken">
       <div
@@ -271,11 +274,11 @@ function SignedInView({
         <Badge tone="success">{identity.provider}</Badge>
       </div>
       <p className="small-caps" style={{ marginBottom: 14 }}>
-        Session действует до {formatDate(expiresAt)}
+        {t('account.sessionUntil', { date: formatDate(expiresAt, locale) })}
       </p>
       <div style={{ display: 'flex', gap: 8 }}>
         <Button variant="danger" size="sm" onClick={onSignOut} disabled={busy} busy={busy}>
-          Выйти
+          {t('account.signOut')}
         </Button>
       </div>
     </Card>
@@ -299,6 +302,7 @@ function PendingPasteView({
   onCancel: () => void;
   busy: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <Card variant="sunken">
       <p
@@ -308,8 +312,9 @@ function PendingPasteView({
           margin: '0 0 8px',
         }}
       >
-        <strong style={{ fontWeight: 500 }}>Шаг 1.</strong> В браузере открылась
-        страница входа <Badge tone="accent">{provider}</Badge>. Войди и подтверди.
+        <strong style={{ fontWeight: 500 }}>{t('account.step1')}</strong> {t('account.step1Body')}{' '}
+        <Badge tone="accent">{provider}</Badge>
+        {t('account.step1Body2')}
       </p>
       <p
         style={{
@@ -318,21 +323,20 @@ function PendingPasteView({
           margin: '0 0 12px',
         }}
       >
-        <strong style={{ fontWeight: 500 }}>Шаг 2.</strong> После успешного входа
-        прокси покажет JSON с полем <code className="mono">sessionId</code>.
-        Скопируй значение sessionId и вставь сюда.
+        <strong style={{ fontWeight: 500 }}>{t('account.step2')}</strong>{' '}
+        {t('account.step2Body')}
       </p>
       <InputField
-        label="Session ID"
+        label={t('account.sessionIdLabel')}
         type="password"
-        placeholder="UUID из ответа прокси"
+        placeholder={t('account.sessionIdPlaceholder')}
         value={pasteValue}
         onChange={(e) => onChange(e.target.value)}
         disabled={busy}
       />
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
-          Отмена
+          {t('common.cancel')}
         </Button>
         <Button
           variant="primary"
@@ -341,7 +345,7 @@ function PendingPasteView({
           disabled={busy || !pasteValue.trim()}
           busy={busy}
         >
-          Подтвердить
+          {t('common.confirm')}
         </Button>
       </div>
       <p
@@ -354,8 +358,7 @@ function PendingPasteView({
           marginBottom: 4,
         }}
       >
-        Авто-перехват callback (без копи-пасты) — в плане через deep-link
-        (<code className="mono">wotold://</code>).
+        {t('account.deepLinkHint')} (<code className="mono">wotold://</code>).
       </p>
       <p
         className="subtle mono"
@@ -374,6 +377,7 @@ function SignedOutView({
   busy: boolean;
   onStart: (p: OidcProvider) => void;
 }) {
+  const { t } = useI18n();
   return (
     <Card variant="sunken">
       <p
@@ -383,7 +387,7 @@ function SignedOutView({
           margin: '0 0 12px',
         }}
       >
-        Войти через SSO. Откроется браузер.
+        {t('account.signInPrompt')}
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {PROVIDERS.map((p) => (
@@ -397,7 +401,7 @@ function SignedOutView({
             {p.label}
             {p.disabled && (
               <Badge tone="neutral" style={{ marginLeft: '0.4rem' }}>
-                скоро
+                {t('account.soon')}
               </Badge>
             )}
           </Button>
@@ -407,9 +411,9 @@ function SignedOutView({
   );
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: string): string {
   try {
-    return new Date(iso).toLocaleDateString('ru-RU', {
+    return new Date(iso).toLocaleDateString(bcp47(locale as Parameters<typeof bcp47>[0]), {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',

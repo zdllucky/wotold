@@ -21,6 +21,7 @@ import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
 import { useCallAudio } from '../hooks/useCallAudio';
+import { useI18n } from '../i18n';
 import { SpeakersSection, extractSamples } from './SpeakersSection';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCallAudioPath } from '../api/calls';
@@ -40,6 +41,7 @@ interface CallDetailPageProps {
 }
 
 export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
+  const { t } = useI18n();
   const [call, setCall] = useState<Call | null>(null);
   // [B17 V3.9] Default tab → transcript (per artboard §5 reference).
   const [tab, setTab] = useState<Tab>('transcript');
@@ -152,10 +154,12 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
   const onReprocess = async () => {
     if (!call) return;
-    const ok = await ask(
-      `Перезапустить обработку звонка?\n\nЗапись будет заново распознана и пересоздана саммари. Текущая расшифровка и рекап перезапишутся.`,
-      { title: 'Wotold', kind: 'warning', okLabel: 'Перезапустить', cancelLabel: 'Отмена' },
-    );
+    const ok = await ask(t('callDetail.reprocessConfirmBody'), {
+      title: t('callDetail.reprocessConfirmTitle'),
+      kind: 'warning',
+      okLabel: t('callDetail.reprocessConfirmOk'),
+      cancelLabel: t('common.cancel'),
+    });
     if (!ok) return;
     setReprocessing(true);
     setError(null);
@@ -178,7 +182,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       setCall(freshCall);
       setSpeakersLite(freshSpeakers);
     } catch (e) {
-      setError(`Не удалось перезапустить: ${String(e)}`);
+      setError(t('callDetail.reprocessFailed', { error: String(e) }));
     } finally {
       setReprocessing(false);
     }
@@ -197,7 +201,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       setRecap(fresh);
       setTasks(freshTasks);
     } catch (e) {
-      setError(`Не удалось пересоздать саммари: ${String(e)}`);
+      setError(t('callDetail.regenerateFailed', { error: String(e) }));
     } finally {
       setRegenerating(false);
     }
@@ -211,7 +215,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       dest = (await save({
         defaultPath: defaultName,
         filters: [{ name: 'Markdown', extensions: ['md'] }],
-        title: 'Сохранить расшифровку звонка',
+        title: t('callDetail.exportTitle'),
       })) as string | null;
     } catch (e) {
       setError(humanError(e));
@@ -232,8 +236,13 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const onDelete = async () => {
     if (!call) return;
     const ok = await ask(
-      `Удалить звонок «${call.title ?? call.id.slice(0, 8)}»?\n\nЭто навсегда удалит запись, расшифровку, саммари, задачи и образцы голоса этого звонка.`,
-      { title: 'Wotold', kind: 'warning', okLabel: 'Удалить', cancelLabel: 'Отмена' },
+      t('callDetail.deleteConfirmBody', { title: call.title ?? call.id.slice(0, 8) }),
+      {
+        title: 'Wotold',
+        kind: 'warning',
+        okLabel: t('callDetail.deleteConfirmOk'),
+        cancelLabel: t('common.cancel'),
+      },
     );
     if (!ok) return;
     setDeleting(true);
@@ -246,14 +255,14 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     }
   };
 
-  if (loading) return <p className="muted">Загрузка…</p>;
+  if (loading) return <p className="muted">{t('common.loading')}</p>;
   if (error)
     return (
       <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
         {error}
       </p>
     );
-  if (!call) return <p className="muted">Звонок не найден.</p>;
+  if (!call) return <p className="muted">{t('callDetail.notFound')}</p>;
 
   return (
     // [B17 V3.8] flex column + minHeight: 100% — scrubber последний child
@@ -273,7 +282,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         onClick={onBack}
         style={{ marginBottom: 18, paddingLeft: 0 }}
       >
-        ← Все звонки
+        {t('common.backAll')}
       </button>
 
       <header style={{ marginBottom: 22, position: 'relative' }}>
@@ -318,7 +327,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           }}
         >
           <div className="small-caps" style={{ color: 'var(--warning)', marginBottom: 6 }}>
-            ⚠ Не удалось распознать речь
+            {t('callDetail.failBadge')}
           </div>
           <p
             style={{
@@ -335,7 +344,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             onClick={() => void onReprocess()}
             disabled={reprocessing}
           >
-            {reprocessing ? 'Перезапускаем…' : 'Попробовать ещё раз'}
+            {reprocessing ? t('callDetail.retrying') : t('callDetail.retry')}
           </button>
         </div>
       )}
@@ -349,7 +358,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           }}
         >
           <div className="small-caps" style={{ color: 'var(--warning)', marginBottom: 6 }}>
-            ⚠ Не удалось создать саммари
+            {t('callDetail.recapFailBadge')}
           </div>
           <p
             style={{
@@ -366,16 +375,16 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             onClick={() => void onRegenerateRecap()}
             disabled={regenerating}
           >
-            {regenerating ? 'Пересоздаём…' : '↻ Пересоздать саммари'}
+            {regenerating ? t('callDetail.regenerating') : t('callDetail.regenerateRecap')}
           </button>
         </div>
       )}
 
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
         <Tabs.List>
-          {(['recap', 'transcript', 'tasks', 'speakers'] as Tab[]).map((t) => (
-            <Tabs.Trigger key={t} value={t}>
-              {tabLabel(t)}
+          {(['recap', 'transcript', 'tasks', 'speakers'] as Tab[]).map((tabId) => (
+            <Tabs.Trigger key={tabId} value={tabId}>
+              {tabLabel(tabId, t)}
             </Tabs.Trigger>
           ))}
         </Tabs.List>
@@ -385,7 +394,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
               menu (HeaderActions) — было два «обращения» к одной операции,
               UI clutter. Failed-banner внизу всё ещё имеет inline CTA
               для retry, потому что там это критичный fix-state. */}
-          <MdPanel md={recap} emptyHint="Саммари ещё не сгенерировано." />
+          <MdPanel md={recap} emptyHint={t('callDetail.emptyRecap')} />
         </Tabs.Panel>
         <Tabs.Panel value="transcript">
           <InteractiveTranscript
@@ -447,19 +456,18 @@ function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
 }
 
 function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contact[] }) {
+  const { t } = useI18n();
   if (tasks.length === 0) {
-    return (
-      <Empty description="Здесь будут задачи, упомянутые в звонке. Пока Wotold их не нашёл — попробуй переобработать звонок или дождись пересборки." />
-    );
+    return <Empty description={t('callDetail.emptyTasks')} />;
   }
   const nameById = new Map(contacts.map((c) => [c.id, c.display_name]));
   return (
     <ol style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-      {tasks.map((t, i) => {
-        const owner = t.owner_contact_id ? nameById.get(t.owner_contact_id) : null;
+      {tasks.map((task, i) => {
+        const owner = task.owner_contact_id ? nameById.get(task.owner_contact_id) : null;
         return (
           <li
-            key={t.id}
+            key={task.id}
             style={{
               display: 'grid',
               gridTemplateColumns: '24px 1fr auto',
@@ -467,8 +475,8 @@ function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contac
               padding: '12px 0',
               borderTop: i === 0 ? 'none' : '1px solid var(--line-soft)',
               alignItems: 'baseline',
-              color: t.done ? 'var(--muted)' : 'var(--ink)',
-              textDecoration: t.done ? 'line-through' : 'none',
+              color: task.done ? 'var(--muted)' : 'var(--ink)',
+              textDecoration: task.done ? 'line-through' : 'none',
             }}
           >
             <span
@@ -487,15 +495,15 @@ function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contac
                 fontSize: 16,
               }}
             >
-              {t.text}
+              {task.text}
               {owner && (
                 <span className="muted" style={{ fontSize: 13, marginLeft: 8 }}>
                   — {owner}
                 </span>
               )}
-              {t.due && (
+              {task.due && (
                 <span className="muted" style={{ fontSize: 13, marginLeft: 8 }}>
-                  · до {t.due}
+                  {t('callDetail.taskDueShort', { date: task.due })}
                 </span>
               )}
             </span>
@@ -503,10 +511,10 @@ function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contac
               className="small-caps"
               style={{
                 fontSize: 10,
-                color: t.done ? 'var(--success)' : 'var(--muted)',
+                color: task.done ? 'var(--success)' : 'var(--muted)',
               }}
             >
-              {t.done ? '✓ done' : 'open'}
+              {task.done ? t('callDetail.taskStatusDone') : t('callDetail.taskStatusOpen')}
             </span>
           </li>
         );
@@ -515,16 +523,18 @@ function TasksPanel({ tasks, contacts }: { tasks: ActionItem[]; contacts: Contac
   );
 }
 
-function tabLabel(t: Tab): string {
-  switch (t) {
+type TFn = ReturnType<typeof useI18n>['t'];
+
+function tabLabel(tab: Tab, t: TFn): string {
+  switch (tab) {
     case 'recap':
-      return 'Саммари';
+      return t('callDetail.tabRecap');
     case 'transcript':
-      return 'Расшифровка';
+      return t('callDetail.tabTranscript');
     case 'tasks':
-      return 'Задачи';
+      return t('callDetail.tabTasks');
     case 'speakers':
-      return 'Участники';
+      return t('callDetail.tabSpeakers');
   }
 }
 
@@ -551,6 +561,7 @@ function HeaderActions({
   exporting: boolean;
   deleting: boolean;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -575,7 +586,7 @@ function HeaderActions({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        aria-label="Действия со звонком"
+        aria-label={t('callDetail.actionsAria')}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={reprocessing || deleting || exporting || regenerating}
@@ -593,7 +604,7 @@ function HeaderActions({
           alignItems: 'center',
           justifyContent: 'center',
         }}
-        title="Действия"
+        title={t('callDetail.actionsTitle')}
       >
         ⋯
       </button>
@@ -620,7 +631,7 @@ function HeaderActions({
             }}
             disabled={reprocessing || deleting || exporting || regenerating}
           >
-            {reprocessing ? 'Переобработка…' : '↻ Переобработать целиком'}
+            {reprocessing ? t('callDetail.reprocessing') : t('callDetail.reprocess')}
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -628,9 +639,9 @@ function HeaderActions({
               onRegenerateRecap();
             }}
             disabled={regenerating || regenerateDisabled || reprocessing || deleting || exporting}
-            title={regenerateDisabled ? 'Нет транскрипта для регенерации' : undefined}
+            title={regenerateDisabled ? t('callDetail.regenerateNoTranscript') : undefined}
           >
-            {regenerating ? 'Пересоздаём…' : '↻ Пересоздать саммари'}
+            {regenerating ? t('callDetail.regenerating') : t('callDetail.regenerateRecap')}
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -639,7 +650,7 @@ function HeaderActions({
             }}
             disabled={exporting || reprocessing || deleting || regenerating}
           >
-            {exporting ? 'Сохраняем…' : '↓ Скачать .md'}
+            {exporting ? t('callDetail.exporting') : t('callDetail.exportMd')}
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -649,7 +660,7 @@ function HeaderActions({
             disabled={deleting || reprocessing || exporting}
             danger
           >
-            {deleting ? 'Удаляем…' : 'Удалить'}
+            {deleting ? t('common.deleting') : t('common.delete')}
           </MenuItem>
         </div>
       )}
@@ -707,6 +718,7 @@ function MenuItem({
 // [V5.2] Dedupe по contact_id — STT может одного человека разбить на S1+S2,
 // показываем только уникальных людей.
 function ParticipantsRow({ speakers }: { speakers: CallSpeakerView[] }) {
+  const { t, locale } = useI18n();
   const namedAll = speakers.filter((s) => s.confirmed && s.contact_display_name);
   // Уникальные по contact_id (если есть; иначе fallback на speaker.id).
   const seen = new Set<string>();
@@ -727,7 +739,12 @@ function ParticipantsRow({ speakers }: { speakers: CallSpeakerView[] }) {
       .slice(0, 2)
       .map((w) => w[0]?.toUpperCase() ?? '')
       .join('');
-  const declN = pluralParticipants(named.length);
+  const declN =
+    locale === 'ru'
+      ? pluralParticipants(named.length)
+      : named.length === 1
+        ? t('participants.one')
+        : t('participants.many');
   return (
     <div
       style={{

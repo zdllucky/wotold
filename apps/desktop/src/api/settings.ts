@@ -23,6 +23,8 @@ export const SETTINGS_KEYS = {
   UI_THEME: 'ui.theme',
   /** [B17] Atelier accent — 'bordeaux' | 'persian' | 'ink'. */
   UI_ACCENT: 'ui.accent',
+  /** UI locale — 'ru' | 'kk' | 'en'. Пусто = auto-detect from system. */
+  UI_LOCALE: 'ui_locale',
 } as const;
 
 export const SETTINGS_DEFAULTS = {

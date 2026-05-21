@@ -21,12 +21,16 @@ import {
   type VoiceModelStatus,
 } from '../api/voiceModel';
 import { humanError } from '../api/errors';
+import { useI18n } from '../i18n';
 
-function formatMB(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+type TFn = ReturnType<typeof useI18n>['t'];
+
+function formatMB(bytes: number, t: TFn): string {
+  return t('voiceModel.mb', { n: (bytes / (1024 * 1024)).toFixed(1) });
 }
 
 export function VoiceModelSection() {
+  const { t } = useI18n();
   const [status, setStatus] = useState<VoiceModelStatus | null>(null);
   const [info, setInfo] = useState<VoiceModelInfo | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -63,9 +67,7 @@ export function VoiceModelSection() {
       setProgress(null);
       const payload = e.payload;
       if (payload.status === 'verify_failed') {
-        setError(
-          `SHA256 не совпал — файл повреждён или сменилась версия модели. Попробуй снова.`,
-        );
+        setError(t('voiceModel.verifyFailed'));
       } else if (payload.status === 'io_error') {
         setError(payload.message);
       }
@@ -106,7 +108,7 @@ export function VoiceModelSection() {
   };
 
   if (!status || !info) {
-    return <p className="muted">Загрузка…</p>;
+    return <p className="muted">{t('common.loading')}</p>;
   }
 
   const featureBadge = info.feature_enabled ? null : (
@@ -123,10 +125,7 @@ export function VoiceModelSection() {
         borderLeft: '3px solid var(--warning)',
       }}
     >
-      ⚠ В этой сборке фича <code>voice-onnx</code> не включена. Модель
-      можно скачать, но pipeline её не использует — биометрический
-      матчинг останется выключенным. В production-сборке (`--features
-      voice-onnx`) скачивание автоматически активирует матчинг.
+      {t('voiceModel.featureOff')}
     </p>
   );
 
@@ -153,7 +152,7 @@ export function VoiceModelSection() {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <div>
-            <div className="small-caps">Модель</div>
+            <div className="small-caps">{t('voiceModel.modelEyebrow')}</div>
             <div
               style={{
                 fontFamily: 'var(--font-serif)',
@@ -162,7 +161,7 @@ export function VoiceModelSection() {
                 marginTop: 2,
               }}
             >
-              WeSpeaker ResNet34 LM · VoxCeleb
+              {t('voiceModel.modelName')}
             </div>
           </div>
           <StatusBadge status={status} downloading={downloading} />
@@ -178,10 +177,10 @@ export function VoiceModelSection() {
           }}
         >
           {status.status === 'valid'
-            ? 'Модель готова. Wotold будет предлагать кто говорит на основе совпадения голоса с уже подтверждёнными контактами (порог 50%). Финальное подтверждение — всегда за тобой (R2 паспорта).'
+            ? t('voiceModel.descValid')
             : status.status === 'corrupted'
-              ? 'Файл повреждён или сменилась версия. Удали и скачай заново.'
-              : 'Биометрический матчинг сейчас выключен. Скачай модель чтобы Wotold предлагал кто говорит. Размер ~25 МБ, скачивается один раз в фоне.'}
+              ? t('voiceModel.descCorrupted')
+              : t('voiceModel.descMissing')}
         </p>
 
         {downloading && progress && (
@@ -213,7 +212,7 @@ export function VoiceModelSection() {
                 justifyContent: 'space-between',
               }}
             >
-              <span>{formatMB(progress.downloaded)} / {formatMB(progress.total)}</span>
+              <span>{formatMB(progress.downloaded, t)} / {formatMB(progress.total, t)}</span>
               <span>{progress.percent.toFixed(0)}%</span>
             </div>
           </div>
@@ -228,10 +227,10 @@ export function VoiceModelSection() {
               disabled={downloading}
             >
               {downloading
-                ? 'Скачиваем…'
+                ? t('voiceModel.btnDownloading')
                 : status.status === 'corrupted'
-                  ? '↻ Перекачать'
-                  : `↓ Скачать ${formatMB(info.size_hint)}`}
+                  ? t('voiceModel.btnRedownload')
+                  : t('voiceModel.btnDownload', { size: formatMB(info.size_hint, t) })}
             </button>
           )}
           {status.status !== 'missing' && !downloading && (
@@ -241,7 +240,7 @@ export function VoiceModelSection() {
               onClick={() => void handleDelete()}
               disabled={deleting}
             >
-              {deleting ? 'Удаляем…' : 'Удалить'}
+              {deleting ? t('voiceModel.btnDeleting') : t('voiceModel.btnDelete')}
             </button>
           )}
         </div>
@@ -256,7 +255,7 @@ export function VoiceModelSection() {
               userSelect: 'none',
             }}
           >
-            Технические детали
+            {t('voiceModel.techDetails')}
           </summary>
           <dl
             data-selectable
@@ -270,14 +269,18 @@ export function VoiceModelSection() {
               gap: '4px 16px',
             }}
           >
-            <dt>URL</dt>
+            <dt>{t('voiceModel.techUrl')}</dt>
             <dd style={{ margin: 0, wordBreak: 'break-all' }}>{info.url}</dd>
-            <dt>SHA256</dt>
+            <dt>{t('voiceModel.techSha')}</dt>
             <dd style={{ margin: 0, wordBreak: 'break-all' }}>{info.sha256}</dd>
-            <dt>Размер</dt>
-            <dd style={{ margin: 0 }}>{formatMB(info.size_hint)}</dd>
-            <dt>Build feature</dt>
-            <dd style={{ margin: 0 }}>{info.feature_enabled ? 'voice-onnx ✓' : '— (не включена)'}</dd>
+            <dt>{t('voiceModel.techSize')}</dt>
+            <dd style={{ margin: 0 }}>{formatMB(info.size_hint, t)}</dd>
+            <dt>{t('voiceModel.techFeature')}</dt>
+            <dd style={{ margin: 0 }}>
+              {info.feature_enabled
+                ? t('voiceModel.featureEnabled')
+                : t('voiceModel.featureDisabled')}
+            </dd>
           </dl>
         </details>
       </div>
@@ -292,11 +295,12 @@ function StatusBadge({
   status: VoiceModelStatus;
   downloading: boolean;
 }) {
+  const { t } = useI18n();
   const styles: Record<string, { bg: string; fg: string; text: string }> = {
-    valid: { bg: 'var(--accent-soft)', fg: 'var(--accent)', text: 'установлена' },
-    missing: { bg: 'var(--bg-2)', fg: 'var(--muted)', text: 'нет' },
-    corrupted: { bg: 'var(--bg-2)', fg: 'var(--warning)', text: 'повреждена' },
-    downloading: { bg: 'var(--bg-2)', fg: 'var(--accent)', text: 'качаем' },
+    valid: { bg: 'var(--accent-soft)', fg: 'var(--accent)', text: t('voiceModel.statusValid') },
+    missing: { bg: 'var(--bg-2)', fg: 'var(--muted)', text: t('voiceModel.statusMissing') },
+    corrupted: { bg: 'var(--bg-2)', fg: 'var(--warning)', text: t('voiceModel.statusCorrupted') },
+    downloading: { bg: 'var(--bg-2)', fg: 'var(--accent)', text: t('voiceModel.statusDownloading') },
   };
   const key = downloading ? 'downloading' : status.status;
   const s = styles[key] ?? styles.missing!;

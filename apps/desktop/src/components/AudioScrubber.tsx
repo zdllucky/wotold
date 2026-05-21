@@ -7,6 +7,7 @@
 
 import type { CallAudioHandle } from '../hooks/useCallAudio';
 import type { CurrentSpeakerInfo } from '../utils/callMeta';
+import { useI18n } from '../i18n';
 import { Waveform } from './Waveform';
 
 const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
@@ -34,6 +35,7 @@ export function AudioScrubber({
   currentSpeaker,
   onJumpToSpeaker,
 }: AudioScrubberProps) {
+  const { t } = useI18n();
   if (!enabled) return null;
   if (audio.bothMissing) return null;
 
@@ -78,7 +80,7 @@ export function AudioScrubber({
           type="button"
           onClick={audio.togglePlay}
           disabled={!audio.ready}
-          aria-label={audio.playing ? 'Пауза' : 'Воспроизведение'}
+          aria-label={audio.playing ? t('scrubber.pause') : t('scrubber.play')}
           style={{
             width: 32,
             height: 32,
@@ -122,7 +124,7 @@ export function AudioScrubber({
             minWidth: 80,
           }}
           role="slider"
-          aria-label="Аудио прогресс"
+          aria-label={t('scrubber.progressAria')}
           aria-valuemin={0}
           aria-valuemax={Math.floor(audio.duration)}
           aria-valuenow={Math.floor(audio.currentTime)}
@@ -201,7 +203,7 @@ export function AudioScrubber({
 }
 
 // SpeakerChip — current speaker indicator inline (без border/bg карточки).
-// Click → onJumpToSpeaker. Если none — italic "пауза".
+// Click → onJumpToSpeaker. Если none — italic «пауза».
 function SpeakerChip({
   speaker,
   onClick,
@@ -209,6 +211,7 @@ function SpeakerChip({
   speaker: CurrentSpeakerInfo | null;
   onClick?: () => void;
 }) {
+  const { t } = useI18n();
   if (!speaker) {
     return (
       <span
@@ -219,7 +222,7 @@ function SpeakerChip({
           fontSize: 12,
         }}
       >
-        пауза
+        {t('scrubber.pausedItalic')}
       </span>
     );
   }
@@ -230,7 +233,11 @@ function SpeakerChip({
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      title={onClick ? `Перейти к блоку «${speaker.displayName}» в расшифровке` : undefined}
+      title={
+        onClick
+          ? t('scrubber.speakerJumpTitle', { name: speaker.displayName })
+          : undefined
+      }
       style={{
         display: 'inline-flex',
         alignItems: 'center',
