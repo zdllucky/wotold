@@ -11,7 +11,12 @@
 **Реализовано:**
 - Этапы 1-5, 6-10, 11-12 по [паспорту](ПАСПОРТ_ПРОЕКТА.md): audio capture (mic+system), STT relay (Soniox+Gladia с auto-fallback), pipeline (transcript+raw_stt), recap+action_items (Groq Llama 3.3 70B), CallDetail с интерактивным транскриптом+spoken bubbles+Speakers+regenerate, contacts с edit+samples view, settings (managed+BYO+quota+account), MCP server, OIDC scaffold, auto-update, CI/CD (split staging/prod + smoke+rollback + commitlint + claude-review + changelog).
 - Staging backend полностью boevoy: /health, /v1/usage, /v1/stt/staging-url (R2), /v1/llm (Groq), /v1/auth/google/start.
-- Все B1-B12 + B15 backlog requirements закрыты.
+- Все B1-B12 + B14 + B15 backlog requirements закрыты.
+- **B17 Atelier v2 redesign** — все 7 страниц мигрированы точь-в-точь по handoff (HomePage, CallsPage, CallDetailPage, SpeakersSection, ContactsPage, OnboardingPage, DesignSystemPage) + Coachmarks; design gate enforcement active.
+- **Recording UX (V2)** — реальный live waveform (Swift RMS → Rust event → React canvas), dual-track sync playback, real WAV peaks, sticky AudioScrubber с current-speaker chip + click-to-jump.
+- **CallDetail (V3/V4)** — header с LLM-generated title + ParticipantsRow + kebab actions; interactive transcript ↔ audio scrubber sync; inline «? кто это» chip → SpeakerConfirmModal.
+- **B3.1–B3.6 voice biometrics scaffold** — cluster_embedding column, WAV chunker, extract_clusters, matching → suggestion, confirm hook → voice_samples (C2-gated). Embedder dispatcher готов, ONNX runtime ждёт B3.7.
+- **Native UX (V4.1/V4.2)** — overscroll lock, user-select только на текстовых блоках, ПКМ context menu блок (whitelist на input/markdown/transcript).
 
 **Осталось для production-релиза (manual user actions):**
 - **#42 X1 Tauri minisign** — генерация ключа подписи updater'а (one-time CLI).
@@ -21,7 +26,66 @@
 - Real OnnxEmbedder (`#[cfg(feature = "voice-onnx")]`) + Kaldi-style fbank preprocessing + integration test против reference Python WeSpeaker output. Pipeline уже готов (B3.1–B3.6 scaffold): извлечение clusters, persist в `call_speakers.cluster_embedding`, matching против consenting voice_samples, suggestion + confirm hook записывающий voice_samples — всё работает «вхолостую» (StubEmbedder возвращает empty → нет данных). Как только модель + preprocessing появятся в `$APP_DATA/models/embedder.onnx`, `try_load_onnx_embedder` подменит Stub и biometric matching включится без UI-изменений.
 
 **Активный backlog (пост-MVP улучшения):**
-- B13 preferred_language setting, B14 live recording level meter.
+- B13 preferred_language UI control (constant `SETTING_PREFERRED_LANGUAGE` уже читается pipeline'ом; нужен Settings UI).
+- Export markdown для recap/transcript с CallDetailPage (Tauri save dialog → `.md`).
+- Settings auto-name из NSFullUserName (требует Swift bridge).
+- Zod schemas в proxy boundary (stt/auth/llm/usage).
+- device-id spoof + IP rate-limit (HMAC-bind + /16 rate-limit).
+- Split db/calls.rs (acknowledged tech debt — 791 строк).
+- Tests P1: `delete_call_and_samples`, `pipeline::run/reprocess_call/regenerate_recap`, STT KV-resume happy path, OIDC ID-token signature negative.
+- Manual visual QA: 6 theme×accent комбо на каждом экране.
+
+---
+
+## Что было сделано в недавних батчах (V2–V4 + B3.x)
+
+> Сводка по PDCA итерациям май 2026. Все детали — в commit log + секция «Готово». Здесь — высокоуровневая навигация для контекста.
+
+### V2 · Recording UX
+- Real-time waveform: Swift sidecar → DispatchSourceTimer 100ms RMS → NDJSON stdout → Rust event dispatcher → Tauri `audio:level` event → React `useAudioLevel` hook → canvas waveform с DPR scaling.
+- Убраны synthetic-fallback'и (на тишине бары плоские, без surrogate noise).
+- DualWaveform stereo split на recording screen.
+
+### V3 · CallDetail полировка
+- Sticky bottom AudioScrubber (vs прежний `<audio>` player): owns 2 `Audio()` элемента (mic + system), browser mixer сводит, drift compensation > 50ms.
+- Real WAV peaks через `AudioContext.decodeAudioData` + combined element-wise max между mic/system, cache в Map<src, peaks[]>.
+- Clip-path progress fill: foreground bars точно align'ятся с background.
+- Sticky bottom через flex column + `marginTop: auto` — scrubber всегда у низа scroll viewport.
+- InteractiveTranscript ↔ AudioScrubber sync: active row подсветка (`var(--accent-soft)` + speaker color border-left), auto-scroll, click row → seek.
+- Speaker chip в scrubber (140px fixed slot — waveform не прыгает) показывает текущего спикера, click → jump to transcript.
+- Custom `<Select>` per Atelier (keyboard nav, A11y combobox+listbox+aria-activedescendant).
+
+### V3.9 · CallDetail header под reference §5
+- Human meta: «СРЕДА · 20 МАЯ · 16:04 · 1 МИН 12 СЕК» (вместо provider+lang noise).
+- LLM-generated title из recap (`recap.json.title`, 3–7 слов headline-style) с fallback «Звонок · 20 мая».
+- Kebab menu top-right (Reprocess + Delete).
+- ParticipantsRow с `.sp`/`.sp-avatar` chips + русское pluralization «N участник[ов/а]».
+
+### V4.0 · LLM title
+- Pipeline `recap::run` теперь генерит `title` поле + persist'ит в `calls.title` через `db::set_call_title`.
+
+### V4.1 · Native UX polish
+- **Overscroll lock**: `overscroll-behavior: none` на html/body/#root — нет rubber-band bounce.
+- **Selective text-select**: `user-select: none` + `cursor: default` дефолтно, whitelist на `.markdown/.transcript-*/.title/.display/.subtitle/code/pre/kbd/input/textarea/[data-selectable]` (cursor: text + user-select: text).
+- **Dynamic ParticipantsRow**: SpeakersSection принимает `onSpeakersChanged` callback, CallDetailPage передаёт refetch — header chip'ы обновляются после confirm/unbind.
+- **Sample playback fix**: «▶ сэмпл» в SpeakerCard реально играет фрагмент из mic.wav/system.wav (owner→mic, прочие→system) с currentTime range. Hidden `<audio>` + watch listeners. Кнопка показывает «▶ N сек» / «◼ стоп» / disabled.
+- **Inline «? кто это» chip** в InteractiveTranscript для не-confirmed спикеров → открывает `<SpeakerConfirmModal>` с тем же `SpeakerCard` внутри (compoт-reuse). focus-trap + Esc + click-outside.
+- `SpeakerCard` вынесен в `components/SpeakerCard.tsx` — переиспользуется и табом «Участники» и SpeakerConfirmModal.
+
+### V4.2 · ПКМ блок
+- Глобальный `document` contextmenu listener preventDefault'ит, кроме whitelist'a (inputs / markdown / transcript / [data-selectable]). В DEV оставлен для Inspect.
+
+### B3.1–B3.6 · Voice biometrics scaffold
+- **B3.1** Migration 0007 → `call_speakers.cluster_embedding BLOB`.
+- **B3.2** `audio::wav_chunker::read_wav_segment` — hound-based PCM int16 → f32 mono slicing + 5 unit-тестов.
+- **B3.3** `pipeline::clusters::extract_clusters(merged, mic, sys, embedder)` — per-tag segments ≥0.5s (cap 10s), mean-pool + L2 normalize + 3 unit-теста.
+- **B3.4** Matching wire — `set_call_speaker_cluster` + `rank_candidates(min_score=0.5)` → `set_call_speaker_suggestion`. Non-fatal в pipeline.
+- **B3.5** Confirm-хук → `voice_samples` — `db::confirm_call_speaker` проверяет `attributes.consent_voice='true'` (C2) + читает cluster + INSERT в той же транзакции.
+- **B3.6 scaffold** `embeddings::try_load_onnx_embedder(model_path)` → `Option<Box<dyn Embedder>>` (default None pre-B3.7). `PipelineCtx.app_data_dir` thread-through. Pipeline резолвит `$APP_DATA/models/embedder.onnx` и fallback'ит на StubEmbedder.
+
+### Hardening
+- M8.3 prompt-injection pass-through + LIKE escape regression тесты (MCP).
+- voice_samples cascade тесты (C5): delete contact → cascade samples; delete call → SET NULL source_call.
 
 ---
 
@@ -188,13 +252,7 @@
   - Action items: тоже на preferred_language (поле `lang_hint` в `replace_action_items` или просто в system_prompt).
   - Acceptance: при `preferred_language='ru'` рекап звонка с английским транскриптом — на русском; на `'auto'` поведение не меняется.
 
-- [ ] **[B14] Live recording level meter (M7.1 follow-up).** Во время записи в `HomePage` пока только pulse-dot. Не видно, есть ли вход с микрофона / системного аудио. Требование:
-  - Расширить Swift sidecar протокол: эмит'ить `{mic_rms: f32, system_rms: f32}` каждые 100ms через stdout (NDJSON line `{"kind":"level","mic":0.12,"system":0.34}`).
-  - Tauri parsing: новый event `audio:level` с двумя float'ами (нормализованы 0..1).
-  - DS-компонент `<LevelMeter mic={...} system={...} />` — две вертикальные/горизонтальные «лесенки» с 8-12 LED'ами, заполняются по RMS. Цвет: зелёный <-12dB, жёлтый -12..-3dB, красный >-3dB.
-  - Anti-clip indicator: если значение > 0.95 хотя бы 100ms — мигает красный «CLIP» badge.
-  - При записи на HomePage: показывать meter вместо/рядом с pulse-dot. При остановке — fade out.
-  - Acceptance: говорим в микрофон — mic-meter растёт. Включаем YouTube/Zoom — system-meter растёт. Меняем громкость — meter реагирует в реальном времени.
+- [x] **[B14] Live recording level meter (M7.1 follow-up)** — закрыто V2 batch: Swift sidecar эмитит `{kind:"level", mic, system}` каждые 100ms через NDJSON stdout (DispatchSourceTimer). Rust парсит → emit `audio:level` событие в frontend. `useAudioLevel` hook + `<LiveWaveform>` рендерит real-time canvas с DPR scaling. Synthetic-fallback убран — на тишине бары плоские. Dual-track stereo split (mic + system) на recording screen.
 
 ## Atelier v2 Redesign (B17)
 
@@ -223,13 +281,13 @@
 - [x] **App shell** (`apps/desktop/src/App.tsx`) — topnav → app-shell + app-rail, ThemeProvider wrap, pipeline indicator перенесён в rail foot.
 - [x] **HomePage** (`apps/desktop/src/pages/HomePage.tsx`) — `.rec-btn` round (108px), `.display` heading, `.stat-row`, consent в `.modal-backdrop` + `.index-card`. Хоткей ⌘⇧R + consent gate + updater сохранены 1-в-1.
 - [x] **SettingsPage** — добавлена секция "Внешний вид" (`AppearanceSection.tsx`) с theme + accent picker через `useTheme()`. Эмодзи убраны из section titles.
-- [ ] **CallsPage** — переход на date-grouped serif-list per MIGRATION.md §3. Virtualization (200+) сохранить.
-- [ ] **CallDetailPage** — header chrome (back as `.btn--quiet`, `.small-caps` meta, `.display` title, `.sp` participants), `.tabs`/`.tab` классы. InteractiveTranscript внутри — отдельный sweep на `.transcript-row` структуру.
-- [ ] **SpeakersSection** — `.modal-backdrop` + `.index-card` оверлей с `.conf` bar per MIGRATION.md §5.
-- [ ] **ContactsPage** — two-column list + detail с voice samples table per MIGRATION.md §6.
-- [ ] **OnboardingPage** — 3-step (без 4го по handoff?) centred `.display`+`.input` flow per MIGRATION.md §8.
-- [ ] **Coachmarks** — переписать tooltips с новыми токенами.
-- [ ] **DesignSystemPage** (dev-only) — обновить showcase под новые токены/классы.
+- [x] **CallsPage** — date-grouped serif-list (Сегодня / Вчера / На неделе / месяц) per MIGRATION.md §3 + virtualization (react-window при ≥200 строках).
+- [x] **CallDetailPage** — header chrome через `.btn--quiet` back, `.small-caps` meta line (weekday · date · time · duration), `.title` (LLM-generated title) + ParticipantsRow с `.sp`/`.sp-avatar` chips, `.tabs`/`.tab` классы. InteractiveTranscript на `.transcript-row` структуру с active-row highlight (V3.x) + inline «? кто это» chip + SpeakerConfirmModal (V4.1).
+- [x] **SpeakersSection** — calling-card flow per MIGRATION.md §5: `.index-card` per speaker, sample bubble с `MiniWave` + real `▶ N сек` playback из mic.wav/system.wav (V4.1), suggestion row с `.conf` bar, footer actions. SpeakerCard вынесен в `components/SpeakerCard.tsx` — переиспользуется в SpeakerConfirmModal.
+- [x] **ContactsPage** — two-column list + detail с voice samples table per MIGRATION.md §6. Click-to-edit на имени, ContactForm с identifiers+attributes+consent_voice.
+- [x] **OnboardingPage** — 3-step (welcome → permissions → consent+name) centred `.display`+`.input` flow per MIGRATION.md §8. focus-trap + step dots indicator.
+- [x] **Coachmarks** — переписаны с новыми токенами, 4-step overlay, keyboard nav + reduced-motion.
+- [x] **DesignSystemPage** (dev-only) — переписан с inline-styles по полному tokens.css + wotold.css showcase.
 
 ### Cleanup (после migration page-by-page)
 
@@ -255,7 +313,7 @@
 - [x] A11y MEDIUM/WARN: `prefers-reduced-motion` CSS — `.dot--pulse`, `.rec-btn`, `.conf-fill`; JS — `UsageBar` width transition через `useReducedMotion` hook.
 - [x] A11y WARN: ContactsPage name button hit area padding/margin для SC 2.5.8.
 - [x] `useFocusTrap` test suite (8 cases) — initial focus, ESC, Tab/Shift+Tab cycling, inactive, scroll-lock.
-- [ ] Подсолить руками: проверить все 6 theme×accent комбинаций на каждом экране визуально.
+- [ ] **Manual visual QA** — пройти руками 6 theme×accent комбинаций (light/dark × bordeaux/persian/ink) на всех экранах. Делается перед публичным релизом, не разработка.
 
 ## Production Readiness (B16)
 
@@ -315,7 +373,7 @@
 - [x] **Контакты search** — фильтр по name/org/role/identifiers/notes когда >5 контактов. Identifier kind icons + attributes UI follow-up.
 - [ ] **Export markdown** для recap/transcript из CallDetailPage.
 - [x] **CSS responsive breakpoints** — @media (max-width: 760px) topnav-label hide + call-row 2-row + app padding; (max-width: 560px) home-stats 1col + tabs wrap.
-- [ ] **Recording level meter (B14 backlog)** — Swift sidecar emits RMS → DS LevelMeter.
+- [x] **Recording level meter (B14)** — Swift sidecar RMS → frontend canvas waveform (см. секцию backlog выше).
 
 ### UX / CX (P2)
 
@@ -393,7 +451,7 @@
 - [ ] **pipeline::run/reprocess_call/regenerate_recap** — нет unit тестов. Cover happy + missing audio + recap fail.
 - [ ] **STT KV-resume happy path** integration test.
 - [ ] **OIDC ID-token signature negative tests** после P0 fix.
-- [ ] **MCP prompt-injection content** — pass-through test (M8.3).
+- [x] **MCP prompt-injection content** — pass-through test (M8.3). `services/mcp/src/tools.test.ts` +2 vitest'а: `get_transcript` возвращает «SYSTEM: Ignore all previous instructions» + HTML-comment injection as-is, `search_calls('%')` → 0 совпадений (LIKE escape regression).
 
 ---
 
