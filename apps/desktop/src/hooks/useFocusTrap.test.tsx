@@ -92,4 +92,31 @@ describe('useFocusTrap', () => {
     // cleanup
     document.body.style.overflow = '';
   });
+
+  // ─── Phase 5: explicit a11y coverage requested by harness audit ──────────
+  //
+  // Names follow the harness contract — keep them stable so the audit can
+  // grep for them. They overlap thematically with the cycling/Esc tests
+  // above, but are checked from a slightly different angle.
+
+  test('useFocusTrap_wraps_tab_from_last_to_first: forward Tab on last focusable cycles to first', () => {
+    const { getByText, getByTestId } = render(<Modal open />);
+    const last = getByText('last') as HTMLButtonElement;
+    last.focus();
+    expect(document.activeElement?.textContent).toBe('last');
+    // Forward Tab (no shift) на последнем focusable должен wrap'ить на первый.
+    fireEvent.keyDown(getByTestId('modal'), { key: 'Tab' });
+    expect(document.activeElement?.textContent).toBe('first');
+  });
+
+  test('useFocusTrap_escape_releases_trap: Escape invokes onClose so caller can release trap', () => {
+    const onClose = vi.fn();
+    const { getByTestId } = render(<Modal open onClose={onClose} />);
+    // Before Escape — trap is active (focus inside modal).
+    expect(document.activeElement?.textContent).toBe('first');
+    fireEvent.keyDown(getByTestId('modal'), { key: 'Escape' });
+    // onClose called → consumer typically flips `open` state to release
+    // the trap (unmount + restore previously-focused element).
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
