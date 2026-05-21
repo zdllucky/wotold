@@ -127,7 +127,15 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
     setLastCall(null);
     try {
       const call = await startRecording();
-      setRecording({ call_id: call.id, started_at: call.started_at });
+      setRecording({
+        call_id: call.id,
+        started_at: call.started_at,
+        // [W2] Свежесозданная запись не на паузе. UI'у этого достаточно;
+        // фактический state перечитается через getRecordingState при
+        // следующем focus-rehydrate (см. effect на recording).
+        paused_at: null,
+        paused_total_ms: 0,
+      });
     } catch (e) {
       setError(humanError(e));
     } finally {

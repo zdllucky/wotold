@@ -26,6 +26,15 @@ pub struct Call {
     pub pipeline_pct: Option<i64>,
     pub pipeline_eta_sec: Option<i64>,
     pub upload_bytes: Option<i64>,
+    /// [W2] RFC3339 timestamp когда юзер нажал pause. NULL означает что запись
+    /// сейчас не на паузе (recording или уже завершена). Используется только
+    /// для recording rows; при finish_recording проставленный paused_at
+    /// автоматически сворачивается в paused_total_ms.
+    pub paused_at: Option<String>,
+    /// [W2] Накопленная длительность пауз в миллисекундах. Pipeline и UI
+    /// вычитают это значение из (ended_at - started_at), чтобы получить
+    /// фактическое время записи аудио.
+    pub paused_total_ms: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -62,19 +71,114 @@ pub async fn insert_recording(pool: &SqlitePool, path_label: &str) -> Result<Cal
         pipeline_pct: None,
         pipeline_eta_sec: None,
         upload_bytes: None,
+        paused_at: None,
+        paused_total_ms: 0,
         created_at: now.clone(),
         updated_at: now,
     })
 }
 
+/// [W2] Pause активную запись. SETs `paused_at = now()` если поле было NULL.
+/// Идемпотентно: если запись уже на паузе — log warning и Ok(()) (frontend мог
+/// дважды нажать кнопку или гонка между hotkey и UI button).
+pub async fn pause_call(pool: &SqlitePool, call_id: &str) -> Result<(), AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    // Условный UPDATE: меняем только если paused_at IS NULL, иначе noop.
+    let res = sqlx::query(
+        "UPDATE calls
+         SET paused_at = ?2,
+             updated_at = ?2
+         WHERE id = ?1 AND paused_at IS NULL",
+    )
+    .bind(call_id)
+    .bind(&now)
+    .execute(pool)
+    .await?;
+
+    if res.rows_affected() == 0 {
+        // Проверим, существует ли вообще такая запись — если нет, это явная
+        // ошибка вызывающего; если есть — уже paused, idempotent noop.
+        let exists: Option<String> = sqlx::query_scalar("SELECT id FROM calls WHERE id = ?1")
+            .bind(call_id)
+            .fetch_optional(pool)
+            .await?;
+        if exists.is_none() {
+            return Err(AppError::Other(format!(
+                "pause_call: call {call_id} not found"
+            )));
+        }
+        log::warn!("pause_call: call {call_id} already paused, idempotent noop");
+    }
+    Ok(())
+}
+
+/// [W2] Resume записи с паузы. Если paused_at IS NOT NULL — вычисляем
+/// (now - paused_at) в мс, добавляем к paused_total_ms, очищаем paused_at.
+/// Если запись не на паузе — Ok(()) без изменений (idempotent).
+pub async fn resume_call(pool: &SqlitePool, call_id: &str) -> Result<(), AppError> {
+    let row: Option<(Option<String>, i64)> =
+        sqlx::query_as("SELECT paused_at, paused_total_ms FROM calls WHERE id = ?1")
+            .bind(call_id)
+            .fetch_optional(pool)
+            .await?;
+
+    let (paused_at, paused_total_ms) = match row {
+        Some(r) => r,
+        None => {
+            return Err(AppError::Other(format!(
+                "resume_call: call {call_id} not found"
+            )));
+        }
+    };
+
+    let Some(paused_at_str) = paused_at else {
+        // Уже resumed — noop, не ошибка.
+        log::debug!("resume_call: call {call_id} not paused, noop");
+        return Ok(());
+    };
+
+    let paused_at_dt = chrono::DateTime::parse_from_rfc3339(&paused_at_str)
+        .map_err(|e| AppError::Other(format!("paused_at parse failed: {e}")))?;
+    let now = chrono::Utc::now();
+    let elapsed_ms = (now - paused_at_dt.with_timezone(&chrono::Utc))
+        .num_milliseconds()
+        .max(0);
+    let new_total = paused_total_ms.saturating_add(elapsed_ms);
+    let now_str = now.to_rfc3339();
+
+    sqlx::query(
+        "UPDATE calls
+         SET paused_at = NULL,
+             paused_total_ms = ?2,
+             updated_at = ?3
+         WHERE id = ?1",
+    )
+    .bind(call_id)
+    .bind(new_total)
+    .bind(&now_str)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Перевести запись из recording → processing с фактической длительностью.
 /// processing — потому что после остановки записи дальше идёт STT → matching → recap.
 /// Финальный статус ready проставит recap pipeline (#28).
+///
+/// [W2] `duration_sec` уже учитывает накопленные паузы — caller (audio sidecar)
+/// возвращает реальное время аудио. Если user забыл нажать resume и сразу
+/// нажал stop, мы сворачиваем lingering paused_at в paused_total_ms и очищаем
+/// поле паузы (resume-then-stop семантика).
 pub async fn finish_recording(
     pool: &SqlitePool,
     call_id: &str,
     duration_sec: f64,
 ) -> Result<Call, AppError> {
+    // [W2] Если был забытый pause — выполняем неявный resume сейчас, чтобы
+    // paused_total_ms остался согласованным и не торчал paused_at у завершённой
+    // записи. resume_call идемпотентен для non-paused.
+    resume_call(pool, call_id).await?;
+
     let now = chrono::Utc::now().to_rfc3339();
     let duration_secs_i64 = duration_sec.round() as i64;
 
@@ -277,7 +381,7 @@ pub async fn fail_recording_with_reason(
 
 pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, AppError> {
     let row: Option<Call> = sqlx::query_as(
-        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, created_at, updated_at
+        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, paused_at, paused_total_ms, created_at, updated_at
          FROM calls WHERE id = ?1",
     )
     .bind(call_id)
@@ -290,7 +394,7 @@ pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, 
 /// подключится в #30 follow-up когда они начнут писаться (#22, #28).
 pub async fn list_calls(pool: &SqlitePool) -> Result<Vec<Call>, AppError> {
     let rows: Vec<Call> = sqlx::query_as(
-        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, created_at, updated_at
+        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, paused_at, paused_total_ms, created_at, updated_at
          FROM calls
          ORDER BY started_at DESC",
     )
@@ -576,5 +680,146 @@ mod tests {
         assert_eq!(after.status, "failed");
         assert!(after.pipeline_step.is_none());
         assert!(after.pipeline_pct.is_none());
+    }
+
+    // ============================================================
+    // [W2] pause / resume
+    // ============================================================
+
+    #[tokio::test]
+    async fn insert_recording_initializes_pause_fields_to_zero() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        assert!(call.paused_at.is_none());
+        assert_eq!(call.paused_total_ms, 0);
+        // Reload — поля действительно записаны через DEFAULT.
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert!(after.paused_at.is_none());
+        assert_eq!(after.paused_total_ms, 0);
+    }
+
+    #[tokio::test]
+    async fn pause_call_sets_timestamp() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        pause_call(&db.pool, &call.id).await.unwrap();
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert!(after.paused_at.is_some(), "paused_at должен быть выставлен");
+        assert_eq!(after.paused_total_ms, 0);
+        // Парсится как валидный rfc3339.
+        let parsed = chrono::DateTime::parse_from_rfc3339(after.paused_at.as_deref().unwrap());
+        assert!(parsed.is_ok());
+    }
+
+    #[tokio::test]
+    async fn pause_already_paused_is_idempotent() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        pause_call(&db.pool, &call.id).await.unwrap();
+        let first = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        let first_paused_at = first.paused_at.clone();
+        assert!(first_paused_at.is_some());
+
+        // Второй вызов — Ok без error, paused_at не должен перезаписаться
+        // (это бы исказило накопленное время паузы).
+        pause_call(&db.pool, &call.id).await.unwrap();
+        let second = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert_eq!(second.paused_at, first_paused_at);
+    }
+
+    #[tokio::test]
+    async fn pause_unknown_call_returns_error() {
+        let db = fresh_db().await;
+        let res = pause_call(&db.pool, "nonexistent-id").await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn resume_clears_timestamp_and_accumulates_total() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        pause_call(&db.pool, &call.id).await.unwrap();
+        // Симулируем реальную паузу.
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        resume_call(&db.pool, &call.id).await.unwrap();
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert!(after.paused_at.is_none(), "paused_at должен очиститься");
+        // ≥ 100ms запас, в worst case CI medium может быть 120-130ms.
+        assert!(
+            after.paused_total_ms >= 100,
+            "paused_total_ms должен накопить ~150ms, got {}",
+            after.paused_total_ms
+        );
+        // Sanity — но не больше секунды (мы спали только 150ms).
+        assert!(after.paused_total_ms < 1000);
+    }
+
+    #[tokio::test]
+    async fn resume_when_not_paused_is_noop() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        // Never paused → resume Ok, без изменений.
+        resume_call(&db.pool, &call.id).await.unwrap();
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert!(after.paused_at.is_none());
+        assert_eq!(after.paused_total_ms, 0);
+    }
+
+    #[tokio::test]
+    async fn multiple_pause_resume_cycles_accumulate_correctly() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+
+        for _ in 0..3 {
+            pause_call(&db.pool, &call.id).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            resume_call(&db.pool, &call.id).await.unwrap();
+            // Короткий «живой» период между паузами.
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert!(after.paused_at.is_none(), "финально не на паузе");
+        // 3 × ~80ms ≈ 240ms. С запасом на CI jitter: ≥ 180ms.
+        assert!(
+            after.paused_total_ms >= 180,
+            "expected ~240ms accumulated, got {}",
+            after.paused_total_ms
+        );
+        assert!(after.paused_total_ms < 1500);
+    }
+
+    #[tokio::test]
+    async fn finish_recording_with_lingering_paused_at_folds_pause_into_total() {
+        // Сценарий: user нажал pause и забыл нажать resume, потом stop.
+        // Ожидание: finish_recording неявно сворачивает pending pause
+        // в paused_total_ms, paused_at очищается, статус идёт processing.
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        pause_call(&db.pool, &call.id).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+
+        let finished = finish_recording(&db.pool, &call.id, 30.0).await.unwrap();
+        assert_eq!(finished.status, "processing");
+        assert!(
+            finished.paused_at.is_none(),
+            "lingering paused_at должен схлопнуться"
+        );
+        assert!(
+            finished.paused_total_ms >= 80,
+            "pending pause должна быть учтена, got {}",
+            finished.paused_total_ms
+        );
+        assert!(finished.ended_at.is_some());
+        assert_eq!(finished.duration_sec, Some(30));
+    }
+
+    #[tokio::test]
+    async fn finish_recording_without_pause_keeps_total_zero() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let finished = finish_recording(&db.pool, &call.id, 5.0).await.unwrap();
+        assert_eq!(finished.paused_total_ms, 0);
+        assert!(finished.paused_at.is_none());
     }
 }
