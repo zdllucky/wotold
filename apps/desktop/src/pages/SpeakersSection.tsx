@@ -17,7 +17,7 @@ import {
   unbindCallSpeaker,
   type CallSpeakerView,
 } from '../api/speakers';
-import { Empty } from '../ui';
+import { Empty, Skeleton } from '../ui';
 import {
   SpeakerCard,
   type SpeakerSample,
@@ -157,7 +157,48 @@ export function SpeakersSection({
   };
 
   if (speakers === null) {
-    return <p className="muted">{t('common.loading')}</p>;
+    // [V8.1] 3 calling-card skeletons mimic финальные SpeakerCard'ы.
+    return (
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+          gap: 14,
+        }}
+        aria-busy="true"
+      >
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="card"
+            style={{
+              padding: 14,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                marginBottom: 4,
+              }}
+            >
+              <Skeleton width="32px" height="32px" radius="50%" />
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <Skeleton width="10ch" height="0.95em" />
+                <Skeleton width="6ch" height="0.7em" />
+              </div>
+            </div>
+            <Skeleton width="100%" height="0.75em" />
+            <Skeleton width="60%" height="0.75em" />
+          </div>
+        ))}
+      </div>
+    );
   }
   if (speakers.length === 0) {
     return (

@@ -22,6 +22,7 @@ import {
 } from '../api/voiceModel';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
+import { Skeleton } from '../ui';
 
 type TFn = ReturnType<typeof useI18n>['t'];
 
@@ -108,7 +109,13 @@ export function VoiceModelSection() {
   };
 
   if (!status || !info) {
-    return <p className="muted">{t('common.loading')}</p>;
+    return (
+      <div aria-busy="true" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Skeleton width="60%" height="0.85em" />
+        <Skeleton width="100%" height="2.5rem" />
+        <Skeleton width="40%" height="0.75em" />
+      </div>
+    );
   }
 
   const featureBadge = info.feature_enabled ? null : (

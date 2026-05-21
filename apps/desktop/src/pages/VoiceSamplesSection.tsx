@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
-import { Badge, Button, Empty } from '../ui';
+import { Badge, Button, Empty, Skeleton } from '../ui';
 import {
   deleteVoiceSample,
   listVoiceSamples,
@@ -79,7 +79,30 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   };
 
   if (samples === null && !error) {
-    return <p className="muted">{t('common.loading')}</p>;
+    return (
+      <div
+        aria-busy="true"
+        style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      >
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr auto auto',
+              gap: 12,
+              padding: '8px 0',
+              alignItems: 'center',
+              pointerEvents: 'none',
+            }}
+          >
+            <Skeleton width="60%" height="0.85em" />
+            <Skeleton width="3rem" height="0.7em" />
+            <Skeleton width="1.5rem" height="1rem" />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   const empty = !samples || samples.length === 0;

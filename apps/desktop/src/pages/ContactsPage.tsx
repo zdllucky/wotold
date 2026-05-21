@@ -22,7 +22,7 @@ import {
 } from '../api/contacts';
 import { listCalls } from '../api/recording';
 import { listCallSpeakers } from '../api/speakers';
-import { Badge, Empty } from '../ui';
+import { Badge, Empty, Skeleton } from '../ui';
 import { useI18n } from '../i18n';
 import { ContactForm } from './ContactForm';
 import { VoiceSamplesSection } from './VoiceSamplesSection';
@@ -211,7 +211,40 @@ export function ContactsPage() {
       </p>
     );
   }
-  if (!contacts) return <p className="muted">{t('common.loading')}</p>;
+  if (!contacts) {
+    // [V8.1] Skeleton mimics contact-list rows: avatar + name + meta.
+    return (
+      <section aria-busy="true">
+        <div className="display" style={{ marginBottom: 18 }}>
+          <Skeleton width="9ch" height="2rem" />
+        </div>
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          {Array.from({ length: 6 }, (_, i) => (
+            <li
+              key={i}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '40px 1fr auto',
+                gap: 14,
+                padding: '12px 0',
+                borderTop:
+                  i === 0 ? 'none' : '1px solid var(--line-soft)',
+                alignItems: 'center',
+                pointerEvents: 'none',
+              }}
+            >
+              <Skeleton width="32px" height="32px" radius="50%" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <Skeleton width="12rem" height="1em" />
+                <Skeleton width="8rem" height="0.75em" />
+              </div>
+              <Skeleton width="3rem" height="0.8em" />
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
 
   const activeContact =
     mode.kind === 'view' || mode.kind === 'edit'
