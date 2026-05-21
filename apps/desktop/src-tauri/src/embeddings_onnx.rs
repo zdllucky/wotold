@@ -1,75 +1,57 @@
-//! [B3.7] Real ONNX Embedder для WeSpeaker / ECAPA-TDNN моделей.
+//! [B3.7] Real ONNX Embedder через официальный `sherpa-onnx` Rust crate.
 //!
-//! Скоуп этого модуля (B3.7a — scaffold):
-//!   1. `OnnxEmbedder` struct + load() из path → возвращает Result
-//!   2. `extract()` — preprocessing (fbank) + inference + L2 normalize
-//!   3. `Embedder` trait impl
+//! Wrapping `SpeakerEmbeddingExtractor` от k2-fsa — полный pipeline:
+//!   1. Kaldi-style mel-fbank preprocessing (внутри C++ lib sherpa-onnx)
+//!   2. ONNX inference через bundled ONNX Runtime
+//!   3. L2 normalization (мы делаем defensive normalize поверх, на случай
+//!      если конкретная модель не нормализует output сама)
 //!
-//! Подключается через `embeddings::try_load_onnx_embedder` который под
-//! `#[cfg(feature = "voice-onnx")]` импортирует этот модуль и пробует
-//! load(`$APP_DATA/models/embedder.onnx`).
+//! Альтернативы (отклонены в research):
+//! - `ort` + `ndarray` + manual Kaldi fbank — больше control но риск
+//!   implementation drift от reference → garbage embeddings.
+//! - `sherpa-rs` — deprecated, upstream рекомендует прямой sherpa-onnx crate.
+//! - Поиск ECAPA с fbank-in-graph — таких production моделей нет
+//!   (WeSpeaker/3D-Speaker/NeMo все ожидают pre-computed features).
 //!
-//! # Текущее состояние (B3.7a)
+//! # Подключение
 //!
-//! Scaffold: модуль компилируется под фичей, `OnnxEmbedder::load()` грузит
-//! ONNX session, но `extract()` возвращает Err("fbank preprocessing not
-//! implemented") — preprocessing будет реализован в B3.7b с unit-тестами
-//! против reference Python output. Pipeline'у безопасно: `try_load_onnx_embedder`
-//! при Err'е fallback'ит на StubEmbedder (см. embeddings.rs:: dispatcher).
+//! Под `#[cfg(feature = "voice-onnx")]`. Default build не тянет
+//! sherpa-onnx + ONNX Runtime native libs. Production-сборка включает.
 //!
-//! # B3.7b — Kaldi mel-fbank
+//! # Совместимые модели
 //!
-//! WeSpeaker и ECAPA-TDNN ожидают 80-dim mel-fbank features:
-//!   - 25ms window, 10ms hop (16kHz sample rate)
-//!   - 80 mel bins
-//!   - Cepstral mean normalization (CMN) per-utterance
-//!   - log10
+//! Sherpa-onnx releases (<https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models>):
+//!   - `wespeaker_en_voxceleb_resnet34_LM.onnx` — 25MB, English, 256-dim
+//!   - `wespeaker_zh_cnceleb_resnet34_LM.onnx` — 25MB, Chinese, 256-dim
+//!   - `3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx` — 25MB
+//!   - `nemo_en_titanet_small.onnx` — 40MB
 //!
-//! Без exact replication → embeddings garbage. Unit-тесты должны сравнить
-//! с reference от torchaudio.compliance.kaldi.fbank() для зашитого WAV.
+//! Все ожидают 16kHz mono PCM (что Swift sidecar и пишет).
 //!
-//! # B3.7c — Bundling decision
+//! # Runtime download (B3.7c)
 //!
-//! Model bundled в DMG vs runtime download — отдельный design call.
-//! Bundled: +26MB к .dmg, но offline-first per паспорт R8.
-//! Runtime: малый bundle, нужен fetch на первом запуске + checksum.
-//! Скорее всего runtime download — bundled .dmg > 100MB требует Apple
-//! notarization tier (R6, не сделано в MVP).
+//! Модель НЕ bundled — runtime download через https + SHA256 check на первой
+//! записи. Кэш в `$APP_DATA/models/embedder.onnx`. UI: «Скачиваем модель
+//! распознавания голоса (25MB)...» splash.
 
 use std::path::Path;
 
-use ndarray::Array;
-use ort::session::Session;
+use sherpa_onnx::{SpeakerEmbeddingExtractor, SpeakerEmbeddingExtractorConfig};
 
 use crate::embeddings::{Embedder, EMBEDDING_DIM};
 use crate::AppError;
 
-/// Production ONNX embedder. Wraps ort::Session + хранит config константы
-/// модели (input/output names, sample rate, fbank params).
-///
-/// Создаётся через `OnnxEmbedder::load(model_path)`. Thread-safe (`Send + Sync`)
-/// потому что ort::Session — `Sync`.
-///
-/// `#[allow(dead_code)]` на полях — B3.7a scaffold не использует их в
-/// extract() (preprocessing TODO). Снимется в B3.7b когда fbank + inference
-/// landed.
-#[allow(dead_code)]
+/// Production ONNX embedder. Wraps `SpeakerEmbeddingExtractor` от sherpa-onnx.
+/// Thread-safe (`Send + Sync`) потому что underlying C++ extractor — `Sync`.
 pub struct OnnxEmbedder {
-    session: Session,
-    /// Имя input tensor'а в модели — WeSpeaker обычно "feats" или "input".
-    /// Захардкоженно под наш bundled checkpoint; если model file other —
-    /// load() прочитает из session.inputs() и сравнит.
-    input_name: String,
-    /// Имя output tensor'а — обычно "embed" / "embedding" / "output".
-    output_name: String,
+    extractor: SpeakerEmbeddingExtractor,
 }
 
 impl OnnxEmbedder {
     /// Загрузить модель с диска. Возвращает Err если:
-    ///   - файл отсутствует / нечитаемый
-    ///   - не валидный ONNX format
-    ///   - модель не имеет ровно 1 input + 1 output (sanity check для
-    ///     WeSpeaker / ECAPA — обе семейства single-input single-output)
+    ///   - файл отсутствует
+    ///   - не валидный ONNX format / не совместим с SpeakerEmbeddingExtractor
+    ///   - native lib init failure
     pub fn load(model_path: &Path) -> Result<Self, AppError> {
         if !model_path.exists() {
             return Err(AppError::Other(format!(
@@ -78,84 +60,88 @@ impl OnnxEmbedder {
             )));
         }
 
-        // ort 2.x: SessionBuilder::new() → commit_from_file().
-        // По умолчанию single-threaded CPU EP — это и нужно для speaker
-        // embedding inference (модель ~26MB, single inference 50-100ms).
-        let session = Session::builder()
-            .map_err(|e| AppError::Other(format!("ort session builder: {e}")))?
-            .commit_from_file(model_path)
-            .map_err(|e| {
-                AppError::Other(format!("load ONNX model {}: {e}", model_path.display()))
-            })?;
+        let config = SpeakerEmbeddingExtractorConfig {
+            model: Some(model_path.to_string_lossy().into_owned()),
+            // CPU EP только. GPU EP (cuda/metal) — overkill для одной
+            // inference per call (~50-100ms) + добавляет binary weight.
+            num_threads: 1,
+            debug: false,
+            provider: Some("cpu".into()),
+        };
+        // sherpa-onnx API возвращает Option<_> при create/stream/compute —
+        // None означает failure (model load fail, OOM, и т.д.). Конкретного
+        // error message нет в Rust API (логи sherpa-onnx идут в stderr).
+        let extractor = SpeakerEmbeddingExtractor::create(&config).ok_or_else(|| {
+            AppError::Other(format!(
+                "SpeakerEmbeddingExtractor::create failed for {} — \
+                 проверь совместимость модели с sherpa-onnx + stderr",
+                model_path.display()
+            ))
+        })?;
 
-        // Sanity check: WeSpeaker/ECAPA — 1 input + 1 output.
-        if session.inputs.len() != 1 {
+        // Sanity check: модель выдаёт ожидаемое 256-dim embedding.
+        let dim = extractor.dim();
+        if dim as usize != EMBEDDING_DIM {
             return Err(AppError::Other(format!(
-                "expected 1 input tensor, model has {}",
-                session.inputs.len()
+                "model dim {dim} != EMBEDDING_DIM {EMBEDDING_DIM} — несовместимая модель"
             )));
         }
-        if session.outputs.len() != 1 {
-            return Err(AppError::Other(format!(
-                "expected 1 output tensor, model has {}",
-                session.outputs.len()
-            )));
-        }
+        log::info!("OnnxEmbedder loaded: {} (dim={dim})", model_path.display());
 
-        let input_name = session.inputs[0].name.clone();
-        let output_name = session.outputs[0].name.clone();
-        log::info!(
-            "OnnxEmbedder loaded: {} → input={input_name}, output={output_name}",
-            model_path.display()
-        );
-
-        Ok(Self {
-            session,
-            input_name,
-            output_name,
-        })
+        Ok(Self { extractor })
     }
 }
 
 impl Embedder for OnnxEmbedder {
-    fn extract(&self, _samples: &[f32], _sample_rate: u32) -> Result<Vec<f32>, AppError> {
-        // [B3.7b TODO] Kaldi-style mel-fbank preprocessing + ONNX inference.
-        //
-        // Flow:
-        //   1. Resample to 16kHz if needed (sample_rate != 16000) — sidecar
-        //      уже пишет 16kHz, sanity-check + skip обычно.
-        //   2. Compute 80-dim log-mel fbank features:
-        //      - frame_length=25ms (400 samples @ 16kHz)
-        //      - hop=10ms (160 samples)
-        //      - n_mels=80
-        //      - power-spectrum → mel filterbank → log
-        //   3. CMN: subtract per-utterance mean from each feature.
-        //   4. Transpose to (T, 80) ndarray + add batch dim → (1, T, 80).
-        //   5. Call session.run() с input_name → Vec<f32> output (256-dim).
-        //   6. L2 normalize → return.
-        //
-        // Без reference test'а против torchaudio.compliance.kaldi.fbank()
-        // — embeddings garbage. B3.7b landed когда reference baked в test
-        // fixtures.
-        //
-        // [Note] Сейчас не блокирует pipeline: try_load_onnx_embedder()
-        // вернёт Some(this), pipeline вызовет extract() → Err → cluster
-        // skip'ается, fallback на пустые clusters (как со StubEmbedder).
-        let _ = self.input_name.as_str();
-        let _ = self.output_name.as_str();
-        let _: Result<Array<f32, _>, _> = Array::from_shape_vec((1, 1, 80), vec![0.0]);
-        Err(AppError::Other(
-            "OnnxEmbedder.extract: fbank preprocessing not implemented yet (B3.7b)".to_string(),
-        ))
+    fn extract(&self, samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, AppError> {
+        if samples.is_empty() {
+            return Err(AppError::Other("empty samples".into()));
+        }
+        // Sidecar пишет 16kHz mono — sherpa-onnx сам resample'нет если нужно.
+        let stream = self.extractor.create_stream().ok_or_else(|| {
+            AppError::Other("SpeakerEmbeddingExtractor::create_stream failed".into())
+        })?;
+        stream.accept_waveform(sample_rate as i32, samples);
+        stream.input_finished();
+
+        if !self.extractor.is_ready(&stream) {
+            // Слишком короткий segment (< чем минимум фреймов для статистики
+            // pooling). cluster pipeline filter'ит < 0.5s — этого должно
+            // хватать, но если модель требует > 0.5s — Err.
+            return Err(AppError::Other(
+                "audio segment too short for embedding extraction".into(),
+            ));
+        }
+
+        let mut embedding = self
+            .extractor
+            .compute(&stream)
+            .ok_or_else(|| AppError::Other("SpeakerEmbeddingExtractor::compute failed".into()))?;
+
+        // L2 normalize defensively. WeSpeaker LM-models обычно нормализуют,
+        // но cluster pipeline всё равно делает L2 после mean-pool — здесь
+        // дополнительная страховка для consistency cosine matching.
+        let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > f32::EPSILON {
+            for x in embedding.iter_mut() {
+                *x /= norm;
+            }
+        } else {
+            return Err(AppError::Other(
+                "zero-norm embedding — model output bug".into(),
+            ));
+        }
+
+        Ok(embedding)
     }
 }
 
-/// Compile-time check: EMBEDDING_DIM из embeddings.rs (256) совпадает с
-/// тем, что выдаёт WeSpeaker ResNet34 / ECAPA-TDNN. Если меняешь модель
-/// на другую dim — обнови `EMBEDDING_DIM` и миграцию `0005_voice_samples_embedding_dim.sql`.
+/// Compile-time check: EMBEDDING_DIM (256) совпадает с WeSpeaker/3D-Speaker.
+/// Если меняешь на NeMo TitaNet (192-dim) или иное — обнови EMBEDDING_DIM
+/// в embeddings.rs + миграцию `0005_voice_samples_embedding_dim.sql`.
 #[allow(dead_code)]
 const _ASSERT_DIM: () = {
-    assert!(EMBEDDING_DIM == 256, "WeSpeaker/ECAPA both produce 256-dim");
+    assert!(EMBEDDING_DIM == 256, "WeSpeaker/3D-Speaker → 256-dim");
 };
 
 #[cfg(test)]
@@ -165,8 +151,7 @@ mod tests {
     #[test]
     fn load_returns_err_when_model_missing() {
         let path = std::path::PathBuf::from("/nonexistent/model.onnx");
-        // OnnxEmbedder не impl Debug (ort::Session не Debug), unwrap_err()
-        // не работает — используем match напрямую.
+        // SpeakerEmbeddingExtractor не impl Debug, unwrap_err() не работает.
         match OnnxEmbedder::load(&path) {
             Ok(_) => panic!("expected Err on missing model"),
             Err(AppError::Other(msg)) => assert!(msg.contains("not found")),
@@ -174,6 +159,7 @@ mod tests {
         }
     }
 
-    // B3.7b: integration test против reference Python torchaudio.kaldi.fbank()
-    // — добавится когда preprocessing landed.
+    // B3.7c: integration test против reference embedding для известного WAV
+    // (fangjun-sr-1.wav из sherpa-onnx test fixtures). Requires model file —
+    // запускается только под `--features voice-onnx` + WOTOLD_TEST_MODEL_PATH env.
 }

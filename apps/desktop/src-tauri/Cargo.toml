@@ -46,20 +46,21 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 hound = "3.5.1"
 
 # [B3.7] Voice biometric ONNX inference — optional. Включается через
-# `--features voice-onnx`. ort тащит ONNX Runtime через `load-dynamic`:
-# `libonnxruntime.dylib` ищется в DYLD_LIBRARY_PATH или рядом с binary
-# в runtime. Это раздельная зависимость которая bundle'ится отдельно
-# (см. B3.7c — packaging decision).
+# `--features voice-onnx`. Используем официальный `sherpa-onnx` Rust crate
+# (k2-fsa) который wrap'ит весь pipeline: Kaldi-style mel fbank + ONNX
+# inference (WeSpeaker / 3D-Speaker / NeMo TitaNet) + L2 normalize.
+# Static link по умолчанию, build script тянет prebuilt ONNX Runtime libs.
 #
-# [Note] `download-binaries` feature ort 2.0.0-rc.12 сломан upstream:
-# ort-sys build.rs использует ureq.tls_config() который удалили в ureq 3.3
-# (https://github.com/pykeio/ort/issues — будет fix в rc.13+). До тех пор
-# выбран load-dynamic — стабилен, но требует .dylib рядом с приложением.
+# Альтернативы рассмотрены и отклонены в research:
+# - `ort` crate + `kaldi-native-fbank` — больше control, но требует ручную
+#   wire (frame extraction, feature aggregation, ONNX inference, L2 norm).
+#   Риск: implementation drift от Kaldi reference → garbage embeddings.
+# - `sherpa-rs` — deprecated; upstream рекомендует прямой sherpa-onnx.
 #
 # WeSpeaker model файл (~26MB) НЕ bundled в репо. Cluster pipeline
 # fallback'ит на StubEmbedder если модели нет в `$APP_DATA/models/embedder.onnx`.
-ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "ndarray", "load-dynamic"], optional = true }
-ndarray = { version = "0.16", optional = true }
+# Скачивание модели — runtime download через https + checksum (B3.7c TODO).
+sherpa-onnx = { version = "1.13", default-features = false, features = ["static"], optional = true }
 
 [dev-dependencies]
 httpmock = "0.7"
@@ -73,7 +74,7 @@ audio-macos = []
 audio-windows = []
 # [B3.7] Включает OnnxEmbedder (ort + ndarray + Kaldi fbank preprocessing).
 # Production-сборка включает; default off для быстрого dev build.
-voice-onnx = ["dep:ort", "dep:ndarray"]
+voice-onnx = ["dep:sherpa-onnx"]
 
 # [B16 audit P1]: жёстче политика на unsafe code и common pitfalls.
 # unsafe_code forbid — у нас pure-Rust core, нет нужды в unsafe.
