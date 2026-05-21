@@ -282,6 +282,8 @@ pub fn run() {
             commands::set_setting,
             commands::start_recording,
             commands::stop_recording,
+            commands::pause_recording,
+            commands::resume_recording,
             commands::get_recording_state,
             commands::list_calls,
             commands::get_call,

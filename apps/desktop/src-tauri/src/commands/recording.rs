@@ -16,6 +16,21 @@ use crate::{
 pub struct RecordingState {
     pub call_id: String,
     pub started_at: String,
+    /// [W2] RFC3339 если запись сейчас на паузе, иначе null.
+    pub paused_at: Option<String>,
+    /// [W2] Накопленная длительность пауз в мс, для elapsed-калькуляций на UI.
+    pub paused_total_ms: i64,
+}
+
+/// [W2] Снимок DB-полей паузы для построения RecordingState.
+async fn pause_snapshot(
+    state: &State<'_, AppState>,
+    call_id: &str,
+) -> Result<(Option<String>, i64), AppError> {
+    let call = crate::db::get_call(&state.db, call_id)
+        .await?
+        .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
+    Ok((call.paused_at, call.paused_total_ms))
 }
 
 #[tauri::command]
@@ -23,9 +38,20 @@ pub async fn get_recording_state(
     state: State<'_, AppState>,
 ) -> Result<Option<RecordingState>, AppError> {
     let guard = state.recording.lock().await;
-    Ok(guard.as_ref().map(|s| RecordingState {
-        call_id: s.call_id.clone(),
-        started_at: s.started_at.to_rfc3339(),
+    let Some(session) = guard.as_ref() else {
+        return Ok(None);
+    };
+    let call_id = session.call_id.clone();
+    let started_at = session.started_at.to_rfc3339();
+    // Освобождаем lock до DB-запроса, чтобы pause/resume не блокировались.
+    drop(guard);
+
+    let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
+    Ok(Some(RecordingState {
+        call_id,
+        started_at,
+        paused_at,
+        paused_total_ms,
     }))
 }
 
@@ -111,6 +137,58 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     .await;
 
     Ok(call)
+}
+
+/// [W2] Pause активную запись. DB-only: проставляет `paused_at = now()` чтобы
+/// UI и timer могли корректно показать состояние паузы и накопленное «на паузе»
+/// время. На уровне Swift sidecar v1 пауза не отправляется — audio frames
+/// продолжают писаться в WAV (тишина/тихая комната через STT отрежется в
+/// silence trim, см. W2 §4 — Rust-level pause).
+///
+/// TODO(W2 v2): wire NDJSON `{"cmd":"pause"}` в Swift sidecar когда
+/// AudioRecorder.swift получит pause/resume API. Сейчас sidecar не знает о
+/// паузе, frames продолжают писаться. Это безопасный default для MVP.
+#[tauri::command]
+pub async fn pause_recording(state: State<'_, AppState>) -> Result<RecordingState, AppError> {
+    let (call_id, started_at) = {
+        let guard = state.recording.lock().await;
+        let session = guard
+            .as_ref()
+            .ok_or_else(|| AppError::Other("not recording".into()))?;
+        (session.call_id.clone(), session.started_at.to_rfc3339())
+    };
+
+    crate::db::pause_call(&state.db, &call_id).await?;
+    let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
+    Ok(RecordingState {
+        call_id,
+        started_at,
+        paused_at,
+        paused_total_ms,
+    })
+}
+
+/// [W2] Resume записи с паузы. DB-only (см. `pause_recording` rationale).
+/// Идемпотентно: если запись не была на паузе — вернёт текущий state без
+/// изменений.
+#[tauri::command]
+pub async fn resume_recording(state: State<'_, AppState>) -> Result<RecordingState, AppError> {
+    let (call_id, started_at) = {
+        let guard = state.recording.lock().await;
+        let session = guard
+            .as_ref()
+            .ok_or_else(|| AppError::Other("not recording".into()))?;
+        (session.call_id.clone(), session.started_at.to_rfc3339())
+    };
+
+    crate::db::resume_call(&state.db, &call_id).await?;
+    let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
+    Ok(RecordingState {
+        call_id,
+        started_at,
+        paused_at,
+        paused_total_ms,
+    })
 }
 
 #[tauri::command]

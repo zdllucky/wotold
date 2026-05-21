@@ -22,6 +22,12 @@ export interface Call {
   pipeline_pct: number | null;
   pipeline_eta_sec: number | null;
   upload_bytes: number | null;
+  /** [W2] RFC3339 timestamp когда юзер нажал pause; null если запись не на
+   *  паузе или уже завершена. Только для status='recording'. */
+  paused_at: string | null;
+  /** [W2] Накопленное время на паузе в миллисекундах. Pipeline и UI вычитают
+   *  это из (ended_at - started_at) для фактической длительности аудио. */
+  paused_total_ms: number;
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +46,10 @@ export interface CallProgressEvent {
 export interface RecordingState {
   call_id: string;
   started_at: string;
+  /** [W2] RFC3339 если запись сейчас на паузе, null иначе. */
+  paused_at: string | null;
+  /** [W2] Накопленная длительность пауз в мс. UI'у пригодится для elapsed. */
+  paused_total_ms: number;
 }
 
 export function startRecording(): Promise<Call> {
@@ -52,6 +62,17 @@ export function stopRecording(): Promise<Call> {
 
 export function getRecordingState(): Promise<RecordingState | null> {
   return invoke<RecordingState | null>('get_recording_state');
+}
+
+/** [W2] Пауза активной записи. Бэкенд проставляет `paused_at = now()`. */
+export function pauseRecording(): Promise<RecordingState> {
+  return invoke<RecordingState>('pause_recording');
+}
+
+/** [W2] Возобновление записи с паузы. Накопленное время добавляется к
+ *  `paused_total_ms`, `paused_at` очищается. */
+export function resumeRecording(): Promise<RecordingState> {
+  return invoke<RecordingState>('resume_recording');
 }
 
 export function listCalls(): Promise<Call[]> {

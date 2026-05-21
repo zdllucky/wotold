@@ -76,6 +76,8 @@ mod tests {
             pipeline_pct: None,
             pipeline_eta_sec: None,
             upload_bytes: None,
+            paused_at: None,
+            paused_total_ms: 0,
             created_at: "2024-01-01T10:00:00+00:00".into(),
             updated_at: "2024-01-01T10:05:00+00:00".into(),
         }
