@@ -16,7 +16,7 @@ import {
 } from '../api/recording';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import { listCallSpeakers } from '../api/speakers';
-import { Waveform } from '../components/Waveform';
+import { LiveWaveform, SyntheticWaveform } from '../components/LiveWaveform';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface AvailableUpdate {
@@ -36,6 +36,11 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   const [installing, setInstalling] = useState(false);
 
   const [recording, setRecording] = useState<RecordingState | null>(null);
+  // [B17 V2.9] При остановке играем exit animation на overlay перед тем
+  // как развалить state на idle layout. recordingExiting === true → overlay
+  // ещё рендерится но с .recording-overlay--exiting класс; через 280мс
+  // фактически setRecording(null) + переход в idle с .idle-enter.
+  const [recordingExiting, setRecordingExiting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastCall, setLastCall] = useState<Call | null>(null);
@@ -142,13 +147,24 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   const onStop = async () => {
     setBusy(true);
     setError(null);
+    // Trigger exit animation immediately for visual responsiveness, even
+    // before backend completes. Если stopRecording fail — overlay уже
+    // exiting но recording vill be reset anyway.
+    setRecordingExiting(true);
     try {
       const call = await stopRecording();
-      setRecording(null);
-      setLastCall(call);
+      // Wait for exit animation to play before swapping layout.
+      window.setTimeout(() => {
+        setRecording(null);
+        setRecordingExiting(false);
+        setLastCall(call);
+      }, 280);
     } catch (e) {
       setError(humanError(e));
-      setRecording(null);
+      window.setTimeout(() => {
+        setRecording(null);
+        setRecordingExiting(false);
+      }, 280);
     } finally {
       setBusy(false);
     }
@@ -205,6 +221,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   if (recording) {
     return (
       <section
+        className={`recording-overlay${recordingExiting ? ' recording-overlay--exiting' : ''}`}
         style={{
           position: 'fixed',
           inset: 0,
@@ -299,15 +316,8 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 {fakeLevelDb(elapsed, 'mic')}
               </span>
             </div>
-            <div className="wave-lane" style={{ height: 110 }}>
-              <Waveform
-                seed={42 + (elapsed % 7)}
-                color="var(--ink)"
-                count={140}
-                gap={2.5}
-                width={1100}
-                height={110}
-              />
+            <div className="wave-lane" style={{ height: 110, color: 'var(--ink)' }}>
+              <LiveWaveform active={!recordingExiting} color="var(--ink)" height={110} />
             </div>
           </div>
 
@@ -337,15 +347,8 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 {fakeLevelDb(elapsed, 'sys')}
               </span>
             </div>
-            <div className="wave-lane" style={{ height: 110 }}>
-              <Waveform
-                seed={73 + (elapsed % 5)}
-                color="var(--accent)"
-                count={140}
-                gap={2.5}
-                width={1100}
-                height={110}
-              />
+            <div className="wave-lane" style={{ height: 110, color: 'var(--accent)' }}>
+              <SyntheticWaveform active={!recordingExiting} color="var(--accent)" height={110} />
             </div>
           </div>
         </div>
@@ -381,8 +384,10 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   }
 
   // ── IDLE STATE — home per artboard §2
+  // [B17 V2.9] `idle-enter` triggers staggered fade-in анимацию children
+  // (см. wotold.css). При первом mount + после остановки записи играет.
   return (
-    <section>
+    <section className="idle-enter">
       <div className="eyebrow" style={{ marginBottom: 18 }}>
         {formatRuDate(new Date())}
       </div>
@@ -404,7 +409,7 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       >
         <button
           type="button"
-          className="rec-btn"
+          className="rec-btn rec-btn--breathing"
           onClick={onStart}
           disabled={busy}
           aria-label={busy ? 'Запускаем' : 'Начать запись'}
