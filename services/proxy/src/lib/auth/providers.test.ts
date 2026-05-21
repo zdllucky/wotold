@@ -143,6 +143,135 @@ describe('decodeIdTokenPayload', () => {
       }),
     ).not.toThrow();
   });
+
+  // ─── Negative / edge cases (audit P0 follow-up) ─────────────────
+
+  test('throws on payload with invalid JSON (valid base64, garbage inside)', () => {
+    // [Sec] Корректная base64 структура но не-JSON содержимое — атакующий
+    // может попробовать подсунуть raw текст. JSON.parse должен бросить.
+    const header = b64urlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+    const body = b64urlEncode('not json at all {{{');
+    expect(() => decodeIdTokenPayload(`${header}.${body}.sig`)).toThrow();
+  });
+
+  test('throws on payload with non-base64 chars (corrupted token)', () => {
+    // Tampered token с invalid base64 в payload части.
+    expect(() => decodeIdTokenPayload('aaa.@@@##.sig')).toThrow();
+  });
+
+  test('throws when iss is empty string but expected', () => {
+    // [Sec] Provider could омит iss или вернуть пустую строку — оба unsafe.
+    const token = buildIdToken({ sub: 's', iss: '' });
+    expect(() =>
+      decodeIdTokenPayload(token, {
+        expectedIssuer: 'https://accounts.google.com',
+      }),
+    ).toThrow(/bad iss/);
+  });
+
+  test('iss comparison is case-sensitive', () => {
+    // [Sec] 'Https://accounts.google.com' != 'https://...' — JWT spec
+    // требует octet-exact match для StringOrURI claims.
+    const token = buildIdToken({
+      sub: 's',
+      iss: 'HTTPS://accounts.google.com',
+    });
+    expect(() =>
+      decodeIdTokenPayload(token, {
+        expectedIssuer: 'https://accounts.google.com',
+      }),
+    ).toThrow(/bad iss/);
+  });
+
+  test('throws when aud array empty', () => {
+    // [Sec] aud=[] не должен match'ить ничего.
+    const token = buildIdToken({ sub: 's', iss: 'https://accounts.google.com', aud: [] });
+    expect(() =>
+      decodeIdTokenPayload(token, {
+        expectedIssuer: 'https://accounts.google.com',
+        expectedAudience: 'cid',
+      }),
+    ).toThrow(/bad aud/);
+  });
+
+  test('accepts when exp is exactly now (boundary)', () => {
+    // exp == now: per JWT RFC the token is valid "until" exp; check is `exp < now`
+    // (strict less-than), так что exp равно now → still valid. Документируем
+    // поведение тестом чтобы случайно не сменить инвариант.
+    const token = buildIdToken({ sub: 's', exp: Math.floor(Date.now() / 1000) });
+    expect(() => decodeIdTokenPayload(token)).not.toThrow();
+  });
+
+  test('throws on exp = 0 (epoch — clearly expired)', () => {
+    const token = buildIdToken({ sub: 's', exp: 0 });
+    expect(() => decodeIdTokenPayload(token)).toThrow(/expired/);
+  });
+
+  test('ignores non-numeric exp (typeof check skips invalid types)', () => {
+    // [Note] Текущая семантика — если exp не number, проверки нет
+    // (typeof === 'number' filter). Это намеренно для Apple-like provider'ов
+    // которые не всегда шлют exp. Документируем тестом — изменение этого
+    // поведения нужно делать осознанно.
+    const token = buildIdToken({
+      sub: 's',
+      exp: 'tomorrow' as unknown as number,
+    });
+    expect(() => decodeIdTokenPayload(token)).not.toThrow();
+  });
+
+  test('skips exp check entirely when omitted (Apple)', () => {
+    // Apple OIDC может не возвращать exp в id_token — должны принимать.
+    const token = buildIdToken({ sub: 'apple-sub' });
+    expect(() => decodeIdTokenPayload(token)).not.toThrow();
+  });
+
+  test('accepts aud as string (not array)', () => {
+    const token = buildIdToken({
+      sub: 's',
+      iss: 'https://accounts.google.com',
+      aud: 'cid-target',
+    });
+    expect(() =>
+      decodeIdTokenPayload(token, {
+        expectedIssuer: 'https://accounts.google.com',
+        expectedAudience: 'cid-target',
+      }),
+    ).not.toThrow();
+  });
+
+  test('skips aud check when aud absent (some providers)', () => {
+    // [Note] options.expectedAudience требует aud claim; если он отсутствует
+    // — пропускаем check (текущее поведение). Меняется когда добавим JWKS
+    // verification + strict require_aud flag.
+    const token = buildIdToken({ sub: 's', iss: 'https://accounts.google.com' });
+    expect(() =>
+      decodeIdTokenPayload(token, {
+        expectedIssuer: 'https://accounts.google.com',
+        expectedAudience: 'cid-target',
+      }),
+    ).not.toThrow();
+  });
+
+  test('KNOWN GAP: tampered payload still accepted (JWKS verification not yet implemented)', () => {
+    // [Sec audit P1, deferred] Подделанный payload (изменили sub/aud после
+    // получения) сейчас проходит — мы не верифицируем подпись против JWKS.
+    // Снижение риска: HTTPS к token endpoint защищает от MITM в transit,
+    // attacker нужен access к token-endpoint TLS чтобы подсунуть свой id_token.
+    // Снимать этот тест когда JWKS verification добавится в next iteration.
+    const tampered = buildIdToken({
+      sub: 'attacker',
+      iss: 'https://accounts.google.com',
+      aud: 'google-cid',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    expect(() =>
+      decodeIdTokenPayload(tampered, {
+        expectedIssuer: 'https://accounts.google.com',
+        expectedAudience: 'google-cid',
+      }),
+    ).not.toThrow();
+    // ↑ когда JWKS landed — этот expect перевернётся на .toThrow(/signature/i).
+  });
 });
 
 describe('GoogleAdapter', () => {

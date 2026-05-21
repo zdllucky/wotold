@@ -34,3 +34,12 @@ GOOGLE_OAUTH_CLIENT_SECRET = "test-google-secret"
 APPLE_OAUTH_CLIENT_ID = ""
 MICROSOFT_OAUTH_CLIENT_ID = ""
 PUBLIC_BASE_URL = "http://test.wotold.local"
+
+# [B3 KV-resume integration test] Dummy creds — aws4fetch только подписывает
+# URL (без сетевого вызова), а fetch партнёру мокается в test'ах. Эти ключи
+# не выходят в R2/Soniox потому что dispatching не происходит.
+R2_ACCOUNT_ID = "test-r2-account"
+R2_ACCESS_KEY_ID = "test-r2-akid"
+R2_SECRET_ACCESS_KEY = "test-r2-secret"
+SONIOX_API_KEY = "test-soniox-key"
+GLADIA_API_KEY = "test-gladia-key"

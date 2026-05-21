@@ -5,6 +5,7 @@ import { authRoutes } from './routes/auth.js';
 import { sttRoutes } from './routes/stt.js';
 import { llmRoutes } from './routes/llm.js';
 import { usageRoutes } from './routes/usage.js';
+import { enforceIp16RateLimit } from './middleware/ip-rate-limit.js';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -39,6 +40,14 @@ app.use(
     maxAge: 86400,
   }),
 );
+
+// [Sec audit P1] /16 IP rate-limit на все /v1/* endpoints'ы. Защита от
+// mass-UUID device-id абьюза из одной /16 подсети. См. middleware комментарий.
+app.use('/v1/*', async (c, next) => {
+  const blocked = await enforceIp16RateLimit(c);
+  if (blocked) return blocked;
+  await next();
+});
 
 app.get('/', (c) => c.text('wotold-proxy ok'));
 app.get('/health', (c) => c.json({ ok: true, tier: 'free' as const }));
