@@ -514,6 +514,20 @@ export function SettingsPage() {
                           SETTINGS_KEYS.CALL_DETECT_ENABLED,
                           v ? '1' : '0',
                         );
+                        // [S2] Поднять/потушить probe сразу же — не ждать
+                        // следующего рестарта. cooldown в минутах из текущего
+                        // значения селектора.
+                        if (v) {
+                          void invoke('enable_call_detect', {
+                            cooldownMin: Number.parseInt(callDetectCooldown, 10),
+                          }).catch((err) => {
+                            console.warn('enable_call_detect failed', err);
+                          });
+                        } else {
+                          void invoke('disable_call_detect').catch((err) => {
+                            console.warn('disable_call_detect failed', err);
+                          });
+                        }
                       }}
                       style={{ marginTop: 4 }}
                     />
@@ -556,6 +570,15 @@ export function SettingsPage() {
                           SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN,
                           v,
                         );
+                        // [S2] Если probe уже работает — пере-enable с новым
+                        // cooldown'ом (controller сохранит value, без перезапуска).
+                        if (callDetectEnabled) {
+                          void invoke('enable_call_detect', {
+                            cooldownMin: Number.parseInt(v, 10),
+                          }).catch((err) => {
+                            console.warn('enable_call_detect (refresh) failed', err);
+                          });
+                        }
                       }}
                     />
                     <span

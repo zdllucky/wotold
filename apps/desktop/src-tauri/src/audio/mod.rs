@@ -41,6 +41,8 @@ pub enum CaptureError {
 pub use scaffold::{AudioCapture, CaptureResult};
 
 #[cfg(target_os = "macos")]
+pub mod call_detect;
+#[cfg(target_os = "macos")]
 pub mod macos;
 #[cfg(target_os = "macos")]
 pub mod permissions;

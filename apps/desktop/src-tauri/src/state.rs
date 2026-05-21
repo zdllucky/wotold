@@ -7,7 +7,11 @@ use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
-use crate::{audio::macos::RecordingSession, call_store::CallStore, db, device, AppError};
+use crate::{
+    audio::{call_detect::CallDetectHandle, macos::RecordingSession},
+    call_store::CallStore,
+    db, device, AppError,
+};
 
 pub struct AppState {
     pub db: SqlitePool,
@@ -22,6 +26,9 @@ pub struct AppState {
     // при shutdown окна можно было ждать завершения (или хотя бы знать какие
     // pipeline-ы ещё бегут). До этого spawn-handle dropped → race на shutdown.
     pub pipeline_tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    /// [S2] Single-instance controller для probe (Core Audio + NSWorkspace).
+    /// Идемпотентный enable/disable через `audio::call_detect::CallDetectController`.
+    pub call_detect: CallDetectHandle,
 }
 
 pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
@@ -56,5 +63,6 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         store,
         recording: Arc::new(Mutex::new(None)),
         pipeline_tasks: Arc::new(Mutex::new(HashMap::new())),
+        call_detect: Arc::new(crate::audio::call_detect::CallDetectController::new()),
     })
 }

@@ -5,6 +5,8 @@
 //! плоский namespace через `pub use`.
 
 pub mod admin;
+#[cfg(target_os = "macos")]
+pub mod call_detection;
 pub mod calls;
 pub mod contacts;
 pub mod pipeline;
@@ -18,6 +20,8 @@ pub mod widget;
 // Re-exports чтобы `commands::list_calls` и т.д. продолжали резолвиться
 // из `lib.rs::invoke_handler!`.
 pub use admin::*;
+#[cfg(target_os = "macos")]
+pub use call_detection::*;
 pub use calls::*;
 pub use contacts::*;
 pub use pipeline::*;
