@@ -22,6 +22,7 @@ import {
   SpeakerCard,
   type SpeakerSample,
 } from '../components/SpeakerCard';
+import { humanSpeakerLabel } from '../utils/callMeta';
 
 const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
 const OWNER_TAG = 'owner';
@@ -283,10 +284,10 @@ export function SpeakersSection({
                     </div>
                     <div className="muted" style={{ fontSize: 12 }}>
                       {group.speakers.length === 1
-                        ? `Голос ${first.speaker_tag}`
-                        : `Голоса ${group.speakers
-                            .map((s) => s.speaker_tag)
-                            .join(', ')} · STT разделил на ${group.speakers.length}`}
+                        ? humanSpeakerLabel(first.speaker_tag)
+                        : `${group.speakers
+                            .map((s) => humanSpeakerLabel(s.speaker_tag))
+                            .join(' + ')} · распознавание разделило на ${group.speakers.length}`}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -296,11 +297,11 @@ export function SpeakersSection({
                         type="button"
                         className="btn btn--quiet btn--sm"
                         onClick={() => void handleUnbind(s)}
-                        title={`Отвязать голос ${s.speaker_tag}`}
+                        title={`Отвязать ${humanSpeakerLabel(s.speaker_tag)}`}
                       >
                         {group.speakers.length === 1
                           ? 'Отвязать'
-                          : `Отвязать ${s.speaker_tag}`}
+                          : `Отвязать ${humanSpeakerLabel(s.speaker_tag)}`}
                       </button>
                     ))}
                   </div>

@@ -7,6 +7,59 @@
 import type { Call } from '../api/recording';
 import type { CallSpeakerView } from '../api/speakers';
 
+/** [V5.3] Превращает технический speaker_tag (от STT диаризации) в
+ *  человекочитаемую подпись:
+ *    - "owner"      → "Я"
+ *    - "Speaker 0"  → "Голос 1"
+ *    - "Speaker 12" → "Голос 13"
+ *    - "S0" / "S2"  → "Голос 1" / "Голос 3"
+ *    - "Marina"     → "Marina"   (произвольный кастом — оставляем как есть)
+ *
+ *  Используется во всех UI местах где раньше отображался raw speaker_tag
+ *  (SpeakerCard subtitle, SpeakersSection «Подтверждены» подпись, и т.д.).
+ *  Маппинг 1-based чтобы юзеру не казалось «нулевой голос». */
+export function humanSpeakerLabel(speakerTag: string): string {
+  if (!speakerTag) return 'Голос';
+  if (speakerTag === 'owner') return 'Я';
+  // "Speaker N" (Soniox) → "Голос N+1"
+  const m1 = /^Speaker\s+(\d+)$/i.exec(speakerTag);
+  if (m1) {
+    const n = Number(m1[1]);
+    if (Number.isFinite(n) && n >= 0) return `Голос ${n + 1}`;
+  }
+  // "SN" сокращённое → "Голос N+1"
+  const m2 = /^S(\d+)$/.exec(speakerTag);
+  if (m2) {
+    const n = Number(m2[1]);
+    if (Number.isFinite(n) && n >= 0) return `Голос ${n + 1}`;
+  }
+  // Произвольный кастомный тег — оставляем как есть.
+  return speakerTag;
+}
+
+/** [V5.3] Короткая версия для avatar-кружков (56×56). Возвращает 1-2 chars:
+ *    - "owner"      → "Я"
+ *    - "Speaker 0"  → "1"
+ *    - "S5"         → "6"
+ *    - "Marina"     → "M"  (первая буква)
+ *  Когда speaker_tag не numeric (custom display name), берём первую букву —
+ *  избегаем «peake»-truncation глитч на длинных строках. */
+export function shortSpeakerLabel(speakerTag: string): string {
+  if (!speakerTag) return '·';
+  if (speakerTag === 'owner') return 'Я';
+  const m1 = /^Speaker\s+(\d+)$/i.exec(speakerTag);
+  if (m1) {
+    const n = Number(m1[1]);
+    if (Number.isFinite(n) && n >= 0) return String(n + 1);
+  }
+  const m2 = /^S(\d+)$/.exec(speakerTag);
+  if (m2) {
+    const n = Number(m2[1]);
+    if (Number.isFinite(n) && n >= 0) return String(n + 1);
+  }
+  return speakerTag.charAt(0).toUpperCase();
+}
+
 export interface CurrentSpeakerInfo {
   tag: string;
   displayName: string;
@@ -123,7 +176,7 @@ export function findSpeakerAtTime(
           (s) => s.confirmed && s.contact_display_name && s.speaker_tag === tag,
         );
         const displayName =
-          labelMatch?.contact_display_name ?? (tag === 'owner' ? 'Я' : tag);
+          labelMatch?.contact_display_name ?? humanSpeakerLabel(tag);
         const colorIdx = tagOrder.indexOf(tag);
         return { tag, displayName, colorIdx: Math.max(0, colorIdx) };
       }

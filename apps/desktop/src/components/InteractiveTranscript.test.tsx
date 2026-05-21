@@ -172,7 +172,8 @@ describe('InteractiveTranscript — speaker labels', () => {
     expect(s1Node).toBeTruthy();
   });
 
-  test('unconfirmed speaker shows tag as label', () => {
+  test('unconfirmed speaker shows humanSpeakerLabel ("Голос 2") not raw tag', () => {
+    // V5.3: humanSpeakerLabel переводит S1 → "Голос 2" (1-based).
     const speakers = [mkSpeaker('S1', 'Marina', false)];
     render(
       <InteractiveTranscript
@@ -182,10 +183,15 @@ describe('InteractiveTranscript — speaker labels', () => {
       />,
     );
     const speakerNodes = document.querySelectorAll('.transcript-speaker');
-    const s1Node = Array.from(speakerNodes).find((n) =>
-      n.textContent?.includes('S1'),
+    const golos2Node = Array.from(speakerNodes).find((n) =>
+      n.textContent?.includes('Голос 2'),
     );
-    expect(s1Node).toBeTruthy();
+    expect(golos2Node).toBeTruthy();
+    // И НЕ должно быть raw "S1" в speaker labels (теперь humanized).
+    const rawTagNode = Array.from(speakerNodes).find(
+      (n) => n.textContent?.trim() === 'S1',
+    );
+    expect(rawTagNode).toBeUndefined();
   });
 });
 

@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { CallSpeakerView } from '../api/speakers';
 import { Empty } from '../ui';
+import { humanSpeakerLabel } from '../utils/callMeta';
 
 interface Segment {
   start: number;
@@ -194,9 +195,14 @@ export function InteractiveTranscript({
       {groups.map((g, idx) => {
         const start = g.segments[0]?.start ?? 0;
         const color = colorVarFor(g.tag);
-        const fullName =
-          labels.get(g.tag) ?? (g.tag === OWNER_TAG ? 'Я' : g.tag);
-        const firstName = fullName.split(/\s+/)[0] ?? fullName;
+        // [V5.3] Если есть привязанный контакт → берём first name (display
+        // contact display_name могло быть "Иван Петров", показываем "Иван").
+        // Иначе → humanSpeakerLabel целиком ("Голос 1", "Я" — split'ить нельзя
+        // потому что "Голос 1" разорвётся на просто "Голос").
+        const contactLabel = labels.get(g.tag);
+        const firstName = contactLabel
+          ? contactLabel.split(/\s+/)[0] ?? contactLabel
+          : humanSpeakerLabel(g.tag);
         const text = g.segments
           .map((s) => s.text.trim())
           .filter(Boolean)

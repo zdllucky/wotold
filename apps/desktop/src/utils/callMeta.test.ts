@@ -6,6 +6,7 @@ import {
   formatHeaderMeta,
   hashCallId,
   humanDuration,
+  humanSpeakerLabel,
   pluralParticipants,
   simpleDateTitle,
 } from './callMeta';
@@ -154,6 +155,37 @@ describe('pluralParticipants', () => {
   });
 });
 
+describe('humanSpeakerLabel', () => {
+  test('owner → Я', () => {
+    expect(humanSpeakerLabel('owner')).toBe('Я');
+  });
+
+  test('Speaker N → Голос N+1 (Soniox формат)', () => {
+    expect(humanSpeakerLabel('Speaker 0')).toBe('Голос 1');
+    expect(humanSpeakerLabel('Speaker 5')).toBe('Голос 6');
+    expect(humanSpeakerLabel('Speaker 12')).toBe('Голос 13');
+  });
+
+  test('SN → Голос N+1 (сокращённый формат)', () => {
+    expect(humanSpeakerLabel('S0')).toBe('Голос 1');
+    expect(humanSpeakerLabel('S3')).toBe('Голос 4');
+  });
+
+  test('кастомный тег возвращается как есть', () => {
+    expect(humanSpeakerLabel('Marina')).toBe('Marina');
+    expect(humanSpeakerLabel('Customer 1')).toBe('Customer 1');
+  });
+
+  test('пустой / странный input — fallback на "Голос"', () => {
+    expect(humanSpeakerLabel('')).toBe('Голос');
+  });
+
+  test('case-insensitive Speaker', () => {
+    expect(humanSpeakerLabel('speaker 0')).toBe('Голос 1');
+    expect(humanSpeakerLabel('SPEAKER 9')).toBe('Голос 10');
+  });
+});
+
 // ─── findSpeakerAtTime ─────────────────────────────────────────────
 
 function mkSpeaker(
@@ -199,11 +231,11 @@ describe('findSpeakerAtTime', () => {
     expect(out?.colorIdx).toBe(1);
   });
 
-  test('falls back to tag for unconfirmed speaker', () => {
-    // S2 не confirmed → fallback на тег.
+  test('falls back to humanSpeakerLabel for unconfirmed speaker', () => {
+    // S2 не confirmed → fallback на человечный label "Голос 3".
     const speakers = [mkSpeaker('S2', 'Marina', false)];
     const out = findSpeakerAtTime(sampleRawStt, speakers, 14);
-    expect(out?.displayName).toBe('S2');
+    expect(out?.displayName).toBe('Голос 3');
   });
 
   test('250ms slack за конец сегмента', () => {
