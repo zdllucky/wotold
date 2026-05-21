@@ -36,6 +36,14 @@ export const SETTINGS_KEYS = {
   RECORDING_HOTKEY_TOGGLE: 'recording.hotkey.toggle',
   /** [W1] Configurable hotkey для pause↔resume (W2 wires the action). */
   RECORDING_HOTKEY_PAUSE: 'recording.hotkey.pause',
+  /** [S1] Opt-in авто-предложение записи когда система детектит звонок
+   *  (микрофон активен другим app + frontmost = Zoom/Teams/Meet/etc).
+   *  R3 паспорта запрещал auto-detect — здесь deviation как V7 для R2:
+   *  default OFF, явное opt-in юзера. '1' = enabled, иначе off. */
+  CALL_DETECT_ENABLED: 'call_detect.enabled',
+  /** [S1] Cooldown в минутах — не предлагать снова для того же app
+   *  в течение N минут после dismiss или start. Default '5'. */
+  CALL_DETECT_COOLDOWN_MIN: 'call_detect.cooldown_min',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
@@ -53,7 +61,14 @@ export const SETTINGS_DEFAULTS = {
   /** [V7] Default OFF — R2 паспорта: opt-in только. */
   AUTO_BIND_ENABLED: false,
   AUTO_BIND_THRESHOLD: '95' as AutoBindThreshold,
+  /** [S1] Call-detect default OFF (R3 deviation opt-in). */
+  CALL_DETECT_ENABLED: false,
+  CALL_DETECT_COOLDOWN_MIN: '5' as CallDetectCooldown,
 } as const;
+
+/** [S1] Whitelist cooldown values 3/5/10/15 min. */
+export type CallDetectCooldown = '3' | '5' | '10' | '15';
+export const CALL_DETECT_COOLDOWNS: CallDetectCooldown[] = ['3', '5', '10', '15'];
 
 /** [V7] Whitelisted threshold values. '90' / '95' / '98' — три уровня риска.
  *  String union because Select<V extends string> generic constraint. */
