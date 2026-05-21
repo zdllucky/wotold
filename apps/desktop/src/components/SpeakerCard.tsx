@@ -8,7 +8,7 @@
 // speaker_tag (owner→mic, прочие→system). Если sample не передан —
 // кнопка отключена.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MiniWave } from './Waveform';
 import type { Contact } from '../api/contacts';
 import type { CallSpeakerView } from '../api/speakers';
@@ -84,12 +84,42 @@ export function SpeakerCard({
   onSubmitNewContact,
 }: SpeakerCardProps) {
   const color = SP_COLORS[speakerColorIdx(speaker, idx) % SP_COLORS.length];
-  const suggestionName = speaker.suggestion_contact_display_name;
+  const suggestionContactName = speaker.suggestion_contact_display_name;
   const suggestionScore = speaker.suggestion_score ?? 0;
   const suggestedContact = contacts.find(
     (c) => c.id === speaker.suggestion_contact_id,
   );
   const pickedContact = contacts.find((c) => c.id === pickedContactId);
+
+  // [B17 V5] «Не он/она» переключает карточку в picker mode для этого
+  // speaker'а (внутреннее состояние) — иначе юзер кликнул, suggestion
+  // остался, а picker'а нет, и кнопка «✓ Подтвердить» disabled.
+  // Сбрасывается если speaker.id меняется (для модала где prop меняется).
+  const [suggestionRejected, setSuggestionRejected] = useState(false);
+  useEffect(() => {
+    setSuggestionRejected(false);
+  }, [speaker.id]);
+
+  const suggestionName = suggestionRejected ? null : suggestionContactName;
+  const showPicker = !suggestionName && contacts.length > 0;
+  // Кого подтверждаем primary-кнопкой:
+  //   - suggestion активен → suggestion contact
+  //   - иначе picked
+  const primaryTarget = useMemo(() => {
+    if (suggestionName && speaker.suggestion_contact_id) {
+      return {
+        name: suggestionName.split(/\s+/)[0] ?? suggestionName,
+        contactId: speaker.suggestion_contact_id,
+      };
+    }
+    if (pickedContact) {
+      return {
+        name: pickedContact.display_name.split(/\s+/)[0] ?? pickedContact.display_name,
+        contactId: pickedContact.id,
+      };
+    }
+    return null;
+  }, [suggestionName, speaker.suggestion_contact_id, pickedContact]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -325,8 +355,8 @@ export function SpeakerCard({
         </>
       )}
 
-      {/* Picker */}
-      {!suggestionName && contacts.length > 0 && (
+      {/* Picker (показывается если suggestion не активен) */}
+      {showPicker && (
         <div className="field" style={{ marginBottom: 18 }}>
           <label className="field-label" htmlFor={`speaker-${speaker.id}-pick`}>
             Выбрать контакт
@@ -423,23 +453,31 @@ export function SpeakerCard({
           className="btn btn--primary"
           style={{ flex: 1, justifyContent: 'center', minWidth: 200 }}
           onClick={() => {
-            if (suggestionName && speaker.suggestion_contact_id) {
-              onConfirm(speaker.suggestion_contact_id);
-            } else if (pickedContact) {
-              onConfirm(pickedContact.id);
+            if (primaryTarget) {
+              onConfirm(primaryTarget.contactId);
             }
           }}
-          disabled={
-            !suggestionName && !pickedContact && !speaker.suggestion_contact_id
-          }
+          disabled={!primaryTarget}
         >
-          ✓ Да, это{' '}
-          {suggestionName
-            ? suggestionName.split(' ')[0]
-            : pickedContact?.display_name.split(' ')[0] ?? '…'}
+          ✓{' '}
+          {primaryTarget
+            ? `Да, это ${primaryTarget.name}`
+            : showPicker
+              ? 'Выбери контакт ниже'
+              : 'Добавь новый контакт'}
         </button>
         {suggestionName && (
-          <button type="button" className="btn btn--ghost" onClick={onReject}>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => {
+              // [V5] Внутренний reject: убираем suggestion с UI и переходим
+              // в picker mode для этого speaker'а. Caller-callback тоже
+              // вызываем (для совместимости / clear'а parent state).
+              setSuggestionRejected(true);
+              onReject();
+            }}
+          >
             Не он/она
           </button>
         )}
