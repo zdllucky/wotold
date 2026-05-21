@@ -329,6 +329,76 @@ pub fn run() {
                     }
                 });
             }
+
+            // [S7] Persist floating-widget position when user drags it. We
+            // debounce via a tokio task that resets a 400ms timer on each
+            // `Moved` event — Tauri fires `Moved` ~per-frame during drag, and
+            // we don't want to thrash SQLite. The timer captures the last
+            // position seen and commits it once drag settles.
+            if let Some(widget) = tauri::Manager::get_webview_window(app, "recording-widget") {
+                use std::sync::Mutex as StdMutex;
+                use std::time::{Duration, Instant};
+
+                let pending = std::sync::Arc::new(StdMutex::new(None::<(f64, f64, Instant)>));
+                let pending_for_event = pending.clone();
+                let widget_for_event = widget.clone();
+                let app_for_persist = handle.clone();
+
+                widget.on_window_event(move |event| {
+                    if !matches!(event, tauri::WindowEvent::Moved(_)) {
+                        return;
+                    }
+                    // Read scale + physical position fresh — Tauri gives us
+                    // physical pixels; we persist logical so future shows
+                    // на разных DPI скрытах не съезжают.
+                    let scale = widget_for_event.scale_factor().unwrap_or(1.0);
+                    let Ok(pos) = widget_for_event.outer_position() else {
+                        return;
+                    };
+                    let logical_x = pos.x as f64 / scale;
+                    let logical_y = pos.y as f64 / scale;
+
+                    let was_idle;
+                    {
+                        let Ok(mut guard) = pending_for_event.lock() else {
+                            return;
+                        };
+                        was_idle = guard.is_none();
+                        *guard = Some((logical_x, logical_y, Instant::now()));
+                    }
+                    if !was_idle {
+                        return;
+                    }
+
+                    // First Moved after settle — spawn debounce task that
+                    // polls until 400ms pass without another Moved.
+                    let pending_for_task = pending_for_event.clone();
+                    let app_for_task = app_for_persist.clone();
+                    tauri::async_runtime::spawn(async move {
+                        loop {
+                            tokio::time::sleep(Duration::from_millis(400)).await;
+                            let snapshot = pending_for_task.lock().ok().and_then(|g| *g);
+                            let Some((x, y, last_seen)) = snapshot else {
+                                return;
+                            };
+                            if last_seen.elapsed() < Duration::from_millis(380) {
+                                continue;
+                            }
+                            if let Ok(mut g) = pending_for_task.lock() {
+                                *g = None;
+                            }
+                            let state = tauri::Manager::state::<state::AppState>(&app_for_task);
+                            if let Err(e) =
+                                commands::widget::persist_widget_position(&state.db, x, y).await
+                            {
+                                log::warn!("persist widget position: {e}");
+                            }
+                            return;
+                        }
+                    });
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

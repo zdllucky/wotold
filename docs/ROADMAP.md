@@ -122,6 +122,7 @@
 - **S4** Native macOS notification — tauri-plugin-notification зарегистрирован + capability `notification:default`. `audio/call_detect::maybe_emit` после Tauri-event дополнительно пушит `Wotold — обнаружен звонок` баннер. Работает даже когда окно свёрнуто.
 - **S5** In-app SuggestBanner — `recording/SuggestBanner.tsx` слушает `recording:suggested`, рендерит `.suggest-banner` с accent border-left (не signal: запись ещё не началась), кнопки «Начать запись» / «Скрыть», auto-dismiss через 30s. Снимается автоматически когда recording стартовал любым путём. i18n ru/kk/en. 3 vitest.
 - **S6** DS page §16 «Auto-detect call» + ROADMAP S-section + commit'ы.
+- **S7** RecFloat drag + position persistence — `data-tauri-drag-region` уже стоял на всех body частях, но не валидировался из-за конфликта с click-restore. Решение: frontend mousedown/mouseup screen-distance threshold (6px) — при движении >threshold click-restore swallow'ится. Rust window `Moved` listener дебаунсит 400ms, persist'ит logical X/Y в settings (`recording.widget.x` / `.y`). `show_recording_widget` теперь читает saved position первым, fallback на top-right primary monitor. `clamp_to_visible_area` helper для off-screen edge case. 2 новых vitest + cargo widget tests passing.
 
 ### Hardening
 - M8.3 prompt-injection pass-through + LIKE escape regression тесты (MCP).
