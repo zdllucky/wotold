@@ -123,6 +123,35 @@ pub fn run() {
             let state = tauri::async_runtime::block_on(state::init(handle.clone()))?;
             tauri::Manager::manage(app, state);
 
+            // [S2] Если CALL_DETECT_ENABLED == "1" с прошлой сессии — поднимаем
+            // probe автоматически. Иначе sidecar спит до toggle'а юзером.
+            #[cfg(target_os = "macos")]
+            {
+                let app_for_probe = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = tauri::Manager::state::<state::AppState>(&app_for_probe);
+                    let enabled = match db::get_setting(&state.db, "call_detect.enabled").await {
+                        Ok(Some(v)) => v == "1",
+                        _ => false,
+                    };
+                    if !enabled {
+                        return;
+                    }
+                    let cooldown_min: u64 =
+                        match db::get_setting(&state.db, "call_detect.cooldown_min").await {
+                            Ok(Some(v)) => v.parse().unwrap_or(5),
+                            _ => 5,
+                        };
+                    if let Err(e) = state
+                        .call_detect
+                        .enable(app_for_probe.clone(), cooldown_min)
+                        .await
+                    {
+                        log::warn!("call-detect bootstrap failed: {e}");
+                    }
+                });
+            }
+
             // [B16 audit P2] macOS app menu — без явного menu Tauri даёт только
             // basic App/Quit. Native Cut/Copy/Paste/SelectAll на webview без menu
             // не работают (стандартные ⌘C/⌘V). Add File/Edit/View/Window submenus.
@@ -352,6 +381,12 @@ pub fn run() {
             commands::show_recording_widget,
             commands::hide_recording_widget,
             commands::restore_main_window,
+            #[cfg(target_os = "macos")]
+            commands::enable_call_detect,
+            #[cfg(target_os = "macos")]
+            commands::disable_call_detect,
+            #[cfg(target_os = "macos")]
+            commands::is_call_detect_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

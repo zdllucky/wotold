@@ -4,11 +4,16 @@ import Foundation
 //   stdin  →  { "cmd": "start", "mic_path": "/abs/mic.wav", "system_path": "/abs/system.wav" }
 //             { "cmd": "stop" }
 //             { "cmd": "ping" }
+//             { "cmd": "call_detect_start" }   [S2] standalone probe mode
+//             { "cmd": "call_detect_stop"  }
 //   stdout ←  { "event": "started" }
 //             { "event": "level", "mic": 0.12, "system": 0.34 }  [B14] каждые 100ms
 //             { "event": "stopped", "duration_sec": N, "mic_bytes": N, "system_bytes": N }
 //             { "event": "error",   "message": "..." }
 //             { "event": "pong" }
+//             { "event": "call_detect_started" }
+//             { "event": "call_suggested", "bundle_id": "...", "app_name": "...", "reason": "..." }
+//             { "event": "call_detect_stopped" }
 
 @main
 struct WotoldAudioMain {
@@ -27,6 +32,12 @@ struct WotoldAudioMain {
 
     static let levelQueue = DispatchQueue(label: "app.wotold.macos-audio.level")
     static var levelTimer: DispatchSourceTimer?
+
+    // [S2] Долгоживущий probe — гоняется параллельно с (или вместо) recording.
+    // Управляется командами call_detect_start / call_detect_stop. Никаких
+    // shared resources с AudioRecorder/SystemAudioRecorder: только Core Audio
+    // флаг + NSWorkspace.frontmostApplication, обе read-only sources.
+    static let callProbe = CallActivityProbe()
 
     // [B14] Start a 100ms repeating timer that emits {"event":"level"} с
     // current RMS из mic + system recorders. Idempotent — повторный вызов
@@ -140,6 +151,16 @@ struct WotoldAudioMain {
                     "mic_bytes": Int(micResult.micBytes),
                     "system_bytes": Int(sysBytes),
                 ])
+
+            case "call_detect_start":
+                callProbe.start { event in
+                    emit(event)
+                }
+                emit(["event": "call_detect_started"])
+
+            case "call_detect_stop":
+                callProbe.stop()
+                emit(["event": "call_detect_stopped"])
 
             default:
                 emitError("unknown cmd: \(cmd)")
