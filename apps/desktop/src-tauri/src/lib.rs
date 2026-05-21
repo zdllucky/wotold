@@ -207,7 +207,38 @@ pub fn run() {
             // SIGHUP, последние ≤5s могут не успеть flush, calls row висит recording.
             if let Some(window) = tauri::Manager::get_webview_window(app, "main") {
                 let app_for_event = handle.clone();
+                // [W4] Track previous minimized state so we emit `main-window:minimized`
+                // / `main-window:restored` only on edge transitions. macOS fires
+                // `Resized` on many unrelated mutations (titlebar overlay churn,
+                // monitor changes) — without an edge filter the frontend would
+                // toggle the widget on every paint.
+                let prev_minimized = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let main_window_for_event = window.clone();
+                let prev_for_event = prev_minimized.clone();
                 window.on_window_event(move |event| {
+                    // [W4] Edge-trigger widget show/hide on minimize/restore.
+                    // We listen to `Resized` because macOS does not surface a
+                    // dedicated "minimized" WindowEvent in Tauri 2 — minimize
+                    // ends up as a Resize with `is_minimized()==true`.
+                    if matches!(event, tauri::WindowEvent::Resized(_)) {
+                        let is_min = main_window_for_event.is_minimized().unwrap_or(false);
+                        let was_min =
+                            prev_for_event.swap(is_min, std::sync::atomic::Ordering::Relaxed);
+                        if is_min && !was_min {
+                            if let Err(e) =
+                                tauri::Emitter::emit(&app_for_event, "main-window:minimized", ())
+                            {
+                                log::warn!("emit main-window:minimized failed: {e}");
+                            }
+                        } else if !is_min && was_min {
+                            if let Err(e) =
+                                tauri::Emitter::emit(&app_for_event, "main-window:restored", ())
+                            {
+                                log::warn!("emit main-window:restored failed: {e}");
+                            }
+                        }
+                    }
+
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         let state = tauri::Manager::state::<state::AppState>(&app_for_event);
                         let has_active = tauri::async_runtime::block_on(async {
@@ -318,6 +349,9 @@ pub fn run() {
             commands::voice_model_download,
             commands::voice_model_delete,
             commands::voice_model_info,
+            commands::show_recording_widget,
+            commands::hide_recording_widget,
+            commands::restore_main_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

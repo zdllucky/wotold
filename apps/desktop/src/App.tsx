@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ask } from '@tauri-apps/plugin-dialog';
 
@@ -215,6 +216,43 @@ function AppShell() {
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [rec, t]);
+
+  // [W4] Show the floating recording widget when the main window is
+  // minimised AND a recording is active. Rust side emits edge-triggered
+  // `main-window:minimized` / `main-window:restored` from
+  // `on_window_event` in lib.rs. We only invoke the widget show command
+  // when there is something useful to display — otherwise an empty pill
+  // would float in the corner of an idle desktop.
+  useEffect(() => {
+    const unlisteners: UnlistenFn[] = [];
+    const attach = async () => {
+      try {
+        unlisteners.push(
+          await listen('main-window:minimized', () => {
+            if (rec.status.kind === 'idle') return;
+            void invoke('show_recording_widget').catch((e) => {
+              console.warn('show_recording_widget failed', e);
+            });
+          }),
+        );
+        unlisteners.push(
+          await listen('main-window:restored', () => {
+            void invoke('hide_recording_widget').catch((e) => {
+              console.warn('hide_recording_widget failed', e);
+            });
+          }),
+        );
+      } catch (e) {
+        console.warn('main-window event listeners failed:', e);
+      }
+    };
+    void attach();
+    // If recording finishes while the main window is still minimised the
+    // widget auto-hides itself (see RecordingWidgetApp.AutoHideOnIdle).
+    return () => {
+      for (const u of unlisteners) u();
+    };
+  }, [rec.status.kind]);
 
   if (bootstrap === 'loading') {
     return (

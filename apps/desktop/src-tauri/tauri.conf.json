@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Wotold",
         "width": 980,
         "height": 720,
@@ -25,6 +26,25 @@
           "x": 18,
           "y": 18
         }
+      },
+      {
+        "label": "recording-widget",
+        "title": "Wotold Recording",
+        "url": "index.html#recording-widget",
+        "width": 280,
+        "height": 52,
+        "minWidth": 280,
+        "maxWidth": 280,
+        "minHeight": 52,
+        "maxHeight": 52,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "acceptFirstMouse": true
       }
     ],
     "security": {

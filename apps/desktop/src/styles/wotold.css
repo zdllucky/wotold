@@ -1343,3 +1343,106 @@ textarea:focus-visible {
   background: var(--signal-fg);
   border-radius: 2px;
 }
+
+/* [W4] Floating recording pill — rendered inside the `recording-widget`
+ * Tauri window (280×52, transparent, decorations off). Same vocabulary as
+ * `.rec-strip` but shrunk to a pocket size + pill radius. `data-paused`
+ * mirrors the strip behaviour: muted timer/eq when paused. */
+.rec-float {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px 6px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-3);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink);
+  height: 44px;
+  box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.rec-float[data-active='false'] {
+  cursor: default;
+  opacity: 0.6;
+}
+.rec-float-eq {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+.rec-float-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+}
+.rec-float-timer {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--signal);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.rec-float[data-paused='true'] .rec-float-timer {
+  color: var(--muted);
+}
+.rec-float-label {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--ink-2);
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rec-float[data-paused='true'] .rec-float-label {
+  color: var(--muted);
+}
+.rec-float-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+/* Compact buttons inside the pill — override the default 34px size. */
+.rec-float-actions .rec-mini-btn {
+  width: 28px;
+  height: 28px;
+}
+
+/* Widget window root — wrapped by `<html class="recording-widget">` in
+ * main.tsx hash-route detection. Tauri's webview default is opaque white,
+ * which would defeat `transparent: true` in tauri.conf.json. Force the
+ * document layers transparent + drop default margins. */
+html.recording-widget,
+html.recording-widget body,
+html.recording-widget #root {
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+html.recording-widget body {
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+html.recording-widget #root {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

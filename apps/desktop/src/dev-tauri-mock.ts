@@ -306,6 +306,16 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         delete speakerBindings[`${callId}:${tag}`];
         return null;
       }
+      // [W4] Widget window controls. In dev/browser mock there is no second
+      // Tauri window — we just acknowledge so the UI doesn't surface noisy
+      // errors during component dev/storybook flows.
+      if (
+        cmd === 'show_recording_widget' ||
+        cmd === 'hide_recording_widget' ||
+        cmd === 'restore_main_window'
+      ) {
+        return null;
+      }
       return responses[cmd] ?? null;
     },
   };
