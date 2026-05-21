@@ -28,6 +28,9 @@ pub use contacts::{
 };
 pub use settings::{get_setting, set_setting};
 pub use voice_samples::{delete_voice_sample, list_voice_samples, VoiceSampleView};
+// [B3.8] evict_old_voice_samples + MAX_SAMPLES_PER_CONTACT — internal API,
+// доступ через crate::db::voice_samples::* (call from db::calls::set_call_speaker_cluster
+// и confirm_call_speaker).
 
 const DB_FILE: &str = "app.db";
 

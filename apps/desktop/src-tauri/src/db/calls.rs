@@ -489,6 +489,8 @@ pub async fn confirm_call_speaker(
                 log::info!(
                     "voice_sample saved: contact={contact_id} call={call_id} quality={quality:.3}"
                 );
+                // [B3.8] N-cap rotation: оставляем top-N по quality DESC.
+                crate::db::voice_samples::evict_old_voice_samples(&mut *tx, contact_id).await?;
             }
         }
     }
@@ -588,6 +590,8 @@ pub async fn set_call_speaker_cluster(
                     log::info!(
                         "voice_sample backfilled (reprocess): contact={cid} call={call_id} quality={quality:.3}"
                     );
+                    // [B3.8] N-cap rotation после INSERT.
+                    crate::db::voice_samples::evict_old_voice_samples(&mut *tx, &cid).await?;
                 }
             }
         }

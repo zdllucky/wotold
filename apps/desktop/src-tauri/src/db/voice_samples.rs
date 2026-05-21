@@ -5,11 +5,27 @@
 //! ошибочно подтвердил спикера и embedding попал в чужой профиль. C3 паспорта.
 //!
 //! Полная очистка по контакту делается через `delete_contact` (ON DELETE CASCADE).
+//!
+//! # B3.8 — N-cap rotation (M3.6 паспорта O4)
+//!
+//! `MAX_SAMPLES_PER_CONTACT = 5` — research-justified sweet spot
+//! (~93-96% accuracy на ECAPA/WeSpeaker). Каждый раз когда INSERT нового
+//! sample происходит (через `set_call_speaker_cluster` backfill или
+//! `confirm_call_speaker`), вызывается `evict_old_voice_samples` —
+//! оставляет top-N по (quality DESC, created_at DESC). Старые / низкого
+//! качества DROP'аются.
 
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
+use sqlx::{Executor, Row, Sqlite, SqlitePool};
 
 use crate::AppError;
+
+/// Максимум voice_samples на контакт. Research baseline 5 (ECAPA/WeSpeaker
+/// sweet spot ~93-96% accuracy). После INSERT нового sample — старые
+/// отбрасываются если total > N. Eviction order: lowest quality first,
+/// затем oldest. Изменение требует осторожности: понижение dropp'ит
+/// существующие embeddings.
+pub const MAX_SAMPLES_PER_CONTACT: usize = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceSampleView {
@@ -48,6 +64,35 @@ pub async fn list_voice_samples(
             embedding_bytes: r.get("embedding_bytes"),
         })
         .collect())
+}
+
+/// [B3.8] N-cap rotation: оставляет MAX_SAMPLES_PER_CONTACT свежих
+/// высококачественных семплов для contact_id, остальные DROP'ает.
+///
+/// Eviction order: `quality DESC, created_at DESC` — лучшие keep'аются,
+/// потом newest. Идемпотентна (no-op если уже ≤ N).
+///
+/// Принимает `Executor` (transaction OR pool) чтобы caller мог встроить
+/// в свою транзакцию атомарно с INSERT'ом нового sample.
+pub async fn evict_old_voice_samples<'e, E>(executor: E, contact_id: &str) -> Result<(), AppError>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
+    sqlx::query(
+        "DELETE FROM voice_samples
+         WHERE contact_id = ?1
+           AND id NOT IN (
+             SELECT id FROM voice_samples
+             WHERE contact_id = ?1
+             ORDER BY quality DESC, created_at DESC
+             LIMIT ?2
+           )",
+    )
+    .bind(contact_id)
+    .bind(MAX_SAMPLES_PER_CONTACT as i64)
+    .execute(executor)
+    .await?;
+    Ok(())
 }
 
 /// Ручное удаление одного семпла (C3 паспорта). Возвращает Err если id не найден.
@@ -202,6 +247,52 @@ mod tests {
             1,
             "voice_samples другого контакта не должны быть затронуты"
         );
+    }
+
+    /// [B3.8] N-cap rotation: после 6+ INSERT'ов остаётся ровно
+    /// MAX_SAMPLES_PER_CONTACT (=5) свежих/качественных, остальные DROP.
+    #[tokio::test]
+    async fn evict_old_keeps_top_n_by_quality_then_recency() {
+        let db = fresh_db().await;
+        // 7 семплов с разным quality. После evict должно остаться 5 топ-по-quality.
+        let qualities = [0.5, 0.9, 0.7, 0.95, 0.6, 0.85, 0.8];
+        seed_contact_and_sample(&db.pool, "c1", "vs1", None, qualities[0]).await;
+        // Subsequent: создаём контакт один раз, прочие — direct INSERT.
+        for (i, q) in qualities.iter().enumerate().skip(1) {
+            sqlx::query(
+                "INSERT INTO voice_samples (id, contact_id, embedding, source_call, quality, created_at)
+                 VALUES (?1, 'c1', ?2, NULL, ?3, ?4)",
+            )
+            .bind(format!("vs{}", i + 1))
+            .bind(vec![0u8; 32])
+            .bind(*q)
+            .bind(format!("2026-05-2{}T00:00:00Z", i)) // разные даты для tiebreak
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        }
+        let before = list_voice_samples(&db.pool, "c1").await.unwrap();
+        assert_eq!(before.len(), 7);
+
+        evict_old_voice_samples(&db.pool, "c1").await.unwrap();
+
+        let after = list_voice_samples(&db.pool, "c1").await.unwrap();
+        assert_eq!(after.len(), MAX_SAMPLES_PER_CONTACT);
+        // Top-5 по quality: 0.95, 0.9, 0.85, 0.8, 0.7. Самые низкие (0.5, 0.6) drop'нулись.
+        let kept_q: Vec<f64> = after.iter().filter_map(|s| s.quality).collect();
+        assert!(kept_q.iter().all(|q| *q >= 0.7));
+        assert!(!kept_q.iter().any(|q| *q < 0.7));
+    }
+
+    /// Idempotent: повторный вызов на already-capped не падает + не меняет state.
+    #[tokio::test]
+    async fn evict_old_idempotent_when_under_cap() {
+        let db = fresh_db().await;
+        seed_contact_and_sample(&db.pool, "c1", "vs1", None, 0.9).await;
+        evict_old_voice_samples(&db.pool, "c1").await.unwrap();
+        evict_old_voice_samples(&db.pool, "c1").await.unwrap();
+        let after = list_voice_samples(&db.pool, "c1").await.unwrap();
+        assert_eq!(after.len(), 1);
     }
 
     /// [Migration 0003] При удалении call'а `voice_samples.source_call`
