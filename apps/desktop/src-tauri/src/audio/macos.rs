@@ -4,7 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::mpsc::Receiver;
@@ -12,7 +12,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use super::{AudioCapture, CaptureError, CaptureResult};
-use crate::AppError;
+use crate::{events::EventBus, AppError};
 
 const SIDECAR_NAME: &str = "wotold-audio";
 const START_TIMEOUT_SECS: u64 = 5;
@@ -209,9 +209,7 @@ async fn run_dispatcher(
                             system: json.get("system").and_then(Value::as_f64).unwrap_or(0.0)
                                 as f32,
                         };
-                        if let Err(e) = app.emit("audio:level", payload) {
-                            log::debug!("emit audio:level failed: {e}");
-                        }
+                        EventBus::new(Some(&app)).audio_level(&payload);
                     }
                     "stopped" | "error" => {
                         if let Some(tx) = terminal_tx.take() {

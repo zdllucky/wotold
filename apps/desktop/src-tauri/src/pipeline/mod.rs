@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use serde_json::json;
 use sqlx::SqlitePool;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 use crate::{
     db,
     embeddings::{self, StubEmbedder},
+    events::{CallAutoBoundEvent, CallProgressEvent, EventBus, PipelineFinishedEvent},
     matching,
     pipeline::{clusters::extract_clusters, merge::OWNER_TAG},
     providers::{
@@ -48,28 +49,6 @@ pub struct PipelineCtx {
     pub app_data_dir: PathBuf,
 }
 
-/// Событие [B5]: фронтенд слушает `pipeline:finished` чтобы обновить Calls list
-/// без manual refresh.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct PipelineFinishedEvent {
-    pub call_id: String,
-    /// `ready` | `failed`
-    pub status: &'static str,
-    pub failed_reason: Option<String>,
-}
-
-/// [V6.2] Per-step progress event для CallStateTag / ProgressRail / PipelineStrip.
-/// Эмитится из `emit_progress` параллельно UPDATE'у в DB — UI обновляется
-/// без polling'а. step (1..5), pct (0..100), eta_sec / upload_bytes — опционально.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct CallProgressEvent {
-    pub call_id: String,
-    pub step: u8,
-    pub pct: u8,
-    pub eta_sec: Option<i64>,
-    pub upload_bytes: Option<i64>,
-}
-
 /// [V6.2] Persist + emit `call:progress`. Ошибки не fatal — pipeline продолжает,
 /// фронт переподнимет state на reload через get_call. Сoncurrent writer'ы
 /// здесь не страшны: каждый step монотонно растёт, последний выигрывает.
@@ -85,18 +64,14 @@ async fn emit_progress(
     if let Err(e) = db::set_call_progress(pool, call_id, step, pct, eta_sec, upload_bytes).await {
         log::warn!("set_call_progress {call_id} step={step}: {e}");
     }
-    if let Some(handle) = app {
-        let event = CallProgressEvent {
-            call_id: call_id.to_string(),
-            step,
-            pct,
-            eta_sec,
-            upload_bytes,
-        };
-        if let Err(e) = handle.emit("call:progress", &event) {
-            log::warn!("emit call:progress failed: {e}");
-        }
-    }
+    let bus = EventBus::new(app);
+    bus.call_progress(&CallProgressEvent {
+        call_id: call_id.to_string(),
+        step,
+        pct,
+        eta_sec,
+        upload_bytes,
+    });
 }
 
 /// Запуск STT после остановки записи (M2.4-2.5 паспорта). Транскрибирует
@@ -110,21 +85,10 @@ pub async fn run(
     ctx: PipelineCtx,
     app: Option<&AppHandle>,
 ) -> Result<(), AppError> {
+    let bus = EventBus::new(app);
     // [B16] Emit `pipeline:started` для global progress indicator в topnav.
-    if let Some(handle) = app {
-        #[derive(Clone, serde::Serialize)]
-        struct Started {
-            call_id: String,
-        }
-        if let Err(e) = handle.emit(
-            "pipeline:started",
-            Started {
-                call_id: ctx.call_id.clone(),
-            },
-        ) {
-            log::warn!("emit pipeline:started failed: {e}");
-        }
-    }
+    bus.pipeline_started(&ctx.call_id);
+
     let result = run_inner(pool, &ctx, app).await;
     let event = match &result {
         Ok(()) => {
@@ -152,11 +116,7 @@ pub async fn run(
     };
 
     // [B5]: фронт слушает 'pipeline:finished' для realtime-обновления Calls list.
-    if let Some(handle) = app {
-        if let Err(e) = handle.emit("pipeline:finished", &event) {
-            log::warn!("emit pipeline:finished failed: {e}");
-        }
-    }
+    bus.pipeline_finished(&event);
 
     result
 }
@@ -580,24 +540,12 @@ async fn run_auto_bind(
         return Ok(());
     }
     log::info!("auto-bound {count} speaker(s) for call {call_id} (threshold {threshold_pct}%)");
-    if let Some(handle) = app {
-        #[derive(Clone, serde::Serialize)]
-        struct AutoBoundEvent {
-            call_id: String,
-            count: u64,
-            threshold_pct: u8,
-        }
-        if let Err(e) = handle.emit(
-            "call:auto_bound",
-            AutoBoundEvent {
-                call_id: call_id.to_string(),
-                count,
-                threshold_pct,
-            },
-        ) {
-            log::warn!("emit call:auto_bound failed: {e}");
-        }
-    }
+    let bus = EventBus::new(app);
+    bus.call_auto_bound(&CallAutoBoundEvent {
+        call_id: call_id.to_string(),
+        count,
+        threshold_pct,
+    });
     Ok(())
 }
 

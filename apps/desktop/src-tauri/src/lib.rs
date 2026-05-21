@@ -15,6 +15,7 @@
 
 mod audio;
 mod audio_io;
+mod call_store;
 mod commands;
 mod db;
 mod device;
@@ -25,6 +26,7 @@ mod embeddings;
 #[cfg(feature = "voice-onnx")]
 mod embeddings_onnx;
 mod error;
+mod events;
 #[allow(dead_code)]
 mod identify;
 #[allow(dead_code)]
@@ -36,6 +38,7 @@ mod merge_signals;
 mod pipeline;
 mod providers;
 mod secrets;
+mod services;
 mod state;
 mod updater;
 // [B3.7c] Voice embedder model — runtime download + SHA256 verify. Всегда

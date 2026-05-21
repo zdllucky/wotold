@@ -23,11 +23,11 @@ use std::path::{Path, PathBuf};
 use futures_util::StreamExt;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 
-use crate::AppError;
+use crate::{events::EventBus, AppError};
 
 /// URL release-файла. Sherpa-onnx releases page (k2-fsa). Pinned релиз,
 /// SHA256 верифицируется ниже — если в репо перезальют, нужен явный update.
@@ -128,12 +128,9 @@ pub async fn download(app_data_dir: &Path, app: &AppHandle) -> Result<PathBuf, A
     // Emit done event с типизированным statusом — frontend слушает один
     // канал `voice-model:done` независимо от типа ошибки.
     if let Err(e) = &result {
-        let _ = app.emit(
-            "voice-model:done",
-            DoneEvent::IoError {
-                message: e.to_string(),
-            },
-        );
+        EventBus::new(Some(app)).voice_model_done(&DoneEvent::IoError {
+            message: e.to_string(),
+        });
     }
     result
 }
@@ -192,14 +189,11 @@ async fn download_inner(app_data_dir: &Path, app: &AppHandle) -> Result<PathBuf,
             } else {
                 0.0
             };
-            let _ = app.emit(
-                "voice-model:progress",
-                ProgressEvent {
-                    downloaded,
-                    total,
-                    percent,
-                },
-            );
+            EventBus::new(Some(app)).voice_model_progress(&ProgressEvent {
+                downloaded,
+                total,
+                percent,
+            });
             next_emit_at = downloaded + EMIT_STEP;
         }
     }
@@ -212,13 +206,10 @@ async fn download_inner(app_data_dir: &Path, app: &AppHandle) -> Result<PathBuf,
     if !got.eq_ignore_ascii_case(MODEL_SHA256) {
         // Удалить corrupted partial и сообщить пользователю.
         let _ = fs::remove_file(&tmp).await;
-        let _ = app.emit(
-            "voice-model:done",
-            DoneEvent::VerifyFailed {
-                expected: MODEL_SHA256.to_string(),
-                got: got.clone(),
-            },
-        );
+        EventBus::new(Some(app)).voice_model_done(&DoneEvent::VerifyFailed {
+            expected: MODEL_SHA256.to_string(),
+            got: got.clone(),
+        });
         return Err(AppError::Other(format!(
             "SHA256 mismatch: expected {MODEL_SHA256}, got {got}"
         )));
@@ -234,7 +225,7 @@ async fn download_inner(app_data_dir: &Path, app: &AppHandle) -> Result<PathBuf,
         ))
     })?;
 
-    let _ = app.emit("voice-model:done", DoneEvent::Ok);
+    EventBus::new(Some(app)).voice_model_done(&DoneEvent::Ok);
     log::info!(
         "voice model downloaded: {} ({} bytes)",
         dest.display(),
