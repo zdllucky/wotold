@@ -116,6 +116,8 @@ export const en: TranslationStrings = {
     badgeProcessing: 'transcribing',
     badgeFailed: 'error',
     badgeRecording: '● recording',
+    activityStripOne: 'Processing 1 call · you can close the window',
+    activityStripMany: 'Processing {n} {plural} · you can close the window',
     tooltipRecording: 'Recording right now.',
     tooltipProcessing: 'Recording finished, STT in progress.',
     tooltipReady: 'Ready — transcript.md and raw_stt.json exist.',
@@ -162,6 +164,19 @@ export const en: TranslationStrings = {
     taskDueShort: '· due {date}',
     reprocessFailed: 'Could not reprocess: {error}',
     regenerateFailed: 'Could not regenerate recap: {error}',
+    reassureCanClose: 'You can close the window — we’ll save progress and finish in the background.',
+    errorTitle: 'Something went wrong',
+    errorAudioSaved: 'Audio is saved locally — you can listen below.',
+    errorRetry: 'Try again',
+    errorRetryProvider: 'Try via {provider}',
+    errorOpenSettings: 'Open settings',
+    errorDiagnosticsTitle: 'Diagnostics',
+    errorDiagnosticsCode: 'Code',
+    errorDiagnosticsProvider: 'Provider',
+    errorDiagnosticsAttempts: 'Attempts',
+    errorDiagnosticsFirstAt: 'First attempt',
+    errorDiagnosticsLastAt: 'Last attempt',
+    errorDiagnosticsQuota: 'Charged against quota',
   },
 
   recap: {
@@ -571,6 +586,28 @@ export const en: TranslationStrings = {
 
   recording: {
     overlayLabel: 'Recording',
+  },
+
+  callState: {
+    live: 'recording',
+    uploading: 'uploading',
+    queued: 'queued',
+    processing: 'transcribing',
+    ready: 'ready',
+    error: 'error',
+    audioSaved: 'audio saved',
+    moreDetails: 'details →',
+    errorFallback: 'could not transcribe',
+    etaSec: 'sec',
+    details: 'details',
+    pending: 'waiting',
+  },
+  pipeline: {
+    step1: 'Saved audio',
+    step2: 'Split mic + system tracks',
+    step3: 'Transcribing speech',
+    step4: 'Matching voices to contacts',
+    step5: 'Drafting summary and tasks',
   },
 };
 

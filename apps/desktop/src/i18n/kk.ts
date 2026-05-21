@@ -115,6 +115,8 @@ export const kk: TranslationStrings = {
     badgeProcessing: 'танудамыз',
     badgeFailed: 'қате',
     badgeRecording: '● жазу',
+    activityStripOne: '1 қоңырау өңделуде · терезені жабуға болады',
+    activityStripMany: '{n} {plural} өңделуде · терезені жабуға болады',
     tooltipRecording: 'Дәл қазір жазылым жүруде.',
     tooltipProcessing: 'Жазу аяқталды, STT арқылы транскрипт жасалуда.',
     tooltipReady: 'Дайын — transcript.md мен raw_stt.json бар.',
@@ -161,6 +163,19 @@ export const kk: TranslationStrings = {
     taskDueShort: '· {date} дейін',
     reprocessFailed: 'Қайта іске қосу мүмкін болмады: {error}',
     regenerateFailed: 'Қорытындыны қайта жасау мүмкін болмады: {error}',
+    reassureCanClose: 'Терезені жабуға болады — біз прогресті сақтап, фонда аяқтаймыз.',
+    errorTitle: 'Бірдеңе дұрыс болмады',
+    errorAudioSaved: 'Аудио жергілікті сақталған, оны төменде тыңдауға болады.',
+    errorRetry: 'Қайтадан көру',
+    errorRetryProvider: '{provider} арқылы көру',
+    errorOpenSettings: 'Параметрлерді ашу',
+    errorDiagnosticsTitle: 'Диагностика',
+    errorDiagnosticsCode: 'Код',
+    errorDiagnosticsProvider: 'Провайдер',
+    errorDiagnosticsAttempts: 'Әрекеттер',
+    errorDiagnosticsFirstAt: 'Алғашқы әрекет',
+    errorDiagnosticsLastAt: 'Соңғы әрекет',
+    errorDiagnosticsQuota: 'Квотадан есептелді',
   },
 
   recap: {
@@ -566,6 +581,28 @@ export const kk: TranslationStrings = {
 
   recording: {
     overlayLabel: 'Жазу жүруде',
+  },
+
+  callState: {
+    live: 'жазу жүруде',
+    uploading: 'жүктеп жатырмыз',
+    queued: 'кезекте',
+    processing: 'танымалап жатырмыз',
+    ready: 'дайын',
+    error: 'қате',
+    audioSaved: 'аудио сақталды',
+    moreDetails: 'толығырақ →',
+    errorFallback: 'танымалай алмадық',
+    etaSec: 'сек',
+    details: 'толығырақ',
+    pending: 'күтуде',
+  },
+  pipeline: {
+    step1: 'Аудионы сақтадық',
+    step2: 'Микрофон мен жүйелік дыбысты бөлдік',
+    step3: 'Сөйлеуді танымалап жатырмыз',
+    step4: 'Дауыстарды контактілермен сәйкестендіреміз',
+    step5: 'Қорытынды мен тапсырмаларды дайындаймыз',
   },
 };
 

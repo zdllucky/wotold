@@ -19,6 +19,13 @@ pub struct Call {
     /// [B16]: причина если recap LLM упал. Звонок остаётся 'ready' (транскрипт
     /// есть), но UI знает что саммари нужно пересоздать.
     pub recap_failed_reason: Option<String>,
+    /// [V6.2] Pipeline progress fields для async-states UI. NULL когда звонок
+    /// recording / ready / failed / шаг не начался — UI рендерит ProgressRail
+    /// только при `status='processing' && pipeline_step IS NOT NULL`.
+    pub pipeline_step: Option<i64>,
+    pub pipeline_pct: Option<i64>,
+    pub pipeline_eta_sec: Option<i64>,
+    pub upload_bytes: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -51,6 +58,10 @@ pub async fn insert_recording(pool: &SqlitePool, path_label: &str) -> Result<Cal
         lang_detected: None,
         failed_reason: None,
         recap_failed_reason: None,
+        pipeline_step: None,
+        pipeline_pct: None,
+        pipeline_eta_sec: None,
+        upload_bytes: None,
         created_at: now.clone(),
         updated_at: now,
     })
@@ -105,13 +116,57 @@ pub async fn set_recap_failed_reason(
 }
 
 /// Перевести запись в финальный статус `ready` после успешного pipeline'а.
+/// [V6.2] Заодно очищаем pipeline_* поля — звонок больше не "в обработке",
+/// UI не должен рендерить ProgressRail.
 pub async fn mark_call_ready(pool: &SqlitePool, call_id: &str) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
-    sqlx::query("UPDATE calls SET status = 'ready', updated_at = ?1 WHERE id = ?2")
-        .bind(&now)
-        .bind(call_id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE calls
+         SET status = 'ready',
+             pipeline_step = NULL,
+             pipeline_pct = NULL,
+             pipeline_eta_sec = NULL,
+             upload_bytes = NULL,
+             updated_at = ?1
+         WHERE id = ?2",
+    )
+    .bind(&now)
+    .bind(call_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// [V6.2] Обновить pipeline_step / pct / eta / upload_bytes. Pipeline вызывает
+/// перед каждым меняющимся шагом — UI получает live tick через `call:progress`
+/// event (см. pipeline::emit_progress). Без транзакции: одна строка, одна
+/// колонка, идемпотент при concurrent writers (последний выигрывает).
+pub async fn set_call_progress(
+    pool: &SqlitePool,
+    call_id: &str,
+    step: u8,
+    pct: u8,
+    eta_sec: Option<i64>,
+    upload_bytes: Option<i64>,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "UPDATE calls
+         SET pipeline_step = ?1,
+             pipeline_pct = ?2,
+             pipeline_eta_sec = ?3,
+             upload_bytes = ?4,
+             updated_at = ?5
+         WHERE id = ?6",
+    )
+    .bind(step as i64)
+    .bind(pct as i64)
+    .bind(eta_sec)
+    .bind(upload_bytes)
+    .bind(&now)
+    .bind(call_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -198,11 +253,17 @@ pub async fn fail_recording_with_reason(
     reason: Option<&str>,
 ) -> Result<(), AppError> {
     let now = chrono::Utc::now().to_rfc3339();
+    // [V6.2] Очищаем pipeline_* — звонок больше не processing, UI должен
+    // показывать error variant, а не ProgressRail.
     sqlx::query(
         "UPDATE calls
          SET status = 'failed',
              ended_at = ?2,
              failed_reason = ?3,
+             pipeline_step = NULL,
+             pipeline_pct = NULL,
+             pipeline_eta_sec = NULL,
+             upload_bytes = NULL,
              updated_at = ?2
          WHERE id = ?1",
     )
@@ -216,7 +277,7 @@ pub async fn fail_recording_with_reason(
 
 pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, AppError> {
     let row: Option<Call> = sqlx::query_as(
-        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, created_at, updated_at
+        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, created_at, updated_at
          FROM calls WHERE id = ?1",
     )
     .bind(call_id)
@@ -229,7 +290,7 @@ pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, 
 /// подключится в #30 follow-up когда они начнут писаться (#22, #28).
 pub async fn list_calls(pool: &SqlitePool) -> Result<Vec<Call>, AppError> {
     let rows: Vec<Call> = sqlx::query_as(
-        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, created_at, updated_at
+        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, created_at, updated_at
          FROM calls
          ORDER BY started_at DESC",
     )
@@ -1039,6 +1100,61 @@ mod tests {
             ),
             "новый suggestion должен быть записан"
         );
+    }
+
+    // ============================================================
+    // [V6.2] pipeline progress
+    // ============================================================
+
+    #[tokio::test]
+    async fn set_call_progress_persists_step_pct_eta_upload() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &call.id, 12.5).await.unwrap();
+
+        set_call_progress(&db.pool, &call.id, 2, 64, Some(25), Some(1_048_576))
+            .await
+            .unwrap();
+
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert_eq!(after.pipeline_step, Some(2));
+        assert_eq!(after.pipeline_pct, Some(64));
+        assert_eq!(after.pipeline_eta_sec, Some(25));
+        assert_eq!(after.upload_bytes, Some(1_048_576));
+    }
+
+    #[tokio::test]
+    async fn mark_call_ready_clears_pipeline_progress() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &call.id, 5.0).await.unwrap();
+        set_call_progress(&db.pool, &call.id, 5, 100, None, None)
+            .await
+            .unwrap();
+
+        mark_call_ready(&db.pool, &call.id).await.unwrap();
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert_eq!(after.status, "ready");
+        assert!(after.pipeline_step.is_none(), "step должен очиститься");
+        assert!(after.pipeline_pct.is_none());
+        assert!(after.pipeline_eta_sec.is_none());
+        assert!(after.upload_bytes.is_none());
+    }
+
+    #[tokio::test]
+    async fn fail_recording_clears_pipeline_progress() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        set_call_progress(&db.pool, &call.id, 3, 50, Some(10), Some(2048))
+            .await
+            .unwrap();
+        fail_recording_with_reason(&db.pool, &call.id, Some("STT down"))
+            .await
+            .unwrap();
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert_eq!(after.status, "failed");
+        assert!(after.pipeline_step.is_none());
+        assert!(after.pipeline_pct.is_none());
     }
 
     #[tokio::test]
