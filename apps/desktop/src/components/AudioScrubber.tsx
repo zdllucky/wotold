@@ -1,25 +1,46 @@
-// [B17 V3.2] Sticky bottom audio scrubber pill — dumb presentation component.
-// State + handlers приходят из useCallAudio() hook (см. CallDetailPage).
-// Это позволяет InteractiveTranscript подписываться на тот же audio state
-// для highlight current row + click-to-seek.
+// [B17 V3.3] Sticky bottom audio scrubber pill — dumb presentation component.
+// State + handlers приходят из useCallAudio() hook. Real waveform peaks из
+// audio.peaks (decoded WAV via AudioContext), не seeded random.
 //
-// Изменения vs V3.1:
-//   - state lifted в useCallAudio hook (single audio element для всей page)
-//   - progress fill через clip-path (bars align с background идеально)
-//   - listeners биндятся в hook (надёжно)
+// Layout pill (слева направо):
+//   [▶] [00:04] [waveform peaks] [SpeakerChip|пауза] [01:11]
+//
+// Track switcher вынесен под pill subtle row (трет приоритет).
 
 import type { CallAudioHandle } from '../hooks/useCallAudio';
 import { Waveform } from './Waveform';
 
-interface AudioScrubberProps {
-  audio: CallAudioHandle;
-  /** seed для stable waveform shape — обычно hash от call.id. */
-  seed: number;
-  /** Скрыть scrubber если false (например call status='failed'). */
-  enabled?: boolean;
+const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
+
+export interface CurrentSpeakerInfo {
+  /** Internal speaker_tag (e.g. "S1", "owner"). */
+  tag: string;
+  /** Display name (first name preferred) для chip. */
+  displayName: string;
+  /** Index 0..4 для SP_COLORS palette. */
+  colorIdx: number;
 }
 
-export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProps) {
+interface AudioScrubberProps {
+  audio: CallAudioHandle;
+  /** seed для seeded random fallback (когда peaks не загружены). */
+  seed: number;
+  /** Скрыть scrubber если false. */
+  enabled?: boolean;
+  /** Текущий говорящий (computed на CallDetailPage из rawStt + currentTime). */
+  currentSpeaker: CurrentSpeakerInfo | null;
+  /** Клик по speaker chip → switch на transcript tab (auto-scroll к active row
+   *  делает InteractiveTranscript сам через currentTime sync). */
+  onJumpToSpeaker?: () => void;
+}
+
+export function AudioScrubber({
+  audio,
+  seed,
+  enabled = true,
+  currentSpeaker,
+  onJumpToSpeaker,
+}: AudioScrubberProps) {
   if (!enabled) return null;
   if (audio.micMissing && audio.systemMissing) return null;
 
@@ -43,62 +64,6 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
         pointerEvents: 'auto',
       }}
     >
-      {/* Track switcher */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: 12,
-          marginBottom: 6,
-          fontSize: 10,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          fontFamily: 'var(--font-sans)',
-          fontWeight: 600,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => audio.switchTrack('mic')}
-          disabled={audio.micMissing}
-          aria-pressed={audio.activeTrack === 'mic'}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '4px 8px',
-            cursor: audio.micMissing ? 'not-allowed' : 'pointer',
-            color: audio.activeTrack === 'mic' ? 'var(--ink)' : 'var(--subtle)',
-            opacity: audio.micMissing ? 0.3 : 1,
-            borderRadius: 'var(--radius-sm)',
-          }}
-          title="Свой микрофон"
-        >
-          Я
-        </button>
-        <span className="subtle" style={{ alignSelf: 'center' }}>
-          ·
-        </span>
-        <button
-          type="button"
-          onClick={() => audio.switchTrack('system')}
-          disabled={audio.systemMissing}
-          aria-pressed={audio.activeTrack === 'system'}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '4px 8px',
-            cursor: audio.systemMissing ? 'not-allowed' : 'pointer',
-            color:
-              audio.activeTrack === 'system' ? 'var(--ink)' : 'var(--subtle)',
-            opacity: audio.systemMissing ? 0.3 : 1,
-            borderRadius: 'var(--radius-sm)',
-          }}
-          title="Звук собеседника (системный аудио)"
-        >
-          Собеседник
-        </button>
-      </div>
-
       {/* Pill */}
       <div
         style={{
@@ -149,9 +114,8 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
           {formatTime(audio.currentTime)}
         </div>
 
-        {/* Waveform + progress fill via clip-path overlay. Both layers
-            render at SAME canvas dimensions, clip-path reveals only played
-            portion in full opacity — bars perfectly aligned. */}
+        {/* Waveform + progress fill via clip-path overlay. Use real peaks
+            when decoded, fallback to seeded random. */}
         <div
           onClick={onWaveformClick}
           style={{
@@ -159,6 +123,7 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
             height: 22,
             position: 'relative',
             cursor: 'pointer',
+            minWidth: 80,
           }}
           role="slider"
           aria-label="Аудио прогресс"
@@ -166,7 +131,6 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
           aria-valuemax={Math.floor(audio.duration)}
           aria-valuenow={Math.floor(audio.currentTime)}
         >
-          {/* Background — unplayed, low opacity */}
           <div
             style={{
               position: 'absolute',
@@ -177,14 +141,14 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
           >
             <Waveform
               seed={seed}
+              peaks={audio.peaks ?? undefined}
               color="currentColor"
               width={600}
               height={22}
-              count={160}
+              count={200}
               gap={1.5}
             />
           </div>
-          {/* Foreground — played, full opacity, clipped right */}
           <div
             style={{
               position: 'absolute',
@@ -196,14 +160,22 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
           >
             <Waveform
               seed={seed}
+              peaks={audio.peaks ?? undefined}
               color="currentColor"
               width={600}
               height={22}
-              count={160}
+              count={200}
               gap={1.5}
             />
           </div>
         </div>
+
+        {/* Speaker chip — справа от waveform, перед duration. */}
+        <SpeakerChip
+          speaker={currentSpeaker}
+          onClick={onJumpToSpeaker}
+        />
+
         <div
           className="mono"
           style={{
@@ -217,7 +189,162 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
           {formatTime(audio.duration)}
         </div>
       </div>
+
+      {/* Track switcher — subtle row под pill, tertiary action. */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: 10,
+          marginTop: 6,
+          fontSize: 10,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          fontFamily: 'var(--font-sans)',
+          fontWeight: 600,
+        }}
+      >
+        <span className="subtle" style={{ alignSelf: 'center', fontSize: 9 }}>
+          трек:
+        </span>
+        <button
+          type="button"
+          onClick={() => audio.switchTrack('mic')}
+          disabled={audio.micMissing}
+          aria-pressed={audio.activeTrack === 'mic'}
+          style={trackBtnStyle(audio.activeTrack === 'mic', audio.micMissing)}
+        >
+          Я
+        </button>
+        <button
+          type="button"
+          onClick={() => audio.switchTrack('system')}
+          disabled={audio.systemMissing}
+          aria-pressed={audio.activeTrack === 'system'}
+          style={trackBtnStyle(audio.activeTrack === 'system', audio.systemMissing)}
+        >
+          Собеседник
+        </button>
+      </div>
     </div>
+  );
+}
+
+function trackBtnStyle(active: boolean, missing: boolean): React.CSSProperties {
+  return {
+    background: 'none',
+    border: 'none',
+    padding: '2px 6px',
+    cursor: missing ? 'not-allowed' : 'pointer',
+    color: active ? 'var(--ink)' : 'var(--subtle)',
+    opacity: missing ? 0.3 : 1,
+    fontFamily: 'inherit',
+    fontWeight: 'inherit',
+    fontSize: 'inherit',
+    letterSpacing: 'inherit',
+    textTransform: 'inherit',
+  };
+}
+
+// SpeakerChip — current speaker indicator с avatar + первое имя. Click →
+// onJumpToSpeaker. Если none — italic "пауза".
+function SpeakerChip({
+  speaker,
+  onClick,
+}: {
+  speaker: CurrentSpeakerInfo | null;
+  onClick?: () => void;
+}) {
+  if (!speaker) {
+    return (
+      <span
+        className="muted"
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 12,
+          flexShrink: 0,
+          padding: '2px 8px',
+        }}
+      >
+        пауза
+      </span>
+    );
+  }
+  const color = SP_COLORS[speaker.colorIdx % SP_COLORS.length];
+  const firstName = speaker.displayName.split(/\s+/)[0] ?? speaker.displayName;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      title={onClick ? `Перейти к блоку «${speaker.displayName}» в расшифровке` : undefined}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '3px 10px 3px 4px',
+        borderRadius: 'var(--radius-pill)',
+        background: 'var(--surface)',
+        border: '1px solid var(--line)',
+        fontSize: 12,
+        fontWeight: 500,
+        color: 'var(--ink)',
+        fontFamily: 'var(--font-sans)',
+        letterSpacing: '-0.005em',
+        cursor: onClick ? 'pointer' : 'default',
+        flexShrink: 0,
+        maxWidth: 140,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        transition: 'background var(--duration-fast)',
+      }}
+      onMouseEnter={(e) => {
+        if (onClick) e.currentTarget.style.background = 'var(--bg-2)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'var(--surface)';
+      }}
+    >
+      <span
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: '50%',
+          background: color,
+          color: '#fff',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 8,
+          fontWeight: 600,
+          letterSpacing: '0.02em',
+          flexShrink: 0,
+        }}
+      >
+        {initials(speaker.displayName)}
+      </span>
+      <span
+        style={{
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {firstName}
+      </span>
+    </button>
+  );
+}
+
+function initials(name: string): string {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? '')
+      .join('') || '·'
   );
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { humanError } from '../api/errors';
 import ReactMarkdown from 'react-markdown';
 import { ask } from '@tauri-apps/plugin-dialog';
@@ -16,7 +16,7 @@ import { listContacts, type Contact } from '../api/contacts';
 import { listCallSpeakers, type CallSpeakerView } from '../api/speakers';
 import type { Call } from '../api/recording';
 import { Empty, Pill, Tabs } from '../ui';
-import { AudioScrubber } from '../components/AudioScrubber';
+import { AudioScrubber, type CurrentSpeakerInfo } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { useCallAudio } from '../hooks/useCallAudio';
 import { SpeakersSection } from './SpeakersSection';
@@ -43,6 +43,14 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   // [B17 V3.2] Single audio source — shared между AudioScrubber и
   // InteractiveTranscript (для highlight current + click-to-seek).
   const audio = useCallAudio(callId, call?.duration_sec ?? 0);
+
+  // [B17 V3.3] Current speaker info — derived from rawStt segments + audio
+  // currentTime. Используется в AudioScrubber SpeakerChip.
+  const currentSpeaker = useCurrentSpeaker(
+    rawStt,
+    speakersLite,
+    audio.currentTime,
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -341,6 +349,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         audio={audio}
         seed={hashCallId(callId)}
         enabled={call.status !== 'failed'}
+        currentSpeaker={currentSpeaker}
+        onJumpToSpeaker={
+          currentSpeaker ? () => setTab('transcript') : undefined
+        }
       />
     </section>
   );
@@ -350,6 +362,62 @@ function hashCallId(id: string): number {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
   return Math.abs(h) % 1000;
+}
+
+// [B17 V3.3] Compute current speaker info из rawStt + speakers state.
+// Возвращает null если currentTime попадает в pause (нет сегмента в range).
+function useCurrentSpeaker(
+  rawSttJson: string | null,
+  speakers: CallSpeakerView[],
+  currentTime: number,
+): CurrentSpeakerInfo | null {
+  return useMemo(
+    () => findSpeakerAtTime(rawSttJson, speakers, currentTime),
+    [rawSttJson, speakers, currentTime],
+  );
+}
+
+function findSpeakerAtTime(
+  rawSttJson: string | null,
+  speakers: CallSpeakerView[],
+  currentTime: number,
+): CurrentSpeakerInfo | null {
+  if (!rawSttJson || !Number.isFinite(currentTime)) return null;
+  try {
+    const data = JSON.parse(rawSttJson) as {
+      merged?: Array<{
+        start?: number;
+        end?: number;
+        speakerTag?: string;
+      }>;
+    };
+    if (!Array.isArray(data.merged)) return null;
+    // Compute unique speaker_tag order для color index assignment.
+    const tagOrder: string[] = [];
+    for (const seg of data.merged) {
+      if (typeof seg?.speakerTag !== 'string') continue;
+      if (!tagOrder.includes(seg.speakerTag)) tagOrder.push(seg.speakerTag);
+    }
+    for (const seg of data.merged) {
+      const tag = seg?.speakerTag;
+      const start = seg?.start ?? 0;
+      const end = seg?.end ?? start;
+      if (typeof tag !== 'string') continue;
+      if (currentTime >= start && currentTime <= end + 0.25) {
+        // 250ms slack для smooth-transitions между сегментами.
+        const labelMatch = speakers.find(
+          (s) => s.confirmed && s.contact_display_name && s.speaker_tag === tag,
+        );
+        const displayName =
+          labelMatch?.contact_display_name ?? (tag === 'owner' ? 'Я' : tag);
+        const colorIdx = tagOrder.indexOf(tag);
+        return { tag, displayName, colorIdx: Math.max(0, colorIdx) };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {

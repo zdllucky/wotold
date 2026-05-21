@@ -10,6 +10,8 @@ import { humanError } from '../api/errors';
 
 export type AudioTrack = 'mic' | 'system';
 
+const PEAK_COUNT = 200;
+
 export interface CallAudioState {
   activeTrack: AudioTrack;
   playing: boolean;
@@ -19,6 +21,9 @@ export interface CallAudioState {
   systemMissing: boolean;
   ready: boolean;
   error: string | null;
+  /** [B17 V3.3] Real WAV peaks (length PEAK_COUNT), 0..1, для active track.
+   *  null пока декодирование не завершено. */
+  peaks: number[] | null;
 }
 
 export interface CallAudioActions {
@@ -46,6 +51,9 @@ export function useCallAudio(callId: string, fallbackDuration = 0): CallAudioHan
   const [duration, setDuration] = useState(fallbackDuration);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // [B17 V3.3] Per-track decoded peak buckets — cached между swaps.
+  const peaksCacheRef = useRef<Map<string, number[]>>(new Map());
+  const [, setPeaksTick] = useState(0); // force re-render когда peaks ready
 
   // Load both track paths.
   useEffect(() => {
@@ -168,6 +176,35 @@ export function useCallAudio(callId: string, fallbackDuration = 0): CallAudioHan
     setActiveTrack(next);
   };
 
+  // [B17 V3.3] Decode WAV → peak buckets per track. Cached в peaksCacheRef.
+  // Async на background — UI пока показывает peaks=null (или предыдущие).
+  useEffect(() => {
+    const src = activeTrack === 'mic' ? micSrc : systemSrc;
+    if (!src) return;
+    if (peaksCacheRef.current.has(src)) {
+      // Already decoded — force consumer re-read.
+      setPeaksTick((n) => n + 1);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const peaks = await decodeWavPeaks(src, PEAK_COUNT);
+        if (cancelled) return;
+        peaksCacheRef.current.set(src, peaks);
+        setPeaksTick((n) => n + 1);
+      } catch (e) {
+        console.warn('[useCallAudio] decode peaks failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTrack, micSrc, systemSrc]);
+
+  const activeSrc = activeTrack === 'mic' ? micSrc : systemSrc;
+  const peaks = activeSrc ? (peaksCacheRef.current.get(activeSrc) ?? null) : null;
+
   return {
     activeTrack,
     playing,
@@ -177,8 +214,46 @@ export function useCallAudio(callId: string, fallbackDuration = 0): CallAudioHan
     systemMissing,
     ready,
     error,
+    peaks,
     togglePlay,
     seek,
     switchTrack,
   };
+}
+
+// [B17 V3.3] Fetch + decode WAV file → array of `count` peaks (max abs per
+// bucket, normalized 0..1). Использует AudioContext.decodeAudioData. Heavy
+// для длинных файлов но one-shot + cached.
+async function decodeWavPeaks(url: string, count: number): Promise<number[]> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`fetch ${response.status}`);
+  const buffer = await response.arrayBuffer();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const Ctx = window.AudioContext ?? (window as any).webkitAudioContext;
+  const ctx: AudioContext = new Ctx();
+  try {
+    const audio = await ctx.decodeAudioData(buffer.slice(0));
+    const channel = audio.getChannelData(0);
+    const bucketSize = Math.max(1, Math.floor(channel.length / count));
+    const peaks = new Array<number>(count).fill(0);
+    let maxAbs = 0;
+    for (let i = 0; i < count; i++) {
+      const start = i * bucketSize;
+      const end = Math.min(channel.length, start + bucketSize);
+      let peak = 0;
+      for (let j = start; j < end; j++) {
+        const v = Math.abs(channel[j]!);
+        if (v > peak) peak = v;
+      }
+      peaks[i] = peak;
+      if (peak > maxAbs) maxAbs = peak;
+    }
+    // Normalize 0..1 (avoid divide-by-zero на тишине).
+    if (maxAbs > 0) {
+      for (let i = 0; i < count; i++) peaks[i]! /= maxAbs;
+    }
+    return peaks;
+  } finally {
+    void ctx.close().catch(() => undefined);
+  }
 }
