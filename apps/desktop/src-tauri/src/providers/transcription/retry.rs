@@ -157,36 +157,20 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 3);
     }
 
+    // [Phase 6] Parameterized через rstest: collapse 4 near-identical
+    // retry-classification tests в один. Auth/Quota/Provider — non-retryable
+    // (1 call), Network — retryable (max_attempts calls). Раньше каждый
+    // вариант был отдельной 12-строчной copy-paste функцией.
+    #[rstest::rstest]
+    #[case::auth(TranscriptionError::Auth("bad key".into()), 1)]
+    #[case::quota(TranscriptionError::QuotaExceeded, 1)]
+    #[case::provider(TranscriptionError::Provider("malformed json".into()), 1)]
+    #[case::network(TranscriptionError::Network("down".into()), 3)]
     #[tokio::test]
-    async fn fails_fast_on_non_retryable_auth() {
-        let calls = Arc::new(AtomicU32::new(0));
-        let calls_ref = calls.clone();
-        let err = with_backoff(RetryConfig::default(), noop_sleep, || {
-            calls_ref.fetch_add(1, Ordering::SeqCst);
-            async { Err::<(), _>(TranscriptionError::Auth("bad key".into())) }
-        })
-        .await
-        .unwrap_err();
-        assert!(matches!(err, TranscriptionError::Auth(_)));
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn fails_fast_on_quota_exceeded() {
-        let calls = Arc::new(AtomicU32::new(0));
-        let calls_ref = calls.clone();
-        let err = with_backoff(RetryConfig::default(), noop_sleep, || {
-            calls_ref.fetch_add(1, Ordering::SeqCst);
-            async { Err::<(), _>(TranscriptionError::QuotaExceeded) }
-        })
-        .await
-        .unwrap_err();
-        assert!(matches!(err, TranscriptionError::QuotaExceeded));
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn exhausts_max_attempts_on_persistent_network_error() {
+    async fn retry_classifies_error_by_retryability(
+        #[case] err: TranscriptionError,
+        #[case] expected_calls: u32,
+    ) {
         let calls = Arc::new(AtomicU32::new(0));
         let calls_ref = calls.clone();
         let cfg = RetryConfig {
@@ -194,14 +178,27 @@ mod tests {
             base_delay: Duration::from_millis(1),
             multiplier: 2,
         };
-        let err = with_backoff(cfg, noop_sleep, || {
+        // Клонируем err каждую попытку — TranscriptionError не Clone из-за
+        // вложенных String, поэтому делаем pattern-based reconstructor.
+        let err_clone = move || match &err {
+            TranscriptionError::Auth(s) => TranscriptionError::Auth(s.clone()),
+            TranscriptionError::QuotaExceeded => TranscriptionError::QuotaExceeded,
+            TranscriptionError::Provider(s) => TranscriptionError::Provider(s.clone()),
+            TranscriptionError::Network(s) => TranscriptionError::Network(s.clone()),
+            _ => unreachable!("test cases только классы выше"),
+        };
+        let res = with_backoff(cfg, noop_sleep, || {
             calls_ref.fetch_add(1, Ordering::SeqCst);
-            async { Err::<(), _>(TranscriptionError::Network("down".into())) }
+            let e = err_clone();
+            async move { Err::<(), _>(e) }
         })
-        .await
-        .unwrap_err();
-        assert!(matches!(err, TranscriptionError::Network(_)));
-        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        .await;
+        assert!(res.is_err(), "expected Err");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            expected_calls,
+            "wrong call count для {expected_calls} expected"
+        );
     }
 
     // ----- fallback tests -----
@@ -390,18 +387,6 @@ mod tests {
         assert!(failure_reason(&TranscriptionError::NotImplemented).contains("не реализован"));
     }
 
-    #[tokio::test]
-    async fn does_not_retry_provider_error() {
-        // Provider error — например parsing — повторять бессмысленно.
-        let calls = Arc::new(AtomicU32::new(0));
-        let calls_ref = calls.clone();
-        let err = with_backoff(RetryConfig::default(), noop_sleep, || {
-            calls_ref.fetch_add(1, Ordering::SeqCst);
-            async { Err::<(), _>(TranscriptionError::Provider("malformed json".into())) }
-        })
-        .await
-        .unwrap_err();
-        assert!(matches!(err, TranscriptionError::Provider(_)));
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-    }
+    // [Phase 6] does_not_retry_provider_error удалён — subsumed by
+    // retry_classifies_error_by_retryability::provider case выше.
 }

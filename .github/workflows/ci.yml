@@ -216,13 +216,14 @@ jobs:
       - name: cargo test + coverage (lcov)
         working-directory: apps/desktop/src-tauri
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-      # [Phase 1] Coverage gate. Текущий honest baseline ~35-45% line coverage
-      # (pipeline/mod.rs + commands.rs + recap::run пока полностью dark).
-      # Поэтапно поднимем к 60-65% после Phase 2-6. 80% паспорта достижим
-      # только через E2E (Playwright) — отдельный B-уровень backlog.
-      - name: Coverage gate (fail-under 40% lines)
+      # [Phase 1-6] Coverage gate. После 6-фазного рефактора + integration
+      # тестов для pipeline + state machine + voice_backfill + proptest на
+      # cosine_similarity baseline должен подняться к 50%+. Поднимаем gate
+      # consequently — если CI упадёт, значит ушли в регрессию.
+      # 80% паспорта достижим только через E2E (Playwright) — backlog B-level.
+      - name: Coverage gate (fail-under 50% lines)
         working-directory: apps/desktop/src-tauri
-        run: cargo llvm-cov report --fail-under-lines 40
+        run: cargo llvm-cov report --fail-under-lines 50
       - name: Upload coverage artefact
         if: always()
         uses: actions/upload-artifact@v4
