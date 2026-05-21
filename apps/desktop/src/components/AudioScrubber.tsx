@@ -58,7 +58,10 @@ export function AudioScrubber({
         position: 'sticky',
         bottom: 12,
         zIndex: 20,
-        marginTop: 16,
+        // [B17 V3.8] marginTop:auto в flex-column parent pushes scrubber
+        // к низу .app-main scroll viewport даже при коротком контенте.
+        // Sticky bottom держит у низа при длинном контенте/scrolling.
+        marginTop: 'auto',
         pointerEvents: 'auto',
       }}
     >
