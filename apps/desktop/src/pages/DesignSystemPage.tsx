@@ -5,6 +5,13 @@
 import type { CSSProperties } from 'react';
 import { Waveform } from '../components/Waveform';
 import {
+  CallErrorRow,
+  CallStateTag,
+  PipelineStrip,
+  ProgressRail,
+} from '../components/call-state';
+import type { CallState } from '../types/callState';
+import {
   ColorSwatch,
   DSCard,
   DSSectionTitle,
@@ -657,6 +664,136 @@ export function DesignSystemPage() {
               height={64}
             />
           </div>
+        </div>
+      </DSCard>
+
+      {/* 14 · Async-state components (V6) */}
+      <DSSectionTitle
+        eyebrow="14 · Async states (V6)"
+        title="Call lifecycle — tags, rails, pipeline, errors"
+        subtitle="Шесть состояний звонка (live · uploading · queued · processing · ready · error) + рельсы прогресса + 5-step pipeline strip + quiet inline error. Всё реактивно к prefers-reduced-motion."
+      />
+      <DSCard style={SECTION_GAP}>
+        {/* Stat tags — все 6 вариантов */}
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          stat-tag · 6 variants
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            flexWrap: 'wrap',
+            marginBottom: 22,
+          }}
+        >
+          {(
+            ['live', 'uploading', 'queued', 'processing', 'ready', 'error'] as CallState[]
+          ).map((s) => (
+            <CallStateTag key={s} state={s} />
+          ))}
+          <CallStateTag state="processing" detail="64%" />
+          <CallStateTag state="uploading" detail="2.4 MB" />
+        </div>
+
+        {/* Progress rails */}
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          rail · determinate / indeterminate
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <ProgressRail pct={32} ariaLabel="32% complete" />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <ProgressRail pct={72} ariaLabel="72% complete" />
+        </div>
+        <div style={{ marginBottom: 22 }}>
+          <ProgressRail indeterminate ariaLabel="Processing" />
+        </div>
+
+        {/* Pipeline strip — single open snapshot */}
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          pipeline strip · expanded (step 3 / 5 · 64%)
+        </div>
+        <div style={{ marginBottom: 22 }}>
+          <PipelineStrip
+            progress={{
+              step: 3,
+              pct: 64,
+              stageLabel: 'Распознаём речь',
+              etaSec: 25,
+            }}
+            defaultOpen
+          />
+        </div>
+
+        {/* Inline error row — как в CallsPage row */}
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          call-error-row · quiet inline (calls list)
+        </div>
+        <div style={{ marginBottom: 22 }}>
+          <CallErrorRow
+            error={{
+              code: 'STT_TIMEOUT',
+              message: 'Сеть недоступна — попробуй ещё раз',
+              attempts: 2,
+              quotaConsumed: false,
+            }}
+            onOpenDetails={() => {
+              /* DS demo — no-op */
+            }}
+          />
+        </div>
+
+        {/* Activity strip */}
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          activity-strip · global processing indicator
+        </div>
+        <div
+          className="activity-strip"
+          style={{ marginBottom: 22 }}
+        >
+          <span className="stat-tag-dot" aria-hidden="true" />
+          <span>Обрабатываем 2 звонка · можно закрыть окно</span>
+        </div>
+
+        {/* Ghost rows — transcript placeholder */}
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          transcript-row--ghost · streaming placeholder
+        </div>
+        <div className="transcript">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="transcript-row transcript-row--ghost"
+            >
+              <div className="transcript-speaker" aria-hidden="true">
+                ···
+              </div>
+              <div className="transcript-text" aria-hidden="true">
+                ···
+              </div>
+              <div className="transcript-time" aria-hidden="true">
+                ···
+              </div>
+            </div>
+          ))}
         </div>
       </DSCard>
 
