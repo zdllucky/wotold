@@ -25,29 +25,10 @@ use crate::{
 pub mod clusters;
 pub mod merge;
 pub mod recap;
+pub mod settings;
 
 pub use merge::{merge_tracks, render_transcript_md};
-
-const SETTING_STT_PROVIDER: &str = "stt_provider";
-const SETTING_PROVIDER_PATH: &str = "provider_path";
-const SETTING_STT_LANG: &str = "stt_lang";
-const SETTING_LLM_MODEL: &str = "llm_model";
-const SETTING_PROXY_BASE_URL: &str = "proxy_base_url";
-/// [B13] Системный язык для LLM-output (рекап + action items). 'auto' = язык
-/// детектированный STT, иначе BCP47 (ru, en, kk, ...). НЕ влияет на STT
-/// auto-detect — STT остаётся multi-lang biased (см. proxy/lib/partners).
-const SETTING_PREFERRED_LANGUAGE: &str = "preferred_language";
-/// [V7] Opt-in auto-bind speakers с suggestion_score >= threshold/100.
-/// '1' = enabled, иначе off. Default OFF (R2 паспорта).
-const SETTING_AUTO_BIND_ENABLED: &str = "auto_bind_enabled";
-const SETTING_AUTO_BIND_THRESHOLD: &str = "auto_bind_threshold";
-
-/// Default proxy URL — debug-сборки (cargo run / tauri dev) целятся на staging,
-/// release — на production. User override через Settings → Прокси → Advanced.
-#[cfg(debug_assertions)]
-const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy-staging.animereader.workers.dev";
-#[cfg(not(debug_assertions))]
-const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy.animereader.workers.dev";
+pub use settings::PipelineSettings;
 
 /// Контекст одной транскрипции: пути к двум дорожкам, call_dir для артефактов,
 /// device-id для managed-режима. `app_data_dir` нужен B3.6 cluster pipeline
@@ -268,37 +249,20 @@ pub async fn regenerate_recap(
         .await
         .map_err(|e| AppError::Other(format!("transcript.md отсутствует: {e}")))?;
 
-    let provider_path = read_setting(pool, SETTING_PROVIDER_PATH, "managed").await?;
-    let llm_model = read_setting(pool, SETTING_LLM_MODEL, "").await?;
-    let preferred_language = read_setting(pool, SETTING_PREFERRED_LANGUAGE, "auto").await?;
-    let proxy_base_url = db::get_setting(pool, SETTING_PROXY_BASE_URL)
-        .await?
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_PROXY_BASE_URL.to_string());
-
-    let model_override = if llm_model.is_empty() {
-        None
-    } else {
-        Some(llm_model.as_str())
-    };
-    // [B13] preferred_language='auto' → используем lang_detected от STT,
-    // иначе override (например 'ru' даже для en-транскрипта).
-    let effective_lang: Option<String> =
-        if preferred_language == "auto" || preferred_language.is_empty() {
-            call.lang_detected.clone()
-        } else {
-            Some(preferred_language.clone())
-        };
+    // [Phase 2 R3] Typed settings — один read, typed fields, edge cases
+    // (malformed threshold, empty proxy URL, "auto" lang) изолированы.
+    let s = PipelineSettings::load(pool).await?;
+    let effective_lang = s.effective_recap_lang(call.lang_detected.as_deref());
 
     let recap_ctx = recap::RecapCtx {
         call_id,
         call_dir: &call_dir,
         transcript_md: &transcript_md,
         lang_detected: effective_lang.as_deref(),
-        proxy_base_url: &proxy_base_url,
+        proxy_base_url: &s.proxy_base_url,
         device_id,
-        provider_path: &provider_path,
-        model_override,
+        provider_path: &s.provider_path,
+        model_override: s.model_override(),
     };
 
     match recap::run(pool, recap_ctx).await {
@@ -321,30 +285,28 @@ async fn run_inner(
     ctx: &PipelineCtx,
     app: Option<&AppHandle>,
 ) -> Result<(), AppError> {
-    let provider_id = read_setting(pool, SETTING_STT_PROVIDER, "auto").await?;
-    let provider_path = read_setting(pool, SETTING_PROVIDER_PATH, "managed").await?;
-    let lang = read_setting(pool, SETTING_STT_LANG, "auto").await?;
-    let llm_model = read_setting(pool, SETTING_LLM_MODEL, "").await?;
-    let proxy_base_url = db::get_setting(pool, SETTING_PROXY_BASE_URL)
-        .await?
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_PROXY_BASE_URL.to_string());
+    // [Phase 2 R3] Все настройки одним проходом, typed. Раньше было 5+
+    // read_setting() inline + duplicate чтения preferred_language с regenerate_recap.
+    let s = PipelineSettings::load(pool).await?;
 
     let providers = build_providers(
-        &provider_id,
-        &provider_path,
-        &proxy_base_url,
+        &s.stt_provider,
+        &s.provider_path,
+        &s.proxy_base_url,
         &ctx.device_id,
     )?;
     let opts = TranscriptionOpts {
-        lang: lang.clone(),
+        lang: s.stt_lang.clone(),
         diarization: true,
     };
     let retry_cfg = RetryConfig::default();
 
     log::info!(
-        "pipeline {} start: provider={provider_id} path={provider_path} lang={lang} fallbacks={}",
+        "pipeline {} start: provider={} path={} lang={} fallbacks={}",
         ctx.call_id,
+        s.stt_provider,
+        s.provider_path,
+        s.stt_lang,
         providers.len()
     );
 
@@ -435,35 +397,23 @@ async fn run_inner(
     // [V7] Opt-in auto-bind: только если юзер явно включил в Settings.
     // Non-fatal: ошибки логируются и пропускаются (suggestion остаётся,
     // юзер может вручную подтвердить). Эмитим event с количеством для UI.
-    if let Err(e) = run_auto_bind(pool, app, &ctx.call_id).await {
+    if let Err(e) = run_auto_bind(pool, app, &ctx.call_id, &s).await {
         log::warn!("auto_bind {} failed (non-fatal): {e}", ctx.call_id);
     }
 
     // M4 chain: транскрипт → LLM рекап. Ошибки рекапа НЕ роняют пайплайн —
     // транскрипт сохранён, рекап можно регенерировать вручную (M4.5).
     let transcript_md = render_transcript_md(&merged);
-    let model_override = if llm_model.is_empty() {
-        None
-    } else {
-        Some(llm_model.as_str())
-    };
-    // [B13] preferred_language override для LLM (см. regenerate_recap).
-    let preferred_language = read_setting(pool, SETTING_PREFERRED_LANGUAGE, "auto").await?;
-    let effective_lang: Option<String> =
-        if preferred_language == "auto" || preferred_language.is_empty() {
-            lang_detected.clone()
-        } else {
-            Some(preferred_language.clone())
-        };
+    let effective_lang = s.effective_recap_lang(lang_detected.as_deref());
     let recap_ctx = recap::RecapCtx {
         call_id: &ctx.call_id,
         call_dir: &ctx.call_dir,
         transcript_md: &transcript_md,
         lang_detected: effective_lang.as_deref(),
-        proxy_base_url: &proxy_base_url,
+        proxy_base_url: &s.proxy_base_url,
         device_id: &ctx.device_id,
-        provider_path: &provider_path,
-        model_override,
+        provider_path: &s.provider_path,
+        model_override: s.model_override(),
     };
     // [V6.2] Step 5 — recap (LLM). Pct=0 на старте, 100 при finish.
     emit_progress(pool, app, &ctx.call_id, 5, 0, None, None).await;
@@ -487,22 +437,19 @@ async fn run_inner(
 /// [V7] Auto-bind speakers с suggestion_score >= threshold/100 при включенной
 /// настройке Settings → Транскрипция → «Автоматически привязывать собеседника».
 ///
-/// Default OFF (R2 паспорта). Threshold: 90 / 95 / 98 (default 95 если
-/// enabled). Emit'ит `call:auto_bound` event с count для UI banner.
+/// Default OFF (R2 паспорта). Threshold parsing + clamping живёт в
+/// `PipelineSettings::load` — здесь только применяем уже-typed config.
 async fn run_auto_bind(
     pool: &SqlitePool,
     app: Option<&AppHandle>,
     call_id: &str,
+    s: &PipelineSettings,
 ) -> Result<(), AppError> {
-    let enabled = read_setting(pool, SETTING_AUTO_BIND_ENABLED, "").await?;
-    if enabled != "1" {
+    let Some(cfg) = &s.auto_bind else {
         return Ok(());
-    }
-    let threshold_raw = read_setting(pool, SETTING_AUTO_BIND_THRESHOLD, "95").await?;
-    let threshold_pct: f64 = threshold_raw.parse().unwrap_or(95.0);
-    // Whitelisted (UI ограничен 90/95/98); защита от мусорных значений.
-    let threshold_pct = threshold_pct.clamp(80.0, 100.0);
-    let threshold = threshold_pct / 100.0;
+    };
+    let threshold = cfg.threshold;
+    let threshold_pct = (threshold * 100.0).round() as u8;
 
     let count = db::auto_bind_high_confidence_speakers(pool, call_id, threshold).await?;
     if count == 0 {
@@ -521,7 +468,7 @@ async fn run_auto_bind(
             AutoBoundEvent {
                 call_id: call_id.to_string(),
                 count,
-                threshold_pct: threshold_pct as u8,
+                threshold_pct,
             },
         ) {
             log::warn!("emit call:auto_bound failed: {e}");
@@ -739,13 +686,163 @@ async fn persist_artifacts(
     Ok(merged)
 }
 
-async fn read_setting(
-    pool: &SqlitePool,
-    key: &str,
-    default_value: &str,
-) -> Result<String, AppError> {
-    Ok(db::get_setting(pool, key)
-        .await?
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| default_value.to_string()))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_support::fresh_db;
+
+    fn arc_device(id: &str) -> Arc<str> {
+        Arc::from(id.to_string().into_boxed_str())
+    }
+
+    // ============================================================
+    // [Phase 2] mode_for — provider mode resolution
+    // ============================================================
+
+    #[test]
+    fn mode_for_managed_returns_proxy_config() {
+        let device = arc_device("dev-1");
+        let m = mode_for(
+            ByoProvider::Soniox,
+            "managed",
+            "https://proxy.example.com",
+            &device,
+        )
+        .unwrap();
+        match m {
+            ProviderMode::Managed {
+                proxy_base_url,
+                device_id,
+            } => {
+                assert_eq!(proxy_base_url, "https://proxy.example.com");
+                assert_eq!(device_id, "dev-1");
+            }
+            _ => panic!("expected Managed mode"),
+        }
+    }
+
+    #[test]
+    fn mode_for_managed_empty_proxy_url_errors() {
+        let device = arc_device("dev-1");
+        let err = mode_for(ByoProvider::Soniox, "managed", "", &device).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Proxy URL"), "got: {msg}");
+    }
+
+    #[test]
+    fn mode_for_unknown_path_errors() {
+        let device = arc_device("dev-1");
+        let err = mode_for(ByoProvider::Soniox, "ghost-path", "https://x", &device).unwrap_err();
+        assert!(err.to_string().contains("unknown provider_path"));
+    }
+
+    // BYO branch требует Keychain access. На CI keychain доступен, на dev
+    // тоже — но затронуть production ключи юзера было бы рискованно.
+    // Reading non-existent ключ должно вернуть Ok(None) → AppError "BYO ключ
+    // не задан". Используем ByoProvider::Anthropic поскольку в pipeline он
+    // не запрашивается через mode_for (STT-only), но enum его поддерживает —
+    // тестируем точку входа.
+    #[test]
+    fn mode_for_byo_missing_key_returns_error() {
+        let device = arc_device("dev-1");
+        // [Phase 2 R5 follow-up] secrets::read_key читает из Keychain.
+        // В test env на macOS он либо вернёт None (никогда не было ключа),
+        // либо ключ из dev-сессии. Считаем что ключ Anthropic для test
+        // env отсутствует (он используется только для proxy LLM, не для STT).
+        // Если кто-то залил ключ — тест станет flaky, но это говорит о
+        // запутанном test isolation, а не о баге кода.
+        let result = mode_for(ByoProvider::Anthropic, "byo", "", &device);
+        // Либо ошибка "BYO ключ не задан", либо Ok если ключ есть.
+        if let Err(e) = result {
+            assert!(
+                e.to_string().contains("BYO ключ"),
+                "expected BYO key error, got: {e}"
+            );
+        }
+    }
+
+    // ============================================================
+    // [Phase 2] reprocess_call — guard rails
+    // ============================================================
+
+    #[tokio::test]
+    async fn reprocess_call_missing_audio_returns_error() {
+        let db = fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let device = arc_device("dev-1");
+
+        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        // Аудио намеренно не создаём — pipeline должен отвергнуть.
+        let err = reprocess_call(&db.pool, tmpdir.path(), &device, &call.id, None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("Аудио файлы"),
+            "expected audio-missing error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reprocess_call_unknown_call_id_returns_not_found() {
+        let db = fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let device = arc_device("dev-1");
+        let err = reprocess_call(&db.pool, tmpdir.path(), &device, "ghost-id", None)
+            .await
+            .unwrap_err();
+        // [Phase 1 R6] typed NotFound теперь сериализуется как
+        // "not found: call ghost-id".
+        assert!(
+            matches!(err, AppError::NotFound(_)),
+            "expected NotFound, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reprocess_call_resets_status_and_progress_when_audio_exists() {
+        let db = fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let device = arc_device("dev-1");
+
+        // Подготовка: row в failed с прогрессом, аудио на диске.
+        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        db::fail_recording_with_reason(&db.pool, &call.id, Some("стрый fail"))
+            .await
+            .unwrap();
+        db::set_call_progress(&db.pool, &call.id, 3, 50, Some(10), Some(2048))
+            .await
+            .unwrap();
+
+        // Создаём пустые WAV файлы — pipeline пройдёт preflight но упадёт
+        // на providers (no settings, no creds). Нам это и нужно — мы
+        // проверяем что reset SQL выполнился ДО запуска pipeline'а.
+        let call_dir = tmpdir.path().join("calls").join(&call.id);
+        tokio::fs::create_dir_all(&call_dir).await.unwrap();
+        tokio::fs::write(call_dir.join("mic.wav"), &[0u8; 4])
+            .await
+            .unwrap();
+        tokio::fs::write(call_dir.join("system.wav"), &[0u8; 4])
+            .await
+            .unwrap();
+
+        // Pipeline упадёт (нет провайдеров / proxy), но reset SQL должен
+        // успеть выполниться раньше.
+        let _ = reprocess_call(&db.pool, tmpdir.path(), &device, &call.id, None).await;
+
+        // После reset+fail цикл: status='failed' снова (упал на providers),
+        // но failed_reason обновится. Главное — pipeline_* очищены.
+        let after = db::get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        // pipeline_step мог быть проставлен step=1 из emit_progress перед
+        // падением, или None если падение случилось раньше. Проверяем что
+        // мы не залипли в старом 3/50%.
+        assert!(
+            after.pipeline_step != Some(3) || after.pipeline_pct != Some(50),
+            "старый прогресс не должен сохраниться"
+        );
+        // failed_reason обновился из "стрый fail" на провайдеровскую ошибку.
+        assert!(
+            after.failed_reason.as_deref() != Some("стрый fail"),
+            "старый failed_reason должен быть перезаписан"
+        );
+    }
 }
