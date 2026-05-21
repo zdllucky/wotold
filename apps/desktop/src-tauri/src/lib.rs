@@ -20,6 +20,10 @@ mod db;
 mod device;
 #[allow(dead_code)]
 mod embeddings;
+// [B3.7] OnnxEmbedder подключается только под фичей. Default build (dev)
+// эту deps tree не тащит — ort + ndarray ~30s build cost экономится.
+#[cfg(feature = "voice-onnx")]
+mod embeddings_onnx;
 mod error;
 #[allow(dead_code)]
 mod identify;
