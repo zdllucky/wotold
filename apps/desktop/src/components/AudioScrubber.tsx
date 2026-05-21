@@ -202,8 +202,8 @@ export function AudioScrubber({
   );
 }
 
-// SpeakerChip — current speaker indicator с avatar + первое имя. Click →
-// onJumpToSpeaker. Если none — italic "пауза".
+// SpeakerChip — current speaker indicator inline (без border/bg карточки).
+// Click → onJumpToSpeaker. Если none — italic "пауза".
 function SpeakerChip({
   speaker,
   onClick,
@@ -219,8 +219,6 @@ function SpeakerChip({
           fontFamily: 'var(--font-serif)',
           fontStyle: 'italic',
           fontSize: 12,
-          flexShrink: 0,
-          padding: '2px 8px',
         }}
       >
         пауза
@@ -239,28 +237,26 @@ function SpeakerChip({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '3px 10px 3px 4px',
-        borderRadius: 'var(--radius-pill)',
-        background: 'var(--surface)',
-        border: '1px solid var(--line)',
+        padding: 0,
+        background: 'none',
+        border: 'none',
         fontSize: 12,
         fontWeight: 500,
         color: 'var(--ink)',
         fontFamily: 'var(--font-sans)',
         letterSpacing: '-0.005em',
         cursor: onClick ? 'pointer' : 'default',
-        flexShrink: 0,
-        maxWidth: 140,
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
-        transition: 'background var(--duration-fast)',
+        maxWidth: '100%',
+        transition: 'color var(--duration-fast)',
       }}
       onMouseEnter={(e) => {
-        if (onClick) e.currentTarget.style.background = 'var(--bg-2)';
+        if (onClick) e.currentTarget.style.color = 'var(--accent)';
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'var(--surface)';
+        e.currentTarget.style.color = 'var(--ink)';
       }}
     >
       <span
