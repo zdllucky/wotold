@@ -141,6 +141,34 @@ pub async fn set_call_meta(
     Ok(())
 }
 
+/// [B17 V4.0] Persist LLM-generated call title. Called from recap pipeline
+/// после успешной генерации JSON. Frontend reads через get_call → renders
+/// в header вместо fallback "Звонок · 20 мая". Empty/blank title не
+/// перезаписывает существующий.
+pub async fn set_call_title(
+    pool: &SqlitePool,
+    call_id: &str,
+    title: &str,
+) -> Result<(), AppError> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "UPDATE calls
+         SET title = ?1,
+             updated_at = ?2
+         WHERE id = ?3",
+    )
+    .bind(trimmed)
+    .bind(&now)
+    .bind(call_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Stale-sweep: при старте приложения все `recording` и `processing` row'ы
 /// помечаются `failed`. Это означает что в прошлой сессии запись или
 /// пайплайн были прерваны (краш, force-quit, потеря питания). Возвращает
@@ -601,6 +629,57 @@ mod tests {
         let db = fresh_db().await;
         // Не должен паниковать при несуществующем id (idempotent semantics).
         delete_call_and_samples(&db.pool, "ghost-id").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_call_cascades_action_items_and_speakers() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let owner = crate::db::ensure_owner_contact(&db.pool).await.unwrap();
+
+        // Seed action_items для call.
+        sqlx::query(
+            "INSERT INTO action_items (id, call_id, text, owner_contact_id)
+             VALUES (?1, ?2, ?3, ?4)",
+        )
+        .bind("ai-1")
+        .bind(&call.id)
+        .bind("buy milk")
+        .bind(&owner.id)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // Seed call_speakers.
+        sqlx::query(
+            "INSERT INTO call_speakers (id, call_id, speaker_tag, contact_id, confirmed)
+             VALUES (?1, ?2, ?3, ?4, 0)",
+        )
+        .bind("cs-1")
+        .bind(&call.id)
+        .bind("S1")
+        .bind(&owner.id)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        delete_call_and_samples(&db.pool, &call.id).await.unwrap();
+
+        let ai_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM action_items WHERE call_id = ?1")
+                .bind(&call.id)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(ai_count, 0, "action_items должны быть cascade-deleted");
+
+        let cs_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM call_speakers WHERE call_id = ?1")
+                .bind(&call.id)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(cs_count, 0, "call_speakers должны быть cascade-deleted");
     }
 
     // ============================================================

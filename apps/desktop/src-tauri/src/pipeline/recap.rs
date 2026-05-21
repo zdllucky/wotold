@@ -22,6 +22,11 @@ use crate::{
 pub struct RecapJson {
     #[serde(default)]
     pub version: Option<u32>,
+    /// [B17 V4.0] Short call title — 3-7 слов, headline-style. Сохраняется
+    /// в calls.title для отображения в CallDetailPage header вместо fallback
+    /// "Звонок · 20 мая".
+    #[serde(default)]
+    pub title: String,
     #[serde(default)]
     pub summary: String,
     #[serde(default)]
@@ -133,6 +138,12 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
 
     db::replace_action_items(pool, ctx.call_id, &action_inputs).await?;
 
+    // [B17 V4.0] Persist generated title в calls.title. Игнорируем пустой
+    // (LLM мог не вытянуть осмысленный headline) — fallback на дату в UI.
+    if !recap.title.trim().is_empty() {
+        db::set_call_title(pool, ctx.call_id, &recap.title).await?;
+    }
+
     let md = render_recap_md(&recap, &contacts, &action_inputs);
     tokio::fs::write(ctx.call_dir.join("recap.md"), md).await?;
 
@@ -174,6 +185,7 @@ fn build_system_prompt(lang_detected: Option<&str>, known_speakers: Option<&str>
 Read the diarized transcript and produce ONE valid JSON object (NO markdown fences, NO commentary, NO trailing text). Schema (strict):\n\
 {{\n\
   \"version\": 1,\n\
+  \"title\": string,                                                        // 3-7 СЛОВ. Headline-style заголовок звонка. Конкретика, без префиксов 'Звонок про'/'Встреча с'. Пример: 'Лонч в августе — Марина', 'Демо НовоСтор', 'Бэйкап Gladia для диаризации'. Используется как title в архиве + в шапке деталей.\n\
   \"summary\": string,                                                      // 1-2 предложения. Бизнес-тон. Конкретика: что обсуждали, кто участвовал, главный итог.\n\
   \"key_points\": string[],                                                 // 3-7 пунктов. Каждый — самодостаточный факт/решение/блокер. Без общих слов 'обсудили статус'.\n\
   \"mom\": string (Markdown),                                               // Структурированные минуты. Заголовки см. ниже.\n\
@@ -386,6 +398,7 @@ mod tests {
     fn render_recap_md_skips_empty_sections() {
         let recap = RecapJson {
             version: Some(1),
+            title: String::new(),
             summary: "Brief".into(),
             key_points: vec![],
             mom: String::new(),
@@ -405,6 +418,7 @@ mod tests {
         let contacts = vec![contact("a", "Alice")];
         let recap = RecapJson {
             version: Some(1),
+            title: "Q3 plan review".into(),
             summary: "Discussed Q3.".into(),
             key_points: vec!["plan reviewed".into()],
             mom: String::new(),
