@@ -126,6 +126,11 @@ const ruInternal = {
     // ≥1 звонок в processing — успокаиваем юзера что можно закрыть окно.
     activityStripOne: 'Обрабатываем 1 звонок · можно закрыть окно',
     activityStripMany: 'Обрабатываем {n} {plural} · можно закрыть окно',
+    // [V6.8] Secondary row под title в списке звонков.
+    secondaryLive: 'идёт запись',
+    secondaryUploading: 'Загружаем аудио',
+    secondaryQueued: 'Ждёт очередь',
+    secondaryEta: 'осталось ~{sec} сек',
     tooltipRecording: 'Идёт запись прямо сейчас.',
     tooltipProcessing: 'Запись завершена, идёт транскрипция через STT.',
     tooltipReady: 'Готово — есть transcript.md и raw_stt.json.',

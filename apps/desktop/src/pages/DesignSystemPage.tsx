@@ -720,7 +720,7 @@ export function DesignSystemPage() {
           className="small-caps"
           style={{ marginBottom: 10, color: 'var(--text-muted)' }}
         >
-          pipeline strip · expanded (step 3 / 5 · 64%)
+          pipeline strip · expanded (step 3 / 5 · indeterminate rail)
         </div>
         <div style={{ marginBottom: 22 }}>
           <PipelineStrip

@@ -871,7 +871,8 @@ textarea:focus-visible {
 }
 .step {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  /* [V6.9] minmax(0,1fr) — label получает min-width:0 для ellipsis */
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
   padding: 8px 0;
@@ -895,12 +896,48 @@ textarea:focus-visible {
   font-size: 14px;
   color: var(--ink);
   letter-spacing: -0.005em;
+  /* [V6.9] min-width:0 + flex grid — позволяет дочернему span'у ellipsis'иться */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.step-label-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .step-meta {
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--muted);
   letter-spacing: 0.02em;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+/* [V6.9] Fake loader для активного шага — нет real within-step progress,
+   shimmer как у браузеров. Один аккуратный пульс по ширине ~28px. */
+.step-shimmer {
+  display: inline-block;
+  width: 28px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-2) 0%,
+    color-mix(in srgb, var(--accent) 35%, var(--bg-2)) 50%,
+    var(--bg-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: wt-skel-shimmer 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .step-shimmer { animation: none; opacity: 0.4; }
 }
 .step--done .step-bullet {
   background: var(--accent);
@@ -948,7 +985,8 @@ textarea:focus-visible {
   list-style: none;
   cursor: pointer;
   display: grid;
-  grid-template-columns: auto 1fr 200px auto;
+  /* [V6.9] minmax — на узких окнах rail колонка сжимается, label получает ellipsis */
+  grid-template-columns: auto minmax(0, 1fr) minmax(80px, 200px) auto;
   align-items: center;
   gap: 18px;
   padding: 14px 18px;
@@ -960,13 +998,27 @@ textarea:focus-visible {
   font-size: 16px;
   color: var(--ink);
   letter-spacing: -0.005em;
+  /* [V6.9] min-width:0 нужен в grid-child чтобы внутренний text-truncate сработал */
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.proc-strip-label-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .proc-strip-rail {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* [V6.9] auto на колонку — rail сжимается на узких окнах */
+  min-width: 80px;
 }
-.proc-strip-rail .rail { width: 130px; }
+.proc-strip-rail .rail { width: 130px; min-width: 60px; }
 .proc-strip-pct {
   font-size: 11px;
   color: var(--muted);

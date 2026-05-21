@@ -26,8 +26,13 @@ export function PipelineStrip({ progress, defaultOpen = false }: PipelineStripPr
           state="processing"
           detail={`${progress.step} / ${totalSteps}`}
         />
-        <span className="proc-strip-label">
-          {progress.stageLabel}
+        {/* [V6.9] Stage label с ellipsis + tooltip — длинные строки
+            («Разделили дорожки микрофона и системы») не должны ломать grid. */}
+        <span
+          className="proc-strip-label"
+          title={progress.stageLabel}
+        >
+          <span className="proc-strip-label-text">{progress.stageLabel}</span>
           <span className="caret" aria-hidden="true" />
           {progress.etaSec !== undefined && (
             <span
@@ -38,12 +43,15 @@ export function PipelineStrip({ progress, defaultOpen = false }: PipelineStripPr
             </span>
           )}
         </span>
+        {/* [V6.9] Pipeline progress = пер-шаговый, но реального within-step %
+            нет (партнёры STT/LLM не стримят progress). Поэтому summary rail
+            всегда indeterminate (shimmer как у браузеров), без числового %.
+            Step count "{step}/{total}" уже в CallStateTag даёт macro-progress. */}
         <div className="proc-strip-rail">
           <ProgressRail
-            pct={progress.pct}
+            indeterminate
             ariaLabel={t('callState.processing')}
           />
-          <span className="mono proc-strip-pct">{Math.round(progress.pct)}%</span>
         </div>
         <span className="btn btn--quiet proc-strip-toggle">
           {t('callState.details')}
@@ -60,18 +68,28 @@ export function PipelineStrip({ progress, defaultOpen = false }: PipelineStripPr
                 : stepNum === progress.step
                   ? 'active'
                   : 'pending';
+            const label = t(key);
             return (
               <div key={key} className={`step step--${state}`}>
                 <div className="step-bullet" aria-hidden="true">
                   {state === 'done' ? '✓' : stepNum}
                 </div>
-                <div className="step-label">
-                  {t(key)}
+                {/* [V6.9] Label truncate-able + tooltip — никаких переносов
+                    которые ломают вертикальную сетку шагов. */}
+                <div className="step-label" title={label}>
+                  <span className="step-label-text">{label}</span>
                   {state === 'active' && <span className="caret" aria-hidden="true" />}
                 </div>
+                {/* [V6.9] Active step → shimmer dot (fake loader). Реального
+                    within-step % нет — числовой процент путал юзера. */}
                 <div className="step-meta">
                   {state === 'done' && '✓'}
-                  {state === 'active' && `${Math.round(progress.pct)}%`}
+                  {state === 'active' && (
+                    <span
+                      className="step-shimmer"
+                      aria-label={t('callState.processing')}
+                    />
+                  )}
                   {state === 'pending' && t('callState.pending')}
                 </div>
               </div>
