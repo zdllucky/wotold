@@ -168,11 +168,21 @@ export function AudioScrubber({
           </div>
         </div>
 
-        {/* Speaker chip — справа от waveform, перед duration. */}
-        <SpeakerChip
-          speaker={currentSpeaker}
-          onClick={onJumpToSpeaker}
-        />
+        {/* Speaker chip — fixed-width контейнер, чтобы waveform не прыгал
+            при смене speaker/пауза. 140px = max chip width + breathing. */}
+        <div
+          style={{
+            width: 140,
+            flexShrink: 0,
+            display: 'flex',
+            justifyContent: 'center',
+          }}
+        >
+          <SpeakerChip
+            speaker={currentSpeaker}
+            onClick={onJumpToSpeaker}
+          />
+        </div>
 
         <div
           className="mono"
