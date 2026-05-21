@@ -8,7 +8,7 @@
 //
 // Virtualization сохранена для 200+ списков (flat layout, без groups).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { humanError } from '../api/errors';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -21,8 +21,8 @@ import { listCallSpeakers } from '../api/speakers';
 import { List, type RowComponentProps } from 'react-window';
 import { CallRowSkeleton, Empty } from '../ui';
 import { bcp47, useI18n } from '../i18n';
-import { CallErrorRow, CallStateTag, ProgressRail } from '../components/call-state';
-import type { CallState } from '../types/callState';
+import { CallStateTag, ProgressRail } from '../components/call-state';
+import { PIPELINE_STEP_KEYS, type CallState } from '../types/callState';
 
 const VIRTUALIZATION_THRESHOLD = 200;
 const ROW_HEIGHT = 78;
@@ -417,11 +417,18 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
   const list = speakers && speakers.length > 0 ? speakers : inferSpeakers(call);
   const uiState = deriveCallState(call);
   const showTag = uiState !== 'ready';
-  const showRail =
-    uiState === 'uploading' || uiState === 'processing' || uiState === 'queued';
-  // [V6.3] Row converted from <button> to clickable <div role="button"> чтобы
-  // позволить вложенные actionable элементы (CallErrorRow "подробнее →").
-  // Keyboard: Enter/Space также открывают звонок.
+  const showRail = uiState === 'uploading' || uiState === 'processing';
+  const title =
+    call.title ?? t('calls.fallbackCallTitle', { short: call.id.slice(0, 8) });
+
+  // [V6.8] Secondary info — единая строка под title, варианты по state.
+  // failed: «<short reason> · аудио сохранено [подробнее →]» (без больших cards).
+  // processing/uploading: текущий step label + ETA, под ним thin rail.
+  // queued: «в очереди».
+  // live: «идёт запись».
+  // ready: пусто.
+  const secondary = renderSecondary(call, uiState, t);
+
   return (
     <div
       role="button"
@@ -434,11 +441,15 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
         }
       }}
       title={statusTooltip(call.status, call.failed_reason, t)}
+      className="call-row"
       style={{
+        // [V6.8] Responsive grid: date 36px / content min:0 1fr / avatars auto / duration auto.
+        // min-width:0 на content-cell обязателен — иначе text-overflow:ellipsis не работает
+        // (children по умолчанию min-content). gap:12 вместо 20 — узкие окна больше не ломаются.
         display: 'grid',
-        gridTemplateColumns: '64px 1fr 200px 70px',
-        gap: 20,
-        padding: '16px 0',
+        gridTemplateColumns: '36px minmax(0, 1fr) auto auto',
+        gap: 12,
+        padding: '14px 0',
         width: '100%',
         background: 'none',
         border: 'none',
@@ -459,59 +470,52 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
       >
         {formatDay(call.started_at)}
       </div>
-      <div>
+      {/* Content cell — min-width:0 чтобы child'ы могли ellipsis'иться */}
+      <div style={{ minWidth: 0 }}>
         <div
           style={{
             fontFamily: 'var(--font-serif)',
             fontSize: 17,
-            marginBottom: 4,
             letterSpacing: '-0.01em',
             color: 'var(--ink)',
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            flexWrap: 'wrap',
+            minWidth: 0,
           }}
         >
-          {call.title ?? t('calls.fallbackCallTitle', { short: call.id.slice(0, 8) })}
-          {showTag && (
-            <CallStateTag
-              state={uiState}
-              detail={
-                uiState === 'processing' && call.pipeline_pct != null
-                  ? `${call.pipeline_pct}%`
-                  : undefined
-              }
-            />
-          )}
+          <span
+            title={title}
+            style={{
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: '0 1 auto',
+            }}
+          >
+            {title}
+          </span>
+          {showTag && <CallStateTag state={uiState} />}
         </div>
+        {secondary && (
+          <div style={{ marginTop: 4, minWidth: 0 }}>{secondary}</div>
+        )}
         {showRail && (
-          <div style={{ marginTop: 6, marginBottom: 4 }}>
+          <div style={{ marginTop: 6 }}>
             <ProgressRail
-              pct={call.pipeline_pct ?? 0}
-              indeterminate={call.pipeline_pct == null}
+              indeterminate
               ariaLabel={t(`callState.${uiState}`)}
             />
           </div>
-        )}
-        {call.status === 'failed' && (
-          <CallErrorRow
-            error={{
-              code: 'PIPELINE',
-              message: call.failed_reason ?? '',
-              attempts: 1,
-              quotaConsumed: false,
-            }}
-            onOpenDetails={() => onOpen(call.id)}
-          />
         )}
       </div>
       <div
         style={{
           display: 'flex',
-          gap: 4,
-          flexWrap: 'wrap',
+          gap: 0,
           alignItems: 'center',
+          flexShrink: 0,
         }}
       >
         {list.slice(0, 3).map((s, i) => (
@@ -533,7 +537,7 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
         {list.length > 3 && (
           <span
             className="mono muted"
-            style={{ fontSize: 11, marginLeft: 4 }}
+            style={{ fontSize: 11, marginLeft: 6 }}
           >
             +{list.length - 3}
           </span>
@@ -545,12 +549,172 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
           fontSize: 12,
           textAlign: 'right',
           letterSpacing: '0.04em',
+          flexShrink: 0,
+          minWidth: 56,
         }}
       >
         {formatDuration(call.duration_sec)}
       </div>
     </div>
   );
+}
+
+/** [V6.8] Secondary-row content по state — единый компактный inline,
+ *  не отдельные карды. ellipsis на длинных строках + tooltip на hover. */
+function renderSecondary(
+  call: Call,
+  state: CallState,
+  t: TFn,
+): ReactNode {
+  // ready — никакой второй строки (clean rest state)
+  if (state === 'ready') return null;
+
+  // failed — короткая первая фраза + «· аудио сохранено» + подробнее →
+  if (state === 'error') {
+    const raw = call.failed_reason?.trim() ?? '';
+    const shortMsg = raw.split(/[—.\n]/)[0]?.trim() || t('callState.errorFallback');
+    return (
+      <div
+        className="call-row-secondary call-row-secondary--error"
+        title={raw || shortMsg}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          minWidth: 0,
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 13,
+          color: 'var(--text-muted)',
+        }}
+      >
+        <span
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: '0 1 auto',
+          }}
+        >
+          {shortMsg} · {t('callState.audioSaved')}
+        </span>
+        <span
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: 'var(--accent)',
+            flexShrink: 0,
+          }}
+        >
+          {t('callState.moreDetails')}
+        </span>
+      </div>
+    );
+  }
+
+  // processing — текущий step label + ETA
+  if (state === 'processing') {
+    const step = clampStep(call.pipeline_step ?? 3);
+    const stageKey = PIPELINE_STEP_KEYS[step - 1] ?? PIPELINE_STEP_KEYS[0];
+    const eta = call.pipeline_eta_sec;
+    const text =
+      eta != null
+        ? `${t(stageKey!)} · ${t('calls.secondaryEta', { sec: eta })}`
+        : t(stageKey!);
+    return secondaryText(text);
+  }
+
+  // uploading — «Загружаем аудио» + опц. «X / Y МБ»
+  if (state === 'uploading') {
+    const bytes = call.upload_bytes;
+    const label = t('calls.secondaryUploading');
+    if (bytes != null && bytes > 0) {
+      return (
+        <div
+          className="call-row-secondary"
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 12,
+            minWidth: 0,
+            fontFamily: 'var(--font-serif)',
+            fontStyle: 'italic',
+            fontSize: 13,
+            color: 'var(--text-muted)',
+          }}
+        >
+          <span
+            style={{
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: '1 1 auto',
+            }}
+            title={label}
+          >
+            {label}
+          </span>
+          <span
+            className="mono"
+            style={{
+              fontSize: 11,
+              flexShrink: 0,
+              color: 'var(--text-muted)',
+            }}
+          >
+            {formatMegabytes(bytes)}
+          </span>
+        </div>
+      );
+    }
+    return secondaryText(label);
+  }
+
+  // queued — «в очереди»
+  if (state === 'queued') {
+    return secondaryText(t('calls.secondaryQueued'));
+  }
+
+  // live — «идёт запись» (waveform на отдельной итерации, пока просто текст)
+  if (state === 'live') {
+    return secondaryText(t('calls.secondaryLive'), 'var(--signal)');
+  }
+
+  return null;
+}
+
+function secondaryText(text: string, color?: string): ReactNode {
+  return (
+    <div
+      className="call-row-secondary"
+      title={text}
+      style={{
+        fontFamily: 'var(--font-serif)',
+        fontStyle: 'italic',
+        fontSize: 13,
+        color: color ?? 'var(--text-muted)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        minWidth: 0,
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
+function clampStep(step: number): 1 | 2 | 3 | 4 | 5 {
+  const n = Math.min(Math.max(step | 0, 1), 5);
+  return n as 1 | 2 | 3 | 4 | 5;
+}
+
+function formatMegabytes(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1) return `${(bytes / 1024).toFixed(0)} КБ`;
+  return `${mb.toFixed(1)} МБ`;
 }
 
 interface VirtualRowProps {

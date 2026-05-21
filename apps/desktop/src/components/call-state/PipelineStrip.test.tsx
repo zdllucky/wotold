@@ -15,12 +15,16 @@ const baseProgress: CallProgress = {
 };
 
 describe('PipelineStrip', () => {
-  test('renders summary with stage label and percentage', () => {
+  test('renders summary with stage label and indeterminate rail', () => {
     const { container } = render(<PipelineStrip progress={baseProgress} />);
     expect(container.querySelector('.proc-strip')).toBeTruthy();
     const summary = container.querySelector('.proc-strip-summary');
     expect(summary?.textContent).toContain('Распознаём речь');
-    expect(container.querySelector('.proc-strip-pct')?.textContent).toBe('64%');
+    // [V6.9] Числовой % убран — нет real within-step progress, rail
+    // всегда indeterminate (shimmer).
+    expect(
+      container.querySelector('.proc-strip-rail .rail.rail--indeterminate'),
+    ).toBeTruthy();
   });
 
   test('renders 5 step rows in expanded body', () => {
@@ -44,13 +48,15 @@ describe('PipelineStrip', () => {
     expect(steps[4]?.classList.contains('step--pending')).toBe(true);
   });
 
-  test('active step shows caret + percent meta', () => {
+  test('active step shows caret + shimmer fake loader', () => {
     const { container } = render(
       <PipelineStrip progress={baseProgress} defaultOpen />,
     );
     const active = container.querySelector('.step--active');
     expect(active?.querySelector('.caret')).toBeTruthy();
-    expect(active?.querySelector('.step-meta')?.textContent).toContain('64%');
+    // [V6.9] No within-step %, instead `.step-shimmer` fake loader
+    // (browser-style indeterminate animation).
+    expect(active?.querySelector('.step-shimmer')).toBeTruthy();
   });
 
   test('done steps show ✓ checkmark', () => {
