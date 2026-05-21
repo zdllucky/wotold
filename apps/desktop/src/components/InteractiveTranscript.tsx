@@ -109,6 +109,8 @@ interface Props {
   currentTime?: number;
   /** Клик по блоку → seek в начало этого блока. */
   onSeek?: (seconds: number) => void;
+  /** Клик по «? Кто это?» chip → открывает SpeakerConfirmModal на заданном теге. */
+  onIdentifySpeaker?: (speakerTag: string) => void;
 }
 
 /** speaker_tag → label для бейджа. Confirmed-contact → display_name,
@@ -124,14 +126,26 @@ function buildLabelMap(speakers?: CallSpeakerView[]): Map<string, string> {
   return m;
 }
 
+/** Set теэгов, которые ещё не подтверждены — для них показываем «Кто это?» chip. */
+function buildUnconfirmedSet(speakers?: CallSpeakerView[]): Set<string> {
+  const s = new Set<string>();
+  if (!speakers) return s;
+  for (const sp of speakers) {
+    if (!sp.confirmed) s.add(sp.speaker_tag);
+  }
+  return s;
+}
+
 export function InteractiveTranscript({
   rawSttJson,
   fallbackMd,
   speakers,
   currentTime,
   onSeek,
+  onIdentifySpeaker,
 }: Props) {
   const labels = useMemo(() => buildLabelMap(speakers), [speakers]);
+  const unconfirmed = useMemo(() => buildUnconfirmedSet(speakers), [speakers]);
   const segments: Segment[] | null = useMemo(() => {
     if (!rawSttJson) return null;
     const parsed = parseRawStt(rawSttJson);
@@ -222,6 +236,20 @@ export function InteractiveTranscript({
           >
             <div className="transcript-speaker" style={{ color }}>
               {firstName}
+              {unconfirmed.has(g.tag) && onIdentifySpeaker && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onIdentifySpeaker(g.tag);
+                  }}
+                  className="transcript-identify-chip"
+                  title="Кто это? Подтвердить голос"
+                  aria-label={`Кто это? Подтвердить голос ${g.tag}`}
+                >
+                  ? кто это
+                </button>
+              )}
             </div>
             <div className="transcript-text">
               {text || <span className="subtle">…</span>}

@@ -368,6 +368,33 @@ textarea:focus-visible,
   letter-spacing: 0.12em;
   text-align: right;
   padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* «? кто это» chip — рядом с лейблом неопределённого спикера в
+ * транскрипте. Quiet ghost-button, на hover поднимает accent. */
+.transcript-identify-chip {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--duration-fast), border-color var(--duration-fast),
+    background var(--duration-fast);
+}
+.transcript-identify-chip:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .transcript-text {
   font-family: var(--font-serif);

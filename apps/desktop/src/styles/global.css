@@ -9,6 +9,79 @@
   color: var(--ink);
 }
 
+/* [Native UX] Tauri webview ≠ браузер.
+   1. overscroll-behavior: none на корне — нет rubber-band бaунса при скролле
+      в шапку/футер. Веб-чувство тяги веб-страницы исчезает.
+   2. user-select: none по умолчанию — выделять рандомные UI-элементы
+      нельзя, как и в нативных приложениях. Cursor: default — не I-beam
+      везде. Whitelist ниже включает selection там где она осмысленна
+      (markdown-контент, текст транскрипта, инпуты, цитируемые таймкоды). */
+html,
+body,
+#root {
+  overscroll-behavior: none;
+}
+
+html,
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* Картинки + svg + кнопки никогда не drag'нутся по случайному movement —
+   стандартное поведение macOS app. */
+img,
+svg {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+/* Whitelist: контент которое логично выделять для копирования.
+   Текстовые блоки транскрипта, recap-markdown, code-блоки, инпуты,
+   крупные заголовки звонков (юзер может скопировать имя/название),
+   произвольные `data-selectable` точки. */
+.markdown,
+.markdown *,
+.transcript-row,
+.transcript-text,
+.transcript-speaker,
+.transcript-time,
+.title,
+.display,
+.subtitle,
+code,
+pre,
+kbd,
+input,
+textarea,
+[contenteditable='true'],
+[data-selectable],
+[data-selectable] * {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+/* Buttons / chips / nav — обратно к pointer, на случай если они внутри
+   markdown или другого selectable-контейнера. */
+button,
+[role='button'],
+.nav-item,
+.tab,
+.btn,
+.sp,
+.sp-avatar {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+
+button:disabled,
+[role='button'][aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
 #root {
   display: flex;
   flex-direction: column;

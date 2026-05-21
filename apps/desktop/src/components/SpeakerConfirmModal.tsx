@@ -1,0 +1,153 @@
+// [B17] SpeakerConfirmModal — inline-popup из транскрипта когда юзер
+// кликает «Кто это?» возле не-определённого спикера. Re-uses SpeakerCard
+// один-в-один (та же calling-card как в табе Участники).
+
+import { useEffect, useRef, useState } from 'react';
+
+import { humanError } from '../api/errors';
+import {
+  confirmCallSpeaker,
+  type CallSpeakerView,
+} from '../api/speakers';
+import { createContact, type Contact } from '../api/contacts';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+
+import { SpeakerCard, type SpeakerSample } from './SpeakerCard';
+
+export interface SpeakerConfirmModalProps {
+  speaker: CallSpeakerView;
+  contacts: Contact[];
+  sample: SpeakerSample | null;
+  onClose: () => void;
+  /** Вызывается после успешного confirm — родитель refresh'ит данные. */
+  onConfirmed: () => void;
+}
+
+export function SpeakerConfirmModal({
+  speaker,
+  contacts,
+  sample,
+  onClose,
+  onConfirmed,
+}: SpeakerConfirmModalProps) {
+  const [pickedContactId, setPickedContactId] = useState<string>(
+    speaker.suggestion_contact_id ?? '',
+  );
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newConsent, setNewConsent] = useState(false);
+  const [busyAdd, setBusyAdd] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusTrap(ref, true, { onClose });
+
+  useEffect(() => {
+    // Перезатягиваем suggestion если speaker сменился (на случай если
+    // модал переоткрывается под другой speaker).
+    setPickedContactId(speaker.suggestion_contact_id ?? '');
+    setAdding(false);
+    setNewName('');
+    setNewConsent(false);
+    setError(null);
+  }, [speaker.id, speaker.suggestion_contact_id]);
+
+  const handleConfirm = async (contactId?: string) => {
+    const picked = contactId ?? pickedContactId;
+    if (!picked) {
+      setError('Сначала выбери контакт.');
+      return;
+    }
+    try {
+      await confirmCallSpeaker(speaker.id, picked);
+      onConfirmed();
+      onClose();
+    } catch (e) {
+      setError(humanError(e));
+    }
+  };
+
+  const handleSubmitNewContact = async () => {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      setError('Введи имя контакта.');
+      return;
+    }
+    setBusyAdd(true);
+    setError(null);
+    try {
+      const contact = await createContact({
+        display_name: trimmed,
+        identifiers: [],
+        attributes: newConsent ? { consent_voice: 'true' } : {},
+      });
+      await confirmCallSpeaker(speaker.id, contact.id);
+      onConfirmed();
+      onClose();
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setBusyAdd(false);
+    }
+  };
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Подтверждение голоса"
+    >
+      <div ref={ref} style={{ width: 'min(560px, 90vw)' }}>
+        {error && (
+          <p
+            role="alert"
+            style={{
+              color: 'var(--signal)',
+              fontFamily: 'var(--font-sans)',
+              marginBottom: 12,
+              background: 'var(--paper)',
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)',
+            }}
+          >
+            {error}
+          </p>
+        )}
+        <SpeakerCard
+          speaker={speaker}
+          idx={0}
+          total={1}
+          contacts={contacts}
+          sample={sample}
+          pickedContactId={pickedContactId}
+          onPick={setPickedContactId}
+          onConfirm={(contactId) => void handleConfirm(contactId)}
+          onReject={() => {
+            setPickedContactId('');
+          }}
+          adding={adding}
+          newName={newName}
+          newConsent={newConsent}
+          busyAdd={busyAdd}
+          onStartAdd={() => {
+            setAdding(true);
+            setNewName('');
+            setNewConsent(false);
+          }}
+          onCancelAdd={() => {
+            setAdding(false);
+            setNewName('');
+            setNewConsent(false);
+          }}
+          onChangeNewName={setNewName}
+          onChangeNewConsent={setNewConsent}
+          onSubmitNewContact={() => void handleSubmitNewContact()}
+        />
+      </div>
+    </div>
+  );
+}
