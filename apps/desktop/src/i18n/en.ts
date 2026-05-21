@@ -64,8 +64,16 @@ export const en: TranslationStrings = {
   home: {
     eyebrowRecording: '● Recording · Local',
     readyHeadline: 'Ready to record.',
+    readyHeadlineRecording: 'Recording in the background.',
+    readyHeadlinePaused: 'Recording paused.',
     subtitle:
       'Press the red circle when your call starts. Transcription arrives in 10–30 seconds.',
+    subtitlePaused:
+      "Audio isn't being captured right now. Resume when you're back — or stop from the strip above.",
+    closeWhileRecordingTitle: 'Recording in progress',
+    closeWhileRecordingBody:
+      'The window will close and recording will stop. Audio and transcript will be saved. Continue?',
+    closeWhileRecordingOk: 'Stop and close',
     startAria: 'Start recording',
     startingAria: 'Starting',
     starting: 'Starting…',
