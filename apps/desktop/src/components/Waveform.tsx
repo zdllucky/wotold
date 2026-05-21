@@ -36,6 +36,10 @@ function bars(seed: number, count: number, width: number, height: number, amp = 
 
 interface WaveformProps {
   seed?: number;
+  /** [B17 V3.3] Real audio peaks (0..1, length=count). Если передан —
+   *  bars генерируются из peaks вместо seeded random. Длина массива должна
+   *  match count, иначе линейная интерполяция. */
+  peaks?: number[];
   /** CSS color string — supports var(--*) tokens. */
   color?: string;
   height?: number;
@@ -46,8 +50,32 @@ interface WaveformProps {
   style?: CSSProperties;
 }
 
+/** Map peaks array (length=n) к target count via downsample / linear interp. */
+function peaksToBars(
+  peaks: number[],
+  count: number,
+  width: number,
+  height: number,
+): Bar[] {
+  const mid = height / 2;
+  const step = width / count;
+  const out: Bar[] = [];
+  for (let i = 0; i < count; i++) {
+    // Linear interp по peaks array.
+    const t = (i / Math.max(1, count - 1)) * Math.max(0, peaks.length - 1);
+    const a = Math.floor(t);
+    const b = Math.min(peaks.length - 1, a + 1);
+    const frac = t - a;
+    const v = (peaks[a] ?? 0) * (1 - frac) + (peaks[b] ?? 0) * frac;
+    const h = Math.max(1.5, Math.min(1, v) * mid);
+    out.push({ x: i * step + step / 2, h });
+  }
+  return out;
+}
+
 export function Waveform({
   seed = 1,
+  peaks,
   color = 'currentColor',
   height = 80,
   width = 800,
@@ -56,7 +84,10 @@ export function Waveform({
   opacity = 1,
   style,
 }: WaveformProps) {
-  const data = bars(seed, count, width, height);
+  const data =
+    peaks && peaks.length > 0
+      ? peaksToBars(peaks, count, width, height)
+      : bars(seed, count, width, height);
   const barW = Math.max(1, width / count - gap);
   return (
     <svg
