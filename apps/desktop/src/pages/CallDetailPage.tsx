@@ -178,7 +178,17 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   if (!call) return <p className="muted">Звонок не найден.</p>;
 
   return (
-    <section>
+    // [B17 V3.8] flex column + minHeight: 100% — scrubber последний child
+    // получает marginTop: auto и прижимается к низу .app-main scroll viewport.
+    // Без этого при коротком контенте (например пустой recap) sticky bottom
+    // не активируется, scrubber висит в середине экрана.
+    <section
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100%',
+      }}
+    >
       <button
         type="button"
         className="btn btn--quiet"
