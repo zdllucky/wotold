@@ -11,7 +11,10 @@ mod action_items;
 mod calls;
 mod contacts;
 mod settings;
-mod voice_samples;
+// [Phase 3 R9] pub(crate) чтобы pipeline::voice_backfill мог вызывать
+// evict_old_voice_samples. Раньше backfill жил внутри db::set_call_speaker_cluster,
+// поэтому хватало private. Теперь side-effect снаружи db/ — нужен crate-wide path.
+pub(crate) mod voice_samples;
 
 pub use action_items::{list_action_items, replace_action_items, ActionItem, ActionItemInput};
 pub use calls::{
@@ -29,8 +32,8 @@ pub use contacts::{
 pub use settings::{get_setting, set_setting};
 pub use voice_samples::{delete_voice_sample, list_voice_samples, VoiceSampleView};
 // [B3.8] evict_old_voice_samples + MAX_SAMPLES_PER_CONTACT — internal API,
-// доступ через crate::db::voice_samples::* (call from db::calls::set_call_speaker_cluster
-// и confirm_call_speaker).
+// доступ через crate::db::voice_samples::* (вызовы из db::calls::confirm_call_speaker
+// и pipeline::voice_backfill::maybe_backfill_voice_sample — Phase 3 R9).
 
 const DB_FILE: &str = "app.db";
 
