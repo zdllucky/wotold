@@ -1,164 +1,37 @@
-// [B17 V3.1] Sticky bottom audio scrubber pill per reference §5 (transcript
-// artboard). Self-contained:
-//   - hidden <audio> elements pre-loaded per track (mic + system)
-//   - visible pill UI: round play btn (ink) + mono time + accent waveform с
-//     progress fill + mono duration
-//   - small track switcher above pill: "я · собеседник" toggle
-//   - position: sticky bottom — float'ит над transcript / recap / tasks
+// [B17 V3.2] Sticky bottom audio scrubber pill — dumb presentation component.
+// State + handlers приходят из useCallAudio() hook (см. CallDetailPage).
+// Это позволяет InteractiveTranscript подписываться на тот же audio state
+// для highlight current row + click-to-seek.
 //
-// При смене track сохраняет playback position. Waveform — seeded из call.id
-// (одинаковый seed → одинаковые bars между renders).
+// Изменения vs V3.1:
+//   - state lifted в useCallAudio hook (single audio element для всей page)
+//   - progress fill через clip-path (bars align с background идеально)
+//   - listeners биндятся в hook (надёжно)
 
-import { useEffect, useRef, useState } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import { getCallAudioPath } from '../api/calls';
-import { humanError } from '../api/errors';
+import type { CallAudioHandle } from '../hooks/useCallAudio';
 import { Waveform } from './Waveform';
 
-type Track = 'mic' | 'system';
-
 interface AudioScrubberProps {
-  callId: string;
-  /** Длительность звонка в секундах — для seed-стабильности + duration label. */
-  durationSec: number;
-  /** Если false (например status='failed') — компонент не рендерится. */
+  audio: CallAudioHandle;
+  /** seed для stable waveform shape — обычно hash от call.id. */
+  seed: number;
+  /** Скрыть scrubber если false (например call status='failed'). */
   enabled?: boolean;
 }
 
-interface SourceState {
-  src: string | null;
-  missing: boolean;
-}
-
-export function AudioScrubber({
-  callId,
-  durationSec,
-  enabled = true,
-}: AudioScrubberProps) {
-  const [active, setActive] = useState<Track>('system');
-  const [mic, setMic] = useState<SourceState>({ src: null, missing: false });
-  const [system, setSystem] = useState<SourceState>({ src: null, missing: false });
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(durationSec || 0);
-  const [error, setError] = useState<string | null>(null);
-
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Load both track paths in parallel.
-  useEffect(() => {
-    let cancelled = false;
-    setError(null);
-    (async () => {
-      const results = await Promise.allSettled([
-        getCallAudioPath(callId, 'mic'),
-        getCallAudioPath(callId, 'system'),
-      ]);
-      if (cancelled) return;
-      const m = results[0];
-      const s = results[1];
-      setMic(
-        m.status === 'fulfilled'
-          ? { src: convertFileSrc(m.value), missing: false }
-          : { src: null, missing: true },
-      );
-      setSystem(
-        s.status === 'fulfilled'
-          ? { src: convertFileSrc(s.value), missing: false }
-          : { src: null, missing: true },
-      );
-      // Если active track недоступен — auto-switch на доступный.
-      if (m.status === 'rejected' && s.status === 'fulfilled') setActive('system');
-      if (s.status === 'rejected' && m.status === 'fulfilled') setActive('mic');
-      if (m.status === 'rejected' && s.status === 'rejected') {
-        const msg =
-          m.reason instanceof Error
-            ? m.reason.message
-            : s.reason instanceof Error
-              ? s.reason.message
-              : String(m.reason ?? s.reason);
-        setError(humanError(msg));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [callId]);
-
-  // Sync audio events.
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    const onTime = () => setCurrentTime(el.currentTime);
-    const onDur = () => {
-      if (Number.isFinite(el.duration)) setDuration(el.duration);
-    };
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    const onEnded = () => setPlaying(false);
-    el.addEventListener('timeupdate', onTime);
-    el.addEventListener('durationchange', onDur);
-    el.addEventListener('loadedmetadata', onDur);
-    el.addEventListener('play', onPlay);
-    el.addEventListener('pause', onPause);
-    el.addEventListener('ended', onEnded);
-    return () => {
-      el.removeEventListener('timeupdate', onTime);
-      el.removeEventListener('durationchange', onDur);
-      el.removeEventListener('loadedmetadata', onDur);
-      el.removeEventListener('play', onPlay);
-      el.removeEventListener('pause', onPause);
-      el.removeEventListener('ended', onEnded);
-    };
-  }, [active]);
-
+export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProps) {
   if (!enabled) return null;
-
-  const activeSrc = active === 'mic' ? mic.src : system.src;
-  const bothMissing = mic.missing && system.missing;
-  if (bothMissing && error) {
-    return null;
-  }
-
-  const togglePlay = () => {
-    const el = audioRef.current;
-    if (!el || !activeSrc) return;
-    if (el.paused) {
-      void el.play().catch(() => undefined);
-    } else {
-      el.pause();
-    }
-  };
-
-  const switchTrack = (next: Track) => {
-    if (next === active) return;
-    if (next === 'mic' && mic.missing) return;
-    if (next === 'system' && system.missing) return;
-    const el = audioRef.current;
-    const pos = el?.currentTime ?? 0;
-    const wasPlaying = el ? !el.paused : false;
-    setActive(next);
-    // Restore position + playback после src swap (async через next tick).
-    requestAnimationFrame(() => {
-      const next_el = audioRef.current;
-      if (next_el) {
-        next_el.currentTime = pos;
-        if (wasPlaying) void next_el.play().catch(() => undefined);
-      }
-    });
-  };
+  if (audio.micMissing && audio.systemMissing) return null;
 
   const onWaveformClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = audioRef.current;
-    if (!el || !duration) return;
+    if (!audio.duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    el.currentTime = ratio * duration;
-    setCurrentTime(el.currentTime);
+    audio.seek(ratio * audio.duration);
   };
 
-  const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const seed = hashId(callId);
+  const progressPct =
+    audio.duration > 0 ? (audio.currentTime / audio.duration) * 100 : 0;
 
   return (
     <div
@@ -170,62 +43,61 @@ export function AudioScrubber({
         pointerEvents: 'auto',
       }}
     >
-      {/* Track switcher — small mono labels above pill */}
-      {!bothMissing && (
-        <div
+      {/* Track switcher */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: 12,
+          marginBottom: 6,
+          fontSize: 10,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          fontFamily: 'var(--font-sans)',
+          fontWeight: 600,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => audio.switchTrack('mic')}
+          disabled={audio.micMissing}
+          aria-pressed={audio.activeTrack === 'mic'}
           style={{
-            display: 'flex',
-            justifyContent: 'center',
-            gap: 12,
-            marginBottom: 6,
-            fontSize: 10,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            fontFamily: 'var(--font-sans)',
-            fontWeight: 600,
+            background: 'none',
+            border: 'none',
+            padding: '4px 8px',
+            cursor: audio.micMissing ? 'not-allowed' : 'pointer',
+            color: audio.activeTrack === 'mic' ? 'var(--ink)' : 'var(--subtle)',
+            opacity: audio.micMissing ? 0.3 : 1,
+            borderRadius: 'var(--radius-sm)',
           }}
+          title="Свой микрофон"
         >
-          <button
-            type="button"
-            onClick={() => switchTrack('mic')}
-            disabled={mic.missing}
-            aria-pressed={active === 'mic'}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '4px 8px',
-              cursor: mic.missing ? 'not-allowed' : 'pointer',
-              color: active === 'mic' ? 'var(--ink)' : 'var(--subtle)',
-              opacity: mic.missing ? 0.3 : 1,
-              borderRadius: 'var(--radius-sm)',
-            }}
-            title="Свой микрофон"
-          >
-            Я
-          </button>
-          <span className="subtle" style={{ alignSelf: 'center' }}>
-            ·
-          </span>
-          <button
-            type="button"
-            onClick={() => switchTrack('system')}
-            disabled={system.missing}
-            aria-pressed={active === 'system'}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: '4px 8px',
-              cursor: system.missing ? 'not-allowed' : 'pointer',
-              color: active === 'system' ? 'var(--ink)' : 'var(--subtle)',
-              opacity: system.missing ? 0.3 : 1,
-              borderRadius: 'var(--radius-sm)',
-            }}
-            title="Звук собеседника (системный аудио)"
-          >
-            Собеседник
-          </button>
-        </div>
-      )}
+          Я
+        </button>
+        <span className="subtle" style={{ alignSelf: 'center' }}>
+          ·
+        </span>
+        <button
+          type="button"
+          onClick={() => audio.switchTrack('system')}
+          disabled={audio.systemMissing}
+          aria-pressed={audio.activeTrack === 'system'}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: '4px 8px',
+            cursor: audio.systemMissing ? 'not-allowed' : 'pointer',
+            color:
+              audio.activeTrack === 'system' ? 'var(--ink)' : 'var(--subtle)',
+            opacity: audio.systemMissing ? 0.3 : 1,
+            borderRadius: 'var(--radius-sm)',
+          }}
+          title="Звук собеседника (системный аудио)"
+        >
+          Собеседник
+        </button>
+      </div>
 
       {/* Pill */}
       <div
@@ -243,9 +115,9 @@ export function AudioScrubber({
       >
         <button
           type="button"
-          onClick={togglePlay}
-          disabled={!activeSrc}
-          aria-label={playing ? 'Пауза' : 'Воспроизведение'}
+          onClick={audio.togglePlay}
+          disabled={!audio.ready}
+          aria-label={audio.playing ? 'Пауза' : 'Воспроизведение'}
           style={{
             width: 32,
             height: 32,
@@ -257,12 +129,13 @@ export function AudioScrubber({
             justifyContent: 'center',
             fontSize: 11,
             border: 'none',
-            cursor: activeSrc ? 'pointer' : 'not-allowed',
-            opacity: activeSrc ? 1 : 0.4,
+            cursor: audio.ready ? 'pointer' : 'not-allowed',
+            opacity: audio.ready ? 1 : 0.4,
             flexShrink: 0,
+            transition: 'transform var(--duration-fast) var(--ease-out-expo)',
           }}
         >
-          {playing ? '❚❚' : '▶'}
+          {audio.playing ? '❚❚' : '▶'}
         </button>
         <div
           className="mono"
@@ -273,8 +146,12 @@ export function AudioScrubber({
             minWidth: 50,
           }}
         >
-          {formatTime(currentTime)}
+          {formatTime(audio.currentTime)}
         </div>
+
+        {/* Waveform + progress fill via clip-path overlay. Both layers
+            render at SAME canvas dimensions, clip-path reveals only played
+            portion in full opacity — bars perfectly aligned. */}
         <div
           onClick={onWaveformClick}
           style={{
@@ -286,10 +163,10 @@ export function AudioScrubber({
           role="slider"
           aria-label="Аудио прогресс"
           aria-valuemin={0}
-          aria-valuemax={Math.floor(duration)}
-          aria-valuenow={Math.floor(currentTime)}
+          aria-valuemax={Math.floor(audio.duration)}
+          aria-valuenow={Math.floor(audio.currentTime)}
         >
-          {/* Background waveform — unplayed portion, low opacity */}
+          {/* Background — unplayed, low opacity */}
           <div
             style={{
               position: 'absolute',
@@ -307,33 +184,24 @@ export function AudioScrubber({
               gap={1.5}
             />
           </div>
-          {/* Played portion — clipped по progress, full opacity */}
+          {/* Foreground — played, full opacity, clipped right */}
           <div
             style={{
               position: 'absolute',
-              top: 0,
-              left: 0,
-              bottom: 0,
-              width: `${progressPct}%`,
-              overflow: 'hidden',
+              inset: 0,
               color: 'var(--accent)',
+              clipPath: `inset(0 ${Math.max(0, 100 - progressPct)}% 0 0)`,
+              transition: 'clip-path 100ms linear',
             }}
           >
-            <div
-              style={{
-                width: progressPct > 0 ? `${(100 / progressPct) * 100}%` : '100%',
-                height: '100%',
-              }}
-            >
-              <Waveform
-                seed={seed}
-                color="currentColor"
-                width={600}
-                height={22}
-                count={160}
-                gap={1.5}
-              />
-            </div>
+            <Waveform
+              seed={seed}
+              color="currentColor"
+              width={600}
+              height={22}
+              count={160}
+              gap={1.5}
+            />
           </div>
         </div>
         <div
@@ -346,19 +214,9 @@ export function AudioScrubber({
             textAlign: 'right',
           }}
         >
-          {formatTime(duration)}
+          {formatTime(audio.duration)}
         </div>
       </div>
-
-      {activeSrc && (
-        // eslint-disable-next-line jsx-a11y/media-has-caption
-        <audio
-          ref={audioRef}
-          src={activeSrc}
-          preload="metadata"
-          style={{ display: 'none' }}
-        />
-      )}
     </div>
   );
 }
@@ -372,10 +230,4 @@ function formatTime(sec: number): string {
     return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
-function hashId(id: string): number {
-  let h = 0;
-  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
-  return Math.abs(h) % 1000;
 }
