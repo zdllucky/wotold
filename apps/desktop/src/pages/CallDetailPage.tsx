@@ -16,7 +16,7 @@ import { listContacts, type Contact } from '../api/contacts';
 import { listCallSpeakers, type CallSpeakerView } from '../api/speakers';
 import type { Call } from '../api/recording';
 import { Empty, Pill, Tabs } from '../ui';
-import { CallAudioPlayer } from '../components/CallAudioPlayer';
+import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakersSection } from './SpeakersSection';
 
@@ -218,8 +218,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         </div>
       </header>
 
-      {call.status !== 'failed' && <CallAudioPlayer callId={callId} />}
-
       {call.status === 'failed' && call.failed_reason && (
         <div
           className="card"
@@ -325,6 +323,15 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           <SpeakersSection callId={callId} />
         </Tabs.Panel>
       </Tabs>
+
+      {/* [B17 V3.1] Sticky-bottom audio scrubber pill — overflow'ит над
+          контентом любого активного таба (transcript / recap / tasks /
+          speakers). Скрыта только при status='failed'. */}
+      <AudioScrubber
+        callId={callId}
+        durationSec={call.duration_sec ?? 0}
+        enabled={call.status !== 'failed'}
+      />
     </section>
   );
 }
