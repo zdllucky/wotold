@@ -1,47 +1,49 @@
-// [B17 V3.2] useCallAudio — single source of truth для audio playback в
-// CallDetailPage. Owns HTMLAudioElement (через `new Audio()` без JSX),
-// resolves track paths via Tauri convertFileSrc, exposes state + handlers
-// для AudioScrubber + InteractiveTranscript.
+// [B17 V3.4] useCallAudio — sync playback двух треков (mic + system)
+// одновременно. Browser mixer сам сводит. Если один отсутствует — играет
+// доступный.
+//
+// State: currentTime/duration берётся из «master» (system если есть, else
+// mic). togglePlay/seek проксируется обоим audio элементам. Peaks combined
+// (element-wise max двух декодированных треков).
 
 import { useEffect, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCallAudioPath } from '../api/calls';
 import { humanError } from '../api/errors';
 
-export type AudioTrack = 'mic' | 'system';
-
 const PEAK_COUNT = 200;
 
 export interface CallAudioState {
-  activeTrack: AudioTrack;
   playing: boolean;
   currentTime: number;
   duration: number;
-  micMissing: boolean;
-  systemMissing: boolean;
+  /** True если оба трека (mic + system) отсутствуют — scrubber тогда скрыт. */
+  bothMissing: boolean;
   ready: boolean;
   error: string | null;
-  /** [B17 V3.3] Real WAV peaks (length PEAK_COUNT), 0..1, для active track.
-   *  null пока декодирование не завершено. */
+  /** Combined peaks (element-wise max между mic + system), 0..1. */
   peaks: number[] | null;
 }
 
 export interface CallAudioActions {
   togglePlay: () => void;
   seek: (seconds: number) => void;
-  switchTrack: (next: AudioTrack) => void;
 }
 
 export type CallAudioHandle = CallAudioState & CallAudioActions;
 
 export function useCallAudio(callId: string, fallbackDuration = 0): CallAudioHandle {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  if (!audioRef.current && typeof window !== 'undefined') {
-    audioRef.current = new Audio();
-    audioRef.current.preload = 'metadata';
+  const micRef = useRef<HTMLAudioElement | null>(null);
+  const systemRef = useRef<HTMLAudioElement | null>(null);
+  if (!micRef.current && typeof window !== 'undefined') {
+    micRef.current = new Audio();
+    micRef.current.preload = 'metadata';
+  }
+  if (!systemRef.current && typeof window !== 'undefined') {
+    systemRef.current = new Audio();
+    systemRef.current.preload = 'metadata';
   }
 
-  const [activeTrack, setActiveTrack] = useState<AudioTrack>('system');
   const [micSrc, setMicSrc] = useState<string | null>(null);
   const [systemSrc, setSystemSrc] = useState<string | null>(null);
   const [micMissing, setMicMissing] = useState(false);
@@ -51,11 +53,10 @@ export function useCallAudio(callId: string, fallbackDuration = 0): CallAudioHan
   const [duration, setDuration] = useState(fallbackDuration);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // [B17 V3.3] Per-track decoded peak buckets — cached между swaps.
   const peaksCacheRef = useRef<Map<string, number[]>>(new Map());
-  const [, setPeaksTick] = useState(0); // force re-render когда peaks ready
+  const [, setPeaksTick] = useState(0);
 
-  // Load both track paths.
+  // Load paths.
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -68,14 +69,10 @@ export function useCallAudio(callId: string, fallbackDuration = 0): CallAudioHan
       if (cancelled) return;
       const m = results[0];
       const s = results[1];
-      const micPath = m.status === 'fulfilled' ? convertFileSrc(m.value) : null;
-      const systemPath = s.status === 'fulfilled' ? convertFileSrc(s.value) : null;
-      setMicSrc(micPath);
-      setSystemSrc(systemPath);
+      setMicSrc(m.status === 'fulfilled' ? convertFileSrc(m.value) : null);
+      setSystemSrc(s.status === 'fulfilled' ? convertFileSrc(s.value) : null);
       setMicMissing(m.status === 'rejected');
       setSystemMissing(s.status === 'rejected');
-      if (m.status === 'rejected' && s.status === 'fulfilled') setActiveTrack('system');
-      if (s.status === 'rejected' && m.status === 'fulfilled') setActiveTrack('mic');
       if (m.status === 'rejected' && s.status === 'rejected') {
         const reason =
           m.reason instanceof Error
@@ -93,137 +90,199 @@ export function useCallAudio(callId: string, fallbackDuration = 0): CallAudioHan
     };
   }, [callId]);
 
-  // Bind audio events ONCE (audio element exists for whole hook lifetime).
+  // Bind events на оба элемента. Master = system (если есть), else mic —
+  // источник currentTime / duration / play state. Слейв тоже играет, sync
+  // по currentTime через seek.
   useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    const onTime = () => setCurrentTime(el.currentTime);
+    const mic = micRef.current;
+    const system = systemRef.current;
+    if (!mic || !system) return;
+    const onTime = () => {
+      const t = pickMaster(mic, system, micMissing, systemMissing).currentTime;
+      setCurrentTime(t);
+    };
     const onDur = () => {
-      if (Number.isFinite(el.duration) && el.duration > 0) setDuration(el.duration);
+      const m = pickMaster(mic, system, micMissing, systemMissing);
+      if (Number.isFinite(m.duration) && m.duration > 0) setDuration(m.duration);
     };
     const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    const onEnded = () => setPlaying(false);
-    el.addEventListener('timeupdate', onTime);
-    el.addEventListener('durationchange', onDur);
-    el.addEventListener('loadedmetadata', onDur);
-    el.addEventListener('play', onPlay);
-    el.addEventListener('pause', onPause);
-    el.addEventListener('ended', onEnded);
+    const onPause = () => {
+      // Считаем «paused» только когда ОБА paused. Иначе пользователь увидит
+      // ❚❚ на secondary pause.
+      if (mic.paused && system.paused) setPlaying(false);
+    };
+    const onEnded = () => {
+      if (mic.ended || mic.paused) {
+        if (system.ended || system.paused) setPlaying(false);
+      }
+    };
+    const targets: HTMLAudioElement[] = [];
+    if (!micMissing) targets.push(mic);
+    if (!systemMissing) targets.push(system);
+    for (const el of targets) {
+      el.addEventListener('timeupdate', onTime);
+      el.addEventListener('durationchange', onDur);
+      el.addEventListener('loadedmetadata', onDur);
+      el.addEventListener('play', onPlay);
+      el.addEventListener('pause', onPause);
+      el.addEventListener('ended', onEnded);
+    }
     return () => {
-      el.pause();
-      el.removeEventListener('timeupdate', onTime);
-      el.removeEventListener('durationchange', onDur);
-      el.removeEventListener('loadedmetadata', onDur);
-      el.removeEventListener('play', onPlay);
-      el.removeEventListener('pause', onPause);
-      el.removeEventListener('ended', onEnded);
+      for (const el of targets) {
+        try {
+          el.pause();
+        } catch {
+          /* noop */
+        }
+        el.removeEventListener('timeupdate', onTime);
+        el.removeEventListener('durationchange', onDur);
+        el.removeEventListener('loadedmetadata', onDur);
+        el.removeEventListener('play', onPlay);
+        el.removeEventListener('pause', onPause);
+        el.removeEventListener('ended', onEnded);
+      }
     };
-  }, []);
+  }, [micMissing, systemMissing]);
 
-  // Sync src when activeTrack или paths change. Preserve currentTime + play
-  // state across track switch.
+  // Sync src при изменении путей.
   useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    const src = activeTrack === 'mic' ? micSrc : systemSrc;
-    if (!src) return;
-    if (el.src === src) return;
-    const pos = el.currentTime;
-    const wasPlaying = !el.paused;
-    el.src = src;
+    const el = micRef.current;
+    if (!el || !micSrc || el.src === micSrc) return;
+    el.src = micSrc;
     el.load();
-    const restore = () => {
-      try {
-        el.currentTime = pos;
-      } catch {
-        /* may not be seekable yet */
-      }
-      if (wasPlaying) {
-        void el.play().catch(() => undefined);
-      }
-      el.removeEventListener('loadedmetadata', restore);
-    };
-    el.addEventListener('loadedmetadata', restore);
-  }, [activeTrack, micSrc, systemSrc]);
-
-  const togglePlay = () => {
-    const el = audioRef.current;
-    if (!el || !el.src) return;
-    if (el.paused) {
-      void el.play().catch(() => undefined);
-    } else {
-      el.pause();
-    }
-  };
-
-  const seek = (seconds: number) => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (!Number.isFinite(seconds) || seconds < 0) return;
-    try {
-      el.currentTime = seconds;
-      setCurrentTime(seconds);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const switchTrack = (next: AudioTrack) => {
-    if (next === activeTrack) return;
-    if (next === 'mic' && micMissing) return;
-    if (next === 'system' && systemMissing) return;
-    setActiveTrack(next);
-  };
-
-  // [B17 V3.3] Decode WAV → peak buckets per track. Cached в peaksCacheRef.
-  // Async на background — UI пока показывает peaks=null (или предыдущие).
+  }, [micSrc]);
   useEffect(() => {
-    const src = activeTrack === 'mic' ? micSrc : systemSrc;
-    if (!src) return;
-    if (peaksCacheRef.current.has(src)) {
-      // Already decoded — force consumer re-read.
-      setPeaksTick((n) => n + 1);
-      return;
-    }
+    const el = systemRef.current;
+    if (!el || !systemSrc || el.src === systemSrc) return;
+    el.src = systemSrc;
+    el.load();
+  }, [systemSrc]);
+
+  // Decode peaks для обоих треков и combine (element-wise max).
+  useEffect(() => {
+    if (!micSrc && !systemSrc) return;
     let cancelled = false;
+    const decodeIfNeeded = async (src: string) => {
+      if (peaksCacheRef.current.has(src)) return peaksCacheRef.current.get(src)!;
+      const peaks = await decodeWavPeaks(src, PEAK_COUNT);
+      if (cancelled) return null;
+      peaksCacheRef.current.set(src, peaks);
+      return peaks;
+    };
     void (async () => {
       try {
-        const peaks = await decodeWavPeaks(src, PEAK_COUNT);
+        const promises: Array<Promise<number[] | null>> = [];
+        if (micSrc) promises.push(decodeIfNeeded(micSrc));
+        if (systemSrc) promises.push(decodeIfNeeded(systemSrc));
+        const results = await Promise.allSettled(promises);
         if (cancelled) return;
-        peaksCacheRef.current.set(src, peaks);
         setPeaksTick((n) => n + 1);
+        void results; // peaks через cache + tick
       } catch (e) {
-        console.warn('[useCallAudio] decode peaks failed', e);
+        console.warn('[useCallAudio] peaks decode failed', e);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeTrack, micSrc, systemSrc]);
+  }, [micSrc, systemSrc]);
 
-  const activeSrc = activeTrack === 'mic' ? micSrc : systemSrc;
-  const peaks = activeSrc ? (peaksCacheRef.current.get(activeSrc) ?? null) : null;
+  const peaks = combinePeaks(
+    micSrc ? peaksCacheRef.current.get(micSrc) ?? null : null,
+    systemSrc ? peaksCacheRef.current.get(systemSrc) ?? null : null,
+  );
+
+  const togglePlay = () => {
+    const mic = micRef.current;
+    const system = systemRef.current;
+    if (!mic || !system) return;
+    const anyPlaying = !mic.paused || !system.paused;
+    if (anyPlaying) {
+      if (!mic.paused) mic.pause();
+      if (!system.paused) system.pause();
+    } else {
+      // Sync currentTime before play (drift compensation).
+      const master = pickMaster(mic, system, micMissing, systemMissing);
+      const pos = master.currentTime;
+      if (!micMissing && Math.abs(mic.currentTime - pos) > 0.05) {
+        try {
+          mic.currentTime = pos;
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!systemMissing && Math.abs(system.currentTime - pos) > 0.05) {
+        try {
+          system.currentTime = pos;
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!micMissing) void mic.play().catch(() => undefined);
+      if (!systemMissing) void system.play().catch(() => undefined);
+    }
+  };
+
+  const seek = (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return;
+    const mic = micRef.current;
+    const system = systemRef.current;
+    if (!micMissing && mic) {
+      try {
+        mic.currentTime = seconds;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!systemMissing && system) {
+      try {
+        system.currentTime = seconds;
+      } catch {
+        /* ignore */
+      }
+    }
+    setCurrentTime(seconds);
+  };
 
   return {
-    activeTrack,
     playing,
     currentTime,
     duration,
-    micMissing,
-    systemMissing,
+    bothMissing: micMissing && systemMissing,
     ready,
     error,
     peaks,
     togglePlay,
     seek,
-    switchTrack,
   };
 }
 
-// [B17 V3.3] Fetch + decode WAV file → array of `count` peaks (max abs per
-// bucket, normalized 0..1). Использует AudioContext.decodeAudioData. Heavy
-// для длинных файлов но one-shot + cached.
+function pickMaster(
+  mic: HTMLAudioElement,
+  system: HTMLAudioElement,
+  micMissing: boolean,
+  systemMissing: boolean,
+): HTMLAudioElement {
+  if (!systemMissing) return system;
+  if (!micMissing) return mic;
+  return system;
+}
+
+function combinePeaks(
+  a: number[] | null,
+  b: number[] | null,
+): number[] | null {
+  if (!a && !b) return null;
+  if (!a) return b;
+  if (!b) return a;
+  const len = Math.min(a.length, b.length);
+  const out = new Array<number>(len);
+  for (let i = 0; i < len; i++) {
+    out[i] = Math.max(a[i] ?? 0, b[i] ?? 0);
+  }
+  return out;
+}
+
 async function decodeWavPeaks(url: string, count: number): Promise<number[]> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`fetch ${response.status}`);
@@ -248,7 +307,6 @@ async function decodeWavPeaks(url: string, count: number): Promise<number[]> {
       peaks[i] = peak;
       if (peak > maxAbs) maxAbs = peak;
     }
-    // Normalize 0..1 (avoid divide-by-zero на тишине).
     if (maxAbs > 0) {
       for (let i = 0; i < count; i++) peaks[i]! /= maxAbs;
     }
