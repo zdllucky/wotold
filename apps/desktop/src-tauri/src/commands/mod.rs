@@ -13,6 +13,7 @@ pub mod secrets;
 pub mod settings;
 pub mod speakers;
 pub mod voice_model;
+pub mod widget;
 
 // Re-exports чтобы `commands::list_calls` и т.д. продолжали резолвиться
 // из `lib.rs::invoke_handler!`.
@@ -25,3 +26,4 @@ pub use secrets::*;
 pub use settings::*;
 pub use speakers::*;
 pub use voice_model::*;
+pub use widget::*;
