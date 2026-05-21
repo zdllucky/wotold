@@ -15,16 +15,18 @@ const baseProgress: CallProgress = {
 };
 
 describe('PipelineStrip', () => {
-  test('renders summary with stage label and indeterminate rail', () => {
+  test('renders summary with stage label and macro progress bar', () => {
     const { container } = render(<PipelineStrip progress={baseProgress} />);
     expect(container.querySelector('.proc-strip')).toBeTruthy();
     const summary = container.querySelector('.proc-strip-summary');
     expect(summary?.textContent).toContain('Распознаём речь');
-    // [V6.9] Числовой % убран — нет real within-step progress, rail
-    // всегда indeterminate (shimmer).
-    expect(
-      container.querySelector('.proc-strip-rail .rail.rail--indeterminate'),
-    ).toBeTruthy();
+    // [V9] Real macro progress. baseProgress = step 3, pct 64
+    // → ((3-1) + 0.64)/5 * 100 = 52.8% → rounded 53.
+    expect(container.querySelector('.proc-strip-pct')?.textContent).toBe('53%');
+    const fill = container.querySelector(
+      '.proc-strip-rail .rail-fill',
+    ) as HTMLElement | null;
+    expect(fill?.style.width).toBe('53%');
   });
 
   test('renders 5 step rows in expanded body', () => {

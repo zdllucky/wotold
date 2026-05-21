@@ -1,7 +1,12 @@
-// [V6.4] ProcessingPanel — рендерит PipelineStrip + reassurance card +
-// ghost-rows mockup транскрипта. Юзер видит «что-то происходит» вместо
-// пустого экрана. DB-state восстанавливается на reload, событие
-// `call:progress` обновляет live tick без F5.
+// [V6.4 / V9] ProcessingPanel — PipelineStrip + reassurance строчка.
+//
+// [V9] Изменения по user feedback:
+// - Ghost-rows удалены (визуальный шум — табы CallDetailPage уже показывают
+//   skeleton'ы пока транскрипт грузится, дублировать не надо)
+// - PipelineStrip collapsed by default — юзер сам разворачивает «подробнее»
+//   если хочет видеть шаги. Сама компактная полоска с прогрессом — достаточно.
+// - ProgressRail внутри strip переходит на real macro-progress
+//   ((step-1 + pct/100) / 5 → 0-100%) вместо indeterminate shimmer.
 
 import type { Call } from '../../api/recording';
 import { PipelineStrip } from '../call-state';
@@ -31,7 +36,7 @@ export function ProcessingPanel({ call }: ProcessingPanelProps) {
   };
   return (
     <div style={{ marginBottom: 18 }}>
-      <PipelineStrip progress={progress} defaultOpen />
+      <PipelineStrip progress={progress} />
       <p
         className="muted"
         style={{
@@ -44,17 +49,6 @@ export function ProcessingPanel({ call }: ProcessingPanelProps) {
       >
         {t('callDetail.reassureCanClose')}
       </p>
-      <div className="transcript" style={{ marginTop: 18 }}>
-        {/* Ghost-rows — намёк что транскрипт скоро появится. Без дёрганий
-            при загрузке (skeletons mounted один раз, до получения transcript). */}
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="transcript-row transcript-row--ghost">
-            <div className="transcript-speaker" aria-hidden="true">···</div>
-            <div className="transcript-text" aria-hidden="true">···</div>
-            <div className="transcript-time" aria-hidden="true">···</div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

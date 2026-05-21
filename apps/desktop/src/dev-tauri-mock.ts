@@ -282,6 +282,11 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         await new Promise((r) => setTimeout(r, 50));
         return null;
       }
+      if (cmd === 'get_active_pipeline_count') {
+        // [V9] In dev browser mock pipeline_tasks always empty (нет реального
+        // Rust state); считаем демо processing звонок «активным» для UI showcase.
+        return 1;
+      }
       // #45: in-memory voice samples preview.
       if (cmd === 'list_voice_samples') {
         const cid = a.contactId as string;

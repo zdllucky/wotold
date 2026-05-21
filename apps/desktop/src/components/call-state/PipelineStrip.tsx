@@ -19,6 +19,15 @@ export interface PipelineStripProps {
 export function PipelineStrip({ progress, defaultOpen = false }: PipelineStripProps) {
   const { t } = useI18n();
   const totalSteps = PIPELINE_STEP_KEYS.length;
+  // [V9] Macro progress 0-100%: each completed step contributes 1/total,
+  // current step within-progress contributes pct/100 * 1/total. Если
+  // pct=0 (default), всё равно показываем уже накопленные шаги.
+  // Шаг 1 в начале → 0%, шаг 1 завершён (=шаг 2 начат) → 20%, шаг 5
+  // завершён → 100%. Это даёт юзеру ощущение реального продвижения,
+  // а не indeterminate shimmer как раньше.
+  const macroPct = Math.round(
+    ((progress.step - 1 + Math.min(progress.pct, 100) / 100) / totalSteps) * 100,
+  );
   return (
     <details className="proc-strip" open={defaultOpen}>
       <summary className="proc-strip-summary">
@@ -43,15 +52,16 @@ export function PipelineStrip({ progress, defaultOpen = false }: PipelineStripPr
             </span>
           )}
         </span>
-        {/* [V6.9] Pipeline progress = пер-шаговый, но реального within-step %
-            нет (партнёры STT/LLM не стримят progress). Поэтому summary rail
-            всегда indeterminate (shimmer как у браузеров), без числового %.
-            Step count "{step}/{total}" уже в CallStateTag даёт macro-progress. */}
+        {/* [V9] Real macro progress bar — step-based прогресс через все 5
+            этапов. Раньше был indeterminate shimmer (выглядело будто ничего
+            не движется); теперь видно «1/5 → 2/5 → 3/5 → 4/5 → 5/5» как
+            заполняющуюся полоску. */}
         <div className="proc-strip-rail">
           <ProgressRail
-            indeterminate
-            ariaLabel={t('callState.processing')}
+            pct={macroPct}
+            ariaLabel={`${t('callState.processing')} · ${macroPct}%`}
           />
+          <span className="mono proc-strip-pct">{macroPct}%</span>
         </div>
         <span className="btn btn--quiet proc-strip-toggle">
           {t('callState.details')}

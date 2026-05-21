@@ -65,6 +65,17 @@ export interface PipelineCancelledEvent {
   artifacts_intact: boolean;
 }
 
+/** [V9] Количество РЕАЛЬНО работающих pipeline-задач в текущей сессии.
+ *  Источник правды — in-memory `pipeline_tasks` registry в AppState, а не
+ *  DB filter (там zombie processing rows от crashed sessions дают false
+ *  positives).
+ *
+ *  Использовать вместо `listCalls().filter(status==='processing'|'recording')`
+ *  для UI counter badges. listCalls остаётся для отображения списка звонков. */
+export function getActivePipelineCount(): Promise<number> {
+  return invoke<number>('get_active_pipeline_count');
+}
+
 /** Экспортировать звонок (recap + transcript + meta) в один markdown-файл
  *  по выбранному пользователем пути. dest_path берётся из save-dialog'а
  *  на frontend'е. Файл должен иметь расширение `.md`. */
