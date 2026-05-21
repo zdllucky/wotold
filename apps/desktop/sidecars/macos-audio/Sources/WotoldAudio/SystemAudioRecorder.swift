@@ -24,6 +24,10 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
     private let flushInterval: TimeInterval = 5.0
     private(set) var bytesWritten: UInt64 = 0
 
+    // [B14] Running RMS для live level meter.
+    private var latestRms: Float = 0
+    var currentRms: Float { latestRms }
+
     func start(systemURL: URL) async throws {
         guard
             let outFormat = AVAudioFormat(
@@ -116,6 +120,7 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
         converter = nil
         outputFormat = nil
         bytesWritten = 0
+        latestRms = 0
 
         return StopResult(bytesWritten: bytes)
     }
@@ -169,6 +174,9 @@ final class SystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
                 Data("system wav write error: \(error.localizedDescription)\n".utf8)
             )
         }
+
+        // [B14] RMS post-write для live level meter.
+        latestRms = computeInt16Rms(outBuffer)
     }
 
     // MARK: - SCStreamDelegate
