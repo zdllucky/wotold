@@ -105,6 +105,7 @@ export const kk: TranslationStrings = {
     filterAll: 'Барлығы',
     filterToday: 'Бүгін',
     filterWeek: 'Апта',
+    filterProcessing: 'Өңдеуде',
     filteredOf: '{filtered} / {total} {plural}',
     countOf: '{n} {plural}',
     hoursSuffix: '· {n} с',
