@@ -30,13 +30,21 @@ html, body {
 }
 
 button { font-family: inherit; cursor: pointer; }
+/* [V5.4] Focus rings — accessible но без визуального шума:
+   - buttons/tabindex: 2px outline + offset (классическая ring)
+   - inputs/textareas: НЕ дублируем outline поверх `.input--box:focus`
+     border-color change — иначе двойная обводка как на скрине юзера.
+     Их focus state теперь полностью контролируется `.input` /
+     `.input--box` ниже (border-color + soft box-shadow). */
 button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+}
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
 }
 
 /* ═══ Type helpers ══════════════════════════════════════ */
@@ -453,8 +461,15 @@ textarea:focus-visible,
   font-size: 14px;
   letter-spacing: -0.005em;
   background: var(--surface);
+  transition: border-color var(--duration-fast),
+              box-shadow var(--duration-fast);
 }
-.input--box:focus { border-color: var(--accent); }
+/* [V5.4] Focus state: border accent + subtle glow ring 2px @ low-alpha.
+ * Без heavy double-outline эффекта (см. global rule выше). */
+.input--box:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
 
 /* ═══ Waveform lane ═════════════════════════════════════ */
 .wave-lane {
