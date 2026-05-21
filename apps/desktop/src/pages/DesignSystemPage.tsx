@@ -4,6 +4,8 @@
 
 import type { CSSProperties } from 'react';
 import { Waveform } from '../components/Waveform';
+import { RecEq } from '../recording/RecEq';
+import { RecMiniButton } from '../recording/RecMiniButton';
 import {
   CallErrorRow,
   CallStateTag,
@@ -794,6 +796,95 @@ export function DesignSystemPage() {
               </div>
             </div>
           ))}
+        </div>
+      </DSCard>
+
+      {/* 15 · Recording controls (W3) */}
+      <DSSectionTitle
+        eyebrow="15 · Recording controls (W3)"
+        title="Persistent strip · pause/resume · live equalizer"
+        subtitle="Полоска .rec-strip живёт над app-main пока запись активна — на любой странице. Pause замораживает таймер и переключает иконку на play. Equalizer .rec-eq — единый индикатор «звук пишется», три полоски с 0.15s сдвигом."
+      />
+      <DSCard style={SECTION_GAP}>
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          rec-eq · animated / paused
+        </div>
+        <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginBottom: 22 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <RecEq />
+            <span className="small-caps">active</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <RecEq paused />
+            <span className="small-caps">paused</span>
+          </div>
+        </div>
+
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          rec-mini-btn · pause / play / stop
+        </div>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 22 }}>
+          <RecMiniButton variant="pause" onClick={() => {}} ariaLabel="Пауза" />
+          <RecMiniButton variant="play" onClick={() => {}} ariaLabel="Продолжить" />
+          <RecMiniButton variant="stop" onClick={() => {}} ariaLabel="Остановить" />
+        </div>
+
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          rec-strip · recording state
+        </div>
+        <div
+          className="rec-strip"
+          role="status"
+          aria-live="polite"
+          style={{ marginBottom: 14 }}
+        >
+          <RecEq />
+          <div className="rec-strip-meta">
+            <div className="small-caps">Идёт запись</div>
+            <div className="rec-strip-meta-row">
+              <span className="rec-strip-timer">00:14:23</span>
+              <span className="rec-strip-title">Звонок с Acme</span>
+            </div>
+          </div>
+          <div className="rec-strip-actions">
+            <RecMiniButton variant="pause" onClick={() => {}} ariaLabel="Пауза" />
+            <RecMiniButton variant="stop" onClick={() => {}} ariaLabel="Стоп" />
+          </div>
+        </div>
+
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          rec-strip · paused state
+        </div>
+        <div
+          className="rec-strip"
+          role="status"
+          aria-live="polite"
+          data-paused="true"
+        >
+          <RecEq paused />
+          <div className="rec-strip-meta">
+            <div className="small-caps">Пауза · записано</div>
+            <div className="rec-strip-meta-row">
+              <span className="rec-strip-timer">00:14:23</span>
+              <span className="rec-strip-title">Звонок с Acme</span>
+            </div>
+          </div>
+          <div className="rec-strip-actions">
+            <RecMiniButton variant="play" onClick={() => {}} ariaLabel="Продолжить" />
+            <RecMiniButton variant="stop" onClick={() => {}} ariaLabel="Стоп" />
+          </div>
         </div>
       </DSCard>
 

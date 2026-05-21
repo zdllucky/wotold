@@ -107,6 +107,14 @@
 - **API extensions** — `CallSpeakerView.auto_bound_at`, `CallAutoBoundEvent` типы.
 - `unbind_call_speaker` теперь очищает `auto_bound_at` тоже — повторное ручное подтверждение даст clean state без auto provenance.
 
+### W · Recording flow redesign (handoff RECORDING-FLOW.md)
+- **W1** Configurable hotkeys — `utils/hotkey.ts` (parse/serialize/format/match/capture/isReserved) + `HotkeyCapture` component + Settings UI. layout-independent через `e.code`. RESERVED list блокирует ⌘W/⌘Q/⌘C. 25 hotkey unit tests.
+- **W2** Backend pause/resume — migration 0010 (`paused_at TEXT` + `paused_total_ms INTEGER`). `db::pause_call` / `resume_call` + 9 cargo tests (idempotent re-pause, multi-cycle accumulation, finish-with-lingering-pause). `pause_recording` / `resume_recording` Tauri commands. v1 = Rust-level pause (frames пишутся в один WAV, silence-trim в pipeline); Swift sidecar pause = TODO v2.
+- **W3** RecordingProvider + UI components — `useRecording()` hook (status idle/recording/paused, elapsedSec с frozen pause, start/pause/resume/stop). `RecEq` (3-span animated equalizer + paused fallback), `RecMiniButton` (pause/play/stop CSS-only glyphs), `RecStrip` (persistent role="status" над app-main). ~200 lines CSS (`.rec-eq`/`.rec-strip`/`.rec-mini-btn` + `prefers-reduced-motion: reduce`). 11 vitest.
+- **W5** HomePage refactor — recording state снят (живёт в RecordingProvider), fullscreen overlay удалён (~260 sloc). Hero copy idle/recording/paused. ⌘⇧R toggle start↔stop + ⌘⇧P pause↔resume через configurable settings. Stop → onOpenCall(callId) → CallDetailPage. cmd+W/Q intercept с confirmation через plugin-dialog ask().
+- **W6** DS page §15 «Recording controls» showcase: RecEq active/paused, RecMiniButton 3 variants, RecStrip recording+paused snapshots.
+- **W4 pending** — RecFloat second Tauri window (мини-виджет при minimize). Требует tauri.conf.json edit + alwaysOnTop transparent decorations:false window + IPC bridge. Отложено как самостоятельная фича: основная backend/UI инфраструктура (RecordingProvider, pause/resume, stop→detail) уже работает в основном окне без виджета.
+
 ### Hardening
 - M8.3 prompt-injection pass-through + LIKE escape regression тесты (MCP).
 - voice_samples cascade тесты (C5): delete contact → cascade samples; delete call → SET NULL source_call.
