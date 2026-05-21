@@ -113,11 +113,6 @@ function withinFilter(c: Call, f: StatusFilter): boolean {
 
 interface CallsPageProps {
   onOpen: (callId: string) => void;
-  /** [V8.2] Pre-set filter (например когда юзер клик'нул rail activity).
-   *  Применяется один раз на mount, потом onFilterConsumed уведомляет
-   *  родителя что флаг можно очистить. */
-  initialFilter?: StatusFilter;
-  onFilterConsumed?: () => void;
 }
 
 interface PipelineFinishedEvent {
@@ -137,25 +132,12 @@ function deriveCallState(call: Call): CallState {
   return 'processing';
 }
 
-export function CallsPage({
-  onOpen,
-  initialFilter,
-  onFilterConsumed,
-}: CallsPageProps) {
+export function CallsPage({ onOpen }: CallsPageProps) {
   const { locale, t } = useI18n();
   const [calls, setCalls] = useState<Call[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<StatusFilter>(initialFilter ?? 'all');
-
-  // [V8.2] Consume initialFilter — после применения сбрасываем у родителя
-  // чтобы повторное навигирование на Calls не залипало в фильтре.
-  useEffect(() => {
-    if (initialFilter && onFilterConsumed) {
-      onFilterConsumed();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot on mount
-  }, []);
+  const [filter, setFilter] = useState<StatusFilter>('all');
   // [B17] Aggregate: per-call confirmed speakers initials.
   const [speakerInitials, setSpeakerInitials] = useState<
     Map<string, string[]>
@@ -295,22 +277,10 @@ export function CallsPage({
 
   return (
     <section>
-      {activeCount > 0 && (
-        <div
-          className="activity-strip"
-          data-comment-anchor="calls-activity-strip"
-        >
-          <span className="stat-tag-dot" aria-hidden="true" />
-          <span>
-            {activeCount === 1
-              ? t('calls.activityStripOne')
-              : t('calls.activityStripMany', {
-                  n: activeCount,
-                  plural: declinePlural(activeCount, pluralForms),
-                })}
-          </span>
-        </div>
-      )}
+      {/* [V8.3] Activity-strip убран — статус видно на Звонки nav-item
+          (badge с count'ом, macOS Mail convention). Дублирующий баннер
+          сверху страницы был визуальным шумом. Фильтр-pill «В обработке»
+          остаётся для ручного применения. */}
       {/* Header — title + bottom-line search + filter pills */}
       <div
         style={{
