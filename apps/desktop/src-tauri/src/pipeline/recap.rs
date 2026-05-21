@@ -362,6 +362,75 @@ mod tests {
     use super::*;
     use serde_json::Value;
 
+    /// [Phase 3] recap::run должен корректно отрабатывать happy-error path:
+    /// если provider_path неизвестный — Err до любых I/O. Это покрывает
+    /// контракт «recap не пробрасывает успех на мусорных настройках».
+    #[tokio::test]
+    async fn recap_run_unknown_provider_path_returns_error() {
+        let db = crate::db::test_support::fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let device: std::sync::Arc<str> = std::sync::Arc::from("dev-1");
+        let ctx = RecapCtx {
+            call_id: "c1",
+            call_dir: tmpdir.path(),
+            transcript_md: "# transcript\n\nspeaker: hello",
+            lang_detected: Some("en"),
+            proxy_base_url: "https://example.com",
+            device_id: &device,
+            provider_path: "ghost-path",
+            model_override: None,
+        };
+        let err = super::run(&db.pool, ctx).await.unwrap_err();
+        assert!(
+            err.to_string().contains("unknown provider_path"),
+            "got: {err}"
+        );
+    }
+
+    /// [Phase 3] recap::run в managed-режиме с пустым proxy_base_url должен
+    /// падать с UX-readable ошибкой («Proxy URL не настроен»). Покрывает
+    /// edge case настройки прокси.
+    #[tokio::test]
+    async fn recap_run_managed_empty_proxy_url_returns_error() {
+        let db = crate::db::test_support::fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let device: std::sync::Arc<str> = std::sync::Arc::from("dev-1");
+        let ctx = RecapCtx {
+            call_id: "c1",
+            call_dir: tmpdir.path(),
+            transcript_md: "stub",
+            lang_detected: None,
+            proxy_base_url: "",
+            device_id: &device,
+            provider_path: "managed",
+            model_override: None,
+        };
+        let err = super::run(&db.pool, ctx).await.unwrap_err();
+        assert!(err.to_string().contains("Proxy URL"), "got: {err}");
+    }
+
+    /// [Phase 3] regenerate_recap при отсутствии transcript.md → AppError.
+    /// Хотя `recap::run` сам не читает файл (caller это делает), мы покрываем
+    /// контракт через pipeline-level wrapper, чтобы поймать regression если
+    /// recap внезапно станет читать transcript сам.
+    #[tokio::test]
+    async fn regenerate_recap_missing_transcript_md_returns_error() {
+        let db = crate::db::test_support::fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let device: std::sync::Arc<str> = std::sync::Arc::from("dev-1");
+        // Создаём call row, но НЕ создаём transcript.md.
+        let call = crate::db::insert_recording(&db.pool, "managed")
+            .await
+            .unwrap();
+        let err = crate::pipeline::regenerate_recap(&db.pool, tmpdir.path(), &device, &call.id)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("transcript.md"),
+            "expected transcript.md error, got: {err}"
+        );
+    }
+
     fn contact(id: &str, name: &str) -> db::Contact {
         db::Contact {
             id: id.to_string(),

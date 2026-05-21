@@ -13,7 +13,7 @@ use crate::{
     providers::{
         transcription::{
             failure_reason, transcribe_with_fallback, DiarizedTranscript, GladiaProvider,
-            RetryConfig, SonioxProvider, TranscriptionError, TranscriptionOpts,
+            RetryConfig, SonioxProvider, TranscriptSegment, TranscriptionError, TranscriptionOpts,
             TranscriptionProvider,
         },
         ProviderMode,
@@ -26,9 +26,12 @@ pub mod clusters;
 pub mod merge;
 pub mod recap;
 pub mod settings;
+pub mod stage;
+pub mod voice_backfill;
 
 pub use merge::{merge_tracks, render_transcript_md};
 pub use settings::PipelineSettings;
+pub use stage::Stage;
 
 /// Контекст одной транскрипции: пути к двум дорожкам, call_dir для артефактов,
 /// device-id для managed-режима. `app_data_dir` нужен B3.6 cluster pipeline
@@ -280,6 +283,31 @@ pub async fn regenerate_recap(
     }
 }
 
+/// [Phase 3 R2] Helper: эмитит `(step, 0)` перед `f.await`, и `(step, 100)`
+/// при успехе. Ошибка пробрасывается БЕЗ финального emit'а — это даёт UI
+/// сигнал «упали на шаге X с pct=0» через DB-state (set_call_progress
+/// эмиссия pct=0 уже произошла).
+///
+/// `upload_bytes` опционально — нужен только для Stage::Upload, чтобы
+/// UI показал «Загружено N МБ из M». Остальные stages передают None.
+async fn run_stage<F, T>(
+    pool: &SqlitePool,
+    app: Option<&AppHandle>,
+    call_id: &str,
+    stage: Stage,
+    upload_bytes: Option<i64>,
+    f: F,
+) -> Result<T, AppError>
+where
+    F: std::future::Future<Output = Result<T, AppError>>,
+{
+    let step = stage.step();
+    emit_progress(pool, app, call_id, step, 0, None, upload_bytes).await;
+    let result = f.await?;
+    emit_progress(pool, app, call_id, step, 100, None, upload_bytes).await;
+    Ok(result)
+}
+
 async fn run_inner(
     pool: &SqlitePool,
     ctx: &PipelineCtx,
@@ -310,34 +338,23 @@ async fn run_inner(
         providers.len()
     );
 
-    // [V6.2] Step 1 — uploading. Реальный per-byte stream'инг внутри providers
-    // потребует middleware вокруг reqwest; пока эмитим начало шага (pct=0)
-    // и шаг сразу же подтягивается к step=2 как только STT-запрос ушёл.
-    // Размер аудио в байтах подходит как upload_bytes hint для UI.
+    // [Phase 3 R2] TIMING contract: stages эмитятся в порядке
+    // Upload(1) → Transcribe(2) → MergeArtifacts(4) → RecognizeSpeakers(3) → Recap(5).
+    // Шаг 3 идёт ПОСЛЕ 4: speaker recognition работает по уже персистированному
+    // транскрипту (transcript.md / raw_stt.json должны быть на диске до cluster pipeline'а).
+
+    // Stage 1: Upload — мгновенный псевдо-шаг (нет per-byte progress в provider API).
     let upload_hint = audio_byte_total(&ctx.mic_path, &ctx.system_path).await;
-    emit_progress(pool, app, &ctx.call_id, 1, 0, None, upload_hint).await;
-    emit_progress(pool, app, &ctx.call_id, 1, 100, None, upload_hint).await;
+    run_stage(pool, app, &ctx.call_id, Stage::Upload, upload_hint, async {
+        stage_upload(upload_hint).await
+    })
+    .await?;
 
-    // [V6.2] Step 2 — transcribe (STT). Долгий шаг, провайдеры возвращают
-    // финальный transcript разово — promise-ish прогресс невозможен без
-    // streaming API партнёра. pct=0 на старте, 100 при завершении.
-    emit_progress(pool, app, &ctx.call_id, 2, 0, None, None).await;
-
-    let (mic_res, sys_res) = tokio::join!(
-        transcribe_with_fallback(&providers, &ctx.mic_path, opts.clone(), retry_cfg),
-        transcribe_with_fallback(&providers, &ctx.system_path, opts.clone(), retry_cfg),
-    );
-
-    let mic_t = mic_res.map_err(stt_to_app_error)?;
-    let sys_t = sys_res.map_err(stt_to_app_error)?;
-    emit_progress(pool, app, &ctx.call_id, 2, 100, None, None).await;
-
-    // [V6.2] Step 4 — merge tracks + persist artifacts (transcript.md, raw_stt.json).
-    // Шаг 3 (speaker recognition) идёт логически после, но мы persist'ить
-    // должны до cluster pipeline (transcript нужен для UI even if cluster fails).
-    emit_progress(pool, app, &ctx.call_id, 4, 0, None, None).await;
-    let merged = persist_artifacts(&ctx.call_dir, &mic_t, &sys_t).await?;
-    emit_progress(pool, app, &ctx.call_id, 4, 100, None, None).await;
+    // Stage 2: Transcribe (STT) — долгий шаг, mic + system параллельно.
+    let (mic_t, sys_t) = run_stage(pool, app, &ctx.call_id, Stage::Transcribe, None, async {
+        stage_transcribe(&providers, ctx, opts, retry_cfg).await
+    })
+    .await?;
 
     let lang_detected = mic_t
         .lang_detected
@@ -345,66 +362,152 @@ async fn run_inner(
         .or_else(|| sys_t.lang_detected.clone());
     let provider_used = sys_t.provider.clone();
 
+    // Stage 4: MergeArtifacts — persist transcript.md + raw_stt.json. Идёт ДО
+    // RecognizeSpeakers (Stage::3), потому что cluster pipeline читает merged
+    // segments и пишет в DB; UI должен иметь транскрипт даже если cluster упал.
+    let merged = run_stage(
+        pool,
+        app,
+        &ctx.call_id,
+        Stage::MergeArtifacts,
+        None,
+        async { stage_merge_artifacts(&ctx.call_dir, &mic_t, &sys_t).await },
+    )
+    .await?;
+
     db::set_call_meta(pool, &ctx.call_id, lang_detected.as_deref(), &provider_used).await?;
 
     // M3.7: mic-дорожка по определению принадлежит владельцу устройства.
-    // Создаём confirmed=1 row сразу — пользователю не нужно подтверждать
-    // самого себя. Не нарушает R2 (никакой автопривязки): owner == юзер.
+    // Не нарушает R2 (никакой автопривязки): owner == юзер.
     let owner = db::ensure_owner_contact(pool).await?;
     if let Err(e) = db::auto_bind_owner_speaker(pool, &ctx.call_id, &owner.id, OWNER_TAG).await {
         log::warn!("auto_bind_owner_speaker {} failed: {e}", ctx.call_id);
     }
+    ensure_anonymous_speakers_present(pool, &ctx.call_id, &merged).await;
 
-    // [B11]: добавить placeholder rows для всех distinct speaker_tag из транскрипта
-    // (кроме owner, у которого уже confirmed). UI покажет даже анонимных «S1/S2»,
-    // юзер сможет привязать через select или «+ Добавить как контакт».
-    let mut seen_tags: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for seg in &merged {
-        if seg.speaker_tag != OWNER_TAG && !seg.speaker_tag.is_empty() {
-            seen_tags.insert(seg.speaker_tag.clone());
-        }
-    }
-    let tags_vec: Vec<String> = seen_tags.into_iter().collect();
-    if !tags_vec.is_empty() {
-        if let Err(e) = db::ensure_call_speakers_present(pool, &ctx.call_id, &tags_vec).await {
-            log::warn!("ensure_call_speakers_present {} failed: {e}", ctx.call_id);
-        }
-    }
-
-    // [B3.3-3.4] Voice cluster extraction + matching → suggestion. Embedder
-    // сейчас Stub (no-op до B3.6 ONNX integration), pipeline ничего не извлекает.
-    // После B3.6 → реальный OnnxEmbedder и flow заработает на existing звонках
-    // через `regenerate_recap` (M4.5) + новых через эту ветку.
-    // [V6.2] Step 3 — recognize speakers (voice clustering + matching).
-    emit_progress(pool, app, &ctx.call_id, 3, 0, None, None).await;
-    if let Err(e) = run_cluster_pipeline(
+    // Stage 3: RecognizeSpeakers — cluster extraction + matching. Non-fatal:
+    // ошибки логируются и пропускаются (recap всё равно сгенерируется).
+    let cluster_result = run_stage(
         pool,
+        app,
         &ctx.call_id,
-        &merged,
-        &ctx.mic_path,
-        &ctx.system_path,
-        &ctx.app_data_dir,
+        Stage::RecognizeSpeakers,
+        None,
+        async { stage_recognize_speakers(pool, ctx, &merged).await },
     )
-    .await
-    {
+    .await;
+    if let Err(e) = cluster_result {
         log::warn!(
             "cluster pipeline {} failed (non-fatal — skip voice match): {e}",
             ctx.call_id
         );
     }
-    emit_progress(pool, app, &ctx.call_id, 3, 100, None, None).await;
 
-    // [V7] Opt-in auto-bind: только если юзер явно включил в Settings.
-    // Non-fatal: ошибки логируются и пропускаются (suggestion остаётся,
-    // юзер может вручную подтвердить). Эмитим event с количеством для UI.
+    // [V7] Opt-in auto-bind — отдельный non-fatal шаг ПОСЛЕ RecognizeSpeakers,
+    // БЕЗ собственного progress event (R2 паспорта: invisible flow).
     if let Err(e) = run_auto_bind(pool, app, &ctx.call_id, &s).await {
         log::warn!("auto_bind {} failed (non-fatal): {e}", ctx.call_id);
     }
 
-    // M4 chain: транскрипт → LLM рекап. Ошибки рекапа НЕ роняют пайплайн —
-    // транскрипт сохранён, рекап можно регенерировать вручную (M4.5).
-    let transcript_md = render_transcript_md(&merged);
-    let effective_lang = s.effective_recap_lang(lang_detected.as_deref());
+    // Stage 5: Recap (LLM). Ошибки рекапа НЕ роняют пайплайн — транскрипт
+    // сохранён, рекап можно регенерировать вручную (M4.5).
+    let recap_step = Stage::Recap.step();
+    emit_progress(pool, app, &ctx.call_id, recap_step, 0, None, None).await;
+    stage_recap(pool, ctx, &s, &merged, lang_detected.as_deref()).await;
+    emit_progress(pool, app, &ctx.call_id, recap_step, 100, None, None).await;
+
+    Ok(())
+}
+
+/// [Phase 3 R2] Stage 1 — Upload. В текущей реализации no-op
+/// (real per-byte streaming требует middleware вокруг reqwest, которого ещё
+/// нет). Хелпер существует чтобы run_inner был симметричный — каждая stage
+/// это отдельная async fn.
+///
+/// Возвращает upload_bytes hint (для UI «Загружено N МБ»). None если оба
+/// аудио-файла отсутствуют (test fixtures + edge cases).
+async fn stage_upload(upload_bytes_hint: Option<i64>) -> Result<Option<i64>, AppError> {
+    Ok(upload_bytes_hint)
+}
+
+/// [Phase 3 R2] Stage 2 — STT (mic + system параллельно с retry/fallback).
+/// Возвращает оба diarized-транскрипта; merge делается в Stage::MergeArtifacts.
+async fn stage_transcribe(
+    providers: &[Box<dyn TranscriptionProvider>],
+    ctx: &PipelineCtx,
+    opts: TranscriptionOpts,
+    retry_cfg: RetryConfig,
+) -> Result<(DiarizedTranscript, DiarizedTranscript), AppError> {
+    let (mic_res, sys_res) = tokio::join!(
+        transcribe_with_fallback(providers, &ctx.mic_path, opts.clone(), retry_cfg),
+        transcribe_with_fallback(providers, &ctx.system_path, opts.clone(), retry_cfg),
+    );
+    let mic_t = mic_res.map_err(stt_to_app_error)?;
+    let sys_t = sys_res.map_err(stt_to_app_error)?;
+    Ok((mic_t, sys_t))
+}
+
+/// [Phase 3 R2] Stage 4 — merge tracks + persist artifacts. Раньше это был
+/// `persist_artifacts` хелпер — теперь явно stage. Возвращает merged-сегменты
+/// для последующих stages (recognize_speakers + recap).
+async fn stage_merge_artifacts(
+    call_dir: &PathBuf,
+    mic: &DiarizedTranscript,
+    system: &DiarizedTranscript,
+) -> Result<Vec<TranscriptSegment>, AppError> {
+    tokio::fs::create_dir_all(call_dir).await?;
+
+    let merged = merge_tracks(mic, system);
+
+    // M2.5: raw_stt.json держим чтобы перегенерировать рекап без повторной оплаты STT.
+    let raw = json!({
+        "version": 1,
+        "mic": mic,
+        "system": system,
+        "merged": &merged,
+    });
+    tokio::fs::write(
+        call_dir.join("raw_stt.json"),
+        serde_json::to_vec_pretty(&raw)?,
+    )
+    .await?;
+
+    let md = render_transcript_md(&merged);
+    tokio::fs::write(call_dir.join("transcript.md"), md).await?;
+
+    Ok(merged)
+}
+
+/// [Phase 3 R2] Stage 3 — voice clusters + matching → suggestion. Wrapper над
+/// `run_cluster_pipeline` чтобы run_inner был симметричный.
+async fn stage_recognize_speakers(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    merged: &[TranscriptSegment],
+) -> Result<(), AppError> {
+    run_cluster_pipeline(
+        pool,
+        &ctx.call_id,
+        merged,
+        &ctx.mic_path,
+        &ctx.system_path,
+        &ctx.app_data_dir,
+    )
+    .await
+}
+
+/// [Phase 3 R2] Stage 5 — LLM recap. Ошибки НЕ пробрасываются (non-fatal):
+/// persist'им reason в DB для UI banner. Pipeline всегда заканчивается Ok
+/// если транскрипт сохранён.
+async fn stage_recap(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    s: &PipelineSettings,
+    merged: &[TranscriptSegment],
+    lang_detected: Option<&str>,
+) {
+    let transcript_md = render_transcript_md(merged);
+    let effective_lang = s.effective_recap_lang(lang_detected);
     let recap_ctx = recap::RecapCtx {
         call_id: &ctx.call_id,
         call_dir: &ctx.call_dir,
@@ -415,23 +518,44 @@ async fn run_inner(
         provider_path: &s.provider_path,
         model_override: s.model_override(),
     };
-    // [V6.2] Step 5 — recap (LLM). Pct=0 на старте, 100 при finish.
-    emit_progress(pool, app, &ctx.call_id, 5, 0, None, None).await;
-    if let Err(e) = recap::run(pool, recap_ctx).await {
-        let reason = e.to_string();
-        log::warn!("recap {} skipped: {reason}", ctx.call_id);
-        // [B16]: persist recap failure для UI banner. status='ready' остаётся —
-        // транскрипт есть, юзер видит «не получилось саммари: ...» + кнопка retry.
-        if let Err(e2) = db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await {
-            log::error!("set_recap_failed_reason {} failed: {e2}", ctx.call_id);
+    match recap::run(pool, recap_ctx).await {
+        Ok(()) => {
+            // Очищаем если был старый recap_failed_reason (например после reprocess).
+            let _ = db::set_recap_failed_reason(pool, &ctx.call_id, None).await;
         }
-    } else {
-        // Очищаем если был старый recap_failed_reason (например после reprocess).
-        let _ = db::set_recap_failed_reason(pool, &ctx.call_id, None).await;
+        Err(e) => {
+            let reason = e.to_string();
+            log::warn!("recap {} skipped: {reason}", ctx.call_id);
+            // [B16]: persist recap failure для UI banner. status='ready' остаётся.
+            if let Err(e2) = db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await {
+                log::error!("set_recap_failed_reason {} failed: {e2}", ctx.call_id);
+            }
+        }
     }
-    emit_progress(pool, app, &ctx.call_id, 5, 100, None, None).await;
+}
 
-    Ok(())
+/// [B11] M7.4: добавить placeholder rows в call_speakers для всех distinct
+/// speaker_tag из транскрипта (кроме owner — у него уже confirmed). UI покажет
+/// анонимных «S1/S2», юзер сможет привязать через select.
+/// Non-fatal: warning при ошибке.
+async fn ensure_anonymous_speakers_present(
+    pool: &SqlitePool,
+    call_id: &str,
+    merged: &[TranscriptSegment],
+) {
+    let mut seen_tags: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for seg in merged {
+        if seg.speaker_tag != OWNER_TAG && !seg.speaker_tag.is_empty() {
+            seen_tags.insert(seg.speaker_tag.clone());
+        }
+    }
+    let tags_vec: Vec<String> = seen_tags.into_iter().collect();
+    if tags_vec.is_empty() {
+        return;
+    }
+    if let Err(e) = db::ensure_call_speakers_present(pool, call_id, &tags_vec).await {
+        log::warn!("ensure_call_speakers_present {call_id} failed: {e}");
+    }
 }
 
 /// [V7] Auto-bind speakers с suggestion_score >= threshold/100 при включенной
@@ -583,10 +707,14 @@ fn stt_to_app_error(e: TranscriptionError) -> AppError {
 /// [B3.6] Embedder выбирается dispatcher'ом — реальный OnnxEmbedder если
 /// модель найдена в `app_data_dir/models/embedder.onnx` и фича `voice-onnx`
 /// включена, иначе StubEmbedder (no-op → пустые clusters).
+///
+/// [Phase 3 R9] После persist'а cluster'а вызываем
+/// `voice_backfill::maybe_backfill_voice_sample` — раньше эта логика жила
+/// внутри `db::set_call_speaker_cluster`, теперь side-effect наружу.
 async fn run_cluster_pipeline(
     pool: &SqlitePool,
     call_id: &str,
-    merged: &[crate::providers::transcription::TranscriptSegment],
+    merged: &[TranscriptSegment],
     mic_path: &Path,
     system_path: &Path,
     app_data_dir: &Path,
@@ -628,6 +756,16 @@ async fn run_cluster_pipeline(
             log::warn!("set_call_speaker_cluster {tag}: {e}");
             continue;
         }
+
+        // [Phase 3 R9] Reprocess backfill: если speaker уже confirmed + контакт
+        // дал consent_voice — upsert'им voice_sample (idempotent). До Phase 3
+        // эта логика жила внутри `set_call_speaker_cluster`. Non-fatal:
+        // warning + continue.
+        if let Err(e) = voice_backfill::maybe_backfill_voice_sample(pool, call_id, tag, &blob).await
+        {
+            log::warn!("voice_backfill {tag}: {e}");
+        }
+
         // Owner-тег не matching'им — он привязан к owner-contact автоматически.
         if tag == OWNER_TAG {
             continue;
@@ -656,34 +794,6 @@ async fn run_cluster_pipeline(
         }
     }
     Ok(())
-}
-
-async fn persist_artifacts(
-    call_dir: &PathBuf,
-    mic: &DiarizedTranscript,
-    system: &DiarizedTranscript,
-) -> Result<Vec<crate::providers::transcription::TranscriptSegment>, AppError> {
-    tokio::fs::create_dir_all(call_dir).await?;
-
-    let merged = merge_tracks(mic, system);
-
-    // M2.5: raw_stt.json держим чтобы перегенерировать рекап без повторной оплаты STT.
-    let raw = json!({
-        "version": 1,
-        "mic": mic,
-        "system": system,
-        "merged": &merged,
-    });
-    tokio::fs::write(
-        call_dir.join("raw_stt.json"),
-        serde_json::to_vec_pretty(&raw)?,
-    )
-    .await?;
-
-    let md = render_transcript_md(&merged);
-    tokio::fs::write(call_dir.join("transcript.md"), md).await?;
-
-    Ok(merged)
 }
 
 #[cfg(test)]
@@ -796,6 +906,124 @@ mod tests {
             matches!(err, AppError::NotFound(_)),
             "expected NotFound, got: {err:?}"
         );
+    }
+
+    // ============================================================
+    // [Phase 3 R2] run_auto_bind — typed config branching
+    // ============================================================
+
+    use crate::pipeline::settings::{AutoBindConfig, DEFAULT_PROXY_BASE_URL};
+
+    fn settings_with_auto_bind(auto_bind: Option<AutoBindConfig>) -> PipelineSettings {
+        PipelineSettings {
+            stt_provider: "auto".into(),
+            provider_path: "managed".into(),
+            stt_lang: "auto".into(),
+            llm_model: String::new(),
+            proxy_base_url: DEFAULT_PROXY_BASE_URL.into(),
+            preferred_language: "auto".into(),
+            auto_bind,
+        }
+    }
+
+    async fn insert_consenting_contact_with_samples(
+        pool: &sqlx::SqlitePool,
+        name: &str,
+        sample_count: usize,
+    ) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO contacts (id, display_name, is_owner, attributes, created_at, updated_at)
+             VALUES (?1, ?2, 0, '{\"consent_voice\":\"true\"}', ?3, ?3)",
+        )
+        .bind(&id)
+        .bind(name)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+        for i in 0..sample_count {
+            sqlx::query(
+                "INSERT INTO voice_samples
+                   (id, contact_id, embedding, source_call, quality, created_at)
+                 VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+            )
+            .bind(format!("vs-{name}-{i}"))
+            .bind(&id)
+            .bind(vec![0u8; 4])
+            .bind(0.9)
+            .bind(&now)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        id
+    }
+
+    async fn insert_speaker_with_score(
+        pool: &sqlx::SqlitePool,
+        call_id: &str,
+        tag: &str,
+        suggestion_contact_id: &str,
+        score: f64,
+    ) {
+        sqlx::query(
+            "INSERT INTO call_speakers
+               (id, call_id, speaker_tag, suggestion_contact_id, suggestion_score, suggestion_source, confirmed)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'embedding', 0)",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(call_id)
+        .bind(tag)
+        .bind(suggestion_contact_id)
+        .bind(score)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn run_auto_bind_disabled_skips_db_call() {
+        // auto_bind=None → ни одного speaker не привязано, даже если есть
+        // высокий-score suggestion + consent + samples.
+        let db = fresh_db().await;
+        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = insert_consenting_contact_with_samples(&db.pool, "Alice", 3).await;
+        insert_speaker_with_score(&db.pool, &call.id, "S1", &alice, 0.99).await;
+
+        let s = settings_with_auto_bind(None);
+        run_auto_bind(&db.pool, None, &call.id, &s).await.unwrap();
+
+        let speakers = db::list_call_speakers(&db.pool, &call.id).await.unwrap();
+        let s1 = speakers.iter().find(|s| s.speaker_tag == "S1").unwrap();
+        assert!(!s1.confirmed, "disabled auto_bind не должен привязывать");
+        assert!(s1.contact_id.is_none());
+        assert!(s1.auto_bound_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn run_auto_bind_enabled_binds_speakers_with_threshold() {
+        // Two speakers: 0.97 (>=0.95) → auto-bound; 0.90 (<0.95) → не привязан.
+        let db = fresh_db().await;
+        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = insert_consenting_contact_with_samples(&db.pool, "Alice", 2).await;
+        let bob = insert_consenting_contact_with_samples(&db.pool, "Bob", 2).await;
+        insert_speaker_with_score(&db.pool, &call.id, "S1", &alice, 0.97).await;
+        insert_speaker_with_score(&db.pool, &call.id, "S2", &bob, 0.90).await;
+
+        let s = settings_with_auto_bind(Some(AutoBindConfig { threshold: 0.95 }));
+        run_auto_bind(&db.pool, None, &call.id, &s).await.unwrap();
+
+        let speakers = db::list_call_speakers(&db.pool, &call.id).await.unwrap();
+        let s1 = speakers.iter().find(|s| s.speaker_tag == "S1").unwrap();
+        let s2 = speakers.iter().find(|s| s.speaker_tag == "S2").unwrap();
+        assert!(s1.confirmed, "S1 score 0.97 >= 0.95 → auto-bound");
+        assert_eq!(s1.contact_id.as_deref(), Some(alice.as_str()));
+        assert!(s1.auto_bound_at.is_some());
+        assert!(!s2.confirmed, "S2 score 0.90 < 0.95 → не привязан");
+        assert!(s2.contact_id.is_none());
+        assert!(s2.auto_bound_at.is_none());
     }
 
     #[tokio::test]
