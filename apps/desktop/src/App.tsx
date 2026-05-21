@@ -49,11 +49,6 @@ function AppShell() {
   // не учитывался → счётчик зависал, как и stale processing записи после
   // crash recovery (status sweep'нулся, а в-памяти counter всё равно 0).
   const [activePipelines, setActivePipelines] = useState(0);
-  // [V8.2] Когда юзер кликает на rail-activity, переключаемся на Calls
-  // и передаём pre-set фильтр «в обработке». null = без оверрайда.
-  const [pendingCallsFilter, setPendingCallsFilter] = useState<
-    'processing' | null
-  >(null);
 
   const navLabel = (id: Exclude<Page, 'ds'>): string => {
     switch (id) {
@@ -186,6 +181,10 @@ function AppShell() {
         </div>
         {NAV_IDS.map((id) => {
           const active = page === id;
+          // [V8.3] Activity badge inline в Звонки nav-item — macOS Mail
+          // convention (passive indicator + count). Заменяет standalone
+          // .nav-activity button и .activity-strip banner на CallsPage.
+          const showBadge = id === 'calls' && activePipelines > 0;
           return (
             <button
               key={id}
@@ -194,7 +193,26 @@ function AppShell() {
               onClick={() => setPage(id)}
               aria-current={active ? 'page' : undefined}
             >
-              {navLabel(id)}
+              <span className="nav-item-label">{navLabel(id)}</span>
+              {showBadge && (
+                <span
+                  className="nav-item-badge"
+                  title={t('nav.processingTitle', {
+                    n: activePipelines,
+                    plural: pipelinePlural,
+                  })}
+                  aria-label={
+                    activePipelines === 1
+                      ? t('nav.processingOne')
+                      : t('nav.processingMany', { n: activePipelines })
+                  }
+                >
+                  <span className="dot dot--accent dot--pulse" aria-hidden />
+                  <span className="nav-item-badge-count">
+                    {activePipelines}
+                  </span>
+                </span>
+              )}
             </button>
           );
         })}
@@ -207,33 +225,6 @@ function AppShell() {
             style={{ marginTop: 12 }}
           >
             {t('nav.ds')}
-          </button>
-        )}
-        {activePipelines > 0 && (
-          <button
-            type="button"
-            className="nav-activity"
-            onClick={() => {
-              // Открываем Calls с pre-set фильтром «в обработке».
-              setDetailCallId(null);
-              setPendingCallsFilter('processing');
-              setPage('calls');
-            }}
-            aria-live="polite"
-            title={t('nav.processingTitle', {
-              n: activePipelines,
-              plural: pipelinePlural,
-            })}
-          >
-            <span className="dot dot--accent dot--pulse" aria-hidden />
-            <span className="nav-activity-label">
-              {activePipelines === 1
-                ? t('nav.processingOne')
-                : t('nav.processingMany', { n: activePipelines })}
-            </span>
-            <span className="nav-activity-arrow" aria-hidden="true">
-              →
-            </span>
           </button>
         )}
         <div className="app-rail-foot">
@@ -261,11 +252,7 @@ function AppShell() {
               onBack={() => setDetailCallId(null)}
             />
           ) : (
-            <CallsPage
-              onOpen={(id) => setDetailCallId(id)}
-              initialFilter={pendingCallsFilter ?? undefined}
-              onFilterConsumed={() => setPendingCallsFilter(null)}
-            />
+            <CallsPage onOpen={(id) => setDetailCallId(id)} />
           ))}
         {page === 'contacts' && <ContactsPage />}
         {page === 'settings' && <SettingsPage />}
