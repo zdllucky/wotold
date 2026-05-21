@@ -309,7 +309,7 @@ pub async fn update_contact(
         .fetch_optional(&mut *tx)
         .await?;
     if exists.is_none() {
-        return Err(AppError::Other(format!("contact {id} not found")));
+        return Err(AppError::NotFound(format!("contact {id}")));
     }
 
     sqlx::query(
@@ -355,7 +355,7 @@ pub async fn delete_contact(pool: &SqlitePool, id: &str) -> Result<(), AppError>
         .await?;
 
     match is_owner {
-        None => return Err(AppError::Other(format!("contact {id} not found"))),
+        None => return Err(AppError::NotFound(format!("contact {id}"))),
         Some(1) => return Err(AppError::Other("cannot delete owner contact".into())),
         _ => {}
     }

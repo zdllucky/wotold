@@ -102,7 +102,7 @@ pub async fn delete_voice_sample(pool: &SqlitePool, id: &str) -> Result<(), AppE
         .execute(pool)
         .await?;
     if result.rows_affected() == 0 {
-        return Err(AppError::Other(format!("voice_sample {id} not found")));
+        return Err(AppError::NotFound(format!("voice_sample {id}")));
     }
     Ok(())
 }
