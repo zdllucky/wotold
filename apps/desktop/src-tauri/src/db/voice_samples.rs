@@ -166,4 +166,63 @@ mod tests {
         let err = delete_voice_sample(&db.pool, "ghost").await;
         assert!(err.is_err());
     }
+
+    /// [C5 / B16 audit P0] CASCADE FK: при удалении контакта все его
+    /// voice_samples должны исчезнуть автоматически — без этого после
+    /// `delete_contact` остаются orphan-семплы с висячим contact_id
+    /// (и leak биометрии = нарушение C5).
+    #[tokio::test]
+    async fn delete_contact_cascades_voice_samples() {
+        let db = fresh_db().await;
+        seed_contact_and_sample(&db.pool, "c1", "vs1", None, 0.9).await;
+        seed_contact_and_sample(&db.pool, "c2", "vs2", None, 0.8).await;
+        // Подтверждаем что оба есть.
+        let before_c1 = list_voice_samples(&db.pool, "c1").await.unwrap();
+        let before_c2 = list_voice_samples(&db.pool, "c2").await.unwrap();
+        assert_eq!(before_c1.len(), 1);
+        assert_eq!(before_c2.len(), 1);
+
+        // Прямой DELETE — миграция 0001 объявляет ON DELETE CASCADE
+        // на voice_samples.contact_id, проверяем что SQLite реально
+        // применяет правило (PRAGMA foreign_keys = ON in db::init).
+        sqlx::query("DELETE FROM contacts WHERE id = ?1")
+            .bind("c1")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let after_c1 = list_voice_samples(&db.pool, "c1").await.unwrap();
+        let after_c2 = list_voice_samples(&db.pool, "c2").await.unwrap();
+        assert!(
+            after_c1.is_empty(),
+            "voice_samples контакта c1 должны быть удалены CASCADE'ом"
+        );
+        assert_eq!(
+            after_c2.len(),
+            1,
+            "voice_samples другого контакта не должны быть затронуты"
+        );
+    }
+
+    /// [Migration 0003] При удалении call'а `voice_samples.source_call`
+    /// должен стать NULL (SET NULL), а сам семпл остаться у контакта.
+    /// Удаление call'а ≠ потеря биометрии — биометрия принадлежит контакту.
+    #[tokio::test]
+    async fn delete_call_sets_source_call_null_keeps_sample() {
+        let db = fresh_db().await;
+        seed_contact_and_sample(&db.pool, "c1", "vs1", Some("call-1"), 0.9).await;
+
+        sqlx::query("DELETE FROM calls WHERE id = ?1")
+            .bind("call-1")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let after = list_voice_samples(&db.pool, "c1").await.unwrap();
+        assert_eq!(after.len(), 1, "семпл должен остаться у контакта");
+        assert_eq!(
+            after[0].source_call, None,
+            "source_call должен стать NULL по SET NULL правилу"
+        );
+    }
 }
