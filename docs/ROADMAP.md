@@ -115,6 +115,14 @@
 - **W6** DS page §15 «Recording controls» showcase: RecEq active/paused, RecMiniButton 3 variants, RecStrip recording+paused snapshots.
 - **W4 pending** — RecFloat second Tauri window (мини-виджет при minimize). Требует tauri.conf.json edit + alwaysOnTop transparent decorations:false window + IPC bridge. Отложено как самостоятельная фича: основная backend/UI инфраструктура (RecordingProvider, pause/resume, stop→detail) уже работает в основном окне без виджета.
 
+### S · Auto-detect call popup (R3 deviation opt-in)
+- **S1** Settings foundation — `SETTINGS_KEYS.CALL_DETECT_ENABLED` + `CALL_DETECT_COOLDOWN_MIN` + whitelist '3'|'5'|'10'|'15'. SettingsPage блок «Авто-предложение записи» (toggle + conditional cooldown select). i18n ru/kk/en privacy-framed копи. CLAUDE.md R3 row дополнен deviation-нотой. Default OFF (R2→V7 pattern).
+- **S2** Swift sidecar probe — `CallActivityProbe.swift` опрашивает `kAudioDevicePropertyDeviceIsRunningSomewhere` на default input device (1.5s tick), matches NSWorkspace frontmost bundle id против whitelist (Zoom/Teams/FaceTime/Discord/Telegram/Skype/Webex + Chrome/Safari/Arc/Firefox/Edge для Meet). State machine idle/detected/suggested; emit `call_suggested` once at transition. Никакая аудио-дорожка чужого процесса не читается — только Core Audio busy флаг. New stdin commands `call_detect_start` / `call_detect_stop`.
+- **S3** Rust dispatcher — `audio/call_detect::CallDetectController` хранит долгоживущий sidecar-child, слушает NDJSON, per-bundle in-memory cooldown (3/5/10/15 min из настройки, рестарт обнуляет), эмитит typed Tauri event `recording:suggested`. Эмит подавляется пока активна своя recording session. 6 cargo tests. Bootstrap из настроек в lib.rs setup hook.
+- **S4** Native macOS notification — tauri-plugin-notification зарегистрирован + capability `notification:default`. `audio/call_detect::maybe_emit` после Tauri-event дополнительно пушит `Wotold — обнаружен звонок` баннер. Работает даже когда окно свёрнуто.
+- **S5** In-app SuggestBanner — `recording/SuggestBanner.tsx` слушает `recording:suggested`, рендерит `.suggest-banner` с accent border-left (не signal: запись ещё не началась), кнопки «Начать запись» / «Скрыть», auto-dismiss через 30s. Снимается автоматически когда recording стартовал любым путём. i18n ru/kk/en. 3 vitest.
+- **S6** DS page §16 «Auto-detect call» + ROADMAP S-section + commit'ы.
+
 ### Hardening
 - M8.3 prompt-injection pass-through + LIKE escape regression тесты (MCP).
 - voice_samples cascade тесты (C5): delete contact → cascade samples; delete call → SET NULL source_call.

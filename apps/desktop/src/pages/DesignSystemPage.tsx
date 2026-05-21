@@ -888,6 +888,41 @@ export function DesignSystemPage() {
         </div>
       </DSCard>
 
+      {/* 16 · Auto-detect call (S2-S5) */}
+      <DSSectionTitle
+        eyebrow="16 · Auto-detect call (S2–S5)"
+        title="SuggestBanner · opt-in авто-предложение записи"
+        subtitle="Когда settings.call_detect.enabled=1 и Core Audio видит mic-busy + frontmost из whitelist'а (Zoom/Teams/Meet/FaceTime/Discord/Telegram/Skype/Webex/любой браузер) — поднимается баннер. R3 deviation: default OFF, in-memory cooldown per-app (3/5/10/15 мин). Аудио чужого app не читается, только busy-флаг."
+      />
+      <DSCard style={SECTION_GAP}>
+        <div
+          className="small-caps"
+          style={{ marginBottom: 10, color: 'var(--text-muted)' }}
+        >
+          suggest-banner · idle suggestion
+        </div>
+        <div
+          className="suggest-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="suggest-banner-body">
+            <span className="suggest-banner-title">Похоже на звонок в Zoom</span>
+            <span className="suggest-banner-text">
+              Wotold заметил активный микрофон. Начать запись прямо сейчас?
+            </span>
+          </div>
+          <div className="suggest-banner-actions">
+            <button type="button" className="btn btn--primary btn--sm">
+              Начать запись
+            </button>
+            <button type="button" className="btn btn--ghost btn--sm">
+              Скрыть
+            </button>
+          </div>
+        </div>
+      </DSCard>
+
       {/* Footer */}
       <div
         className="mono muted"

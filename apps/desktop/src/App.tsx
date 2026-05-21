@@ -16,6 +16,7 @@ import { getActivePipelineCount } from './api/calls';
 import { I18nProvider, useI18n } from './i18n';
 import { RecordingProvider, useRecording } from './recording/RecordingContext';
 import { RecStrip } from './recording/RecStrip';
+import { SuggestBanner } from './recording/SuggestBanner';
 import { ThemeProvider } from './theme/useTheme';
 
 type Page = 'home' | 'calls' | 'contacts' | 'settings' | 'ds';
@@ -334,6 +335,9 @@ function AppShell() {
         {/* [W3] Persistent recording strip. Renders null when idle, so layout
             is unchanged for non-recording sessions. */}
         <RecStrip />
+        {/* [S5] Auto-detect call suggestion banner. Listens to backend
+            `recording:suggested`; renders null when no pending suggestion. */}
+        <SuggestBanner />
         {page === 'home' && (
           <HomePage
             onOpenCall={(id) => {
