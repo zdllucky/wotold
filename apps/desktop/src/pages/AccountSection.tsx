@@ -13,7 +13,7 @@ import {
   type OidcProvider,
 } from '../api/auth';
 import { bcp47, useI18n } from '../i18n';
-import { Badge, Button, Card, InputField } from '../ui';
+import { Badge, Button, Card, InputField, Skeleton } from '../ui';
 
 interface AuthDeepLinkPayload {
   path: string;
@@ -167,7 +167,15 @@ export function AccountSection() {
   };
 
   if (state.kind === 'loading') {
-    return <p className="muted">{t('common.loading')}</p>;
+    // [V8.1] Skeleton mimics account fields layout (status badge + 2 inputs).
+    return (
+      <div aria-busy="true" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Skeleton width="50%" height="0.85em" />
+        <Skeleton width="100%" height="2.25rem" />
+        <Skeleton width="100%" height="2.25rem" />
+        <Skeleton width="40%" height="2rem" />
+      </div>
+    );
   }
 
   return (

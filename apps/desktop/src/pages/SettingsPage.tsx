@@ -27,7 +27,7 @@ import {
   type SttProvider,
 } from '../api/settings';
 import { useI18n } from '../i18n';
-import { InputField, Select } from '../ui';
+import { InputField, Select, Skeleton } from '../ui';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
 import { ByoKeysSection } from './ByoKeysSection';
@@ -136,7 +136,34 @@ export function SettingsPage() {
     return () => clearTimeout(t);
   }, [savedTick]);
 
-  if (loading) return <p className="muted">{t('common.loading')}</p>;
+  if (loading) {
+    // [V8.1] Inner rail (220px) + content shimmer mimics Settings layout.
+    return (
+      <section
+        style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 32 }}
+        aria-busy="true"
+      >
+        <aside style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {Array.from({ length: 7 }, (_, i) => (
+            <Skeleton key={i} width="80%" height="1em" />
+          ))}
+        </aside>
+        <div>
+          <Skeleton width="14ch" height="0.7em" style={{ marginBottom: 12 }} />
+          <Skeleton width="20ch" height="2rem" style={{ marginBottom: 8 }} />
+          <Skeleton width="36ch" height="0.85em" style={{ marginBottom: 28 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+            {Array.from({ length: 4 }, (_, i) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Skeleton width="12ch" height="0.8em" />
+                <Skeleton width="100%" height="2.25rem" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   const effectiveProxyUrl = proxyUrl.trim() || SETTINGS_DEFAULTS.PROXY_BASE_URL;
 

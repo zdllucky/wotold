@@ -24,7 +24,7 @@ import {
   type CallSpeakerView,
 } from '../api/speakers';
 import type { Call, CallProgressEvent } from '../api/recording';
-import { Empty, Tabs } from '../ui';
+import { Empty, Skeleton, Tabs } from '../ui';
 import { CallStateTag, PipelineStrip } from '../components/call-state';
 import { PIPELINE_STEP_KEYS, type CallProgress } from '../types/callState';
 import { AudioScrubber } from '../components/AudioScrubber';
@@ -384,7 +384,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     }
   };
 
-  if (loading) return <p className="muted">{t('common.loading')}</p>;
+  if (loading) return <CallDetailSkeleton onBack={onBack} t={t} />;
   if (error)
     return (
       <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
@@ -1207,4 +1207,63 @@ function ParticipantsRow({ speakers }: { speakers: CallSpeakerView[] }) {
     </div>
   );
 }
+
+/**
+ * [V8.1] Loading skeleton для всей CallDetailPage — mimics финальную
+ * структуру (back-link, meta caps, title, ParticipantsRow, tabs, transcript
+ * rows). Юзер видит form factor контента до того как загрузятся артефакты.
+ *
+ * Параллельно грузятся 9 ресурсов (call meta + recap + transcript + raw_stt
+ * + tasks + contacts + speakers + 2 audio paths) — на холодном диске может
+ * занять до пары секунд. Раньше было «Загрузка…», теперь — нормальный shimmer.
+ */
+function CallDetailSkeleton({ onBack, t }: { onBack: () => void; t: TFnLocal }) {
+  return (
+    <section
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100%',
+      }}
+      aria-busy="true"
+    >
+      <button
+        type="button"
+        className="btn btn--quiet"
+        onClick={onBack}
+        style={{ marginBottom: 18, paddingLeft: 0 }}
+      >
+        {t('common.backAll')}
+      </button>
+      <header style={{ marginBottom: 22 }}>
+        <Skeleton width="22ch" height="0.75em" style={{ marginBottom: 10 }} />
+        <Skeleton width="16ch" height="2.25rem" style={{ marginBottom: 14 }} />
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Skeleton width="7rem" height="1.5rem" radius="999px" />
+          <Skeleton width="6rem" height="1.5rem" radius="999px" />
+          <Skeleton width="8rem" height="1.5rem" radius="999px" />
+        </div>
+      </header>
+      {/* Tabs row */}
+      <div style={{ display: 'flex', gap: 18, marginBottom: 22 }}>
+        <Skeleton width="6rem" height="1rem" />
+        <Skeleton width="7rem" height="1rem" />
+        <Skeleton width="5rem" height="1rem" />
+        <Skeleton width="6rem" height="1rem" />
+      </div>
+      {/* Transcript ghost rows */}
+      <div className="transcript">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="transcript-row transcript-row--ghost">
+            <div className="transcript-speaker" aria-hidden="true">···</div>
+            <div className="transcript-text" aria-hidden="true">···</div>
+            <div className="transcript-time" aria-hidden="true">···</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+type TFnLocal = ReturnType<typeof useI18n>['t'];
 

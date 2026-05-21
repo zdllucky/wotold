@@ -93,10 +93,11 @@ function AppShell() {
   // «Reload», «Back/Forward») — это веб-чувство, неприемлемо в Tauri-приложении.
   // Блокируем глобально, но whitelist'ом разрешаем на inputs/markdown/транскрипте
   // — там copy/paste/inspect-spelling действительно полезны юзеру.
-  // В DEV оставляем меню работать чтобы можно было использовать Inspect.
+  // [V8.1] Раньше был `if (IS_DEV) return;` — DEV всё ещё пускал webview-меню,
+  // а это путало во время тестирования "финального" UX. Inspect остался
+  // доступен через DevTools (⌥⌘I в Tauri dev shell).
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    if (IS_DEV) return;
     const ALLOW = 'input, textarea, [contenteditable="true"], .markdown, .markdown *, .transcript-row, .transcript-row *, .transcript-text, .title, .display, .subtitle, code, pre, kbd, [data-selectable], [data-selectable] *';
     const onContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
