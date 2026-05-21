@@ -5,6 +5,7 @@ import { ask, save } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import {
+  cancelReprocess,
   deleteCall,
   exportCallMarkdown,
   getCall,
@@ -13,6 +14,7 @@ import {
   regenerateRecap,
   reprocessCall,
   type ActionItem,
+  type PipelineCancelledEvent,
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
 import {
@@ -140,6 +142,47 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch handle stable across renders
   }, [callId]);
 
+  // [V8] Lifecycle events — pipeline:started / pipeline:finished /
+  // pipeline:cancelled триггерят refetch'и для текущего звонка.
+  // На started: refetch call meta (статус 'processing' уже стоит, ок).
+  // На finished/cancelled: refetch всё (артефакты могли обновиться).
+  useEffect(() => {
+    const unlisteners: UnlistenFn[] = [];
+    const attach = async () => {
+      try {
+        const u1 = await listen<{ call_id: string }>('pipeline:started', (e) => {
+          if (e.payload.call_id !== callId) return;
+          // Status уже processing — лёгкий refetch только meta для синка.
+          void getCall(callId).then((c) => c && setCall(c));
+        });
+        unlisteners.push(u1);
+        const u2 = await listen<{ call_id: string; status: string }>(
+          'pipeline:finished',
+          (e) => {
+            if (e.payload.call_id !== callId) return;
+            void refetchAll();
+          },
+        );
+        unlisteners.push(u2);
+        const u3 = await listen<PipelineCancelledEvent>(
+          'pipeline:cancelled',
+          (e) => {
+            if (e.payload.call_id !== callId) return;
+            void refetchAll();
+          },
+        );
+        unlisteners.push(u3);
+      } catch (e) {
+        console.warn('pipeline lifecycle listeners failed:', e);
+      }
+    };
+    void attach();
+    return () => {
+      for (const u of unlisteners) u();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetchAll stable per callId
+  }, [callId]);
+
   // [V6.4] Live pipeline progress — слушаем `call:progress` события для этого
   // звонка и патчим Call object. UI: PipelineStrip + reassurance banner.
   // Без этого юзеру пришлось бы вручную F5 чтобы увидеть переход step 2→3.
@@ -202,6 +245,27 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     [confirmingTag, speakersLite],
   );
 
+  // [V8] Refetch full state — артефакты + call meta + speakers. Используется
+  // и в reprocess, и в pipeline:finished/cancelled listeners.
+  const refetchAll = async () => {
+    if (!call) return;
+    const [fresh, freshTranscript, freshRaw, freshTasks, freshCall, freshSpeakers] =
+      await Promise.allSettled([
+        readCallArtifact(call.id, 'recap'),
+        readCallArtifact(call.id, 'transcript'),
+        readCallArtifact(call.id, 'raw_stt'),
+        listCallActionItems(call.id),
+        getCall(call.id),
+        listCallSpeakers(call.id),
+      ]);
+    if (fresh.status === 'fulfilled') setRecap(fresh.value);
+    if (freshTranscript.status === 'fulfilled') setTranscript(freshTranscript.value);
+    if (freshRaw.status === 'fulfilled') setRawStt(freshRaw.value);
+    if (freshTasks.status === 'fulfilled') setTasks(freshTasks.value);
+    if (freshCall.status === 'fulfilled') setCall(freshCall.value);
+    if (freshSpeakers.status === 'fulfilled') setSpeakersLite(freshSpeakers.value);
+  };
+
   const onReprocess = async () => {
     if (!call) return;
     const ok = await ask(t('callDetail.reprocessConfirmBody'), {
@@ -213,28 +277,43 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     if (!ok) return;
     setReprocessing(true);
     setError(null);
+    // [V8] Optimistic patch — сразу переводим call.status='processing' чтобы
+    // ReprocessBanner показался. Backend `reprocess_call` теперь spawn'ит
+    // task и возвращается мгновенно; точное состояние подтянется через
+    // `call:progress` / `pipeline:finished` события.
+    setCall((prev) =>
+      prev
+        ? {
+            ...prev,
+            status: 'processing',
+            pipeline_step: 1,
+            pipeline_pct: 0,
+            pipeline_eta_sec: null,
+            upload_bytes: null,
+          }
+        : prev,
+    );
     try {
       await reprocessCall(call.id);
-      // Pipeline:finished event на бекенде сам триггерит refresh где надо;
-      // здесь явно перечитаем артефакты.
-      const [fresh, freshTranscript, freshRaw, freshTasks, freshCall, freshSpeakers] = await Promise.all([
-        readCallArtifact(call.id, 'recap'),
-        readCallArtifact(call.id, 'transcript'),
-        readCallArtifact(call.id, 'raw_stt'),
-        listCallActionItems(call.id),
-        getCall(call.id),
-        listCallSpeakers(call.id),
-      ]);
-      setRecap(fresh);
-      setTranscript(freshTranscript);
-      setRawStt(freshRaw);
-      setTasks(freshTasks);
-      setCall(freshCall);
-      setSpeakersLite(freshSpeakers);
     } catch (e) {
       setError(t('callDetail.reprocessFailed', { error: String(e) }));
+      // Откат optimistic patch — если backend сразу же отверг (например
+      // нет аудио на диске), возвращаем status каким был.
+      await refetchAll();
     } finally {
       setReprocessing(false);
+    }
+  };
+
+  // [V8] Cancel running reprocess. Backend abort'ает pipeline task и
+  // восстанавливает status='ready' (если артефакты пережили) или
+  // 'failed' (первичная отмена). pipeline:cancelled listener подтянет.
+  const onCancelReprocess = async () => {
+    if (!call) return;
+    try {
+      await cancelReprocess(call.id);
+    } catch (e) {
+      console.warn('cancel reprocess failed:', e);
     }
   };
 
@@ -368,9 +447,20 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         )}
       </header>
 
-      {call.status === 'processing' && (
-        <ProcessingPanel call={call} />
-      )}
+      {/* [V8] Если есть прежние артефакты (recap или transcript) → это
+          reprocess, рендерим компактный баннер с Cancel и оставляем старый
+          контент видимым в табах. Иначе первичная обработка → полный
+          ProcessingPanel с ghost-rows (без Cancel — нечего отменять
+          к чистому состоянию). */}
+      {call.status === 'processing' &&
+        (recap || transcript ? (
+          <ReprocessBanner
+            call={call}
+            onCancel={() => void onCancelReprocess()}
+          />
+        ) : (
+          <ProcessingPanel call={call} />
+        ))}
 
       {call.status === 'failed' && (
         <ErrorScreen
@@ -684,6 +774,67 @@ function ErrorDiagnostics({ call }: { call: Call }) {
         <dd style={{ margin: 0 }}>—</dd>
       </dl>
     </details>
+  );
+}
+
+/**
+ * [V8] ReprocessBanner — компактный overlay над уже видимым контентом
+ * звонка. Юзер видит что reprocess идёт, но **старые** recap/transcript
+ * остаются в табах под баннером. Cancel кнопка → backend abort'ает
+ * pipeline task + restore статуса на 'ready'.
+ *
+ * Отличие от ProcessingPanel: без ghost-rows (контент уже есть) и с
+ * Cancel кнопкой (первичная обработка не отменяется до 'ready' — нечего
+ * восстанавливать).
+ */
+function ReprocessBanner({
+  call,
+  onCancel,
+}: {
+  call: Call;
+  onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  const step = (Math.min(
+    Math.max(call.pipeline_step ?? 1, 1),
+    PIPELINE_STEP_KEYS.length,
+  ) as CallProgress['step']);
+  const stageKey =
+    PIPELINE_STEP_KEYS[step - 1] ?? PIPELINE_STEP_KEYS[0];
+  const progress: CallProgress = {
+    step,
+    pct: 0,
+    stageLabel: t(stageKey!),
+    etaSec: call.pipeline_eta_sec ?? undefined,
+  };
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <PipelineStrip progress={progress} />
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          marginTop: 10,
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 13,
+          color: 'var(--text-muted)',
+        }}
+      >
+        <span style={{ flex: 1, minWidth: 0 }}>
+          {t('callDetail.reprocessRunning')}
+        </span>
+        <button
+          type="button"
+          className="btn btn--quiet btn--sm"
+          onClick={onCancel}
+          data-comment-anchor="reprocess-cancel"
+        >
+          {t('callDetail.reprocessCancel')}
+        </button>
+      </div>
+    </div>
   );
 }
 

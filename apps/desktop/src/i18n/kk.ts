@@ -168,6 +168,8 @@ export const kk: TranslationStrings = {
     reprocessFailed: 'Қайта іске қосу мүмкін болмады: {error}',
     regenerateFailed: 'Қорытындыны қайта жасау мүмкін болмады: {error}',
     reassureCanClose: 'Терезені жабуға болады — біз прогресті сақтап, фонда аяқтаймыз.',
+    reprocessRunning: 'Қайта өңдеу жүруде — ескі мазмұн сақталады, болдырмауға болады.',
+    reprocessCancel: 'Қайта өңдеуді болдырмау',
     autoBoundOne: 'Сөйлесушіні автоматты түрде байладық: {name} — дауыс сәйкестігі бойынша.',
     autoBoundMany: '{n} сөйлесушіні автоматты түрде байладық: {names} — дауыс сәйкестігі бойынша.',
     autoBoundUndo: '↩ Болдырмау',

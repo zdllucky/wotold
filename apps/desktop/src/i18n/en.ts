@@ -169,6 +169,8 @@ export const en: TranslationStrings = {
     reprocessFailed: 'Could not reprocess: {error}',
     regenerateFailed: 'Could not regenerate recap: {error}',
     reassureCanClose: 'You can close the window — we’ll save progress and finish in the background.',
+    reprocessRunning: 'Reprocessing — old content stays, you can cancel.',
+    reprocessCancel: 'Cancel reprocess',
     autoBoundOne: 'Auto-bound speaker: {name} — by voice match.',
     autoBoundMany: 'Auto-bound {n} speakers: {names} — by voice match.',
     autoBoundUndo: '↩ Undo',

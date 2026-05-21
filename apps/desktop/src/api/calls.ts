@@ -44,9 +44,25 @@ export function getCallAudioPath(callId: string, kind: 'mic' | 'system'): Promis
 }
 
 /** Перезапустить полный pipeline (STT + recap) для существующего звонка.
- *  Применяется к failed | ready | processing — берёт mic.wav/system.wav с диска. */
+ *  Применяется к failed | ready | processing — берёт mic.wav/system.wav с диска.
+ *  [V8] Spawn'ится в background — promise резолвится сразу. Прогресс через
+ *  события `pipeline:started` / `call:progress` / `pipeline:finished`. */
 export function reprocessCall(callId: string): Promise<void> {
   return invoke<void>('reprocess_call', { callId });
+}
+
+/** [V8] Отменить running reprocess. Идемпотент. После отмены:
+ *   - artifacts_intact=true → call.status='ready', старый recap/transcript на месте
+ *   - artifacts_intact=false → call.status='failed' с reason «Отменено пользователем»
+ *  Эмитит `pipeline:cancelled` событие — фронт перечитывает state. */
+export function cancelReprocess(callId: string): Promise<void> {
+  return invoke<void>('cancel_reprocess', { callId });
+}
+
+/** [V8] Событие `pipeline:cancelled` payload. */
+export interface PipelineCancelledEvent {
+  call_id: string;
+  artifacts_intact: boolean;
 }
 
 /** Экспортировать звонок (recap + transcript + meta) в один markdown-файл

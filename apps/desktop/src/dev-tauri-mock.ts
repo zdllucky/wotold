@@ -274,7 +274,12 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         throw new Error('audio file не найден (dev mock)');
       }
       if (cmd === 'reprocess_call') {
-        await new Promise((r) => setTimeout(r, 1500));
+        // [V8] В реальном Tauri это spawn'ит task и сразу возвращается.
+        await new Promise((r) => setTimeout(r, 100));
+        return null;
+      }
+      if (cmd === 'cancel_reprocess') {
+        await new Promise((r) => setTimeout(r, 50));
         return null;
       }
       // #45: in-memory voice samples preview.

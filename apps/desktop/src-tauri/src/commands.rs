@@ -576,20 +576,128 @@ pub async fn regenerate_recap(state: State<'_, AppState>, call_id: String) -> Re
 /// Перезапустить полный pipeline (STT + recap) для существующего звонка.
 /// Применяется к failed | ready | processing звонкам — берёт mic.wav/system.wav
 /// с диска и прогоняет заново.
+///
+/// [V8] Spawn'им как stop_recording — invoke возвращается сразу, фронт
+/// идёт оптимистично рендерить reprocess banner и подтягивает state через
+/// `pipeline:started` / `call:progress` / `pipeline:finished` события.
+/// Handle регистрируется в `pipeline_tasks` чтобы `cancel_reprocess` мог
+/// его abort'нуть.
 #[tauri::command]
 pub async fn reprocess_call(
     app: AppHandle,
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<(), AppError> {
-    crate::pipeline::reprocess_call(
-        &state.db,
-        &state.app_data_dir,
-        &state.device_id,
-        &call_id,
-        Some(&app),
-    )
-    .await
+    // Pre-flight: убеждаемся что row существует и аудио на диске. Делает
+    // pipeline::reprocess_call внутри тоже, но мы хотим явный sync error
+    // для UI (а не silent failure в spawn'нутом task).
+    let _call = crate::db::get_call(&state.db, &call_id)
+        .await?
+        .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
+
+    // Если уже бежит pipeline для этого звонка — abort'аем старый и стартуем
+    // новый (юзер дважды кликнул Reprocess).
+    if let Some(old) = state.pipeline_tasks.lock().await.remove(&call_id) {
+        old.abort();
+        let _ = old.await; // дожидаемся фактического drop'а
+    }
+
+    let pool = state.db.clone();
+    let device_id = state.device_id.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let app_handle = app.clone();
+    let tasks = state.pipeline_tasks.clone();
+    let call_id_for_task = call_id.clone();
+    let handle = tauri::async_runtime::spawn(async move {
+        if let Err(e) = crate::pipeline::reprocess_call(
+            &pool,
+            &app_data_dir,
+            &device_id,
+            &call_id_for_task,
+            Some(&app_handle),
+        )
+        .await
+        {
+            log::error!("reprocess {call_id_for_task} error: {e}");
+        }
+        tasks.lock().await.remove(&call_id_for_task);
+    });
+    state.pipeline_tasks.lock().await.insert(call_id, handle);
+    Ok(())
+}
+
+/// [V8] Отменить running reprocess. Идемпотент — если pipeline уже завершился
+/// или не стартовал, возвращает Ok без действий.
+///
+/// Restoration logic:
+///   - Если `transcript.md` существует на диске → старые артефакты пережили
+///     старт нового run (persist_artifacts ещё не успел перезаписать) →
+///     status='ready', clear pipeline_*.
+///   - Иначе → status='failed' с reason «Отменено пользователем».
+///
+/// Эмитит `pipeline:cancelled` event чтобы фронт перечитал call + артефакты.
+#[tauri::command]
+pub async fn cancel_reprocess(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<(), AppError> {
+    use tauri::Emitter;
+
+    let handle = state.pipeline_tasks.lock().await.remove(&call_id);
+    if let Some(h) = handle {
+        h.abort();
+        // Дожидаемся фактического drop'а task'а — иначе наш restore UPDATE
+        // может race'нуть с последним `set_call_progress` из pipeline'а.
+        let _ = h.await;
+    } else {
+        // Pipeline уже завершился (или не стартовал) — нечего отменять.
+        // Не Err, потому что юзер мог кликнуть Cancel когда pipeline уже
+        // эмитнул pipeline:finished но фронт ещё не успел перерисоваться.
+        return Ok(());
+    }
+
+    let call_dir = state.app_data_dir.join("calls").join(&call_id);
+    let transcript_path = call_dir.join("transcript.md");
+    let artifacts_intact = tokio::fs::metadata(&transcript_path).await.is_ok();
+
+    if artifacts_intact {
+        // Восстанавливаем status='ready' — старый транскрипт/рекап остаются.
+        let now = chrono::Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE calls
+             SET status = 'ready',
+                 failed_reason = NULL,
+                 pipeline_step = NULL,
+                 pipeline_pct = NULL,
+                 pipeline_eta_sec = NULL,
+                 upload_bytes = NULL,
+                 updated_at = ?1
+             WHERE id = ?2",
+        )
+        .bind(&now)
+        .bind(&call_id)
+        .execute(&state.db)
+        .await?;
+    } else {
+        // Первичная обработка отменена — артефактов нет, отмечаем failed.
+        crate::db::fail_recording_with_reason(&state.db, &call_id, Some("Отменено пользователем"))
+            .await?;
+    }
+
+    #[derive(serde::Serialize, Clone)]
+    struct Cancelled {
+        call_id: String,
+        artifacts_intact: bool,
+    }
+    let _ = app.emit(
+        "pipeline:cancelled",
+        Cancelled {
+            call_id: call_id.clone(),
+            artifacts_intact,
+        },
+    );
+    Ok(())
 }
 
 /// [B16 UX P0] Возвращает абсолютный путь к WAV-файлу звонка для аудиоплеера.
