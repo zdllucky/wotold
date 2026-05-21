@@ -245,12 +245,7 @@
   - В UI ошибки рекапа показывать с кнопкой «Повторить» (current «↻ Пересоздать рекап» уже почти оно — добавить hint «бесплатный Groq иногда лимитит, подожди 5 сек и попробуй ещё»).
   - Acceptance: 502 на первом запросе с переход на retry за 1.5s даёт 200; счётчик usage тикает только за фактически использованные токены.
 
-- [ ] **[B13] Предпочитаемый язык — системная настройка.** Сейчас Soniox/Gladia auto-detect (с биасом ru/en/kk — [Lang-tuning]), а LLM пишет рекап/действия на языке детектированного транскрипта (`Output language: {lang_detected}` в `recap.rs::build_system_prompt`). Если детект ошибся или транскрипт мульти-язычный — рекап получается в случайном языке. Требование:
-  - Новый setting `preferred_language: BCP47 | 'auto'` (default `'auto'`). UI — `SelectField` в Settings → LLM section с пресетами: auto / Русский / English / Қазақша / Other (BCP47 input).
-  - Пробрасывать в `recap::run` как `lang_hint_override`. Если `preferred_language != 'auto'` — `build_system_prompt` использует его (override над `lang_detected`).
-  - **НЕ форсить** в Soniox/Gladia — auto-detect остаётся (см. [Lang-tuning]) чтобы корректно распознавать речь на любом языке. Только LLM-output bias.
-  - Action items: тоже на preferred_language (поле `lang_hint` в `replace_action_items` или просто в system_prompt).
-  - Acceptance: при `preferred_language='ru'` рекап звонка с английским транскриптом — на русском; на `'auto'` поведение не меняется.
+- [x] **[B13] Предпочитаемый язык — системная настройка.** Готово: `SETTINGS_KEYS.PREFERRED_LANGUAGE` + `PREFERRED_LANGUAGES` array (auto/ru/en/kk) в `api/settings.ts`. UI в `SettingsPage` → секция «Распознавание» → `<Select<PreferredLanguage>>` («Язык рекапа и задач», hint: «Не влияет на сам STT»). Backend pipeline уже читает `SETTING_PREFERRED_LANGUAGE` в `pipeline::run` + `regenerate_recap` — если не 'auto' → override `lang_detected` в `recap::run`. Acceptance соблюдён: STT auto-detect не трогается, LLM bias только.
 
 - [x] **[B14] Live recording level meter (M7.1 follow-up)** — закрыто V2 batch: Swift sidecar эмитит `{kind:"level", mic, system}` каждые 100ms через NDJSON stdout (DispatchSourceTimer). Rust парсит → emit `audio:level` событие в frontend. `useAudioLevel` hook + `<LiveWaveform>` рендерит real-time canvas с DPR scaling. Synthetic-fallback убран — на тишине бары плоские. Dual-track stereo split (mic + system) на recording screen.
 
@@ -371,7 +366,7 @@
 - [x] **Pipeline progress в topnav** — pipeline:started/finished events + counter в App, subtle pill 'обрабатываем N…' с spinner.
 - [x] **BYO ключи validation** — Settings → BYO secrets section warn если все ключи пустые (red border-left) или часть (yellow). Юзер видит до попытки записи.
 - [x] **Контакты search** — фильтр по name/org/role/identifiers/notes когда >5 контактов. Identifier kind icons + attributes UI follow-up.
-- [ ] **Export markdown** для recap/transcript из CallDetailPage.
+- [x] **Export markdown** для recap/transcript из CallDetailPage. Tauri command `export_call_markdown(call_id, dest_path)` композирует metadata header (title + дата + длительность + провайдер + язык) + recap.md + transcript.md в один `.md` файл. Frontend кнопка «↓ Скачать .md» в kebab меню CallDetailPage → `save()` save-dialog → invoke. Расширение `.md` валидируется backend'ом.
 - [x] **CSS responsive breakpoints** — @media (max-width: 760px) topnav-label hide + call-row 2-row + app padding; (max-width: 560px) home-stats 1col + tabs wrap.
 - [x] **Recording level meter (B14)** — Swift sidecar RMS → frontend canvas waveform (см. секцию backlog выше).
 
@@ -447,7 +442,7 @@
 ### Tests (P1)
 
 - [x] **voice_samples cascade test** — `delete_contact_cascades_voice_samples` + `delete_call_sets_source_call_null_keeps_sample` (db/voice_samples.rs). Подтверждают что `ON DELETE CASCADE` на `voice_samples.contact_id` (миграция 0001) действительно срабатывает в SQLite + `ON DELETE SET NULL` на `voice_samples.source_call` (миграция 0003) сохраняет семпл при удалении звонка.
-- [ ] **delete_call_and_samples** — test для action_items + call_speakers cleanup.
+- [x] **delete_call_and_samples** — 3 sqlx-теста в `db/calls.rs::tests`: `delete_call_removes_row_and_voice_samples` (cascade на voice_samples с source_call=id), `delete_call_handles_missing_id_silently` (idempotent), `delete_call_cascades_action_items_and_speakers` (ON DELETE CASCADE на action_items + call_speakers по migration 0001).
 - [ ] **pipeline::run/reprocess_call/regenerate_recap** — нет unit тестов. Cover happy + missing audio + recap fail.
 - [ ] **STT KV-resume happy path** integration test.
 - [ ] **OIDC ID-token signature negative tests** после P0 fix.

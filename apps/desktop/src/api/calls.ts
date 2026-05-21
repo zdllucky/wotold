@@ -48,3 +48,10 @@ export function getCallAudioPath(callId: string, kind: 'mic' | 'system'): Promis
 export function reprocessCall(callId: string): Promise<void> {
   return invoke<void>('reprocess_call', { callId });
 }
+
+/** Экспортировать звонок (recap + transcript + meta) в один markdown-файл
+ *  по выбранному пользователем пути. dest_path берётся из save-dialog'а
+ *  на frontend'е. Файл должен иметь расширение `.md`. */
+export function exportCallMarkdown(callId: string, destPath: string): Promise<void> {
+  return invoke<void>('export_call_markdown', { callId, destPath });
+}

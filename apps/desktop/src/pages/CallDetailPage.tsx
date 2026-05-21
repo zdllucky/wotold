@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { humanError } from '../api/errors';
 import ReactMarkdown from 'react-markdown';
-import { ask } from '@tauri-apps/plugin-dialog';
+import { ask, save } from '@tauri-apps/plugin-dialog';
 
 import {
   deleteCall,
+  exportCallMarkdown,
   getCall,
   listCallActionItems,
   readCallArtifact,
@@ -110,6 +111,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [deleting, setDeleting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // [B17 V4.1] Per-tag sample bubble (text + start/end/src) — для модала
   // и (потенциально) для будущего sample-row inline-feature в транскрипте.
@@ -195,6 +197,32 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     }
   };
 
+  const onExportMarkdown = async () => {
+    if (!call) return;
+    const defaultName = `${(call.title?.trim() || `wotold-${call.id.slice(0, 8)}`).replace(/[^\p{L}\p{N}_.-]/gu, '_')}.md`;
+    let dest: string | null = null;
+    try {
+      dest = (await save({
+        defaultPath: defaultName,
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+        title: 'Сохранить расшифровку звонка',
+      })) as string | null;
+    } catch (e) {
+      setError(humanError(e));
+      return;
+    }
+    if (!dest) return; // cancel
+    setExporting(true);
+    setError(null);
+    try {
+      await exportCallMarkdown(call.id, dest);
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const onDelete = async () => {
     if (!call) return;
     const ok = await ask(
@@ -256,11 +284,13 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           {call.title?.trim() || simpleDateTitle(call)}
         </h1>
 
-        {/* Action overflow — kebab menu top-right с reprocess/delete */}
+        {/* Action overflow — kebab menu top-right с reprocess/export/delete */}
         <HeaderActions
           onReprocess={() => void onReprocess()}
+          onExport={() => void onExportMarkdown()}
           onDelete={onDelete}
           reprocessing={reprocessing}
+          exporting={exporting}
           deleting={deleting}
         />
 
@@ -620,16 +650,20 @@ function simpleDateTitle(call: Call): string {
   }
 }
 
-// Action overflow menu — kebab top-right с reprocess + delete.
+// Action overflow menu — kebab top-right с reprocess + export + delete.
 function HeaderActions({
   onReprocess,
+  onExport,
   onDelete,
   reprocessing,
+  exporting,
   deleting,
 }: {
   onReprocess: () => void;
+  onExport: () => void;
   onDelete: () => void;
   reprocessing: boolean;
+  exporting: boolean;
   deleting: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -659,7 +693,7 @@ function HeaderActions({
         aria-label="Действия со звонком"
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={reprocessing || deleting}
+        disabled={reprocessing || deleting || exporting}
         style={{
           width: 32,
           height: 32,
@@ -699,16 +733,25 @@ function HeaderActions({
               setOpen(false);
               onReprocess();
             }}
-            disabled={reprocessing || deleting}
+            disabled={reprocessing || deleting || exporting}
           >
             {reprocessing ? 'Переобработка…' : '↻ Переобработать'}
           </MenuItem>
           <MenuItem
             onClick={() => {
               setOpen(false);
+              onExport();
+            }}
+            disabled={exporting || reprocessing || deleting}
+          >
+            {exporting ? 'Сохраняем…' : '↓ Скачать .md'}
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
               onDelete();
             }}
-            disabled={deleting || reprocessing}
+            disabled={deleting || reprocessing || exporting}
             danger
           >
             {deleting ? 'Удаляем…' : 'Удалить'}

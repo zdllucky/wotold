@@ -140,6 +140,75 @@ pub async fn create_contact(
     crate::db::create_contact(&state.db, input).await
 }
 
+/// Экспорт звонка в одиночный markdown-файл по выбранному пользователем
+/// пути. Композирует metadata header (title + дата + длительность +
+/// провайдер) + recap.md + transcript.md (если есть). Если оба артефакта
+/// отсутствуют — Err. dest_path берётся из save-dialog'а на frontend'е,
+/// валидируется здесь (must end in `.md`, must be writable).
+#[tauri::command]
+pub async fn export_call_markdown(
+    state: State<'_, AppState>,
+    call_id: String,
+    dest_path: String,
+) -> Result<(), AppError> {
+    use std::path::Path;
+    let dest = Path::new(&dest_path);
+    // [Sec] Sanity: расширение .md — иначе юзер может случайно перезаписать
+    // важный файл. Не строгая валидация — просто guard от опечаток.
+    if dest.extension().and_then(|e| e.to_str()) != Some("md") {
+        return Err(AppError::Other(
+            "Файл должен иметь расширение .md".to_string(),
+        ));
+    }
+    let call = crate::db::get_call(&state.db, &call_id)
+        .await?
+        .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
+
+    let call_dir = state.app_data_dir.join("calls").join(&call_id);
+    let recap_path = call_dir.join("recap.md");
+    let transcript_path = call_dir.join("transcript.md");
+
+    let recap = tokio::fs::read_to_string(&recap_path).await.ok();
+    let transcript = tokio::fs::read_to_string(&transcript_path).await.ok();
+    if recap.is_none() && transcript.is_none() {
+        return Err(AppError::Other(
+            "Ни recap, ни транскрипт ещё не готовы — нечего экспортировать."
+                .to_string(),
+        ));
+    }
+
+    let title = call.title.as_deref().unwrap_or("Без названия").trim();
+    let mut out = String::with_capacity(8192);
+    out.push_str(&format!("# {title}\n\n"));
+    out.push_str(&format!("- **Дата**: {}\n", call.started_at));
+    if let Some(dur) = call.duration_sec {
+        out.push_str(&format!("- **Длительность**: {} сек\n", dur));
+    }
+    if let Some(provider) = &call.provider {
+        out.push_str(&format!("- **Провайдер STT**: {provider}\n"));
+    }
+    if let Some(lang) = &call.lang_detected {
+        out.push_str(&format!("- **Язык**: {lang}\n"));
+    }
+    out.push_str("\n---\n\n");
+
+    if let Some(r) = recap {
+        out.push_str("## Саммари\n\n");
+        out.push_str(r.trim_end());
+        out.push_str("\n\n---\n\n");
+    }
+    if let Some(t) = transcript {
+        out.push_str("## Расшифровка\n\n");
+        out.push_str(t.trim_end());
+        out.push('\n');
+    }
+
+    tokio::fs::write(&dest, out)
+        .await
+        .map_err(|e| AppError::Other(format!("write {dest_path}: {e}")))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn delete_contact(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
     crate::db::delete_contact(&state.db, &id).await
