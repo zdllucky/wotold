@@ -18,8 +18,11 @@ import type { Call } from '../api/recording';
 import { Empty, Tabs } from '../ui';
 import { AudioScrubber, type CurrentSpeakerInfo } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
+import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
 import { useCallAudio } from '../hooks/useCallAudio';
-import { SpeakersSection } from './SpeakersSection';
+import { SpeakersSection, extractSamples } from './SpeakersSection';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { getCallAudioPath } from '../api/calls';
 
 type Tab = 'recap' | 'transcript' | 'tasks' | 'speakers';
 
@@ -40,6 +43,11 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [speakersLite, setSpeakersLite] = useState<CallSpeakerView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // [B17 V4.1] Inline-confirm popup из транскрипта — speaker_tag клика.
+  const [confirmingTag, setConfirmingTag] = useState<string | null>(null);
+  // Источники аудио + sample-extract — переиспользуются модалом.
+  const [micSrc, setMicSrc] = useState<string | null>(null);
+  const [systemSrc, setSystemSrc] = useState<string | null>(null);
 
   // [B17 V3.2] Single audio source — shared между AudioScrubber и
   // InteractiveTranscript (для highlight current + click-to-seek).
@@ -66,8 +74,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       listCallActionItems(callId),
       listContacts(),
       listCallSpeakers(callId),
+      getCallAudioPath(callId, 'mic'),
+      getCallAudioPath(callId, 'system'),
     ])
-      .then(([rCall, rRecap, rTrans, rRaw, rTasks, rContacts, rSpeakers]) => {
+      .then(([rCall, rRecap, rTrans, rRaw, rTasks, rContacts, rSpeakers, rMic, rSys]) => {
         // Call meta — критично. Без неё страница не имеет смысла.
         if (rCall.status === 'fulfilled') {
           setCall(rCall.value);
@@ -80,6 +90,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         if (rTasks.status === 'fulfilled') setTasks(rTasks.value);
         if (rContacts.status === 'fulfilled') setContacts(rContacts.value);
         if (rSpeakers.status === 'fulfilled') setSpeakersLite(rSpeakers.value);
+        setMicSrc(rMic.status === 'fulfilled' ? convertFileSrc(rMic.value) : null);
+        setSystemSrc(rSys.status === 'fulfilled' ? convertFileSrc(rSys.value) : null);
         // Log невидимые failures чтобы они не исчезли silent.
         for (const [name, r] of [
           ['recap', rRecap],
@@ -98,6 +110,37 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [deleting, setDeleting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
+
+  // [B17 V4.1] Per-tag sample bubble (text + start/end/src) — для модала
+  // и (потенциально) для будущего sample-row inline-feature в транскрипте.
+  const samplesByTag = useMemo(
+    () => extractSamples(rawStt, micSrc, systemSrc),
+    [rawStt, micSrc, systemSrc],
+  );
+
+  // [B17 V4.1] Перечитать speakers + contacts после mutation в табе или
+  // inline modal. SpeakersSection + SpeakerConfirmModal вызывают это
+  // → ParticipantsRow в шапке + chip'ы в транскрипте обновятся динамически.
+  const refetchSpeakersAndContacts = async () => {
+    try {
+      const [s, c] = await Promise.all([
+        listCallSpeakers(callId),
+        listContacts(),
+      ]);
+      setSpeakersLite(s);
+      setContacts(c);
+    } catch (e) {
+      console.warn('refetch speakers/contacts failed', e);
+    }
+  };
+
+  const confirmingSpeaker = useMemo(
+    () =>
+      confirmingTag
+        ? speakersLite.find((s) => s.speaker_tag === confirmingTag) ?? null
+        : null,
+    [confirmingTag, speakersLite],
+  );
 
   const onReprocess = async () => {
     if (!call) return;
@@ -328,13 +371,17 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
               audio.seek(s);
               if (!audio.playing && audio.ready) audio.togglePlay();
             }}
+            onIdentifySpeaker={(tag) => setConfirmingTag(tag)}
           />
         </Tabs.Panel>
         <Tabs.Panel value="tasks">
           <TasksPanel tasks={tasks ?? []} contacts={contacts} />
         </Tabs.Panel>
         <Tabs.Panel value="speakers">
-          <SpeakersSection callId={callId} />
+          <SpeakersSection
+            callId={callId}
+            onSpeakersChanged={() => void refetchSpeakersAndContacts()}
+          />
         </Tabs.Panel>
       </Tabs>
 
@@ -350,6 +397,16 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           currentSpeaker ? () => setTab('transcript') : undefined
         }
       />
+
+      {confirmingSpeaker && (
+        <SpeakerConfirmModal
+          speaker={confirmingSpeaker}
+          contacts={contacts}
+          sample={samplesByTag.get(confirmingSpeaker.speaker_tag) ?? null}
+          onClose={() => setConfirmingTag(null)}
+          onConfirmed={() => void refetchSpeakersAndContacts()}
+        />
+      )}
     </section>
   );
 }
