@@ -74,6 +74,24 @@ function AppShell() {
     window.location.hash = page;
   }, [page]);
 
+  // [Native UX] ПКМ context menu по умолчанию открывает webview-меню («Inspect»,
+  // «Reload», «Back/Forward») — это веб-чувство, неприемлемо в Tauri-приложении.
+  // Блокируем глобально, но whitelist'ом разрешаем на inputs/markdown/транскрипте
+  // — там copy/paste/inspect-spelling действительно полезны юзеру.
+  // В DEV оставляем меню работать чтобы можно было использовать Inspect.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (IS_DEV) return;
+    const ALLOW = 'input, textarea, [contenteditable="true"], .markdown, .markdown *, .transcript-row, .transcript-row *, .transcript-text, .title, .display, .subtitle, code, pre, kbd, [data-selectable], [data-selectable] *';
+    const onContextMenu = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest(ALLOW)) return; // оставить нативное меню
+      e.preventDefault();
+    };
+    document.addEventListener('contextmenu', onContextMenu);
+    return () => document.removeEventListener('contextmenu', onContextMenu);
+  }, []);
+
   if (bootstrap === 'loading') {
     return (
       <main className="app-shell" style={{ alignItems: 'center', justifyContent: 'center' }}>
