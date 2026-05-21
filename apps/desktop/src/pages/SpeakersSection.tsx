@@ -20,7 +20,7 @@ import {
   unbindCallSpeaker,
   type CallSpeakerView,
 } from '../api/speakers';
-import { Empty } from '../ui';
+import { Empty, Select } from '../ui';
 import { MiniWave } from '../components/Waveform';
 
 interface SpeakersSectionProps {
@@ -475,21 +475,20 @@ function SpeakerCard({
           >
             Выбрать контакт
           </label>
-          <select
+          <Select
             id={`speaker-${speaker.id}-pick`}
-            className="input input--box"
-            style={{ fontFamily: 'var(--font-sans)' }}
             value={pickedContactId}
-            onChange={(e) => onPick(e.target.value)}
-          >
-            <option value="">— не выбран —</option>
-            {contacts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.display_name}
-                {c.is_owner ? ' (владелец)' : ''}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: '', label: '— не выбран —' },
+              ...contacts.map((c) => ({
+                value: c.id,
+                label: c.is_owner
+                  ? `${c.display_name} (владелец)`
+                  : c.display_name,
+              })),
+            ]}
+            onChange={(v) => onPick(v)}
+          />
         </div>
       )}
 
