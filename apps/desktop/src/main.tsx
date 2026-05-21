@@ -22,6 +22,17 @@ const isRecordingWidget =
   window.location.hash === '#recording-widget';
 if (isRecordingWidget) {
   document.documentElement.classList.add('recording-widget');
+  // [S8] Belt-and-suspenders: ensure html/body/#root are visually transparent
+  // even if CSS cascade misfires (Vite HMR injects styles late in dev). Inline
+  // style wins без !important борьбы.
+  const transparentize = (el: HTMLElement | null) => {
+    if (!el) return;
+    el.style.background = 'transparent';
+    el.style.backgroundColor = 'transparent';
+  };
+  transparentize(document.documentElement);
+  transparentize(document.body);
+  transparentize(root);
 }
 
 ReactDOM.createRoot(root).render(

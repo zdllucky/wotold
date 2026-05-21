@@ -22,6 +22,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import {
   getRecordingState,
@@ -131,11 +132,14 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
   const statusRef = useRef<RecordingStatus>(status);
   statusRef.current = status;
 
-  // ── Reconcile on mount. If the backend says we're already recording (e.g.
-  //    page reload mid-call), reconstruct the provider's local state.
+  // ── Reconcile on mount AND on every `recording:state` event from backend
+  //    (S8). Без слушателя widget-окно никогда не узнавало что main остановил
+  //    запись → его `rec.status` навсегда оставался "recording" → pause/stop
+  //    invoke падал «not recording». Now every start/stop/pause/resume в Rust
+  //    эмитит recording:state, и оба окна refetch'ат свежий snapshot.
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
+    const refetch = async () => {
       try {
         const state = await getRecordingState();
         if (cancelled) return;
@@ -144,12 +148,25 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
         setElapsedSec(computeElapsedSec(next, Date.now()));
       } catch (e) {
         if (cancelled) return;
-        // Non-fatal: stay idle, surface as recoverable error so UI can warn.
         setError(errorMessage(e));
       }
+    };
+    void refetch();
+
+    let unlisten: UnlistenFn | null = null;
+    void (async () => {
+      try {
+        unlisten = await listen('recording:state', () => {
+          void refetch();
+        });
+      } catch (e) {
+        if (!cancelled) console.warn('recording:state listen failed', e);
+      }
     })();
+
     return () => {
       cancelled = true;
+      unlisten?.();
     };
   }, []);
 

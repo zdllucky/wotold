@@ -22,6 +22,11 @@ pub const PIPELINE_CANCELLED: &str = "pipeline:cancelled";
 pub const CALL_PROGRESS: &str = "call:progress";
 pub const CALL_AUTO_BOUND: &str = "call:auto_bound";
 pub const AUDIO_LEVEL: &str = "audio:level";
+/// [S8] Fires whenever the backend recording session changes — start, stop,
+/// pause, resume. Both webviews (main + recording-widget) listen so their
+/// `RecordingProvider` мирror гарантированно in sync. Payload пустой —
+/// слушатели делают `getRecordingState()` для свежего snapshot'а.
+pub const RECORDING_STATE: &str = "recording:state";
 pub const VOICE_MODEL_PROGRESS: &str = "voice-model:progress";
 pub const VOICE_MODEL_DONE: &str = "voice-model:done";
 
@@ -132,6 +137,12 @@ impl<'a> EventBus<'a> {
 
     pub fn voice_model_done<T: Serialize + Clone>(&self, payload: &T) {
         self.emit(VOICE_MODEL_DONE, payload);
+    }
+
+    /// [S8] Notify все webview'ы что backend recording state поменялся.
+    /// Слушатели зовут `getRecordingState` чтобы pull fresh snapshot.
+    pub fn recording_state_changed(&self) {
+        self.emit(RECORDING_STATE, &());
     }
 }
 
