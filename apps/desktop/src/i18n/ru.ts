@@ -122,6 +122,10 @@ const ruInternal = {
     badgeProcessing: 'распознаём',
     badgeFailed: 'ошибка',
     badgeRecording: '● запись',
+    // [V6.3] Глобальный activity-strip над списком звонков. Показываем когда
+    // ≥1 звонок в processing — успокаиваем юзера что можно закрыть окно.
+    activityStripOne: 'Обрабатываем 1 звонок · можно закрыть окно',
+    activityStripMany: 'Обрабатываем {n} {plural} · можно закрыть окно',
     tooltipRecording: 'Идёт запись прямо сейчас.',
     tooltipProcessing: 'Запись завершена, идёт транскрипция через STT.',
     tooltipReady: 'Готово — есть transcript.md и raw_stt.json.',
@@ -169,6 +173,22 @@ const ruInternal = {
     taskDueShort: '· до {date}',
     reprocessFailed: 'Не удалось перезапустить: {error}',
     regenerateFailed: 'Не удалось пересоздать саммари: {error}',
+    // [V6.4] Reassurance строчка под PipelineStrip: юзер видит длинный
+    // процесс и нервничает. Подтверждаем что прогресс persist-нут в DB.
+    reassureCanClose: 'Можно закрыть окно — мы сохраним прогресс и закончим в фоне.',
+    // [V6.5] Error variant — заголовок и подзаголовок ErrorScreen.
+    errorTitle: 'Что-то пошло не так',
+    errorAudioSaved: 'Аудио сохранено локально, его можно прослушать ниже.',
+    errorRetry: 'Попробовать ещё раз',
+    errorRetryProvider: 'Попробовать через {provider}',
+    errorOpenSettings: 'Открыть настройки',
+    errorDiagnosticsTitle: 'Диагностика',
+    errorDiagnosticsCode: 'Код',
+    errorDiagnosticsProvider: 'Провайдер',
+    errorDiagnosticsAttempts: 'Попыток',
+    errorDiagnosticsFirstAt: 'Первая попытка',
+    errorDiagnosticsLastAt: 'Последняя попытка',
+    errorDiagnosticsQuota: 'Списано из квоты',
   },
 
   // ── Recap tab (dossier) ─────────────────────────────────────────────────
@@ -588,6 +608,31 @@ const ruInternal = {
   // ── Live recording / waveforms (HomePage recording state) ───────────────
   recording: {
     overlayLabel: 'Идёт запись',
+  },
+
+  // ── [V6.1] Async pipeline states (CallStateTag, PipelineStrip etc) ──────
+  callState: {
+    // Badge labels
+    live: 'идёт запись',
+    uploading: 'загружаем',
+    queued: 'в очереди',
+    processing: 'распознаём',
+    ready: 'готов',
+    error: 'ошибка',
+    // CallErrorRow / PipelineStrip копи
+    audioSaved: 'аудио сохранено',
+    moreDetails: 'подробнее →',
+    errorFallback: 'не удалось распознать',
+    etaSec: 'сек',
+    details: 'подробнее',
+    pending: 'ожидает',
+  },
+  pipeline: {
+    step1: 'Сохранили аудио',
+    step2: 'Разделили дорожки микрофона и системы',
+    step3: 'Распознаём речь',
+    step4: 'Соотносим голоса с контактами',
+    step5: 'Готовим саммари и задачи',
   },
 } as const;
 

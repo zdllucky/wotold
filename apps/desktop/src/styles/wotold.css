@@ -695,3 +695,369 @@ textarea:focus-visible {
   font-style: italic;
   font-size: 16px;
 }
+
+/* ═══ [V6.1] Async state primitives — STATES.md handoff ═══════════
+   Status badges (.stat-tag), progress rail (.rail), skeleton (.skel),
+   writing caret (.caret), pipeline steps (.steps/.step), collapsible
+   processing strip (.proc-strip), streaming transcript rows, activity
+   strip над списком звонков, call-error-row для inline ошибок в
+   списке. Все цвета через токены — никаких hex в TSX.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Status badges ─── */
+.stat-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  line-height: 1;
+  white-space: nowrap;
+}
+.stat-tag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.stat-tag--ready {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.stat-tag--ready .stat-tag-dot { background: var(--success); }
+
+.stat-tag--processing {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.stat-tag--processing .stat-tag-dot {
+  background: var(--accent);
+  animation: wt-dot-pulse 1.4s ease-in-out infinite;
+}
+
+.stat-tag--uploading {
+  background: var(--bg-2);
+  color: var(--ink-2);
+}
+.stat-tag--uploading .stat-tag-dot { background: var(--muted); }
+
+.stat-tag--queued {
+  background: var(--bg-2);
+  color: var(--muted);
+}
+.stat-tag--queued .stat-tag-dot { background: var(--muted); }
+
+.stat-tag--live {
+  background: var(--signal-soft);
+  color: var(--signal);
+}
+.stat-tag--live .stat-tag-dot {
+  background: var(--signal);
+  animation: wt-dot-pulse 1s ease-in-out infinite;
+}
+
+.stat-tag--error {
+  background: var(--signal-soft);
+  color: var(--signal);
+}
+.stat-tag--error .stat-tag-dot { background: var(--signal); }
+
+@keyframes wt-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.85); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stat-tag-dot { animation: none !important; }
+}
+
+/* ─── Progress rail (2px ink bar) ─── */
+.rail {
+  height: 2px;
+  width: 100%;
+  background: var(--line-soft);
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+.rail-fill {
+  height: 100%;
+  background: var(--ink);
+  border-radius: 1px;
+  transition: width var(--duration-normal) var(--ease-out-expo);
+}
+.rail--indeterminate {
+  overflow: hidden;
+}
+.rail--indeterminate .rail-fill {
+  width: 30%;
+  animation: wt-rail-sweep 1.6s ease-in-out infinite;
+}
+@keyframes wt-rail-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail--indeterminate .rail-fill { animation: none; transform: none; width: 100%; opacity: 0.5; }
+}
+
+/* ─── Skeleton placeholders ─── */
+.skel {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    var(--bg-2) 0%,
+    var(--line-soft) 50%,
+    var(--bg-2) 100%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: wt-skel-shimmer 2.4s ease-in-out infinite;
+  height: 12px;
+  min-width: 60px;
+  vertical-align: middle;
+}
+.skel--title  { height: 17px; }
+.skel--meta   { height: 11px; }
+.skel--avatar {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(
+    90deg,
+    var(--bg-2) 0%,
+    var(--line-soft) 50%,
+    var(--bg-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: wt-skel-shimmer 2.4s ease-in-out infinite;
+}
+@keyframes wt-skel-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel, .skel--avatar { animation: none; }
+}
+
+/* ─── Writing caret ─── */
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: wt-caret-blink 1s steps(2, start) infinite;
+}
+@keyframes wt-caret-blink {
+  to { visibility: hidden; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .caret { animation: none; opacity: 0.85; }
+}
+
+/* ─── Pipeline steps ─── */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.step {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0;
+}
+.step-bullet {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+  position: relative;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.step-label {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+.step-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.step--done .step-bullet {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.step--done .step-label { color: var(--muted); }
+.step--active .step-bullet {
+  background: transparent;
+  color: var(--accent);
+  border: 2px solid var(--accent);
+}
+.step--active .step-bullet::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0.25;
+  animation: wt-step-ring 1.6s ease-out infinite;
+}
+@keyframes wt-step-ring {
+  0%   { transform: scale(0.7); opacity: 0.6; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .step--active .step-bullet::after { animation: none; opacity: 0; }
+}
+.step--pending .step-bullet {
+  background: var(--bg-2);
+  color: var(--muted);
+}
+.step--pending .step-label,
+.step--pending .step-meta { color: var(--muted); }
+
+/* ─── Collapsible processing strip ─── */
+.proc-strip {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.proc-strip[open] { box-shadow: var(--shadow-1); }
+.proc-strip > summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: auto 1fr 200px auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 18px;
+  user-select: none;
+}
+.proc-strip > summary::-webkit-details-marker { display: none; }
+.proc-strip-label {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+.proc-strip-rail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.proc-strip-rail .rail { width: 130px; }
+.proc-strip-pct {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.proc-strip-toggle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+}
+.proc-strip-body {
+  padding: 4px 18px 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ─── Transcript streaming + ghost rows ─── */
+.transcript-row--streaming {
+  opacity: 0;
+  animation: wt-row-fade-up var(--duration-normal) var(--ease-out-expo) forwards;
+}
+@keyframes wt-row-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .transcript-row--streaming { animation: none; opacity: 1; transform: none; }
+}
+.transcript-row--ghost { opacity: 0.5; }
+.transcript-row--ghost .transcript-speaker,
+.transcript-row--ghost .transcript-text,
+.transcript-row--ghost .transcript-time {
+  color: transparent;
+  background: linear-gradient(
+    90deg,
+    var(--bg-2) 0%,
+    var(--line-soft) 50%,
+    var(--bg-2) 100%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: wt-skel-shimmer 2.4s ease-in-out infinite;
+  height: 14px;
+}
+.transcript-row--ghost .transcript-speaker { width: 70%; }
+.transcript-row--ghost .transcript-time    { width: 50%; }
+
+/* ─── Activity strip (над CallsPage когда есть live/processing) ─── */
+.activity-strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: var(--radius-md);
+  margin-bottom: 22px;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.activity-strip > .btn { margin-left: auto; }
+
+/* ─── Inline error row (calls list item) ─── */
+.call-error-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--signal);
+  margin-top: 2px;
+}
+.call-error-row-link {
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  padding: 0;
+}
+
+/* ─── Danger button (was missing, добавлено для ErrorScreen) ─── */
+.btn--danger {
+  background: var(--signal-soft);
+  color: var(--signal);
+  border-color: color-mix(in srgb, var(--signal) 20%, transparent);
+}
+.btn--danger:hover {
+  background: var(--signal);
+  color: white;
+  filter: brightness(1.05);
+}

@@ -83,6 +83,19 @@
 - **B3.5** Confirm-хук → `voice_samples` — `db::confirm_call_speaker` проверяет `attributes.consent_voice='true'` (C2) + читает cluster + INSERT в той же транзакции.
 - **B3.6 scaffold** `embeddings::try_load_onnx_embedder(model_path)` → `Option<Box<dyn Embedder>>` (default None pre-B3.7). `PipelineCtx.app_data_dir` thread-through. Pipeline резолвит `$APP_DATA/models/embedder.onnx` и fallback'ит на StubEmbedder.
 
+### V5 · Polish + i18n + speaker UX
+- **V5.1–V5.3** Speakers UX: contact picker search + details (org/role/email/phone); кнопка «соединить как один контакт»; HumanSpeakerLabel («Голос N» вместо «S1»).
+- **V5.4** Input focus visual fix (border-color + box-shadow accent-soft); «↻ Пересоздать саммари» только в kebab menu.
+- **V5.5** i18n ru/kk/en — `useI18n` context + `detectSystemLocale` (navigator.language) + Settings → Внешний вид → Язык интерфейса. Persisted в `settings.ui_locale`.
+
+### V6 · Async-states UI per design handoff
+- **V6.1** Foundation — `types/callState.ts` (CallState, CallProgress, CallError + PIPELINE_STEP_KEYS) + 4 компонента (`CallStateTag`, `ProgressRail`, `PipelineStrip`, `CallErrorRow`) + ~330 строк CSS (`.stat-tag` 6 variants, `.rail`, `.skel`, `.caret`, `.steps`, `.proc-strip`, `.transcript-row--ghost/--streaming`, `.activity-strip`, `.call-error-row`, `.btn--danger`) + 19 vitest unit-тестов; всё уважает `prefers-reduced-motion`.
+- **V6.2** Backend progress wiring — migration `0008_pipeline_progress.sql` (`pipeline_step/pct/eta_sec/upload_bytes`) + `db::set_call_progress` + clear-on-ready/failed/reprocess + Tauri событие `call:progress` эмитится на 5 transitions (upload→stt→speakers→merge→recap) + 3 cargo тестa.
+- **V6.3** CallsPage — `CallStateTag` per row (live/uploading/processing/queued/error) + `ProgressRail` для processing rows + global `.activity-strip` banner при `activeCount > 0` + `CallErrorRow` для failed + live `call:progress` patcher (без full refetch).
+- **V6.4** CallDetailPage processing — `PipelineStrip defaultOpen` с stage-метка + caret + ETA + 5-step body + reassurance строка «Можно закрыть окно — мы сохраним прогресс» + ghost-rows skeleton транскрипта + per-page `call:progress` listener.
+- **V6.5** CallDetailPage error — `ErrorScreen` (calm explanation + 3 retry actions включая alt-provider hint + diagnostics `<details>` с code/provider/last_at/quota) + AudioScrubber теперь enabled для failed (аудио всегда доступно).
+- **V6.6** Cleanup — i18n keys (`callState.*`, `pipeline.*`, `calls.activityStrip*`, `callDetail.reassureCanClose`, `callDetail.errorTitle/errorAudioSaved/errorRetry/errorRetryProvider/errorOpenSettings/errorDiagnostics*`) на ru/kk/en; cargo fmt + clippy clean; 231/231 vitest + 135/135 cargo passing.
+
 ### Hardening
 - M8.3 prompt-injection pass-through + LIKE escape regression тесты (MCP).
 - voice_samples cascade тесты (C5): delete contact → cascade samples; delete call → SET NULL source_call.

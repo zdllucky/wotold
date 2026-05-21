@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { humanError } from '../api/errors';
 import ReactMarkdown from 'react-markdown';
 import { ask, save } from '@tauri-apps/plugin-dialog';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import {
   deleteCall,
@@ -15,8 +16,10 @@ import {
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
 import { listCallSpeakers, type CallSpeakerView } from '../api/speakers';
-import type { Call } from '../api/recording';
+import type { Call, CallProgressEvent } from '../api/recording';
 import { Empty, Tabs } from '../ui';
+import { CallStateTag, PipelineStrip } from '../components/call-state';
+import { PIPELINE_STEP_KEYS, type CallProgress } from '../types/callState';
 import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
@@ -114,6 +117,32 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         }
       })
       .finally(() => setLoading(false));
+  }, [callId]);
+
+  // [V6.4] Live pipeline progress — слушаем `call:progress` события для этого
+  // звонка и патчим Call object. UI: PipelineStrip + reassurance banner.
+  // Без этого юзеру пришлось бы вручную F5 чтобы увидеть переход step 2→3.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<CallProgressEvent>('call:progress', (e) => {
+      if (e.payload.call_id !== callId) return;
+      setCall((prev) =>
+        prev
+          ? {
+              ...prev,
+              pipeline_step: e.payload.step,
+              pipeline_pct: e.payload.pct,
+              pipeline_eta_sec: e.payload.eta_sec,
+              upload_bytes: e.payload.upload_bytes,
+            }
+          : prev,
+      );
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((err) => console.warn('call:progress listener:', err));
+    return () => unlisten?.();
   }, [callId]);
 
   const [deleting, setDeleting] = useState(false);
@@ -318,35 +347,16 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         )}
       </header>
 
-      {call.status === 'failed' && call.failed_reason && (
-        <div
-          className="card"
-          style={{
-            marginBottom: 18,
-            borderColor: 'var(--warning)',
-          }}
-        >
-          <div className="small-caps" style={{ color: 'var(--warning)', marginBottom: 6 }}>
-            {t('callDetail.failBadge')}
-          </div>
-          <p
-            style={{
-              fontFamily: 'var(--font-serif)',
-              fontSize: 16,
-              margin: '0 0 14px',
-            }}
-          >
-            {call.failed_reason}
-          </p>
-          <button
-            type="button"
-            className="btn btn--primary btn--sm"
-            onClick={() => void onReprocess()}
-            disabled={reprocessing}
-          >
-            {reprocessing ? t('callDetail.retrying') : t('callDetail.retry')}
-          </button>
-        </div>
+      {call.status === 'processing' && (
+        <ProcessingPanel call={call} />
+      )}
+
+      {call.status === 'failed' && (
+        <ErrorScreen
+          call={call}
+          reprocessing={reprocessing}
+          onRetry={() => void onReprocess()}
+        />
       )}
 
       {call.recap_failed_reason && call.status !== 'failed' && (
@@ -422,11 +432,14 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
       {/* [B17 V3.1] Sticky-bottom audio scrubber pill — overflow'ит над
           контентом любого активного таба (transcript / recap / tasks /
-          speakers). Скрыта только при status='failed'. */}
+          speakers).
+          [V6.5] Включаем и для failed: аудио сохранено локально, юзер
+          должен иметь возможность послушать запись даже если транскрипт
+          не получился. enabled=false только когда нет ни одной дорожки. */}
       <AudioScrubber
         audio={audio}
         seed={hashCallId(callId)}
-        enabled={call.status !== 'failed'}
+        enabled
         currentSpeaker={currentSpeaker}
         onJumpToSpeaker={
           currentSpeaker ? () => setTab('transcript') : undefined
@@ -451,6 +464,190 @@ function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
   return (
     <div className="markdown">
       <ReactMarkdown>{md}</ReactMarkdown>
+    </div>
+  );
+}
+
+/**
+ * [V6.5] ErrorScreen — спокойный fail-state. Объясняет что аудио сохранено,
+ * показывает 3 retry actions и diagnostics block. Бывший small card с одной
+ * кнопкой заменён на полный layout per handoff design.
+ *
+ * provider hint извлекается из call.provider (последний фактически
+ * использованный STT). Кнопка «попробовать через другого провайдера»
+ * показывается только если provider не пустой — иначе оставляем generic.
+ */
+function ErrorScreen({
+  call,
+  reprocessing,
+  onRetry,
+}: {
+  call: Call;
+  reprocessing: boolean;
+  onRetry: () => void;
+}) {
+  const { t } = useI18n();
+  const reason = call.failed_reason?.trim() || t('callDetail.failBadge');
+  const provider = call.provider?.trim() || null;
+  const alternativeProvider = provider
+    ? provider === 'soniox'
+      ? 'gladia'
+      : provider === 'gladia'
+        ? 'soniox'
+        : null
+    : null;
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <CallStateTag state="error" />
+      <h2
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 22,
+          margin: '12px 0 4px',
+          letterSpacing: '-0.01em',
+        }}
+      >
+        {t('callDetail.errorTitle')}
+      </h2>
+      <p
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 15,
+          margin: '0 0 12px',
+          color: 'var(--text)',
+        }}
+      >
+        {reason}
+      </p>
+      <p
+        className="muted"
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 14,
+          margin: '0 0 16px',
+        }}
+      >
+        {t('callDetail.errorAudioSaved')}
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn btn--primary btn--sm"
+          onClick={onRetry}
+          disabled={reprocessing}
+        >
+          {reprocessing ? t('callDetail.retrying') : t('callDetail.errorRetry')}
+        </button>
+        {alternativeProvider && (
+          <button
+            type="button"
+            className="btn btn--quiet btn--sm"
+            onClick={onRetry}
+            disabled={reprocessing}
+            title={t('callDetail.errorRetryProvider', { provider: alternativeProvider })}
+          >
+            {t('callDetail.errorRetryProvider', { provider: alternativeProvider })}
+          </button>
+        )}
+      </div>
+      <ErrorDiagnostics call={call} />
+    </div>
+  );
+}
+
+function ErrorDiagnostics({ call }: { call: Call }) {
+  const { t } = useI18n();
+  return (
+    <details style={{ marginTop: 18 }}>
+      <summary
+        className="small-caps"
+        style={{ cursor: 'pointer', color: 'var(--text-muted)' }}
+      >
+        {t('callDetail.errorDiagnosticsTitle')}
+      </summary>
+      <dl
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '160px 1fr',
+          gap: '6px 16px',
+          marginTop: 10,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12,
+        }}
+      >
+        <dt className="muted">{t('callDetail.errorDiagnosticsCode')}</dt>
+        <dd style={{ margin: 0 }}>PIPELINE_FAIL</dd>
+        {call.provider && (
+          <>
+            <dt className="muted">
+              {t('callDetail.errorDiagnosticsProvider')}
+            </dt>
+            <dd style={{ margin: 0 }}>{call.provider}</dd>
+          </>
+        )}
+        <dt className="muted">
+          {t('callDetail.errorDiagnosticsLastAt')}
+        </dt>
+        <dd style={{ margin: 0 }}>{call.updated_at}</dd>
+        <dt className="muted">
+          {t('callDetail.errorDiagnosticsQuota')}
+        </dt>
+        <dd style={{ margin: 0 }}>—</dd>
+      </dl>
+    </details>
+  );
+}
+
+/**
+ * [V6.4] ProcessingPanel — рендерит PipelineStrip + reassurance card +
+ * ghost-rows mockup транскрипта. Юзер видит «что-то происходит» вместо
+ * пустого экрана. DB-state восстанавливается на reload, событие
+ * `call:progress` обновляет live tick без F5.
+ */
+function ProcessingPanel({ call }: { call: Call }) {
+  const { t } = useI18n();
+  // Step может быть NULL до первого emit_progress — показываем step=1 (upload).
+  const step = (Math.min(
+    Math.max(call.pipeline_step ?? 1, 1),
+    PIPELINE_STEP_KEYS.length,
+  ) as CallProgress['step']);
+  const pct = Math.max(0, Math.min(100, call.pipeline_pct ?? 0));
+  const eta = call.pipeline_eta_sec ?? undefined;
+  const stageKey =
+    PIPELINE_STEP_KEYS[step - 1] ?? PIPELINE_STEP_KEYS[0];
+  const progress: CallProgress = {
+    step,
+    pct,
+    stageLabel: t(stageKey),
+    etaSec: eta,
+  };
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <PipelineStrip progress={progress} defaultOpen />
+      <p
+        className="muted"
+        style={{
+          fontFamily: 'var(--font-serif)',
+          fontSize: 14,
+          fontStyle: 'italic',
+          marginTop: 14,
+          marginBottom: 0,
+        }}
+      >
+        {t('callDetail.reassureCanClose')}
+      </p>
+      <div className="transcript" style={{ marginTop: 18 }}>
+        {/* Ghost-rows — намёк что транскрипт скоро появится. Без дёрганий
+            при загрузке (skeletons mounted один раз, до получения transcript). */}
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="transcript-row transcript-row--ghost">
+            <div className="transcript-speaker" aria-hidden="true">···</div>
+            <div className="transcript-text" aria-hidden="true">···</div>
+            <div className="transcript-time" aria-hidden="true">···</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

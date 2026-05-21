@@ -70,6 +70,47 @@ pub struct PipelineFinishedEvent {
     pub failed_reason: Option<String>,
 }
 
+/// [V6.2] Per-step progress event для CallStateTag / ProgressRail / PipelineStrip.
+/// Эмитится из `emit_progress` параллельно UPDATE'у в DB — UI обновляется
+/// без polling'а. step (1..5), pct (0..100), eta_sec / upload_bytes — опционально.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CallProgressEvent {
+    pub call_id: String,
+    pub step: u8,
+    pub pct: u8,
+    pub eta_sec: Option<i64>,
+    pub upload_bytes: Option<i64>,
+}
+
+/// [V6.2] Persist + emit `call:progress`. Ошибки не fatal — pipeline продолжает,
+/// фронт переподнимет state на reload через get_call. Сoncurrent writer'ы
+/// здесь не страшны: каждый step монотонно растёт, последний выигрывает.
+async fn emit_progress(
+    pool: &SqlitePool,
+    app: Option<&AppHandle>,
+    call_id: &str,
+    step: u8,
+    pct: u8,
+    eta_sec: Option<i64>,
+    upload_bytes: Option<i64>,
+) {
+    if let Err(e) = db::set_call_progress(pool, call_id, step, pct, eta_sec, upload_bytes).await {
+        log::warn!("set_call_progress {call_id} step={step}: {e}");
+    }
+    if let Some(handle) = app {
+        let event = CallProgressEvent {
+            call_id: call_id.to_string(),
+            step,
+            pct,
+            eta_sec,
+            upload_bytes,
+        };
+        if let Err(e) = handle.emit("call:progress", &event) {
+            log::warn!("emit call:progress failed: {e}");
+        }
+    }
+}
+
 /// Запуск STT после остановки записи (M2.4-2.5 паспорта). Транскрибирует
 /// mic и system параллельно, сливает таймлайн, сохраняет `raw_stt.json` и
 /// `transcript.md`, проставляет `calls.status = ready/failed`.
@@ -96,7 +137,7 @@ pub async fn run(
             log::warn!("emit pipeline:started failed: {e}");
         }
     }
-    let result = run_inner(pool, &ctx).await;
+    let result = run_inner(pool, &ctx, app).await;
     let event = match &result {
         Ok(()) => {
             db::mark_call_ready(pool, &ctx.call_id).await?;
@@ -168,10 +209,16 @@ pub async fn reprocess_call(
     // Reset status: was failed → processing, clear failed_reason.
     // Если был ready — тоже перетянем в processing, чтобы UI показывал прогресс
     // и не закешировал старый recap.
+    // [V6.2] Заодно очищаем pipeline_* fields — старый прогресс не должен
+    // мигнуть в UI до того как новый run эмитнёт step=1.
     sqlx::query(
         "UPDATE calls
          SET status = 'processing',
              failed_reason = NULL,
+             pipeline_step = NULL,
+             pipeline_pct = NULL,
+             pipeline_eta_sec = NULL,
+             upload_bytes = NULL,
              updated_at = ?1
          WHERE id = ?2",
     )
@@ -265,7 +312,11 @@ pub async fn regenerate_recap(
     }
 }
 
-async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError> {
+async fn run_inner(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    app: Option<&AppHandle>,
+) -> Result<(), AppError> {
     let provider_id = read_setting(pool, SETTING_STT_PROVIDER, "auto").await?;
     let provider_path = read_setting(pool, SETTING_PROVIDER_PATH, "managed").await?;
     let lang = read_setting(pool, SETTING_STT_LANG, "auto").await?;
@@ -293,6 +344,19 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
         providers.len()
     );
 
+    // [V6.2] Step 1 — uploading. Реальный per-byte stream'инг внутри providers
+    // потребует middleware вокруг reqwest; пока эмитим начало шага (pct=0)
+    // и шаг сразу же подтягивается к step=2 как только STT-запрос ушёл.
+    // Размер аудио в байтах подходит как upload_bytes hint для UI.
+    let upload_hint = audio_byte_total(&ctx.mic_path, &ctx.system_path).await;
+    emit_progress(pool, app, &ctx.call_id, 1, 0, None, upload_hint).await;
+    emit_progress(pool, app, &ctx.call_id, 1, 100, None, upload_hint).await;
+
+    // [V6.2] Step 2 — transcribe (STT). Долгий шаг, провайдеры возвращают
+    // финальный transcript разово — promise-ish прогресс невозможен без
+    // streaming API партнёра. pct=0 на старте, 100 при завершении.
+    emit_progress(pool, app, &ctx.call_id, 2, 0, None, None).await;
+
     let (mic_res, sys_res) = tokio::join!(
         transcribe_with_fallback(&providers, &ctx.mic_path, opts.clone(), retry_cfg),
         transcribe_with_fallback(&providers, &ctx.system_path, opts.clone(), retry_cfg),
@@ -300,8 +364,14 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
 
     let mic_t = mic_res.map_err(stt_to_app_error)?;
     let sys_t = sys_res.map_err(stt_to_app_error)?;
+    emit_progress(pool, app, &ctx.call_id, 2, 100, None, None).await;
 
+    // [V6.2] Step 4 — merge tracks + persist artifacts (transcript.md, raw_stt.json).
+    // Шаг 3 (speaker recognition) идёт логически после, но мы persist'ить
+    // должны до cluster pipeline (transcript нужен для UI even if cluster fails).
+    emit_progress(pool, app, &ctx.call_id, 4, 0, None, None).await;
     let merged = persist_artifacts(&ctx.call_dir, &mic_t, &sys_t).await?;
+    emit_progress(pool, app, &ctx.call_id, 4, 100, None, None).await;
 
     let lang_detected = mic_t
         .lang_detected
@@ -339,6 +409,8 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     // сейчас Stub (no-op до B3.6 ONNX integration), pipeline ничего не извлекает.
     // После B3.6 → реальный OnnxEmbedder и flow заработает на existing звонках
     // через `regenerate_recap` (M4.5) + новых через эту ветку.
+    // [V6.2] Step 3 — recognize speakers (voice clustering + matching).
+    emit_progress(pool, app, &ctx.call_id, 3, 0, None, None).await;
     if let Err(e) = run_cluster_pipeline(
         pool,
         &ctx.call_id,
@@ -354,6 +426,7 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
             ctx.call_id
         );
     }
+    emit_progress(pool, app, &ctx.call_id, 3, 100, None, None).await;
 
     // M4 chain: транскрипт → LLM рекап. Ошибки рекапа НЕ роняют пайплайн —
     // транскрипт сохранён, рекап можно регенерировать вручную (M4.5).
@@ -381,6 +454,8 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
         provider_path: &provider_path,
         model_override,
     };
+    // [V6.2] Step 5 — recap (LLM). Pct=0 на старте, 100 при finish.
+    emit_progress(pool, app, &ctx.call_id, 5, 0, None, None).await;
     if let Err(e) = recap::run(pool, recap_ctx).await {
         let reason = e.to_string();
         log::warn!("recap {} skipped: {reason}", ctx.call_id);
@@ -393,8 +468,28 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
         // Очищаем если был старый recap_failed_reason (например после reprocess).
         let _ = db::set_recap_failed_reason(pool, &ctx.call_id, None).await;
     }
+    emit_progress(pool, app, &ctx.call_id, 5, 100, None, None).await;
 
     Ok(())
+}
+
+/// [V6.2] Размер двух аудио-файлов в байтах — UI показывает «X МБ» в активити
+/// strip'е. Best-effort: если файла нет (например только mic пишется), берём
+/// что доступно. None если оба отсутствуют.
+async fn audio_byte_total(mic: &Path, sys: &Path) -> Option<i64> {
+    let mut total: i64 = 0;
+    let mut seen = false;
+    for path in [mic, sys] {
+        if let Ok(meta) = tokio::fs::metadata(path).await {
+            total = total.saturating_add(meta.len() as i64);
+            seen = true;
+        }
+    }
+    if seen {
+        Some(total)
+    } else {
+        None
+    }
 }
 
 /// Возвращает ProviderMode для конкретного партнёра с учётом path:

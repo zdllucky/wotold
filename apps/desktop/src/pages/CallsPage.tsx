@@ -12,11 +12,17 @@ import { useEffect, useState } from 'react';
 import { humanError } from '../api/errors';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-import { listCalls, type Call } from '../api/recording';
+import {
+  listCalls,
+  type Call,
+  type CallProgressEvent,
+} from '../api/recording';
 import { listCallSpeakers } from '../api/speakers';
 import { List, type RowComponentProps } from 'react-window';
 import { CallRowSkeleton, Empty } from '../ui';
 import { bcp47, useI18n } from '../i18n';
+import { CallErrorRow, CallStateTag, ProgressRail } from '../components/call-state';
+import type { CallState } from '../types/callState';
 
 const VIRTUALIZATION_THRESHOLD = 200;
 const ROW_HEIGHT = 78;
@@ -110,6 +116,17 @@ interface PipelineFinishedEvent {
   failed_reason: string | null;
 }
 
+/** [V6.3] DB status → UI state. Pipeline step=1 (upload) рендерим как
+ *  'uploading' — отдельная анимация ProgressRail, отдельный tag color. */
+function deriveCallState(call: Call): CallState {
+  if (call.status === 'recording') return 'live';
+  if (call.status === 'failed') return 'error';
+  if (call.status === 'ready') return 'ready';
+  // status === 'processing'
+  if (call.pipeline_step === 1) return 'uploading';
+  return 'processing';
+}
+
 export function CallsPage({ onOpen }: CallsPageProps) {
   const { locale, t } = useI18n();
   const [calls, setCalls] = useState<Call[] | null>(null);
@@ -129,18 +146,45 @@ export function CallsPage({ onOpen }: CallsPageProps) {
 
   useEffect(() => {
     refresh();
-    let unlisten: UnlistenFn | undefined;
+    let unlistenFinished: UnlistenFn | undefined;
+    let unlistenProgress: UnlistenFn | undefined;
     listen<PipelineFinishedEvent>('pipeline:finished', () => {
       refresh();
     })
       .then((fn) => {
-        unlisten = fn;
+        unlistenFinished = fn;
       })
       .catch((e: unknown) => {
         console.warn('pipeline event listener:', e);
       });
+    // [V6.3] Live per-step progress — обновляем only затронутый row
+    // вместо полного refetch'а. DB-source-of-truth уже UPDATE'нут в pipeline
+    // через set_call_progress; refresh() на каждый tick = overhead.
+    listen<CallProgressEvent>('call:progress', (e) => {
+      setCalls((prev) => {
+        if (!prev) return prev;
+        return prev.map((c) =>
+          c.id === e.payload.call_id
+            ? {
+                ...c,
+                pipeline_step: e.payload.step,
+                pipeline_pct: e.payload.pct,
+                pipeline_eta_sec: e.payload.eta_sec,
+                upload_bytes: e.payload.upload_bytes,
+              }
+            : c,
+        );
+      });
+    })
+      .then((fn) => {
+        unlistenProgress = fn;
+      })
+      .catch((e: unknown) => {
+        console.warn('call:progress listener:', e);
+      });
     return () => {
-      unlisten?.();
+      unlistenFinished?.();
+      unlistenProgress?.();
     };
   }, []);
 
@@ -215,8 +259,30 @@ export function CallsPage({ onOpen }: CallsPageProps) {
     t('calls.callsForm5'),
   ];
 
+  // [V6.3] Active = recording | processing. Strip успокаивает юзера: можно
+  // закрыть окно, прогресс не теряется (DB-state persists).
+  const activeCount = calls.filter(
+    (c) => c.status === 'recording' || c.status === 'processing',
+  ).length;
+
   return (
     <section>
+      {activeCount > 0 && (
+        <div
+          className="activity-strip"
+          data-comment-anchor="calls-activity-strip"
+        >
+          <span className="stat-tag-dot" aria-hidden="true" />
+          <span>
+            {activeCount === 1
+              ? t('calls.activityStripOne')
+              : t('calls.activityStripMany', {
+                  n: activeCount,
+                  plural: declinePlural(activeCount, pluralForms),
+                })}
+          </span>
+        </div>
+      )}
       {/* Header — title + bottom-line search + filter pills */}
       <div
         style={{
@@ -349,10 +415,24 @@ interface CallRowProps {
 
 function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
   const list = speakers && speakers.length > 0 ? speakers : inferSpeakers(call);
+  const uiState = deriveCallState(call);
+  const showTag = uiState !== 'ready';
+  const showRail =
+    uiState === 'uploading' || uiState === 'processing' || uiState === 'queued';
+  // [V6.3] Row converted from <button> to clickable <div role="button"> чтобы
+  // позволить вложенные actionable элементы (CallErrorRow "подробнее →").
+  // Keyboard: Enter/Space также открывают звонок.
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onOpen(call.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen(call.id);
+        }
+      }}
       title={statusTooltip(call.status, call.failed_reason, t)}
       style={{
         display: 'grid',
@@ -394,67 +474,36 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
           }}
         >
           {call.title ?? t('calls.fallbackCallTitle', { short: call.id.slice(0, 8) })}
-          {call.status === 'processing' && (
-            <span
-              className="mono"
-              style={{
-                fontSize: 9,
-                background: 'var(--accent-soft)',
-                color: 'var(--accent)',
-                padding: '2px 6px',
-                borderRadius: 3,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-              }}
-            >
-              {t('calls.badgeProcessing')}
-            </span>
-          )}
-          {call.status === 'failed' && (
-            <span
-              className="mono"
-              style={{
-                fontSize: 9,
-                background: 'var(--signal-soft)',
-                color: 'var(--signal)',
-                padding: '2px 6px',
-                borderRadius: 3,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-              }}
-            >
-              {t('calls.badgeFailed')}
-            </span>
-          )}
-          {call.status === 'recording' && (
-            <span
-              className="mono"
-              style={{
-                fontSize: 9,
-                background: 'var(--signal-soft)',
-                color: 'var(--signal)',
-                padding: '2px 6px',
-                borderRadius: 3,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-              }}
-            >
-              {t('calls.badgeRecording')}
-            </span>
+          {showTag && (
+            <CallStateTag
+              state={uiState}
+              detail={
+                uiState === 'processing' && call.pipeline_pct != null
+                  ? `${call.pipeline_pct}%`
+                  : undefined
+              }
+            />
           )}
         </div>
-        {call.failed_reason && call.status === 'failed' && (
-          <div
-            className="muted"
-            style={{
-              fontFamily: 'var(--font-serif)',
-              fontStyle: 'italic',
-              fontSize: 14,
-              lineHeight: 1.4,
-            }}
-          >
-            «{call.failed_reason}»
+        {showRail && (
+          <div style={{ marginTop: 6, marginBottom: 4 }}>
+            <ProgressRail
+              pct={call.pipeline_pct ?? 0}
+              indeterminate={call.pipeline_pct == null}
+              ariaLabel={t(`callState.${uiState}`)}
+            />
           </div>
+        )}
+        {call.status === 'failed' && (
+          <CallErrorRow
+            error={{
+              code: 'PIPELINE',
+              message: call.failed_reason ?? '',
+              attempts: 1,
+              quotaConsumed: false,
+            }}
+            onOpenDetails={() => onOpen(call.id)}
+          />
         )}
       </div>
       <div
@@ -500,7 +549,7 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
       >
         {formatDuration(call.duration_sec)}
       </div>
-    </button>
+    </div>
   );
 }
 
