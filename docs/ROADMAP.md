@@ -414,7 +414,7 @@
 
 ### Logic / Code Quality (P1)
 
-- [ ] **Zod schemas в proxy boundary** — заменить hand-rolled `typeof body.X !== 'string'` validation на `z.object({...}).parse()`. Routes: stt/auth/llm/usage.
+- [x] **Zod schemas в proxy boundary** — `services/proxy/src/lib/schemas.ts` с `llmRequestSchema` / `sttStagingUrlRequestSchema` / `sttRequestSchema` / `authStartRequestSchema` + `parseBody<T>(request, schema)` helper. Заменили hand-rolled `typeof body.X !== 'string'` в /v1/llm, /v1/stt, /v1/stt/staging-url, /v1/auth/:provider/start. Zod issue (с path) идёт в `message` поля envelope'а. Fix как бонус: integration auth tests раньше падали с fake `'dev-1'` deviceId (UUID regex регрессия от 0d79a22) + 500 на callback (отсутствие `iss/aud/exp` claims после ID-token hardening) — обновлены UUID + buildIdToken теперь инжектит дефолтные claims. 27 workers integration + 91 unit = 118 proxy тестов проходят.
 - [x] **Hand-rolled Promise.all → Promise.allSettled** в `CallDetailPage` — критична только call meta, остальные artifacts soft-fail с console.warn.
 - [x] **`as 400 | 502 | 503` type cast в llm.ts** — заменён explicit whitelist.
 - [x] **`.catch(() => {})` silent ignores** в HomePage — заменены на console.warn.

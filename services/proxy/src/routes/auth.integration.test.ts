@@ -24,8 +24,18 @@ function b64urlEncode(s: string): string {
 }
 
 function buildIdToken(payload: Record<string, unknown>): string {
+  // [B16] decodeIdTokenPayload теперь валидирует iss/aud/exp claims —
+  // тестовые токены должны их содержать чтобы callback не падал 500.
+  // GOOGLE_OAUTH_CLIENT_ID в wrangler.test.toml = 'test-google-client-id'.
+  const claims: Record<string, unknown> = {
+    iss: 'https://accounts.google.com',
+    aud: 'test-google-client-id',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    iat: Math.floor(Date.now() / 1000),
+    ...payload,
+  };
   const header = b64urlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const body = b64urlEncode(JSON.stringify(payload));
+  const body = b64urlEncode(JSON.stringify(claims));
   return `${header}.${body}.sig`;
 }
 
@@ -39,7 +49,7 @@ describe('POST /v1/auth/:provider/start', () => {
     const res = await SELF.fetch('http://proxy/v1/auth/google/start', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ deviceId: 'dev-1' }),
+      body: JSON.stringify({ deviceId: '11111111-1111-4111-8111-111111111111' }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { authorizeUrl: string; state: string };
@@ -88,7 +98,7 @@ describe('GET /v1/auth/:provider/callback', () => {
     // 1. start — получаем state.
     const startRes = await SELF.fetch('http://proxy/v1/auth/google/start', {
       method: 'POST',
-      body: JSON.stringify({ deviceId: 'dev-7' }),
+      body: JSON.stringify({ deviceId: '77777777-7777-4777-8777-777777777777' }),
       headers: { 'content-type': 'application/json' },
     });
     const { state } = (await startRes.json()) as { state: string };
@@ -201,7 +211,7 @@ describe('[B9] deep-link callback redirect', () => {
   test('callback returns 302 to wotold:// when start used redirectMode=deeplink', async () => {
     const startRes = await SELF.fetch('http://proxy/v1/auth/google/start', {
       method: 'POST',
-      body: JSON.stringify({ deviceId: 'dl-1', redirectMode: 'deeplink' }),
+      body: JSON.stringify({ deviceId: 'd1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1', redirectMode: 'deeplink' }),
       headers: { 'content-type': 'application/json' },
     });
     const { state } = (await startRes.json()) as { state: string };
