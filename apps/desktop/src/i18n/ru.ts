@@ -641,6 +641,13 @@ const ruInternal = {
   // ── Live recording / waveforms (HomePage recording state) ───────────────
   recording: {
     overlayLabel: 'Идёт запись',
+    // [W3] RecStrip labels — persistent strip rendered above main content
+    // while a recording is active (or paused).
+    stripRecording: 'Идёт запись',
+    stripPaused: 'Пауза · записано',
+    pauseAction: 'Поставить на паузу',
+    resumeAction: 'Продолжить запись',
+    stopAction: 'Остановить запись',
   },
 
   // ── [V6.1] Async pipeline states (CallStateTag, PipelineStrip etc) ──────

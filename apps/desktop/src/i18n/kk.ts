@@ -605,6 +605,11 @@ export const kk: TranslationStrings = {
 
   recording: {
     overlayLabel: 'Жазу жүруде',
+    stripRecording: 'Жазу жүруде',
+    stripPaused: 'Кідіріс · жазылды',
+    pauseAction: 'Жазуды кідірту',
+    resumeAction: 'Жазуды жалғастыру',
+    stopAction: 'Жазуды тоқтату',
   },
 
   callState: {

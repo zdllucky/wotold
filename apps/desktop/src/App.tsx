@@ -12,6 +12,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, SETTINGS_KEYS } from './api/settings';
 import { listCalls } from './api/recording';
 import { I18nProvider, useI18n } from './i18n';
+import { RecordingProvider } from './recording/RecordingContext';
+import { RecStrip } from './recording/RecStrip';
 import { ThemeProvider } from './theme/useTheme';
 
 type Page = 'home' | 'calls' | 'contacts' | 'settings' | 'ds';
@@ -234,6 +236,9 @@ function AppShell() {
       </aside>
 
       <main className="app-main">
+        {/* [W3] Persistent recording strip. Renders null when idle, so layout
+            is unchanged for non-recording sessions. */}
+        <RecStrip />
         {page === 'home' && (
           <HomePage
             onOpenCall={(id) => {
@@ -267,7 +272,11 @@ export function App() {
   return (
     <I18nProvider>
       <ThemeProvider>
-        <AppShell />
+        {/* [W3] Recording state is App-level so RecStrip + future RecFloat
+            window + HomePage hotkey share one source of truth. */}
+        <RecordingProvider>
+          <AppShell />
+        </RecordingProvider>
       </ThemeProvider>
     </I18nProvider>
   );

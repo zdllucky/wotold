@@ -611,6 +611,11 @@ export const en: TranslationStrings = {
 
   recording: {
     overlayLabel: 'Recording',
+    stripRecording: 'Recording',
+    stripPaused: 'Paused · recorded',
+    pauseAction: 'Pause recording',
+    resumeAction: 'Resume recording',
+    stopAction: 'Stop recording',
   },
 
   callState: {
