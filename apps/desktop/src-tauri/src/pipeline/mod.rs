@@ -46,14 +46,18 @@ const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy-staging.animereader.w
 const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy.animereader.workers.dev";
 
 /// Контекст одной транскрипции: пути к двум дорожкам, call_dir для артефактов,
-/// device-id для managed-режима. Настройки (provider/path/lang/proxy URL) и
-/// BYO-ключи читаются из БД внутри `run`.
+/// device-id для managed-режима. `app_data_dir` нужен B3.6 cluster pipeline
+/// для резолва пути к локальной ONNX-модели эмбеддера. Настройки
+/// (provider/path/lang/proxy URL) и BYO-ключи читаются из БД внутри `run`.
 pub struct PipelineCtx {
     pub call_id: String,
     pub call_dir: PathBuf,
     pub mic_path: PathBuf,
     pub system_path: PathBuf,
     pub device_id: Arc<str>,
+    /// [B3.6] Корень app-данных для поиска `models/embedder.onnx`. Cluster pipeline
+    /// fallback'ит на StubEmbedder если модель отсутствует или ONNX feature off.
+    pub app_data_dir: PathBuf,
 }
 
 /// Событие [B5]: фронтенд слушает `pipeline:finished` чтобы обновить Calls list
@@ -179,6 +183,7 @@ pub async fn reprocess_call(
         mic_path,
         system_path,
         device_id: Arc::clone(device_id),
+        app_data_dir: app_data_dir.to_path_buf(),
     };
 
     run(pool, ctx, app).await
@@ -327,15 +332,16 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     }
 
     // [B3.3-3.4] Voice cluster extraction + matching → suggestion. Embedder
-    // сейчас Stub (no-op до B3.6), pipeline ничего не извлекает. После B3.6
-    // → реальный OnnxEmbedder и flow заработает на existing звонках через
-    // `regenerate_recap` (M4.5) + новых через эту ветку.
+    // сейчас Stub (no-op до B3.6 ONNX integration), pipeline ничего не извлекает.
+    // После B3.6 → реальный OnnxEmbedder и flow заработает на existing звонках
+    // через `regenerate_recap` (M4.5) + новых через эту ветку.
     if let Err(e) = run_cluster_pipeline(
         pool,
         &ctx.call_id,
         &merged,
         &ctx.mic_path,
         &ctx.system_path,
+        &ctx.app_data_dir,
     )
     .await
     {
@@ -471,18 +477,36 @@ fn stt_to_app_error(e: TranscriptionError) -> AppError {
 /// запускает matching против consenting voice_samples, populate'ит
 /// suggestion_contact_id/score/source. Non-fatal: ошибки сюда логятся
 /// и пропускаются (recap всё равно сгенерируется).
+///
+/// [B3.6] Embedder выбирается dispatcher'ом — реальный OnnxEmbedder если
+/// модель найдена в `app_data_dir/models/embedder.onnx` и фича `voice-onnx`
+/// включена, иначе StubEmbedder (no-op → пустые clusters).
 async fn run_cluster_pipeline(
     pool: &SqlitePool,
     call_id: &str,
     merged: &[crate::providers::transcription::TranscriptSegment],
     mic_path: &Path,
     system_path: &Path,
+    app_data_dir: &Path,
 ) -> Result<(), AppError> {
-    let embedder = StubEmbedder; // B3.6 swaps на OnnxEmbedder.
-    let clusters = extract_clusters(merged, mic_path, system_path, &embedder)?;
+    let model_path = app_data_dir.join("models").join("embedder.onnx");
+    let embedder: Box<dyn embeddings::Embedder> =
+        match embeddings::try_load_onnx_embedder(&model_path) {
+            Some(e) => {
+                log::info!("cluster pipeline {call_id}: OnnxEmbedder ({})", model_path.display());
+                e
+            }
+            None => {
+                log::debug!(
+                    "cluster pipeline {call_id}: StubEmbedder (no model at {})",
+                    model_path.display()
+                );
+                Box::new(StubEmbedder)
+            }
+        };
+    let clusters = extract_clusters(merged, mic_path, system_path, embedder.as_ref())?;
     if clusters.is_empty() {
-        // Stub embedder возвращает empty → нет clusters. Это OK pre-B3.6.
-        log::debug!("cluster pipeline {call_id}: no clusters (stub embedder)");
+        log::debug!("cluster pipeline {call_id}: no clusters extracted");
         return Ok(());
     }
 

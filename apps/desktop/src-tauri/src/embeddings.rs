@@ -35,6 +35,8 @@
 //! - Mic-дорожка (M3.7) → owner contact автоматически, эмбеддинг
 //!   из её сегментов идёт в `voice_samples` владельца без UI confirm.
 
+use std::path::Path;
+
 use crate::AppError;
 
 /// Размерность эмбеддинга, ожидаемая от ONNX-модели. WeSpeaker ResNet34
@@ -80,9 +82,10 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
-/// [B3.3] Stub embedder — no-op pre-B3.6. Returns empty Vec → pipeline
-/// extract_clusters обнаруживает empty embedding → не persist'ит cluster.
-/// Заменяется на `OnnxEmbedder` в B3.6 когда WeSpeaker model bundled.
+/// [B3.3] Stub embedder — no-op pre-B3.6 ONNX integration. Returns empty Vec
+/// → pipeline extract_clusters обнаруживает empty embedding → не persist'ит
+/// cluster. Заменяется на `OnnxEmbedder` через `try_load_onnx_embedder`
+/// когда WeSpeaker/ECAPA model доступна и фича `voice-onnx` включена.
 #[derive(Default)]
 pub struct StubEmbedder;
 
@@ -90,6 +93,34 @@ impl Embedder for StubEmbedder {
     fn extract(&self, _samples: &[f32], _sample_rate: u32) -> Result<Vec<f32>, AppError> {
         Ok(Vec::new())
     }
+}
+
+/// [B3.6 scaffold] Попытаться загрузить production ONNX embedder из `model_path`.
+/// Возвращает None если:
+///   - фича `voice-onnx` выключена при сборке (default — нет тяжёлых ONNX-deps)
+///   - файл модели отсутствует
+///   - модель не валидируется (несовместимая архитектура / corrupt)
+///
+/// Pipeline ([B3.3]) fallback'ит на StubEmbedder если None — это значит
+/// pre-existing звонки без real embeddings (UI honest: «образцов нет»).
+///
+/// # B3.7+ TODO (полная имплементация)
+///
+/// 1. Cargo feature `voice-onnx` подтягивает `ort` (ONNX Runtime) + `ndarray`.
+/// 2. WeSpeaker ResNet34 / ECAPA-TDNN ONNX (~14-30MB, Apache-2.0) кладётся
+///    в `$APP_DATA/models/embedder.onnx`. Bundle vs runtime download — отдельное
+///    решение (M3.6 паспорта, R6: notarization влияет на bundle size policy).
+/// 3. Kaldi-style fbank preprocessing: 80-dim mel, 25ms window, 10ms hop,
+///    cepstral mean normalization per-utterance. Без точной репликации
+///    референса embeddings будут garbage → matching случайный.
+/// 4. ONNX inference → 256-dim L2-normalized embedding (EMBEDDING_DIM).
+/// 5. Integration test против reference embedding (Python WeSpeaker output
+///    для известного WAV) — баг в preprocessing незаметен без этого.
+pub fn try_load_onnx_embedder(_model_path: &Path) -> Option<Box<dyn Embedder>> {
+    // [B3.6 scaffold] Дефолтная сборка не тянет ort/ndarray — экономия
+    // ~50-100MB ONNX Runtime libs + ~30s build time. Реальная имплементация
+    // приедет в B3.7 за `#[cfg(feature = "voice-onnx")]`.
+    None
 }
 
 /// Сериализовать embedding в little-endian f32 байты для записи в `voice_samples.embedding BLOB`.
@@ -203,6 +234,14 @@ mod tests {
         // 5 байт = не кратно 4.
         let err = bytes_to_embedding(&[1, 2, 3, 4, 5]).unwrap_err();
         assert!(matches!(err, AppError::Other(_)));
+    }
+
+    #[test]
+    fn try_load_onnx_embedder_returns_none_when_model_missing() {
+        // B3.6 scaffold: дефолтная сборка возвращает None всегда — это
+        // ожидаемое поведение pre-B3.7. Pipeline fallback'ит на StubEmbedder.
+        let missing = std::path::PathBuf::from("/nonexistent/path/embedder.onnx");
+        assert!(try_load_onnx_embedder(&missing).is_none());
     }
 
     #[test]

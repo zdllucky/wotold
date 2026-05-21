@@ -324,6 +324,7 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
             mic_path,
             system_path,
             device_id,
+            app_data_dir: app_data_dir.clone(),
         };
         // [B5]: передаём AppHandle чтобы pipeline emit 'pipeline:finished'.
         if let Err(e) = crate::pipeline::run(&pool, ctx, Some(&app_handle)).await {
