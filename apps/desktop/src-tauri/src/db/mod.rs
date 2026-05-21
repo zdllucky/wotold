@@ -18,7 +18,7 @@ pub use calls::{
     auto_bind_owner_speaker, confirm_call_speaker, delete_call_and_samples,
     ensure_call_speakers_present, fail_recording, fail_recording_with_reason, finish_recording,
     get_call, insert_recording, insert_speaker_suggestions, list_call_speakers, list_calls,
-    mark_call_ready, set_call_meta, set_recap_failed_reason, sweep_stale_calls,
+    mark_call_ready, set_call_meta, set_call_title, set_recap_failed_reason, sweep_stale_calls,
     unbind_call_speaker, Call, CallSpeakerView,
 };
 pub use contacts::{
