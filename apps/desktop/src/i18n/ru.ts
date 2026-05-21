@@ -70,8 +70,16 @@ const ruInternal = {
   home: {
     eyebrowRecording: '● Идёт запись · Локально',
     readyHeadline: 'Готов записывать.',
+    readyHeadlineRecording: 'Запись идёт фоном.',
+    readyHeadlinePaused: 'Запись на паузе.',
     subtitle:
       'Нажмите красный кружок когда начнёте звонок. Расшифровка приходит через 10–30 секунд.',
+    subtitlePaused:
+      'Звук сейчас не пишется. Продолжите, когда вернётесь к разговору — или остановите запись из полоски сверху.',
+    closeWhileRecordingTitle: 'Идёт запись',
+    closeWhileRecordingBody:
+      'Окно будет закрыто, и запись остановится. Аудио и расшифровка будут сохранены. Продолжить?',
+    closeWhileRecordingOk: 'Остановить и закрыть',
     startAria: 'Начать запись',
     startingAria: 'Запускаем',
     starting: 'Запускаем…',

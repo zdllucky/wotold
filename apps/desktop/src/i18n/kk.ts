@@ -64,8 +64,16 @@ export const kk: TranslationStrings = {
   home: {
     eyebrowRecording: '● Жазылым · Жергілікті',
     readyHeadline: 'Жазуға дайын.',
+    readyHeadlineRecording: 'Жазу фонда жүруде.',
+    readyHeadlinePaused: 'Жазу кідіртілді.',
     subtitle:
       'Қоңырау бастаған кезде қызыл шеңберді басыңыз. Транскрипт 10–30 секундта дайын болады.',
+    subtitlePaused:
+      'Дыбыс қазір жазылмайды. Әңгімеге оралғанда жалғастырыңыз — немесе жоғарыдағы жолақтан тоқтатыңыз.',
+    closeWhileRecordingTitle: 'Жазу жүруде',
+    closeWhileRecordingBody:
+      'Терезе жабылады, жазу тоқтайды. Дыбыс пен транскрипт сақталады. Жалғастырамыз ба?',
+    closeWhileRecordingOk: 'Тоқтату және жабу',
     startAria: 'Жазуды бастау',
     startingAria: 'Іске қосудамыз',
     starting: 'Іске қосудамыз…',
