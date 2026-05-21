@@ -213,6 +213,9 @@ mod tests {
     use super::super::{DiarizedTranscript, TranscriptionOpts, TranscriptionProvider};
 
     struct MockProvider {
+        /// Сохраняется для трассировки. Используется в `provider` поле
+        /// `DiarizedTranscript` через `name.into()` ниже + при отладке тестов.
+        #[allow(dead_code)]
         name: &'static str,
         results: Mutex<Vec<Result<DiarizedTranscript, TranscriptionError>>>,
         calls: AtomicU32,

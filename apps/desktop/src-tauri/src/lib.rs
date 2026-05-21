@@ -5,6 +5,14 @@
 // #25 voice-matching pipeline (embeddings/identify/llm_hint/matching/merge_signals).
 // Эти модули будут wire-up после ONNX runtime интеграции (см. ROADMAP M3.x).
 // `audio` и `providers` теперь без wide-allow — там реально вызываемый код.
+//
+// [CI clippy] Под `cargo clippy --all-targets -- -D warnings`:
+//   - Production code lints (unwrap_used/expect_used/panic = warn в Cargo.toml)
+//     становятся deny.
+//   - Test code: allow глобально через `cfg_attr(test, ...)`. В тестах
+//     `.unwrap()` идиоматичен и читабелен; разрешаем явно.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 mod audio;
 mod audio_io;
 mod commands;
@@ -30,6 +38,12 @@ mod updater;
 pub use error::AppError;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// [CI clippy] `.expect()` на `.run()` — идиоматично для tauri::Builder
+// (паника на unrecoverable startup error из-за невалидного `tauri.conf.json`
+// или missing capabilities). Альтернатива — `if let Err(e) = …` + exit code,
+// но stderr-логирование Tauri и так это покрывает. Локальный allow вместо
+// глобального — чтобы новые `.expect()` в коде ловились clippy'м.
+#[allow(clippy::expect_used)]
 pub fn run() {
     // [B16 audit P1] panic hook: silent-kill процессу не оставляет следов.
     // Пишем backtrace в panic.log + дублируем в stderr. Поверх default hook —
@@ -125,9 +139,7 @@ pub fn run() {
                     .select_all()
                     .build()?;
 
-                let view_menu = SubmenuBuilder::new(&handle, "View")
-                    .fullscreen()
-                    .build()?;
+                let view_menu = SubmenuBuilder::new(&handle, "View").fullscreen().build()?;
 
                 let window_menu = SubmenuBuilder::new(&handle, "Window")
                     .minimize()
@@ -229,11 +241,9 @@ pub fn run() {
                                     pending.len()
                                 );
                                 for (cid, h) in pending {
-                                    let waited = tokio::time::timeout(
-                                        std::time::Duration::from_secs(8),
-                                        h,
-                                    )
-                                    .await;
+                                    let waited =
+                                        tokio::time::timeout(std::time::Duration::from_secs(8), h)
+                                            .await;
                                     match waited {
                                         Ok(Ok(())) => log::info!("pipeline {cid} done"),
                                         Ok(Err(e)) => log::warn!("pipeline {cid} join error: {e}"),

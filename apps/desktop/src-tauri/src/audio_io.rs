@@ -188,7 +188,8 @@ mod tests {
             .collect();
         write_test_wav(&path, &samples, 16_000);
 
-        let clips = extract_segments_batch(&path, &[(0.0, 0.25), (0.5, 0.75), (0.75, 1.0)]).unwrap();
+        let clips =
+            extract_segments_batch(&path, &[(0.0, 0.25), (0.5, 0.75), (0.75, 1.0)]).unwrap();
         assert_eq!(clips.len(), 3);
         assert_eq!(clips[0].samples.len(), 4000);
         assert_eq!(clips[1].samples.len(), 4000);

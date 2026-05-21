@@ -206,10 +206,8 @@ async fn run_dispatcher(
                     "level" => {
                         let payload = LevelPayload {
                             mic: json.get("mic").and_then(Value::as_f64).unwrap_or(0.0) as f32,
-                            system: json
-                                .get("system")
-                                .and_then(Value::as_f64)
-                                .unwrap_or(0.0) as f32,
+                            system: json.get("system").and_then(Value::as_f64).unwrap_or(0.0)
+                                as f32,
                         };
                         if let Err(e) = app.emit("audio:level", payload) {
                             log::debug!("emit audio:level failed: {e}");

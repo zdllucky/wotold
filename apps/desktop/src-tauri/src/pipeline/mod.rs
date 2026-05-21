@@ -89,7 +89,9 @@ pub async fn run(
         }
         if let Err(e) = handle.emit(
             "pipeline:started",
-            Started { call_id: ctx.call_id.clone() },
+            Started {
+                call_id: ctx.call_id.clone(),
+            },
         ) {
             log::warn!("emit pipeline:started failed: {e}");
         }
@@ -158,7 +160,8 @@ pub async fn reprocess_call(
 
     if !mic_path.exists() && !system_path.exists() {
         return Err(AppError::Other(
-            "Аудио файлы (mic.wav / system.wav) не найдены на диске — переобработка невозможна.".into(),
+            "Аудио файлы (mic.wav / system.wav) не найдены на диске — переобработка невозможна."
+                .into(),
         ));
     }
 
@@ -229,11 +232,12 @@ pub async fn regenerate_recap(
     };
     // [B13] preferred_language='auto' → используем lang_detected от STT,
     // иначе override (например 'ru' даже для en-транскрипта).
-    let effective_lang: Option<String> = if preferred_language == "auto" || preferred_language.is_empty() {
-        call.lang_detected.clone()
-    } else {
-        Some(preferred_language.clone())
-    };
+    let effective_lang: Option<String> =
+        if preferred_language == "auto" || preferred_language.is_empty() {
+            call.lang_detected.clone()
+        } else {
+            Some(preferred_language.clone())
+        };
 
     let recap_ctx = recap::RecapCtx {
         call_id,
@@ -361,11 +365,12 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
     };
     // [B13] preferred_language override для LLM (см. regenerate_recap).
     let preferred_language = read_setting(pool, SETTING_PREFERRED_LANGUAGE, "auto").await?;
-    let effective_lang: Option<String> = if preferred_language == "auto" || preferred_language.is_empty() {
-        lang_detected.clone()
-    } else {
-        Some(preferred_language.clone())
-    };
+    let effective_lang: Option<String> =
+        if preferred_language == "auto" || preferred_language.is_empty() {
+            lang_detected.clone()
+        } else {
+            Some(preferred_language.clone())
+        };
     let recap_ctx = recap::RecapCtx {
         call_id: &ctx.call_id,
         call_dir: &ctx.call_dir,
@@ -381,9 +386,7 @@ async fn run_inner(pool: &SqlitePool, ctx: &PipelineCtx) -> Result<(), AppError>
         log::warn!("recap {} skipped: {reason}", ctx.call_id);
         // [B16]: persist recap failure для UI banner. status='ready' остаётся —
         // транскрипт есть, юзер видит «не получилось саммари: ...» + кнопка retry.
-        if let Err(e2) =
-            db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await
-        {
+        if let Err(e2) = db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await {
             log::error!("set_recap_failed_reason {} failed: {e2}", ctx.call_id);
         }
     } else {
@@ -493,7 +496,10 @@ async fn run_cluster_pipeline(
     let embedder: Box<dyn embeddings::Embedder> =
         match embeddings::try_load_onnx_embedder(&model_path) {
             Some(e) => {
-                log::info!("cluster pipeline {call_id}: OnnxEmbedder ({})", model_path.display());
+                log::info!(
+                    "cluster pipeline {call_id}: OnnxEmbedder ({})",
+                    model_path.display()
+                );
                 e
             }
             None => {

@@ -93,7 +93,10 @@ async fn generate_managed(
         }
         if status.is_server_error() {
             let body = resp.text().await.unwrap_or_default();
-            last_provider_err = Some(format!("proxy {status}: {}", body.chars().take(200).collect::<String>()));
+            last_provider_err = Some(format!(
+                "proxy {status}: {}",
+                body.chars().take(200).collect::<String>()
+            ));
             continue;
         }
         if !status.is_success() {
@@ -111,7 +114,6 @@ async fn generate_managed(
 }
 
 async fn parse_managed_body(resp: reqwest::Response) -> Result<Value, LlmError> {
-
     // Прокси отдаёт LlmResponse: { ok: true, json: ... } | { ok: false, code, message }.
     let body: Value = resp
         .json()
