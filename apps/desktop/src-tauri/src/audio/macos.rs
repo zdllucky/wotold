@@ -2,11 +2,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use serde::Serialize;
 use serde_json::Value;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 use super::{AudioCapture, CaptureError, CaptureResult};
 use crate::AppError;
@@ -15,23 +18,35 @@ const SIDECAR_NAME: &str = "wotold-audio";
 const START_TIMEOUT_SECS: u64 = 5;
 const STOP_TIMEOUT_SECS: u64 = 10;
 
-/// Активная сессия записи macOS-аудио. Хранит дескриптор sidecar-процесса
-/// и канал событий, чтобы stop() мог дождаться "stopped" события.
+/// [B14] Tauri event payload — каждые 100ms эмитится `audio:level` пока запись
+/// идёт. mic/system нормализованы 0..1.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct LevelPayload {
+    pub mic: f32,
+    pub system: f32,
+}
+
+/// Активная сессия записи macOS-аудио. Хранит дескриптор sidecar-процесса +
+/// terminal_rx (oneshot из background dispatcher task), который завершится с
+/// `stopped` либо `error` Value.
 pub struct RecordingSession {
     pub call_id: String,
     pub mic_path: PathBuf,
     pub system_path: PathBuf,
     pub started_at: chrono::DateTime<chrono::Utc>,
     child: CommandChild,
-    rx: Receiver<CommandEvent>,
+    /// Resolved когда dispatcher получит "stopped" или "error" event.
+    terminal_rx: oneshot::Receiver<Value>,
+    /// Удерживаем handle чтобы task жил столько, сколько и session.
+    /// Drop при stop / error cancels dispatcher (если ещё работает).
+    _dispatcher: JoinHandle<()>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct StopResult {
     pub duration_sec: f64,
-    // [B16] Сохраняем размеры файлов для будущей quota-аналитики
-    // и диагностики неполной записи. Сейчас not read — но это legitimate
-    // metadata, не реактивный mutable state.
+    // [B16] Сохраняем размеры файлов для будущей quota-аналитики и диагностики
+    // неполной записи. Сейчас not read — но это legitimate metadata.
     #[allow(dead_code)]
     pub mic_bytes: u64,
     #[allow(dead_code)]
@@ -39,6 +54,8 @@ pub struct StopResult {
 }
 
 /// Спавнит wotold-audio sidecar, шлёт start-команду, ждёт `started` с таймаутом.
+/// После started — spawn'ит background dispatcher что эмитит Tauri-события для
+/// frontend (`audio:level`) пока не придёт terminal event.
 pub async fn start(
     app: &AppHandle,
     call_id: String,
@@ -82,14 +99,25 @@ pub async fn start(
         first.ok_or_else(|| AppError::Other("audio sidecar exited before started event".into()))?;
 
     match first.get("event").and_then(Value::as_str) {
-        Some("started") => Ok(RecordingSession {
-            call_id,
-            mic_path,
-            system_path,
-            started_at: chrono::Utc::now(),
-            child,
-            rx,
-        }),
+        Some("started") => {
+            // [B14] Spawn dispatcher что owns rx, forwards level/passthrough
+            // events to frontend, и сигналит terminal через oneshot.
+            let (terminal_tx, terminal_rx) = oneshot::channel::<Value>();
+            let app_clone = app.clone();
+            let dispatcher = tokio::spawn(async move {
+                run_dispatcher(rx, app_clone, terminal_tx).await;
+            });
+
+            Ok(RecordingSession {
+                call_id,
+                mic_path,
+                system_path,
+                started_at: chrono::Utc::now(),
+                child,
+                terminal_rx,
+                _dispatcher: dispatcher,
+            })
+        }
         Some("error") => {
             let msg = first
                 .get("message")
@@ -105,7 +133,7 @@ pub async fn start(
     }
 }
 
-/// Отправляет stop команду, ждёт `stopped` с длительностью и размером, закрывает sidecar.
+/// Отправляет stop команду, ждёт `stopped` через terminal channel, закрывает sidecar.
 pub async fn stop(mut session: RecordingSession) -> Result<StopResult, AppError> {
     let stop_cmd = b"{\"cmd\":\"stop\"}\n";
     session
@@ -113,17 +141,17 @@ pub async fn stop(mut session: RecordingSession) -> Result<StopResult, AppError>
         .write(stop_cmd)
         .map_err(|e| AppError::Other(format!("sidecar write failed: {e}")))?;
 
-    let result = tokio::time::timeout(Duration::from_secs(STOP_TIMEOUT_SECS), async {
-        wait_for_event(&mut session.rx, &["stopped", "error"]).await
-    })
+    let event = tokio::time::timeout(
+        Duration::from_secs(STOP_TIMEOUT_SECS),
+        &mut session.terminal_rx,
+    )
     .await
-    .map_err(|_| AppError::Other(format!("audio stop timed out after {STOP_TIMEOUT_SECS}s")))?;
+    .map_err(|_| AppError::Other(format!("audio stop timed out after {STOP_TIMEOUT_SECS}s")))?
+    .map_err(|_| AppError::Other("audio sidecar exited without stopped event".into()))?;
 
     // После stop sidecar выходит когда мы закрываем stdin (drop child).
     drop(session.child);
 
-    let event = result
-        .ok_or_else(|| AppError::Other("audio sidecar exited without stopped event".into()))?;
     match event.get("event").and_then(Value::as_str) {
         Some("stopped") => {
             if let Some(warning) = event.get("warning").and_then(Value::as_str) {
@@ -152,6 +180,67 @@ pub async fn stop(mut session: RecordingSession) -> Result<StopResult, AppError>
         _ => Err(AppError::Other(format!(
             "unexpected sidecar event: {event}"
         ))),
+    }
+}
+
+/// [B14] Background dispatcher — consumes sidecar's rx после `started`. Эмитит
+/// в Tauri webview `audio:level` события для frontend meter, остальные
+/// passthrough логирует. При `stopped`/`error` шлёт Value в terminal_tx и
+/// завершается.
+async fn run_dispatcher(
+    mut rx: Receiver<CommandEvent>,
+    app: AppHandle,
+    terminal_tx: oneshot::Sender<Value>,
+) {
+    let mut terminal_tx = Some(terminal_tx);
+    while let Some(event) = rx.recv().await {
+        match event {
+            CommandEvent::Stdout(bytes) => {
+                let line = String::from_utf8_lossy(&bytes);
+                let Ok(json) = serde_json::from_str::<Value>(line.trim()) else {
+                    log::debug!("audio non-json stdout: {line}");
+                    continue;
+                };
+                let ev = json.get("event").and_then(Value::as_str).unwrap_or("");
+                match ev {
+                    "level" => {
+                        let payload = LevelPayload {
+                            mic: json.get("mic").and_then(Value::as_f64).unwrap_or(0.0) as f32,
+                            system: json
+                                .get("system")
+                                .and_then(Value::as_f64)
+                                .unwrap_or(0.0) as f32,
+                        };
+                        if let Err(e) = app.emit("audio:level", payload) {
+                            log::debug!("emit audio:level failed: {e}");
+                        }
+                    }
+                    "stopped" | "error" => {
+                        if let Some(tx) = terminal_tx.take() {
+                            let _ = tx.send(json);
+                        }
+                        return;
+                    }
+                    _ => {
+                        log::debug!("audio passthrough event: {json}");
+                    }
+                }
+            }
+            CommandEvent::Stderr(bytes) => {
+                log::warn!("audio stderr: {}", String::from_utf8_lossy(&bytes));
+            }
+            CommandEvent::Terminated(payload) => {
+                log::warn!("audio sidecar terminated: {payload:?}");
+                if let Some(tx) = terminal_tx.take() {
+                    let _ = tx.send(serde_json::json!({
+                        "event": "error",
+                        "message": "sidecar terminated unexpectedly"
+                    }));
+                }
+                return;
+            }
+            _ => {}
+        }
     }
 }
 

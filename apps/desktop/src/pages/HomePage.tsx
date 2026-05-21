@@ -17,6 +17,8 @@ import {
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import { listCallSpeakers } from '../api/speakers';
 import { LiveWaveform, SyntheticWaveform } from '../components/LiveWaveform';
+import { LeveledWaveform } from '../components/LeveledWaveform';
+import { useAudioLevel } from '../hooks/useAudioLevel';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
 interface AvailableUpdate {
@@ -41,6 +43,9 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   // ещё рендерится но с .recording-overlay--exiting класс; через 280мс
   // фактически setRecording(null) + переход в idle с .idle-enter.
   const [recordingExiting, setRecordingExiting] = useState(false);
+  // [B14] Live levels из Swift sidecar (mic + system RMS @ 10Hz). Активен
+  // только пока recording идёт.
+  const audioLevels = useAudioLevel(recording !== null && !recordingExiting);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastCall, setLastCall] = useState<Call | null>(null);
@@ -313,11 +318,27 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 className="mono muted"
                 style={{ fontSize: 11, letterSpacing: '0.04em' }}
               >
-                {fakeLevelDb(elapsed, 'mic')}
+                {audioLevels.connected
+                  ? formatDb(audioLevels.mic[audioLevels.mic.length - 1] ?? 0)
+                  : fakeLevelDb(elapsed, 'mic')}
               </span>
             </div>
             <div className="wave-lane" style={{ height: 110, color: 'var(--ink)' }}>
-              <LiveWaveform active={!recordingExiting} color="var(--ink)" height={110} />
+              {audioLevels.connected ? (
+                <LeveledWaveform
+                  data={audioLevels.mic}
+                  color="var(--ink)"
+                  height={110}
+                />
+              ) : (
+                // [B14] Fallback на Web Audio AnalyserNode пока sidecar level
+                // event не пришёл (первые ~200ms либо если IPC не работает).
+                <LiveWaveform
+                  active={!recordingExiting}
+                  color="var(--ink)"
+                  height={110}
+                />
+              )}
             </div>
           </div>
 
@@ -344,11 +365,25 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
                 className="mono muted"
                 style={{ fontSize: 11, letterSpacing: '0.04em' }}
               >
-                {fakeLevelDb(elapsed, 'sys')}
+                {audioLevels.connected
+                  ? formatDb(audioLevels.system[audioLevels.system.length - 1] ?? 0)
+                  : fakeLevelDb(elapsed, 'sys')}
               </span>
             </div>
             <div className="wave-lane" style={{ height: 110, color: 'var(--accent)' }}>
-              <SyntheticWaveform active={!recordingExiting} color="var(--accent)" height={110} />
+              {audioLevels.connected ? (
+                <LeveledWaveform
+                  data={audioLevels.system}
+                  color="var(--accent)"
+                  height={110}
+                />
+              ) : (
+                <SyntheticWaveform
+                  active={!recordingExiting}
+                  color="var(--accent)"
+                  height={110}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -698,14 +733,22 @@ function formatHMS(sec: number, padHours = false): string {
   return `${m}:${ss}`;
 }
 
-// [B17] Mock dB indicator для recording state — реальные значения требуют
-// IPC из sidecar (см. B14 в ROADMAP). Здесь deterministic oscillation
-// чтобы UI не выглядел статично, +-3 dB около baseline.
+// [B17] Mock dB indicator — fallback пока sidecar level event не пришёл.
+// Deterministic oscillation +-3 dB около baseline.
 function fakeLevelDb(elapsed: number, track: 'mic' | 'sys'): string {
   const baseline = track === 'mic' ? -12 : -18;
   const osc = Math.sin((elapsed / (track === 'mic' ? 2.7 : 4.1)) * Math.PI) * 3;
   const v = Math.round(baseline + osc);
   return `${v} dB`;
+}
+
+// [B14] RMS (0..1) → dBFS approximation. -∞ → "−∞", clamp -60 на min.
+// 20·log10(rms). Real signal at -12 dB ≈ rms 0.25, -3 dB ≈ rms 0.71.
+function formatDb(rms: number): string {
+  if (rms <= 1e-6) return '−∞ dB';
+  const db = 20 * Math.log10(rms);
+  const clamped = Math.max(-60, Math.min(0, db));
+  return `${clamped.toFixed(0)} dB`;
 }
 
 function formatRuDate(d: Date): string {

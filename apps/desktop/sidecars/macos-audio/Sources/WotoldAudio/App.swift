@@ -5,6 +5,7 @@ import Foundation
 //             { "cmd": "stop" }
 //             { "cmd": "ping" }
 //   stdout ←  { "event": "started" }
+//             { "event": "level", "mic": 0.12, "system": 0.34 }  [B14] каждые 100ms
 //             { "event": "stopped", "duration_sec": N, "mic_bytes": N, "system_bytes": N }
 //             { "event": "error",   "message": "..." }
 //             { "event": "pong" }
@@ -22,6 +23,31 @@ struct WotoldAudioMain {
 
     static func emitError(_ message: String) {
         emit(["event": "error", "message": message])
+    }
+
+    static let levelQueue = DispatchQueue(label: "app.wotold.macos-audio.level")
+    static var levelTimer: DispatchSourceTimer?
+
+    // [B14] Start a 100ms repeating timer that emits {"event":"level"} с
+    // current RMS из mic + system recorders. Idempotent — повторный вызов
+    // переустанавливает таймер.
+    static func startLevelTimer(mic: AudioRecorder, system: SystemAudioRecorder) {
+        stopLevelTimer()
+        let t = DispatchSource.makeTimerSource(queue: levelQueue)
+        t.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
+        t.setEventHandler {
+            // round to 4 знач знака чтобы JSON был компактнее.
+            let m = (mic.currentRms * 10_000).rounded() / 10_000
+            let s = (system.currentRms * 10_000).rounded() / 10_000
+            emit(["event": "level", "mic": m, "system": s])
+        }
+        t.resume()
+        levelTimer = t
+    }
+
+    static func stopLevelTimer() {
+        levelTimer?.cancel()
+        levelTimer = nil
     }
 
     static func main() async {
@@ -80,8 +106,10 @@ struct WotoldAudioMain {
                     continue
                 }
                 emit(["event": "started"])
+                startLevelTimer(mic: mic, system: system)
 
             case "stop":
+                stopLevelTimer()
                 let micResult: (durationSec: Double, micBytes: UInt64)
                 do {
                     micResult = try mic.stop()

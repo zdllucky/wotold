@@ -17,6 +17,12 @@ final class AudioRecorder {
     private let queue = DispatchQueue(label: "app.wotold.macos-audio.recorder")
     private let flushInterval: TimeInterval = 5.0
 
+    // [B14] Running RMS for live level meter. Frontend reads через
+    // {"event":"level","mic":..,"system":..} stdout эмит'ы каждые 100ms.
+    // Не thread-safe чтение из main thread — но atomic-fast enough.
+    private var latestRms: Float = 0
+    var currentRms: Float { latestRms }
+
     func start(micURL: URL) throws {
         // Если уже пишем — стопаем предыдущий чтобы не потерять состояние.
         if engine != nil {
@@ -125,6 +131,9 @@ final class AudioRecorder {
                 Data("wav write error: \(error.localizedDescription)\n".utf8)
             )
         }
+
+        // [B14] RMS post-write — frontend читает latestRms через эмит таймер.
+        latestRms = computeInt16Rms(outBuffer)
     }
 
     func stop() throws -> (durationSec: Double, micBytes: UInt64) {
@@ -145,7 +154,26 @@ final class AudioRecorder {
         inputFormat = nil
         startTime = nil
         bytesWritten = 0
+        latestRms = 0
 
         return (durationSec: duration, micBytes: bytes)
     }
+}
+
+// [B14] Compute RMS из int16 PCM AVAudioPCMBuffer, нормализован 0..1.
+func computeInt16Rms(_ buffer: AVAudioPCMBuffer) -> Float {
+    guard buffer.format.commonFormat == .pcmFormatInt16,
+          let data = buffer.int16ChannelData
+    else { return 0 }
+    let channel = data[0]
+    let count = Int(buffer.frameLength)
+    guard count > 0 else { return 0 }
+    var sumSq: Double = 0
+    for i in 0..<count {
+        let v = Double(channel[i]) / 32768.0
+        sumSq += v * v
+    }
+    let rms = sqrt(sumSq / Double(count))
+    // Clamp 0..1 — иногда float overflow на пик ~1.05.
+    return Float(min(1.0, max(0.0, rms)))
 }
