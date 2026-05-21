@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
-import type { LlmRequest, LlmResponse } from '@wotold/contracts';
+import type { LlmResponse } from '@wotold/contracts';
 import type { Env } from '../lib/env.js';
 import { requireDeviceId } from '../middleware/device-id.js';
 import { enforceQuota, incUsage } from '../middleware/rate-limit.js';
 import { callLlm } from '../lib/llm-backends.js';
+import { llmRequestSchema, parseBody } from '../lib/schemas.js';
 
 export const llmRoutes = new Hono<{ Bindings: Env; Variables: { deviceId: string } }>();
 
@@ -13,13 +14,14 @@ llmRoutes.post('/', async (c) => {
   const quotaErr = await enforceQuota(c, 'llm_tok');
   if (quotaErr) return quotaErr;
 
-  const body = await c.req.json<LlmRequest>().catch(() => null);
-  if (!body || typeof body.system !== 'string' || typeof body.input !== 'string') {
+  const parsed = await parseBody(c.req.raw, llmRequestSchema);
+  if (!parsed.ok) {
     return c.json(
-      { ok: false, code: 'bad_request', message: 'system and input required' } satisfies LlmResponse,
+      { ok: false, code: 'bad_request', message: parsed.message } satisfies LlmResponse,
       400,
     );
   }
+  const body = parsed.data;
 
   const result = await callLlm(c.env, {
     system: body.system,

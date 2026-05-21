@@ -16,7 +16,8 @@
   "dependencies": {
     "@wotold/contracts": "workspace:*",
     "aws4fetch": "^1.0.20",
-    "hono": "^4.6.14"
+    "hono": "^4.6.14",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.6.16",

@@ -1,16 +1,16 @@
 import { Hono } from 'hono';
-import type {
-  SttStagingUrlRequest,
-  SttStagingUrlResponse,
-  SttRequest,
-  SttResponse,
-} from '@wotold/contracts';
+import type { SttStagingUrlResponse, SttResponse } from '@wotold/contracts';
 import type { Env } from '../lib/env.js';
 import { requireDeviceId } from '../middleware/device-id.js';
 import { enforceQuota, incUsage } from '../middleware/rate-limit.js';
 import { presignR2Get, presignR2Put } from '../lib/r2-presign.js';
 import { transcribeSoniox } from '../lib/partners/soniox.js';
 import { transcribeGladia } from '../lib/partners/gladia.js';
+import {
+  parseBody,
+  sttRequestSchema,
+  sttStagingUrlRequestSchema,
+} from '../lib/schemas.js';
 
 // Workers Free CPU/wall лимит ≈ 30s на запрос. Polling 25s + буфер на сеть.
 const POLL_BUDGET_MS = 25_000;
@@ -56,13 +56,14 @@ const ALLOWED_CONTENT_TYPES = new Set([
 ]);
 
 sttRoutes.post('/staging-url', async (c) => {
-  const body = await c.req.json<SttStagingUrlRequest>().catch(() => null);
-  if (!body || typeof body.contentType !== 'string') {
+  const parsed = await parseBody(c.req.raw, sttStagingUrlRequestSchema);
+  if (!parsed.ok) {
     return c.json(
-      { ok: false, code: 'bad_request', message: 'contentType required' } satisfies SttResponse,
+      { ok: false, code: 'bad_request', message: parsed.message } satisfies SttResponse,
       400,
     );
   }
+  const body = parsed.data;
 
   if (!ALLOWED_CONTENT_TYPES.has(body.contentType.toLowerCase())) {
     return c.json(
@@ -102,13 +103,14 @@ sttRoutes.post('/', async (c) => {
   const quotaErr = await enforceQuota(c, 'stt_sec');
   if (quotaErr) return quotaErr;
 
-  const body = await c.req.json<SttRequest>().catch(() => null);
-  if (!body || typeof body.r2Key !== 'string' || !body.opts) {
+  const parsed = await parseBody(c.req.raw, sttRequestSchema);
+  if (!parsed.ok) {
     return c.json(
-      { ok: false, code: 'bad_request', message: 'r2Key and opts required' } satisfies SttResponse,
+      { ok: false, code: 'bad_request', message: parsed.message } satisfies SttResponse,
       400,
     );
   }
+  const body = parsed.data;
 
   const head = await c.env.STT_STAGING.head(body.r2Key);
   if (!head) {

@@ -29,6 +29,7 @@ import {
   type Account,
   type OidcProvider,
 } from '../lib/auth/storage.js';
+import { authStartRequestSchema, parseBody } from '../lib/schemas.js';
 
 export const authRoutes = new Hono<{ Bindings: Env }>();
 
@@ -51,22 +52,15 @@ authRoutes.post('/:provider/start', async (c) => {
   const provider = parseProvider(c.req.param('provider'));
   if (!provider) return jsonError(c, 'unknown_provider', 'Unknown provider', 404);
 
-  const body = (await c.req.json().catch(() => ({}))) as {
-    deviceId?: string;
-    redirectMode?: string;
-  };
-  // [B16 audit P1]: deviceId должен быть UUID (либо null), иначе мусор в KV.
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  let deviceId: string | null = null;
-  if (typeof body.deviceId === 'string' && body.deviceId.length > 0) {
-    if (!UUID_RE.test(body.deviceId)) {
-      return jsonError(c, 'bad_request', 'deviceId must be UUID', 400);
-    }
-    deviceId = body.deviceId;
+  const parsed = await parseBody(c.req.raw, authStartRequestSchema);
+  if (!parsed.ok) {
+    return jsonError(c, 'bad_request', parsed.message, 400);
   }
+  const body = parsed.data;
+  // [B16 audit P1]: deviceId UUID-валидация уже в schema. null/undefined допустимо.
+  const deviceId: string | null = body.deviceId ?? null;
   // [B9]: deep-link mode для Tauri-клиента → callback вернёт HTTP 302 на wotold://.
-  const redirectMode: 'json' | 'deeplink' =
-    body.redirectMode === 'deeplink' ? 'deeplink' : 'json';
+  const redirectMode: 'json' | 'deeplink' = body.redirectMode ?? 'json';
 
   const redirectUri = buildRedirectUri(c, provider);
   const state = await startStateFlow(c.env, provider, redirectUri, deviceId, redirectMode);
