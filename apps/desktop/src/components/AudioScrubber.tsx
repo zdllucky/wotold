@@ -1,11 +1,9 @@
-// [B17 V3.3] Sticky bottom audio scrubber pill — dumb presentation component.
-// State + handlers приходят из useCallAudio() hook. Real waveform peaks из
-// audio.peaks (decoded WAV via AudioContext), не seeded random.
+// [B17 V3.4] Sticky bottom audio scrubber pill — dumb presentation component.
+// useCallAudio() hook играет ОБА трека одновременно (mic + system), нет
+// track switcher. Browser mixer сводит их в один stream.
 //
 // Layout pill (слева направо):
-//   [▶] [00:04] [waveform peaks] [SpeakerChip|пауза] [01:11]
-//
-// Track switcher вынесен под pill subtle row (трет приоритет).
+//   [▶] [00:04] [combined peaks waveform] [SpeakerChip|пауза] [01:11]
 
 import type { CallAudioHandle } from '../hooks/useCallAudio';
 import { Waveform } from './Waveform';
@@ -42,7 +40,7 @@ export function AudioScrubber({
   onJumpToSpeaker,
 }: AudioScrubberProps) {
   if (!enabled) return null;
-  if (audio.micMissing && audio.systemMissing) return null;
+  if (audio.bothMissing) return null;
 
   const onWaveformClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!audio.duration) return;
@@ -190,60 +188,8 @@ export function AudioScrubber({
         </div>
       </div>
 
-      {/* Track switcher — subtle row под pill, tertiary action. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: 10,
-          marginTop: 6,
-          fontSize: 10,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          fontFamily: 'var(--font-sans)',
-          fontWeight: 600,
-        }}
-      >
-        <span className="subtle" style={{ alignSelf: 'center', fontSize: 9 }}>
-          трек:
-        </span>
-        <button
-          type="button"
-          onClick={() => audio.switchTrack('mic')}
-          disabled={audio.micMissing}
-          aria-pressed={audio.activeTrack === 'mic'}
-          style={trackBtnStyle(audio.activeTrack === 'mic', audio.micMissing)}
-        >
-          Я
-        </button>
-        <button
-          type="button"
-          onClick={() => audio.switchTrack('system')}
-          disabled={audio.systemMissing}
-          aria-pressed={audio.activeTrack === 'system'}
-          style={trackBtnStyle(audio.activeTrack === 'system', audio.systemMissing)}
-        >
-          Собеседник
-        </button>
-      </div>
     </div>
   );
-}
-
-function trackBtnStyle(active: boolean, missing: boolean): React.CSSProperties {
-  return {
-    background: 'none',
-    border: 'none',
-    padding: '2px 6px',
-    cursor: missing ? 'not-allowed' : 'pointer',
-    color: active ? 'var(--ink)' : 'var(--subtle)',
-    opacity: missing ? 0.3 : 1,
-    fontFamily: 'inherit',
-    fontWeight: 'inherit',
-    fontSize: 'inherit',
-    letterSpacing: 'inherit',
-    textTransform: 'inherit',
-  };
 }
 
 // SpeakerChip — current speaker indicator с avatar + первое имя. Click →
