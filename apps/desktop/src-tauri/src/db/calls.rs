@@ -353,6 +353,10 @@ pub struct CallSpeakerView {
     pub suggestion_score: Option<f64>,
     pub suggestion_source: Option<String>,
     pub confirmed: bool,
+    /// [V7] RFC3339 timestamp если speaker был привязан автоматически
+    /// (suggestion_score >= threshold). NULL = ручное подтверждение.
+    /// UI рендерит «↩ отменить» баннер первые N секунд после открытия.
+    pub auto_bound_at: Option<String>,
 }
 
 /// Возвращает спикеров звонка с join'ом display_name по contact_id +
@@ -367,7 +371,8 @@ pub async fn list_call_speakers(
             c1.display_name AS contact_display_name,
             cs.suggestion_contact_id,
             c2.display_name AS suggestion_contact_display_name,
-            cs.suggestion_score, cs.suggestion_source, cs.confirmed
+            cs.suggestion_score, cs.suggestion_source, cs.confirmed,
+            cs.auto_bound_at
          FROM call_speakers cs
          LEFT JOIN contacts c1 ON c1.id = cs.contact_id
          LEFT JOIN contacts c2 ON c2.id = cs.suggestion_contact_id
@@ -392,6 +397,7 @@ pub async fn list_call_speakers(
             suggestion_score: r.get("suggestion_score"),
             suggestion_source: r.get("suggestion_source"),
             confirmed: r.get::<i64, _>("confirmed") == 1,
+            auto_bound_at: r.get("auto_bound_at"),
         })
         .collect())
 }
@@ -662,6 +668,61 @@ pub async fn set_call_speaker_cluster(
     Ok(())
 }
 
+/// [V7] Авто-привязка спикеров с высокой уверенностью (suggestion_score >=
+/// `threshold`). Выполняется после matching pipeline, ТОЛЬКО когда юзер
+/// явно включил toggle в Settings.
+///
+/// Guardrails (R2 паспорта — opt-in is the only legitimate path):
+///   1. Speaker НЕ должен быть уже привязан (confirmed=0 AND contact_id NULL)
+///   2. speaker_tag != 'owner' (owner всегда привязан тривиально)
+///   3. suggestion_score >= threshold (0.90 | 0.95 | 0.98)
+///   4. Контакт-кандидат имеет consent_voice='true'
+///   5. Контакт имеет ≥ 2 voice_samples (один sample = слабая база, может
+///      ошибаться при больном голосе или родственниках)
+///
+/// Возвращает количество авто-привязанных speaker'ов — pipeline эмитит
+/// event `call:auto_bound` с этим числом, UI рендерит «↩ отменить» баннер.
+pub async fn auto_bind_high_confidence_speakers(
+    pool: &SqlitePool,
+    call_id: &str,
+    threshold: f64,
+) -> Result<u64, AppError> {
+    // Минимум 2 sample'а на контакт — отдельный CTE-сабквери внутри UPDATE
+    // (SQLite ≥3.8.3 поддерживает correlated subquery в SET, проверено в
+    // sqlx 0.8 + bundled libsqlite ≥3.40). consent_voice проверяется через
+    // json_extract атрибутов — формат '{"consent_voice":"true"}' (см.
+    // confirm_call_speaker).
+    let now = chrono::Utc::now().to_rfc3339();
+    let res = sqlx::query(
+        "UPDATE call_speakers
+         SET contact_id = suggestion_contact_id,
+             confirmed = 1,
+             auto_bound_at = ?1
+         WHERE call_id = ?2
+           AND speaker_tag != 'owner'
+           AND confirmed = 0
+           AND contact_id IS NULL
+           AND suggestion_contact_id IS NOT NULL
+           AND suggestion_score IS NOT NULL
+           AND suggestion_score >= ?3
+           AND EXISTS (
+             SELECT 1 FROM contacts c
+             WHERE c.id = call_speakers.suggestion_contact_id
+               AND json_extract(COALESCE(c.attributes, '{}'), '$.consent_voice') = 'true'
+           )
+           AND (
+             SELECT COUNT(*) FROM voice_samples vs
+             WHERE vs.contact_id = call_speakers.suggestion_contact_id
+           ) >= 2",
+    )
+    .bind(&now)
+    .bind(call_id)
+    .bind(threshold)
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}
+
 /// [B3.4] Persist suggestion (contact_id, score, source) к существующему
 /// call_speaker — заменяет старую при перезапуске matching pipeline.
 #[allow(dead_code)] // wired в B3.4
@@ -692,12 +753,20 @@ pub async fn set_call_speaker_suggestion(
 
 /// Откатить привязку спикера: contact_id = NULL, confirmed = 0. Suggestion
 /// остаётся как был — пользователь может изменить решение позже.
+/// [V7] auto_bound_at тоже очищается — после undo'а это снова pending speaker
+/// без auto-bound provenance (если юзер вручную подтвердит позже —
+/// auto_bound_at останется NULL, что и нужно).
 pub async fn unbind_call_speaker(pool: &SqlitePool, call_speaker_id: &str) -> Result<(), AppError> {
-    let updated =
-        sqlx::query("UPDATE call_speakers SET contact_id = NULL, confirmed = 0 WHERE id = ?1")
-            .bind(call_speaker_id)
-            .execute(pool)
-            .await?;
+    let updated = sqlx::query(
+        "UPDATE call_speakers
+         SET contact_id = NULL,
+             confirmed = 0,
+             auto_bound_at = NULL
+         WHERE id = ?1",
+    )
+    .bind(call_speaker_id)
+    .execute(pool)
+    .await?;
     if updated.rows_affected() == 0 {
         return Err(AppError::Other(format!(
             "call_speaker {call_speaker_id} not found"
@@ -1155,6 +1224,217 @@ mod tests {
         assert_eq!(after.status, "failed");
         assert!(after.pipeline_step.is_none());
         assert!(after.pipeline_pct.is_none());
+    }
+
+    // ============================================================
+    // [V7] auto_bind_high_confidence_speakers — opt-in auto bind
+    // ============================================================
+
+    /// Helper: создать контакт с opt-in consent + N voice samples.
+    async fn contact_with_samples(
+        pool: &sqlx::SqlitePool,
+        name: &str,
+        sample_count: usize,
+    ) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO contacts (id, display_name, is_owner, attributes, created_at, updated_at)
+             VALUES (?1, ?2, 0, '{\"consent_voice\":\"true\"}', ?3, ?3)",
+        )
+        .bind(&id)
+        .bind(name)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+        for i in 0..sample_count {
+            sqlx::query(
+                "INSERT INTO voice_samples
+                   (id, contact_id, embedding, source_call, quality, created_at)
+                 VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+            )
+            .bind(format!("vs-{name}-{i}"))
+            .bind(&id)
+            .bind(vec![0u8; 4])
+            .bind(0.9)
+            .bind(&now)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        id
+    }
+
+    async fn insert_speaker_with_suggestion(
+        pool: &sqlx::SqlitePool,
+        call_id: &str,
+        speaker_tag: &str,
+        suggestion_contact_id: &str,
+        score: f64,
+    ) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO call_speakers
+               (id, call_id, speaker_tag, suggestion_contact_id, suggestion_score, suggestion_source, confirmed)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'embedding', 0)",
+        )
+        .bind(&id)
+        .bind(call_id)
+        .bind(speaker_tag)
+        .bind(suggestion_contact_id)
+        .bind(score)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    #[tokio::test]
+    async fn auto_bind_binds_high_score_speaker_with_consent_and_samples() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = contact_with_samples(&db.pool, "Alice", 2).await;
+        let sid = insert_speaker_with_suggestion(&db.pool, &call.id, "S1", &alice, 0.97).await;
+
+        let n = auto_bind_high_confidence_speakers(&db.pool, &call.id, 0.95)
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+
+        let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
+        let s1 = speakers.iter().find(|s| s.id == sid).unwrap();
+        assert!(s1.confirmed);
+        assert_eq!(s1.contact_id.as_deref(), Some(alice.as_str()));
+        assert!(s1.auto_bound_at.is_some(), "auto_bound_at должен быть set");
+    }
+
+    #[tokio::test]
+    async fn auto_bind_skips_when_score_below_threshold() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = contact_with_samples(&db.pool, "Alice", 3).await;
+        insert_speaker_with_suggestion(&db.pool, &call.id, "S1", &alice, 0.93).await;
+
+        let n = auto_bind_high_confidence_speakers(&db.pool, &call.id, 0.95)
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[tokio::test]
+    async fn auto_bind_skips_when_only_one_sample() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        // 1 sample — недостаточно для confident match.
+        let alice = contact_with_samples(&db.pool, "Alice", 1).await;
+        insert_speaker_with_suggestion(&db.pool, &call.id, "S1", &alice, 0.99).await;
+
+        let n = auto_bind_high_confidence_speakers(&db.pool, &call.id, 0.95)
+            .await
+            .unwrap();
+        assert_eq!(n, 0, "consenting но <2 samples — не привязываем");
+    }
+
+    #[tokio::test]
+    async fn auto_bind_skips_when_no_consent() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        // Контакт без consent_voice.
+        let bob = insert_contact_row(&db.pool, "Bob").await; // helper выше
+        sqlx::query(
+            "INSERT INTO voice_samples
+               (id, contact_id, embedding, source_call, quality, created_at)
+             VALUES ('vs-x', ?1, ?2, NULL, 0.9, ?3)",
+        )
+        .bind(&bob)
+        .bind(vec![0u8; 4])
+        .bind("2026-05-20T00:00:00Z")
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO voice_samples
+               (id, contact_id, embedding, source_call, quality, created_at)
+             VALUES ('vs-y', ?1, ?2, NULL, 0.9, ?3)",
+        )
+        .bind(&bob)
+        .bind(vec![0u8; 4])
+        .bind("2026-05-20T00:00:00Z")
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        insert_speaker_with_suggestion(&db.pool, &call.id, "S1", &bob, 0.99).await;
+
+        let n = auto_bind_high_confidence_speakers(&db.pool, &call.id, 0.95)
+            .await
+            .unwrap();
+        assert_eq!(n, 0, "без consent_voice='true' — никакой авто-привязки");
+    }
+
+    #[tokio::test]
+    async fn auto_bind_skips_already_confirmed_speaker() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = contact_with_samples(&db.pool, "Alice", 2).await;
+        let bob = contact_with_samples(&db.pool, "Bob", 2).await;
+        let sid = insert_speaker_with_suggestion(&db.pool, &call.id, "S1", &alice, 0.99).await;
+        // Юзер УЖЕ вручную привязал к Bob — auto-bind не должен перезаписать.
+        confirm_call_speaker(&db.pool, &sid, &bob).await.unwrap();
+
+        let n = auto_bind_high_confidence_speakers(&db.pool, &call.id, 0.95)
+            .await
+            .unwrap();
+        assert_eq!(n, 0, "existing binding не перезаписывается");
+
+        let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
+        let s1 = speakers.iter().find(|s| s.id == sid).unwrap();
+        assert_eq!(s1.contact_id.as_deref(), Some(bob.as_str()));
+        assert!(s1.auto_bound_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn auto_bind_skips_owner_tag() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = contact_with_samples(&db.pool, "Alice", 2).await;
+        // owner row с suggestion на Alice — must not auto-rebind owner.
+        sqlx::query(
+            "INSERT INTO call_speakers
+               (id, call_id, speaker_tag, suggestion_contact_id, suggestion_score, suggestion_source, confirmed)
+             VALUES ('owner-row', ?1, 'owner', ?2, 0.99, 'embedding', 0)",
+        )
+        .bind(&call.id)
+        .bind(&alice)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        let n = auto_bind_high_confidence_speakers(&db.pool, &call.id, 0.95)
+            .await
+            .unwrap();
+        assert_eq!(n, 0, "owner tag всегда исключён из auto-bind");
+    }
+
+    #[tokio::test]
+    async fn unbind_clears_auto_bound_at() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = contact_with_samples(&db.pool, "Alice", 2).await;
+        let sid = insert_speaker_with_suggestion(&db.pool, &call.id, "S1", &alice, 0.99).await;
+        auto_bind_high_confidence_speakers(&db.pool, &call.id, 0.95)
+            .await
+            .unwrap();
+
+        unbind_call_speaker(&db.pool, &sid).await.unwrap();
+        let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
+        let s1 = speakers.iter().find(|s| s.id == sid).unwrap();
+        assert!(!s1.confirmed);
+        assert!(s1.contact_id.is_none());
+        assert!(
+            s1.auto_bound_at.is_none(),
+            "auto_bound_at очищается на undo"
+        );
     }
 
     #[tokio::test]

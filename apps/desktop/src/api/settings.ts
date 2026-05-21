@@ -25,6 +25,11 @@ export const SETTINGS_KEYS = {
   UI_ACCENT: 'ui.accent',
   /** UI locale — 'ru' | 'kk' | 'en'. Пусто = auto-detect from system. */
   UI_LOCALE: 'ui_locale',
+  /** [V7] Auto-bind speaker когда suggestion_score >= AUTO_BIND_THRESHOLD/100.
+   *  '1' = включено, иначе off. Default OFF (R2 паспорта). */
+  AUTO_BIND_ENABLED: 'auto_bind_enabled',
+  /** [V7] Min similarity для auto-bind (90 | 95 | 98). Default '95'. */
+  AUTO_BIND_THRESHOLD: 'auto_bind_threshold',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
@@ -39,7 +44,15 @@ export const SETTINGS_DEFAULTS = {
     ? 'https://wotold-proxy-staging.animereader.workers.dev'
     : 'https://wotold-proxy.animereader.workers.dev',
   PREFERRED_LANGUAGE: 'auto' as PreferredLanguage,
+  /** [V7] Default OFF — R2 паспорта: opt-in только. */
+  AUTO_BIND_ENABLED: false,
+  AUTO_BIND_THRESHOLD: '95' as AutoBindThreshold,
 } as const;
+
+/** [V7] Whitelisted threshold values. '90' / '95' / '98' — три уровня риска.
+ *  String union because Select<V extends string> generic constraint. */
+export type AutoBindThreshold = '90' | '95' | '98';
+export const AUTO_BIND_THRESHOLDS: AutoBindThreshold[] = ['90', '95', '98'];
 
 /** Список языков для UI селектора. 'auto' = язык STT. */
 export type PreferredLanguage = 'auto' | 'ru' | 'en' | 'kk' | string;

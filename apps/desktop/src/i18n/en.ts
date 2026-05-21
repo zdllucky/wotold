@@ -165,6 +165,9 @@ export const en: TranslationStrings = {
     reprocessFailed: 'Could not reprocess: {error}',
     regenerateFailed: 'Could not regenerate recap: {error}',
     reassureCanClose: 'You can close the window — we’ll save progress and finish in the background.',
+    autoBoundOne: 'Auto-bound speaker: {name} — by voice match.',
+    autoBoundMany: 'Auto-bound {n} speakers: {names} — by voice match.',
+    autoBoundUndo: '↩ Undo',
     errorTitle: 'Something went wrong',
     errorAudioSaved: 'Audio is saved locally — you can listen below.',
     errorRetry: 'Try again',
@@ -381,6 +384,15 @@ export const en: TranslationStrings = {
     sttModelPlaceholder: 'auto (resolved by backend)',
     sttModelHint:
       'Empty = proxy picks by LLM_BACKEND. Override only if you know what you are doing.',
+    autoBindLabel: 'Auto-bind speakers by voice',
+    autoBindCheckboxLabel:
+      'Automatically bind a speaker to a contact when voice match is high. Requires ≥ 2 voice samples and the contact’s biometry consent.',
+    autoBindHint:
+      'If off, Wotold only suggests a candidate and you confirm manually (recommended).',
+    autoBindThresholdLabel: 'Match threshold',
+    autoBindThresholdOption: '{n}%',
+    autoBindThresholdHint:
+      'Higher = fewer mistakes but fires less often. 95% is the default balance.',
     pathTitle: 'Service source.',
     pathLede:
       'By default Wotold uses our proxy with a daily free quota. Plug in your own keys — requests go direct, no limits.',

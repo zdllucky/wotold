@@ -15,7 +15,12 @@ import {
   type ActionItem,
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
-import { listCallSpeakers, type CallSpeakerView } from '../api/speakers';
+import {
+  listCallSpeakers,
+  unbindCallSpeaker,
+  type CallAutoBoundEvent,
+  type CallSpeakerView,
+} from '../api/speakers';
 import type { Call, CallProgressEvent } from '../api/recording';
 import { Empty, Tabs } from '../ui';
 import { CallStateTag, PipelineStrip } from '../components/call-state';
@@ -117,6 +122,22 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         }
       })
       .finally(() => setLoading(false));
+  }, [callId]);
+
+  // [V7] auto-bound event — pipeline закончил matching и нашёл N speaker'ов
+  // с score >= threshold. Refetch speakers и показываем undo баннер.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<CallAutoBoundEvent>('call:auto_bound', (e) => {
+      if (e.payload.call_id !== callId) return;
+      void refetchSpeakersAndContacts();
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((err) => console.warn('call:auto_bound listener:', err));
+    return () => unlisten?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch handle stable across renders
   }, [callId]);
 
   // [V6.4] Live pipeline progress — слушаем `call:progress` события для этого
@@ -390,6 +411,13 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         </div>
       )}
 
+      {/* [V7] Auto-bound banner — показывается пока есть speaker'ы с
+          auto_bound_at, дает явный undo и аудит происхождения привязки. */}
+      <AutoBoundBanner
+        speakers={speakersLite}
+        onUndone={() => void refetchSpeakersAndContacts()}
+      />
+
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
         <Tabs.List>
           {(['recap', 'transcript', 'tasks', 'speakers'] as Tab[]).map((tabId) => (
@@ -464,6 +492,66 @@ function MdPanel({ md, emptyHint }: { md: string | null; emptyHint: string }) {
   return (
     <div className="markdown">
       <ReactMarkdown>{md}</ReactMarkdown>
+    </div>
+  );
+}
+
+/**
+ * [V7] Баннер «Авто-привязано: N · ↩ Отменить». Рендерится пока есть
+ * speaker'ы с `auto_bound_at != null` AND `confirmed=1`. Один клик «отменить»
+ * unbind'ит все авто-привязки этого звонка (caveat: не трогает manual
+ * confirmed). Юзер может потом пере-подтвердить вручную через таб
+ * «Участники» или inline «? кто это» chip.
+ */
+function AutoBoundBanner({
+  speakers,
+  onUndone,
+}: {
+  speakers: CallSpeakerView[];
+  onUndone: () => void;
+}) {
+  const { t } = useI18n();
+  const [undoing, setUndoing] = useState(false);
+  const autoBound = speakers.filter(
+    (s) => s.auto_bound_at != null && s.confirmed && s.contact_id,
+  );
+  if (autoBound.length === 0) return null;
+  const names = autoBound
+    .map((s) => s.contact_display_name)
+    .filter((n): n is string => Boolean(n))
+    .join(', ');
+  const handleUndo = async () => {
+    setUndoing(true);
+    try {
+      await Promise.all(autoBound.map((s) => unbindCallSpeaker(s.id)));
+    } catch (e) {
+      console.warn('auto-bound undo failed:', e);
+    } finally {
+      setUndoing(false);
+      onUndone();
+    }
+  };
+  return (
+    <div
+      className="activity-strip"
+      data-comment-anchor="call-auto-bound-banner"
+      style={{ marginBottom: 14 }}
+    >
+      <span className="stat-tag-dot" aria-hidden="true" />
+      <span>
+        {autoBound.length === 1
+          ? t('callDetail.autoBoundOne', { name: names })
+          : t('callDetail.autoBoundMany', { n: autoBound.length, names })}
+      </span>
+      <button
+        type="button"
+        className="btn btn--quiet btn--sm"
+        onClick={() => void handleUndo()}
+        disabled={undoing}
+        style={{ marginLeft: 'auto' }}
+      >
+        {undoing ? t('common.loading') : t('callDetail.autoBoundUndo')}
+      </button>
     </div>
   );
 }

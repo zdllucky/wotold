@@ -15,11 +15,13 @@ import { ask } from '@tauri-apps/plugin-dialog';
 import { humanError } from '../api/errors';
 
 import {
+  AUTO_BIND_THRESHOLDS,
   getSetting,
   setSetting,
   PREFERRED_LANGUAGES,
   SETTINGS_DEFAULTS,
   SETTINGS_KEYS,
+  type AutoBindThreshold,
   type PreferredLanguage,
   type ProviderPath,
   type SttProvider,
@@ -79,6 +81,12 @@ export function SettingsPage() {
   const [preferredLanguage, setPreferredLanguage] = useState<PreferredLanguage>(
     SETTINGS_DEFAULTS.PREFERRED_LANGUAGE,
   );
+  const [autoBindEnabled, setAutoBindEnabled] = useState<boolean>(
+    SETTINGS_DEFAULTS.AUTO_BIND_ENABLED,
+  );
+  const [autoBindThreshold, setAutoBindThreshold] = useState<AutoBindThreshold>(
+    SETTINGS_DEFAULTS.AUTO_BIND_THRESHOLD,
+  );
   const [proxyUrl, setProxyUrl] = useState<string>('');
   const [proxyUrlError, setProxyUrlError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,18 +94,24 @@ export function SettingsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [stt, path, model, proxy, lang] = await Promise.all([
+        const [stt, path, model, proxy, lang, autoBind, autoBindT] = await Promise.all([
           getSetting(SETTINGS_KEYS.STT_PROVIDER),
           getSetting(SETTINGS_KEYS.PROVIDER_PATH),
           getSetting(SETTINGS_KEYS.LLM_MODEL),
           getSetting(SETTINGS_KEYS.PROXY_BASE_URL),
           getSetting(SETTINGS_KEYS.PREFERRED_LANGUAGE),
+          getSetting(SETTINGS_KEYS.AUTO_BIND_ENABLED),
+          getSetting(SETTINGS_KEYS.AUTO_BIND_THRESHOLD),
         ]);
         if (isSttProvider(stt)) setSttProvider(stt);
         if (isProviderPath(path)) setProviderPath(path);
         if (model) setLlmModel(model);
         if (proxy) setProxyUrl(proxy);
         if (lang) setPreferredLanguage(lang as PreferredLanguage);
+        setAutoBindEnabled(autoBind === '1');
+        if (autoBindT && AUTO_BIND_THRESHOLDS.includes(autoBindT as AutoBindThreshold)) {
+          setAutoBindThreshold(autoBindT as AutoBindThreshold);
+        }
       } catch (e) {
         setError(humanError(e));
       } finally {
@@ -272,6 +286,80 @@ export function SettingsPage() {
                 placeholder={t('settings.sttModelPlaceholder')}
                 hint={t('settings.sttModelHint')}
               />
+
+              {/* [V7] Auto-bind opt-in. Default OFF (R2 паспорта). При включении
+                  показывается threshold-селектор и каноничный privacy-warning. */}
+              <div className="field">
+                <label className="field-label">
+                  {t('settings.autoBindLabel')}
+                </label>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={autoBindEnabled}
+                    onChange={(e) => {
+                      const v = e.target.checked;
+                      setAutoBindEnabled(v);
+                      void persist(SETTINGS_KEYS.AUTO_BIND_ENABLED, v ? '1' : '0');
+                    }}
+                    style={{ marginTop: 4 }}
+                  />
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-serif)',
+                      fontSize: 14,
+                      color: 'var(--ink-2)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {t('settings.autoBindCheckboxLabel')}
+                  </span>
+                </label>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--subtle)',
+                    marginTop: 6,
+                    fontStyle: 'italic',
+                  }}
+                >
+                  {t('settings.autoBindHint')}
+                </span>
+              </div>
+              {autoBindEnabled && (
+                <div className="field">
+                  <label className="field-label">
+                    {t('settings.autoBindThresholdLabel')}
+                  </label>
+                  <Select<AutoBindThreshold>
+                    value={autoBindThreshold}
+                    options={AUTO_BIND_THRESHOLDS.map((n) => ({
+                      value: n,
+                      label: t('settings.autoBindThresholdOption', { n }),
+                    }))}
+                    onChange={(v) => {
+                      setAutoBindThreshold(v);
+                      void persist(SETTINGS_KEYS.AUTO_BIND_THRESHOLD, v);
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--subtle)',
+                      marginTop: 2,
+                    }}
+                  >
+                    {t('settings.autoBindThresholdHint')}
+                  </span>
+                </div>
+              )}
             </div>
           </SectionShell>
         )}
