@@ -106,6 +106,7 @@ export const en: TranslationStrings = {
     filterAll: 'All',
     filterToday: 'Today',
     filterWeek: 'Week',
+    filterProcessing: 'Processing',
     filteredOf: '{filtered} of {total} {plural}',
     countOf: '{n} {plural}',
     hoursSuffix: '· {n} h',

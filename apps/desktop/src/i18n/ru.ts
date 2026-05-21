@@ -112,6 +112,8 @@ const ruInternal = {
     filterAll: 'Все',
     filterToday: 'Сегодня',
     filterWeek: 'Неделя',
+    // [V8.2] Появляется только когда хоть один звонок recording|processing.
+    filterProcessing: 'В обработке',
     filteredOf: '{filtered} из {total} {plural}',
     countOf: '{n} {plural}',
     hoursSuffix: '· {n} ч',

@@ -40,7 +40,7 @@ function declinePlural(n: number, forms: [string, string, string]): string {
   return forms[2];
 }
 
-type StatusFilter = 'all' | 'today' | 'week';
+type StatusFilter = 'all' | 'today' | 'week' | 'processing';
 
 interface MonthGroup {
   label: string;
@@ -92,6 +92,11 @@ function matchesQuery(c: Call, q: string): boolean {
 
 function withinFilter(c: Call, f: StatusFilter): boolean {
   if (f === 'all') return true;
+  // [V8.2] «В обработке» — recording | processing. Юзер кликает rail
+  // activity и сразу видит только активные звонки, без шума ready/failed.
+  if (f === 'processing') {
+    return c.status === 'recording' || c.status === 'processing';
+  }
   const t = new Date(c.started_at).getTime();
   if (!Number.isFinite(t)) return false;
   const now = Date.now();
@@ -108,6 +113,11 @@ function withinFilter(c: Call, f: StatusFilter): boolean {
 
 interface CallsPageProps {
   onOpen: (callId: string) => void;
+  /** [V8.2] Pre-set filter (например когда юзер клик'нул rail activity).
+   *  Применяется один раз на mount, потом onFilterConsumed уведомляет
+   *  родителя что флаг можно очистить. */
+  initialFilter?: StatusFilter;
+  onFilterConsumed?: () => void;
 }
 
 interface PipelineFinishedEvent {
@@ -127,12 +137,25 @@ function deriveCallState(call: Call): CallState {
   return 'processing';
 }
 
-export function CallsPage({ onOpen }: CallsPageProps) {
+export function CallsPage({
+  onOpen,
+  initialFilter,
+  onFilterConsumed,
+}: CallsPageProps) {
   const { locale, t } = useI18n();
   const [calls, setCalls] = useState<Call[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<StatusFilter>('all');
+  const [filter, setFilter] = useState<StatusFilter>(initialFilter ?? 'all');
+
+  // [V8.2] Consume initialFilter — после применения сбрасываем у родителя
+  // чтобы повторное навигирование на Calls не залипало в фильтре.
+  useEffect(() => {
+    if (initialFilter && onFilterConsumed) {
+      onFilterConsumed();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot on mount
+  }, []);
   // [B17] Aggregate: per-call confirmed speakers initials.
   const [speakerInitials, setSpeakerInitials] = useState<
     Map<string, string[]>
@@ -247,12 +270,6 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   );
   const totalHours = totalDurationSec / 3600;
 
-  const FILTERS: Array<{ id: StatusFilter; label: string }> = [
-    { id: 'all', label: t('calls.filterAll') },
-    { id: 'today', label: t('calls.filterToday') },
-    { id: 'week', label: t('calls.filterWeek') },
-  ];
-
   const pluralForms: [string, string, string] = [
     t('calls.callsForm1'),
     t('calls.callsForm2'),
@@ -264,6 +281,17 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   const activeCount = calls.filter(
     (c) => c.status === 'recording' || c.status === 'processing',
   ).length;
+
+  const FILTERS: Array<{ id: StatusFilter; label: string }> = [
+    { id: 'all', label: t('calls.filterAll') },
+    { id: 'today', label: t('calls.filterToday') },
+    { id: 'week', label: t('calls.filterWeek') },
+    // [V8.2] «В обработке» фильтр — появляется только когда есть активные.
+    // Иначе rail activity не показывается тоже, и пункт меню был бы пустым.
+    ...(activeCount > 0
+      ? [{ id: 'processing' as StatusFilter, label: t('calls.filterProcessing') }]
+      : []),
+  ];
 
   return (
     <section>

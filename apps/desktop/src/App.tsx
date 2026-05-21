@@ -10,6 +10,7 @@ import { HomePage } from './pages/HomePage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, SETTINGS_KEYS } from './api/settings';
+import { listCalls } from './api/recording';
 import { I18nProvider, useI18n } from './i18n';
 import { ThemeProvider } from './theme/useTheme';
 
@@ -43,7 +44,16 @@ function AppShell() {
   const [page, setPage] = useState<Page>(initialPage);
   const [detailCallId, setDetailCallId] = useState<string | null>(null);
   // [B16] Counter активных pipeline-задач. Subtle indicator в app-rail foot.
+  // [V8.2] Источник правды — DB (list_calls на mount + pipeline events).
+  // Раньше считали только +1 на started / −1 на finished — pipeline:cancelled
+  // не учитывался → счётчик зависал, как и stale processing записи после
+  // crash recovery (status sweep'нулся, а в-памяти counter всё равно 0).
   const [activePipelines, setActivePipelines] = useState(0);
+  // [V8.2] Когда юзер кликает на rail-activity, переключаемся на Calls
+  // и передаём pre-set фильтр «в обработке». null = без оверрайда.
+  const [pendingCallsFilter, setPendingCallsFilter] = useState<
+    'processing' | null
+  >(null);
 
   const navLabel = (id: Exclude<Page, 'ds'>): string => {
     switch (id) {
@@ -69,18 +79,62 @@ function AppShell() {
     })();
   }, []);
 
+  // [V8.2] Active-pipeline counter — DB source of truth. На mount считаем
+  // status IN ('recording','processing') из list_calls. События только
+  // инкрементят/декрементят без resync (быстро), а полная пере-сверка
+  // выполняется на pipeline:cancelled и при возврате окна в фокус.
   useEffect(() => {
-    let unStart: UnlistenFn | undefined;
-    let unFinish: UnlistenFn | undefined;
-    listen('pipeline:started', () => setActivePipelines((n) => n + 1))
-      .then((fn) => (unStart = fn))
-      .catch((e: unknown) => console.warn('listen pipeline:started failed', e));
-    listen('pipeline:finished', () => setActivePipelines((n) => Math.max(0, n - 1)))
-      .then((fn) => (unFinish = fn))
-      .catch((e: unknown) => console.warn('listen pipeline:finished failed', e));
+    const resync = async () => {
+      try {
+        const calls = await listCalls();
+        const n = calls.filter(
+          (c) => c.status === 'recording' || c.status === 'processing',
+        ).length;
+        setActivePipelines(n);
+      } catch (e) {
+        console.warn('listCalls for activity counter failed:', e);
+      }
+    };
+    void resync();
+
+    const unlisteners: UnlistenFn[] = [];
+    const attach = async () => {
+      try {
+        unlisteners.push(
+          await listen('pipeline:started', () =>
+            setActivePipelines((n) => n + 1),
+          ),
+        );
+        unlisteners.push(
+          await listen('pipeline:finished', () =>
+            setActivePipelines((n) => Math.max(0, n - 1)),
+          ),
+        );
+        // V8: cancelled event — раньше counter не декрементился и зависал.
+        unlisteners.push(
+          await listen('pipeline:cancelled', () => {
+            // Full resync — race с finished возможен (cancel пришёл уже
+            // после того как pipeline эмитнул finished), точный +/- ненадёжен.
+            void resync();
+          }),
+        );
+      } catch (e) {
+        console.warn('pipeline event listeners failed:', e);
+      }
+    };
+    void attach();
+
+    // Перепроверяем counter когда окно вернулось в фокус — sweep_stale_calls
+    // мог пометить зависшие звонки failed, а events мы пропустили (приложение
+    // было свёрнуто/sleep).
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void resync();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     return () => {
-      unStart?.();
-      unFinish?.();
+      for (const u of unlisteners) u();
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 
@@ -156,34 +210,31 @@ function AppShell() {
           </button>
         )}
         {activePipelines > 0 && (
-          <div
-            role="status"
+          <button
+            type="button"
+            className="nav-activity"
+            onClick={() => {
+              // Открываем Calls с pre-set фильтром «в обработке».
+              setDetailCallId(null);
+              setPendingCallsFilter('processing');
+              setPage('calls');
+            }}
             aria-live="polite"
             title={t('nav.processingTitle', {
               n: activePipelines,
               plural: pipelinePlural,
             })}
-            style={{
-              marginTop: 'auto',
-              padding: '10px 6px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontFamily: 'var(--font-sans)',
-              fontSize: 11,
-              color: 'var(--muted)',
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-            }}
           >
             <span className="dot dot--accent dot--pulse" aria-hidden />
-            <span>
+            <span className="nav-activity-label">
               {activePipelines === 1
                 ? t('nav.processingOne')
                 : t('nav.processingMany', { n: activePipelines })}
             </span>
-          </div>
+            <span className="nav-activity-arrow" aria-hidden="true">
+              →
+            </span>
+          </button>
         )}
         <div className="app-rail-foot">
           v1.0.0<br />
@@ -210,7 +261,11 @@ function AppShell() {
               onBack={() => setDetailCallId(null)}
             />
           ) : (
-            <CallsPage onOpen={(id) => setDetailCallId(id)} />
+            <CallsPage
+              onOpen={(id) => setDetailCallId(id)}
+              initialFilter={pendingCallsFilter ?? undefined}
+              onFilterConsumed={() => setPendingCallsFilter(null)}
+            />
           ))}
         {page === 'contacts' && <ContactsPage />}
         {page === 'settings' && <SettingsPage />}
