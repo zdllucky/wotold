@@ -10,7 +10,9 @@ use tokio::sync::Mutex;
 use crate::{
     audio::{call_detect::CallDetectHandle, macos::RecordingSession},
     call_store::CallStore,
-    db, device, AppError,
+    db, device,
+    pipeline::chunk_orchestrator::OrchestratorSummary,
+    AppError,
 };
 
 pub struct AppState {
@@ -29,6 +31,11 @@ pub struct AppState {
     /// [S2] Single-instance controller для probe (Core Audio + NSWorkspace).
     /// Идемпотентный enable/disable через `audio::call_detect::CallDetectController`.
     pub call_detect: CallDetectHandle,
+    /// [M13.1.5c] Handle активного chunk_orchestrator (если CHUNKED_PIPELINE=ON
+    /// и engine=local на момент start_recording). None в happy path.
+    /// Orchestrator умирает natural'но когда sidecar terminates (rms_rx закрывается).
+    /// stop_recording просто делает `take()` — `await` не нужен.
+    pub orchestrator: Arc<Mutex<Option<JoinHandle<OrchestratorSummary>>>>,
 }
 
 pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
@@ -69,6 +76,7 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         recording: Arc::new(Mutex::new(None)),
         pipeline_tasks: Arc::new(Mutex::new(HashMap::new())),
         call_detect: Arc::new(crate::audio::call_detect::CallDetectController::new()),
+        orchestrator: Arc::new(Mutex::new(None)),
     })
 }
 
