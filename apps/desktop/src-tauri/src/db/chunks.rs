@@ -26,7 +26,12 @@ pub struct ChunkRow {
     pub mic_path: String,
     pub system_path: String,
     pub status: String,
+    /// [M13.1.5d] Сериализованный `DiarizedTranscript` mic-дорожки.
     pub transcript_json: Option<String>,
+    /// [M13.1.5d] Сериализованный `DiarizedTranscript` system-дорожки.
+    /// `None` для legacy chunks (M13.1.5c, mic-only) или когда system STT
+    /// деградировал — assembly обрабатывает это как пустой system track.
+    pub system_transcript_json: Option<String>,
     pub embeddings_json: Option<String>,
 }
 
@@ -86,20 +91,27 @@ pub async fn mark_chunk_processing(
     Ok(())
 }
 
-/// Транзишн `processing → done` + sets end_ms + transcript_json. После
-/// этого chunk_runner может извлечь tail-prompt для следующего чанка.
+/// Транзишн `processing → done` + sets end_ms + transcript_json (+ optional
+/// system_transcript_json). После этого chunk_runner может извлечь
+/// tail-prompt для следующего чанка.
+///
+/// [M13.1.5d] `system_transcript_json` опционален: при degraded-ok сценарии
+/// (mic transcribed, system failed) сохраняем mic + NULL system. Assembly
+/// помечает такие chunks как «mic-only».
 pub async fn mark_chunk_done(
     pool: &SqlitePool,
     call_id: &str,
     chunk_idx: u32,
     end_ms: u64,
     transcript_json: &str,
+    system_transcript_json: Option<&str>,
 ) -> Result<(), AppError> {
     let res = sqlx::query(
         "UPDATE call_chunks
          SET status = 'done',
              end_ms = ?3,
              transcript_json = ?4,
+             system_transcript_json = ?5,
              updated_at = CURRENT_TIMESTAMP
          WHERE call_id = ?1 AND chunk_idx = ?2 AND status = 'processing'",
     )
@@ -107,6 +119,7 @@ pub async fn mark_chunk_done(
     .bind(chunk_idx)
     .bind(end_ms as i64)
     .bind(transcript_json)
+    .bind(system_transcript_json)
     .execute(pool)
     .await
     .map_err(AppError::from)?;
@@ -149,7 +162,7 @@ pub async fn list_chunks_by_call(
 ) -> Result<Vec<ChunkRow>, AppError> {
     let rows = sqlx::query(
         "SELECT call_id, chunk_idx, start_ms, end_ms, mic_path, system_path,
-                status, transcript_json, embeddings_json
+                status, transcript_json, system_transcript_json, embeddings_json
          FROM call_chunks
          WHERE call_id = ?1
          ORDER BY chunk_idx ASC",
@@ -169,6 +182,7 @@ pub async fn list_chunks_by_call(
             system_path: r.get::<String, _>("system_path"),
             status: r.get::<String, _>("status"),
             transcript_json: r.get::<Option<String>, _>("transcript_json"),
+            system_transcript_json: r.get::<Option<String>, _>("system_transcript_json"),
             embeddings_json: r.get::<Option<String>, _>("embeddings_json"),
         })
         .collect())
@@ -247,7 +261,7 @@ mod tests {
         .await
         .unwrap();
         mark_chunk_processing(&test_db.pool, "c1", 0).await.unwrap();
-        mark_chunk_done(&test_db.pool, "c1", 0, 600_000, r#"{"segments":[]}"#)
+        mark_chunk_done(&test_db.pool, "c1", 0, 600_000, r#"{"segments":[]}"#, None)
             .await
             .unwrap();
         let rows = list_chunks_by_call(&test_db.pool, "c1").await.unwrap();
@@ -256,6 +270,40 @@ mod tests {
         assert_eq!(
             rows[0].transcript_json.as_deref(),
             Some(r#"{"segments":[]}"#)
+        );
+        assert!(rows[0].system_transcript_json.is_none());
+    }
+
+    #[tokio::test]
+    async fn mark_done_persists_both_tracks() {
+        let test_db = fresh_db().await;
+        insert_dummy_call(&test_db.pool, "c1").await;
+        insert_chunk(
+            &test_db.pool,
+            "c1",
+            0,
+            0,
+            &PathBuf::from("/m"),
+            &PathBuf::from("/s"),
+        )
+        .await
+        .unwrap();
+        mark_chunk_processing(&test_db.pool, "c1", 0).await.unwrap();
+        mark_chunk_done(
+            &test_db.pool,
+            "c1",
+            0,
+            600_000,
+            r#"{"mic":1}"#,
+            Some(r#"{"sys":1}"#),
+        )
+        .await
+        .unwrap();
+        let rows = list_chunks_by_call(&test_db.pool, "c1").await.unwrap();
+        assert_eq!(rows[0].transcript_json.as_deref(), Some(r#"{"mic":1}"#));
+        assert_eq!(
+            rows[0].system_transcript_json.as_deref(),
+            Some(r#"{"sys":1}"#)
         );
     }
 
@@ -274,7 +322,7 @@ mod tests {
         .await
         .unwrap();
         // Skip processing — try done directly. Должно fail'нуться.
-        let res = mark_chunk_done(&test_db.pool, "c1", 0, 600_000, "{}").await;
+        let res = mark_chunk_done(&test_db.pool, "c1", 0, 600_000, "{}", None).await;
         assert!(res.is_err());
     }
 

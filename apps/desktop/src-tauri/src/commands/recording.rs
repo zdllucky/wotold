@@ -310,7 +310,8 @@ struct ChunkedSetup {
     /// `stop_tx` — каноничный путь shutdown'а. Phase 1 не использует (channels
     /// закроются natural'но), но держим для будущего pause-aware orchestrator.
     _stop_tx: oneshot::Sender<()>,
-    provider: Arc<dyn TranscriptionProvider>,
+    mic_provider: Arc<dyn TranscriptionProvider>,
+    system_provider: Arc<dyn TranscriptionProvider>,
     stt_lang: String,
 }
 
@@ -354,11 +355,19 @@ async fn prepare_chunked_setup(
             )
         })?;
     let whisper_id = preset.whisper_model_id();
-    let provider =
+    // [M13.1.5d] Два provider'а — для mic + system дорожек. TrackKind влияет
+    // на дефолтные speaker tags ("owner" для mic, "speaker:0" для system),
+    // которые потом cluster pipeline переcassign'ает в RecognizeSpeakers stage.
+    let mic_provider =
         LocalWhisperProvider::for_preset(&state.app_data_dir, whisper_id, TrackKind::MicOwner)
             .with_app(app.clone())
             .await;
-    let provider: Arc<dyn TranscriptionProvider> = Arc::new(provider);
+    let system_provider =
+        LocalWhisperProvider::for_preset(&state.app_data_dir, whisper_id, TrackKind::System)
+            .with_app(app.clone())
+            .await;
+    let mic_provider: Arc<dyn TranscriptionProvider> = Arc::new(mic_provider);
+    let system_provider: Arc<dyn TranscriptionProvider> = Arc::new(system_provider);
 
     // STT lang — auto по умолчанию (см. pipeline::run).
     let stt_lang = db::get_setting(&state.db, "stt_lang")
@@ -375,7 +384,8 @@ async fn prepare_chunked_setup(
         rotate_rx,
         stop_rx,
         _stop_tx: stop_tx,
-        provider,
+        mic_provider,
+        system_provider,
         stt_lang,
     }))
 }
@@ -394,7 +404,8 @@ async fn spawn_orchestrator(
         rotate_rx,
         stop_rx,
         _stop_tx,
-        provider,
+        mic_provider,
+        system_provider,
         stt_lang,
     } = setup;
 
@@ -408,7 +419,8 @@ async fn spawn_orchestrator(
         call_id_str.clone(),
         pool.clone(),
         store.clone(),
-        provider.clone(),
+        mic_provider,
+        system_provider,
         stt_lang,
     );
 
@@ -473,7 +485,8 @@ fn make_enqueue_fn(
     call_id: String,
     pool: SqlitePool,
     store: Arc<CallStore>,
-    provider: Arc<dyn TranscriptionProvider>,
+    mic_provider: Arc<dyn TranscriptionProvider>,
+    system_provider: Arc<dyn TranscriptionProvider>,
     lang: String,
 ) -> impl Fn(u32, u64, u64, Option<String>) -> chunk_orchestrator::EnqueueFut + Send + Sync + 'static
 {
@@ -481,7 +494,8 @@ fn make_enqueue_fn(
         let call_id = call_id.clone();
         let pool = pool.clone();
         let store = store.clone();
-        let provider = provider.clone();
+        let mic_provider = mic_provider.clone();
+        let system_provider = system_provider.clone();
         let lang = lang.clone();
         Box::pin(async move {
             let mic_path = store.chunk_mic_path(&call_id, chunk_idx);
@@ -507,9 +521,14 @@ fn make_enqueue_fn(
                 prev_prompt,
                 lang: lang.clone(),
             };
-            let out = chunk_runner::run_chunk(&pool, provider.as_ref(), input)
-                .await
-                .map_err(|e| format!("run_chunk({chunk_idx}): {e}"))?;
+            let out = chunk_runner::run_chunk(
+                &pool,
+                mic_provider.as_ref(),
+                system_provider.as_ref(),
+                input,
+            )
+            .await
+            .map_err(|e| format!("run_chunk({chunk_idx}): {e}"))?;
             Ok(Some(out.transcript_tail))
         })
     }
