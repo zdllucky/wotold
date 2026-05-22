@@ -1,3 +1,4 @@
+import ApplicationServices
 import AVFoundation
 import CoreGraphics
 
@@ -46,10 +47,24 @@ func requestScreenRecordingAccess() -> Bool {
     return CGRequestScreenCaptureAccess()
 }
 
+func currentAccessibilityStatus() -> PermissionStatus {
+    if AXIsProcessTrustedWithOptions(nil) {
+        return .granted
+    }
+    return .denied
+}
+
+func requestAccessibilityAccess() -> Bool {
+    let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+    let options = [key: true] as CFDictionary
+    return AXIsProcessTrustedWithOptions(options)
+}
+
 func permissionsEvent() -> [String: Any] {
     return [
         "event": "permissions",
         "microphone": currentMicrophoneStatus().rawValue,
         "screen_recording": currentScreenRecordingStatus().rawValue,
+        "accessibility": currentAccessibilityStatus().rawValue,
     ]
 }

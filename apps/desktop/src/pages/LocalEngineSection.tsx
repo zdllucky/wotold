@@ -16,7 +16,7 @@
 // События `model:progress`/`model:done` слушаются глобально для всех id;
 // при completion → refresh status.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ask } from '@tauri-apps/plugin-dialog';
 import type {
@@ -27,7 +27,9 @@ import type {
   PresetSpec,
 } from '@wotold/contracts';
 
-import { useFocusTrap } from '../hooks/useFocusTrap';
+import { DeleteModelConfirm } from '../components/DeleteModelConfirm';
+import { RediscoveryChip } from '../components/RediscoveryChip';
+import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import {
   localEngineGetActiveEngine,
   localEngineGetActivePreset,
@@ -44,6 +46,8 @@ import {
 } from '../api/local-engine';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
+import { modelLabel } from '../utils/modelLabel';
+import { UsageSection } from './UsageSection';
 
 const PRESETS: LocalEnginePreset[] = ['light', 'balanced', 'quality'];
 
@@ -103,12 +107,19 @@ export function LocalEngineSection() {
   const [hw, setHw] = useState<HwReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [storageOpen, setStorageOpen] = useState(false);
   const [storageRows, setStorageRows] = useState<LocalEngineStorageRow[]>([]);
-  // [Review M-6] Modal должен ловить Escape + трапить фокус для keyboard
-  // и screen-reader пользователей. useFocusTrap покрывает оба требования.
-  const storageRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(storageRef, storageOpen, { onClose: () => setStorageOpen(false) });
+  // [M12-v1.1] hwLoading — пока true рендерим skeleton вместо engine rows.
+  const [hwLoading, setHwLoading] = useState(true);
+  // [M12-v1.1] deleteConfirmModel — pending confirm для активной модели.
+  const [deleteConfirmModel, setDeleteConfirmModel] = useState<{
+    id: string;
+    fallbackPreset: string;
+    modelRole: string;
+    currentPreset: string;
+  } | null>(null);
+  // [M12-v1.1] rediscovery chip — показываем когда engine !== 'local'
+  // И invite не dismissed permanently.
+  const [showRediscovery, setShowRediscovery] = useState(false);
 
   const refreshStatuses = useCallback(async (ids: string[]) => {
     const entries = await Promise.all(
@@ -124,21 +135,31 @@ export function LocalEngineSection() {
   }, []);
 
   const refreshAll = useCallback(async () => {
+    setHwLoading(true);
     try {
-      const [e, p, c, h] = await Promise.all([
+      const [e, p, c, h, rows] = await Promise.all([
         localEngineGetActiveEngine(),
         localEngineGetActivePreset(),
         localEngineListCatalog(),
         localEngineHwProbe(false),
+        localEngineStorageList().catch(() => [] as LocalEngineStorageRow[]),
       ]);
       setEngine(e);
       setPreset(p);
       setCatalog(c);
       setHw(h);
+      setStorageRows(rows);
       await refreshStatuses(c.map((m) => m.id));
+      // [M12-v1.1] Rediscovery: show when not local + invite not dismissed.
+      if (e !== 'local') {
+        const dismissed = await getSetting(SETTINGS_KEYS.LOCAL_ENGINE_INVITE_DISMISSED).catch(() => null);
+        if (!dismissed) setShowRediscovery(true);
+      }
       setError(null);
     } catch (e) {
       setError(humanError(e));
+    } finally {
+      setHwLoading(false);
     }
   }, [refreshStatuses]);
 
@@ -154,10 +175,6 @@ export function LocalEngineSection() {
       setError(humanError(e));
     }
   }, []);
-
-  useEffect(() => {
-    if (storageOpen) void refreshStorage();
-  }, [storageOpen, refreshStorage]);
 
   useEffect(() => {
     // [Review HIGH-2] React 18 StrictMode + fast unmount race: `listen()` —
@@ -272,14 +289,23 @@ export function LocalEngineSection() {
    */
   const onDeleteFromStorage = useCallback(
     async (id: string, isActive: boolean, after: () => void) => {
-      const msgKey = isActive
-        ? 'localEngine.deleteActiveConfirmMsg'
-        : 'localEngine.deleteConfirmMsg';
-      const titleKey = isActive
-        ? 'localEngine.deleteActiveConfirmTitle'
-        : 'localEngine.deleteConfirmTitle';
-      const ok = await ask(t(msgKey, { id }), {
-        title: t(titleKey),
+      if (isActive && preset) {
+        // [M12-v1.1] Use inline modal instead of native ask() for active models.
+        const fallbackIdx = PRESETS.indexOf(preset.preset as LocalEnginePreset);
+        const fallbackKey: LocalEnginePreset =
+          fallbackIdx > 0 ? PRESETS[fallbackIdx - 1] ?? 'light' : 'light';
+        const fallbackPreset = t(`localEngine.preset.${fallbackKey}`);
+        setDeleteConfirmModel({
+          id,
+          fallbackPreset,
+          modelRole: modelLabel(id, t),
+          currentPreset: t(`localEngine.preset.${preset.preset as LocalEnginePreset}`),
+        });
+        // after() will be called by the confirm modal's onConfirm handler.
+        return;
+      }
+      const ok = await ask(t('localEngine.deleteConfirmMsg', { id }), {
+        title: t('localEngine.deleteConfirmTitle'),
         kind: 'warning',
       });
       if (!ok) return;
@@ -290,7 +316,7 @@ export function LocalEngineSection() {
         setError(humanError(e));
       }
     },
-    [t],
+    [t, preset],
   );
 
   const totalInstalledBytes = catalog.reduce((sum, m) => {
@@ -307,6 +333,38 @@ export function LocalEngineSection() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 640 }}>
+      {deleteConfirmModel && (
+        <DeleteModelConfirm
+          modelRole={deleteConfirmModel.modelRole}
+          currentPreset={deleteConfirmModel.currentPreset}
+          fallbackPreset={deleteConfirmModel.fallbackPreset}
+          onConfirm={async () => {
+            try {
+              await localEngineModelDelete(deleteConfirmModel.id);
+              setDeleteConfirmModel(null);
+              await refreshStorage();
+            } catch (e) {
+              setError(humanError(e));
+              setDeleteConfirmModel(null);
+            }
+          }}
+          onCancel={() => setDeleteConfirmModel(null)}
+        />
+      )}
+
+      {showRediscovery && (
+        <RediscoveryChip
+          onInstall={() => {
+            setShowRediscovery(false);
+            void onEngineChange('local');
+          }}
+          onTerminalDismiss={async () => {
+            setShowRediscovery(false);
+            await setSetting(SETTINGS_KEYS.LOCAL_ENGINE_INVITE_DISMISSED, '1').catch(() => {});
+          }}
+        />
+      )}
+
       {error && (
         <p
           role="alert"
@@ -318,6 +376,22 @@ export function LocalEngineSection() {
         >
           {error}
         </p>
+      )}
+
+      {hwLoading && (
+        <div
+          className="activity-strip"
+          role="status"
+          aria-label={t('localEngine.probeSkeleton.measuring')}
+          style={{ flexDirection: 'column', gap: 10, alignItems: 'stretch' }}
+        >
+          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+            {t('localEngine.probeSkeleton.measuring')}
+          </p>
+          <div className="probe-skeleton-row" style={{ width: '75%' }} />
+          <div className="probe-skeleton-row" style={{ width: '55%' }} />
+          <div className="probe-skeleton-row" style={{ width: '40%' }} />
+        </div>
       )}
 
       {showHwBanner && hw && hw.recommendation && (
@@ -352,60 +426,74 @@ export function LocalEngineSection() {
         </div>
       )}
 
-      <div className="field">
-        <label className="field-label" id="local-engine-kind-label">
-          {t('localEngine.engineLabel')}
-        </label>
-        <div
-          role="radiogroup"
-          aria-labelledby="local-engine-kind-label"
-          style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-        >
-          {(['local', 'cloud_managed', 'cloud_byo'] as EngineKind[]).map((k) => {
-            const active = engine === k;
-            return (
-              <label
-                key={k}
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 12,
-                  padding: 12,
-                  borderRadius: 'var(--radius-card, 8px)',
-                  border: `1px solid ${active ? 'var(--accent)' : 'var(--line-soft)'}`,
-                  background: active ? 'var(--bg-2)' : 'transparent',
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font-sans)',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="local-engine-kind"
-                  checked={active}
-                  onChange={() => void onEngineChange(k)}
-                  style={{ marginTop: 4 }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, color: 'var(--ink)', marginBottom: 4 }}>
-                    {t(`localEngine.engine.${k}.title`)}
+      {!hwLoading && (
+        <div className="field">
+          <label className="field-label" id="local-engine-kind-label">
+            {t('localEngine.engineLabel')}
+          </label>
+          <div
+            role="radiogroup"
+            aria-labelledby="local-engine-kind-label"
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+          >
+            {(['cloud_managed', 'local'] as EngineKind[]).map((k) => {
+              const active = engine === k;
+              return (
+                <label
+                  key={k}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                    padding: 12,
+                    borderRadius: 'var(--radius-card, 8px)',
+                    border: active ? '1.5px solid var(--accent)' : '1px solid var(--line-soft)',
+                    background: active ? 'var(--accent-soft)' : 'transparent',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-sans)',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="local-engine-kind"
+                    checked={active}
+                    onChange={() => void onEngineChange(k)}
+                    style={{ marginTop: 4 }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500, color: 'var(--ink)', marginBottom: 4 }}>
+                      {t(`localEngine.engine.${k}.title`)}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--subtle)', lineHeight: 1.5 }}>
+                      {t(`localEngine.engine.${k}.body`)}
+                    </div>
+                    <div
+                      className="mono"
+                      style={{ fontSize: 11, color: 'var(--subtle)', marginTop: 6 }}
+                    >
+                      {t(`localEngine.engine.${k}.quality`)}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--subtle)', lineHeight: 1.5 }}>
-                    {t(`localEngine.engine.${k}.body`)}
-                  </div>
-                  <div
-                    className="mono"
-                    style={{ fontSize: 11, color: 'var(--subtle)', marginTop: 6 }}
-                  >
-                    {t(`localEngine.engine.${k}.quality`)}
-                  </div>
-                </div>
-              </label>
-            );
-          })}
+                  {active && (
+                    <span className="badge badge--active" style={{ alignSelf: 'center', flexShrink: 0 }}>
+                      <span className="dot" style={{ background: 'var(--success)', width: 5, height: 5 }} aria-hidden />
+                      {t('localEngine.engine.active')}
+                    </span>
+                  )}
+                </label>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
-      {engine === 'local' && hw && (
+      {!hwLoading && engine === 'cloud_managed' && (
+        <div style={{ marginTop: 4 }}>
+          <UsageSection />
+        </div>
+      )}
+
+      {!hwLoading && engine === 'local' && hw && (
         <div
           className="subtle"
           style={{
@@ -445,7 +533,7 @@ export function LocalEngineSection() {
         </div>
       )}
 
-      {engine === 'local' && (
+      {!hwLoading && engine === 'local' && (
         <div className="field">
           <label className="field-label" id="local-engine-preset-label">
             {t('localEngine.presetLabel')}
@@ -467,6 +555,7 @@ export function LocalEngineSection() {
               const anyDownloading = !!whisperProgress || !!llmProgress;
               const totalSize =
                 (whisperStatus?.bytes_total ?? 0) + (llmStatus?.bytes_total ?? 0);
+              const isRecommended = hw?.recommendation === p;
               return (
                 <label
                   key={p}
@@ -476,8 +565,8 @@ export function LocalEngineSection() {
                     gap: 12,
                     padding: 12,
                     borderRadius: 'var(--radius-card, 8px)',
-                    border: `1px solid ${active ? 'var(--accent)' : 'var(--line-soft)'}`,
-                    background: active ? 'var(--bg-2)' : 'transparent',
+                    border: active ? '1.5px solid var(--accent)' : '1px solid var(--line-soft)',
+                    background: active ? 'var(--accent-soft)' : 'transparent',
                     cursor: 'pointer',
                     fontFamily: 'var(--font-sans)',
                   }}
@@ -493,11 +582,19 @@ export function LocalEngineSection() {
                     aria-hidden
                   />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 500, color: 'var(--ink)' }}>
-                      {t(`localEngine.preset.${p}`)}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 500, color: 'var(--ink)' }}>
+                        {t(`localEngine.preset.${p}`)}
+                      </span>
+                      {isRecommended && (
+                        <span className="badge badge--recommend">
+                          {t('localEngine.presetRecommend')}
+                        </span>
+                      )}
                     </div>
-                    <div className="mono" style={{ fontSize: 11, color: 'var(--subtle)' }}>
-                      {totalSize > 0 ? formatGB(totalSize) : '—'} ·{' '}
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--subtle)', marginTop: 2 }}>
+                      {t(`localEngine.presetMeta.${p}`)}{' · '}
+                      {totalSize > 0 ? formatGB(totalSize) : '—'}{' · '}
                       {allPresent
                         ? t('localEngine.statusInstalled')
                         : anyDownloading
@@ -510,177 +607,131 @@ export function LocalEngineSection() {
             })}
           </div>
 
-          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ marginTop: 6 }}>
             <span className="subtle" style={{ fontSize: 12 }}>
               {t('localEngine.installedFootprint', { size: formatGB(totalInstalledBytes) })}
             </span>
-            <button
-              type="button"
-              className="btn btn--quiet btn--sm"
-              onClick={() => setStorageOpen(true)}
-            >
-              {t('localEngine.manageStorage')}
-            </button>
           </div>
         </div>
       )}
 
-      {storageOpen && (
-        <div
-          ref={storageRef}
-          className="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="local-engine-storage-title"
-          onClick={() => setStorageOpen(false)}
-        >
+      {!hwLoading && engine === 'local' && storageRows.length > 0 && (
+        <div className="field">
           <div
-            className="card"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 640, width: '92%', padding: 24 }}
+            className="field-label small-caps"
+            id="local-engine-storage-title"
+            style={{ marginBottom: 10 }}
           >
-            <h3
-              id="local-engine-storage-title"
+            {t('localEngine.storageTitle')}
+          </div>
+          <p
+            className="subtle"
+            style={{ margin: 0, marginBottom: 12, fontSize: 12, fontFamily: 'var(--font-sans)' }}
+          >
+            {t('localEngine.storageLede')}
+          </p>
+          {/* [M12.4.4-bis] Таблица inline: name · size · last_used · active badge · × */}
+          <div role="table" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div
+              role="row"
               style={{
-                margin: 0,
-                marginBottom: 4,
-                fontFamily: 'var(--font-serif)',
-                fontSize: 20,
+                display: 'grid',
+                gridTemplateColumns: '1fr 70px 90px 100px 28px',
+                gap: 10,
+                padding: '6px 0',
+                borderBottom: '1px solid var(--line-soft)',
               }}
             >
-              {t('localEngine.storageTitle')}
-            </h3>
-            <p
-              className="subtle"
-              style={{
-                margin: 0,
-                marginBottom: 16,
-                fontSize: 12,
-                fontFamily: 'var(--font-sans)',
-              }}
-            >
-              {t('localEngine.storageLede')}
-            </p>
-            {/* [M12.4.4-bis] Таблица: name · size · last_used · active badge · × */}
-            <div role="table" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div
-                role="row"
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 70px 90px 100px 28px',
-                  gap: 10,
-                  padding: '6px 0',
-                  borderBottom: '1px solid var(--line-soft)',
-                }}
-              >
-                <span className="small-caps">{t('localEngine.colName')}</span>
-                <span className="small-caps">{t('localEngine.colSize')}</span>
-                <span className="small-caps">{t('localEngine.colLastUsed')}</span>
-                <span className="small-caps">{t('localEngine.colState')}</span>
-                <span />
-              </div>
-              {storageRows.map((row) => {
-                const progress = progresses[row.id];
-                const status = row.status;
-                return (
-                  <div
-                    key={row.id}
-                    role="row"
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 70px 90px 100px 28px',
-                      gap: 10,
-                      padding: '10px 0',
-                      borderBottom: '1px solid var(--line-soft)',
-                      alignItems: 'center',
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: 13,
-                    }}
-                  >
-                    <div>
-                      <div style={{ color: 'var(--ink)' }}>{row.display_name}</div>
-                      <div
-                        className="mono"
-                        style={{ fontSize: 10.5, color: 'var(--subtle)', marginTop: 2 }}
-                      >
-                        {row.id}
-                      </div>
-                    </div>
-                    <span className="mono" style={{ fontSize: 11, color: 'var(--subtle)' }}>
-                      {formatGB(row.size_bytes)}
-                    </span>
-                    <span className="mono" style={{ fontSize: 11, color: 'var(--subtle)' }}>
-                      {row.last_used_at ? formatLastUsed(row.last_used_at) : '—'}
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span
-                        className={`dot ${dotClassForStatus(status, progress ?? null)}`}
-                        aria-hidden
-                      />
-                      <span style={{ fontSize: 11, color: 'var(--subtle)' }}>
-                        {status.state === 'present'
-                          ? row.is_active
-                            ? t('localEngine.statusActive')
-                            : t('localEngine.statusInstalled')
-                          : progress
-                            ? `${progress.pct.toFixed(0)}%`
-                            : status.state === 'corrupted'
-                              ? t('localEngine.statusCorrupted')
-                              : t('localEngine.statusAbsent')}
+              <span className="small-caps">{t('localEngine.colName')}</span>
+              <span className="small-caps">{t('localEngine.colSize')}</span>
+              <span className="small-caps">{t('localEngine.colLastUsed')}</span>
+              <span className="small-caps">{t('localEngine.colState')}</span>
+              <span />
+            </div>
+            {storageRows.map((row) => {
+              const progress = progresses[row.id];
+              const status = row.status;
+              return (
+                <div
+                  key={row.id}
+                  role="row"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 70px 90px 100px 28px',
+                    gap: 10,
+                    padding: '10px 0',
+                    borderBottom: '1px solid var(--line-soft)',
+                    alignItems: 'center',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: 13,
+                  }}
+                >
+                  <div style={{ color: 'var(--ink)' }}>{modelLabel(row.id, t)}</div>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--subtle)' }}>
+                    {formatGB(row.size_bytes)}
+                  </span>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--subtle)' }}>
+                    {row.last_used_at ? formatLastUsed(row.last_used_at) : '—'}
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {row.is_active && status.state === 'present' ? (
+                      <span className="badge badge--active">
+                        <span className="dot" style={{ background: 'var(--success)', width: 5, height: 5 }} aria-hidden />
+                        {t('localEngine.statusActive')}
                       </span>
-                    </div>
-                    {status.state === 'present' ? (
-                      <button
-                        type="button"
-                        className="btn btn--quiet btn--sm"
-                        aria-label={t('localEngine.deleteAria', { name: row.display_name })}
-                        title={t('localEngine.delete')}
-                        onClick={() =>
-                          void onDeleteFromStorage(row.id, row.is_active, () => {
-                            void refreshStorage();
-                            void refreshStatuses([row.id]);
-                          })
-                        }
-                      >
-                        ×
-                      </button>
-                    ) : !progress ? (
-                      <button
-                        type="button"
-                        className="btn btn--ghost btn--sm"
-                        aria-label={t('localEngine.downloadAria', { name: row.display_name })}
-                        title={t('localEngine.download')}
-                        onClick={() => void onDownload(row.id)}
-                      >
-                        ↓
-                      </button>
                     ) : (
-                      <span />
+                      <>
+                        <span
+                          className={`dot ${dotClassForStatus(status, progress ?? null)}`}
+                          aria-hidden
+                        />
+                        <span style={{ fontSize: 11, color: 'var(--subtle)' }}>
+                          {status.state === 'present'
+                            ? t('localEngine.statusInstalled')
+                            : progress
+                              ? `${progress.pct.toFixed(0)}%`
+                              : status.state === 'corrupted'
+                                ? t('localEngine.statusCorrupted')
+                                : t('localEngine.statusAbsent')}
+                        </span>
+                      </>
                     )}
                   </div>
-                );
-              })}
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginTop: 18,
-              }}
-            >
-              <span className="subtle" style={{ fontSize: 11 }}>
-                {t('localEngine.storageFootnote')}
-              </span>
-              <button
-                type="button"
-                className="btn btn--ghost"
-                onClick={() => setStorageOpen(false)}
-              >
-                {t('localEngine.close')}
-              </button>
-            </div>
+                  {status.state === 'present' ? (
+                    <button
+                      type="button"
+                      className="btn btn--quiet btn--sm"
+                      aria-label={t('localEngine.deleteAria', { name: modelLabel(row.id, t) })}
+                      title={t('localEngine.delete')}
+                      onClick={() =>
+                        void onDeleteFromStorage(row.id, row.is_active, () => {
+                          void refreshStorage();
+                          void refreshStatuses([row.id]);
+                        })
+                      }
+                    >
+                      ×
+                    </button>
+                  ) : !progress ? (
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      aria-label={t('localEngine.downloadAria', { name: modelLabel(row.id, t) })}
+                      title={t('localEngine.download')}
+                      onClick={() => void onDownload(row.id)}
+                    >
+                      ↓
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                </div>
+              );
+            })}
           </div>
+          <p className="subtle" style={{ fontSize: 11, marginTop: 12 }}>
+            {t('localEngine.storageFootnote')}
+          </p>
         </div>
       )}
     </div>

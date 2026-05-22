@@ -75,7 +75,7 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     }
     if perms.screen_recording != "granted" {
         return Err(AppError::Other(
-            "Нет разрешения на запись экрана (для системного аудио). Открой Настройки → Разрешения.".into(),
+            "Нет разрешения на захват системного звука (для записи голоса собеседника в FaceTime, Zoom и т.д.). Открой Настройки → Разрешения.".into(),
         ));
     }
 
@@ -225,6 +225,9 @@ pub fn open_system_privacy_pane(pane: String) -> Result<(), AppError> {
         }
         "screen_recording" => {
             "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+        "accessibility" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         }
         _ => return Err(AppError::Other(format!("unknown pane: {pane}"))),
     };

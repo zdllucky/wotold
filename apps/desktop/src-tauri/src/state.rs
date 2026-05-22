@@ -54,6 +54,11 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         log::warn!("sweep_stale_calls: {swept} зависших звонков → failed");
     }
 
+    // [Settings UX rework] BYO больше не доступен в UI. Существующих BYO-users
+    // мигрируем в managed (ключи в keychain не трогаем — могут пригодиться
+    // если BYO вернём). Идемпотентно.
+    migrate_byo_to_managed(&pool).await?;
+
     let store = Arc::new(CallStore::new(app_data_dir.clone()));
 
     Ok(AppState {
@@ -65,4 +70,29 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         pipeline_tasks: Arc::new(Mutex::new(HashMap::new())),
         call_detect: Arc::new(crate::audio::call_detect::CallDetectController::new()),
     })
+}
+
+/// Migrate legacy BYO users to managed. Idempotent: no-op if values are already
+/// `managed`/`cloud_managed`. Keychain BYO keys are intentionally not touched.
+async fn migrate_byo_to_managed(pool: &SqlitePool) -> Result<(), AppError> {
+    let path_updated = sqlx::query(
+        "UPDATE settings SET value = 'managed' WHERE key = 'provider_path' AND value = 'byo'",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| AppError::Init(format!("migrate provider_path: {e}")))?
+    .rows_affected();
+    let engine_updated = sqlx::query(
+        "UPDATE settings SET value = 'cloud_managed' WHERE key = 'local_engine.active' AND value = 'cloud_byo'",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| AppError::Init(format!("migrate active_engine: {e}")))?
+    .rows_affected();
+    if path_updated > 0 || engine_updated > 0 {
+        log::info!(
+            "migrate_byo_to_managed: provider_path={path_updated} active_engine={engine_updated}"
+        );
+    }
+    Ok(())
 }

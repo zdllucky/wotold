@@ -20,6 +20,12 @@ import {
   type VoiceModelProgress,
   type VoiceModelStatus,
 } from '../api/voiceModel';
+import {
+  getSetting,
+  setSetting,
+  SETTINGS_DEFAULTS,
+  SETTINGS_KEYS,
+} from '../api/settings';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
 import { Skeleton } from '../ui';
@@ -38,6 +44,25 @@ export function VoiceModelSection() {
   const [progress, setProgress] = useState<VoiceModelProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [autoBindEnabled, setAutoBindEnabled] = useState<boolean>(
+    SETTINGS_DEFAULTS.AUTO_BIND_ENABLED,
+  );
+
+  useEffect(() => {
+    void (async () => {
+      const raw = await getSetting(SETTINGS_KEYS.AUTO_BIND_ENABLED).catch(() => null);
+      setAutoBindEnabled(raw === '1');
+    })();
+  }, []);
+
+  const persistAutoBind = async (next: boolean) => {
+    setAutoBindEnabled(next);
+    try {
+      await setSetting(SETTINGS_KEYS.AUTO_BIND_ENABLED, next ? '1' : '0');
+    } catch (e) {
+      setError(humanError(e));
+    }
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -290,6 +315,58 @@ export function VoiceModelSection() {
             </dd>
           </dl>
         </details>
+      </div>
+
+      {/* Auto-bind toggle — связан со списком voiced спикеров.
+          Гасим если модель не скачана: без эмбеддингов матчинга нет. */}
+      <div
+        style={{
+          marginTop: 22,
+          padding: 18,
+          border: '1px solid var(--line-soft)',
+          borderRadius: 'var(--radius-card, 8px)',
+          background: 'var(--bg)',
+          opacity: status.status === 'valid' ? 1 : 0.6,
+        }}
+      >
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 12,
+            cursor: status.status === 'valid' ? 'pointer' : 'not-allowed',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={autoBindEnabled}
+            disabled={status.status !== 'valid'}
+            onChange={(e) => void persistAutoBind(e.target.checked)}
+            style={{ marginTop: 4 }}
+          />
+          <div style={{ flex: 1 }}>
+            <div
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: 14,
+                color: 'var(--ink)',
+                fontWeight: 500,
+                marginBottom: 4,
+              }}
+            >
+              {t('settings.speakersAutoBindLabel')}
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--subtle)',
+                lineHeight: 1.5,
+              }}
+            >
+              {t('settings.speakersAutoBindHint')}
+            </div>
+          </div>
+        </label>
       </div>
     </div>
   );

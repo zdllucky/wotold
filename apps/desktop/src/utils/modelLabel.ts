@@ -1,0 +1,27 @@
+// Абстрактные имена для моделей local-engine, чтобы UI не показывал
+// конкретные бренды (Whisper / Qwen / Pyannote) и tech-id. Бренды утекают
+// stack-tech-leak'ом и сбивают несведующего юзера. Контракт (Rust
+// MODEL_CATALOG.display_name) оставлен как есть — там это нужно для логов и
+// дебага. Маппинг хранится в i18n чтобы был переводим.
+
+import type { TranslationKey, useI18n } from '../i18n';
+
+type TFn = ReturnType<typeof useI18n>['t'];
+
+const MODEL_LABEL_KEYS: Record<string, TranslationKey> = {
+  'whisper-small': 'localEngine.modelLabel.whisperSmall',
+  'whisper-medium': 'localEngine.modelLabel.whisperMedium',
+  'whisper-large-v3': 'localEngine.modelLabel.whisperLarge',
+  'qwen25-1_5b': 'localEngine.modelLabel.qwenSmall',
+  'qwen25-3b': 'localEngine.modelLabel.qwenMedium',
+  'qwen25-7b': 'localEngine.modelLabel.qwenLarge',
+  'pyannote-segmentation': 'localEngine.modelLabel.diarization',
+};
+
+export function modelLabel(id: string, t: TFn): string {
+  const key = MODEL_LABEL_KEYS[id];
+  // Fallback на raw id если каталог Rust разъехался с маппингом — лучше
+  // показать «whisper-xyz» в UI чем пусто. В норме сюда не доходим:
+  // MODEL_CATALOG в Rust и keys тут синхронизированы.
+  return key ? t(key) : id;
+}

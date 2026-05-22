@@ -112,6 +112,27 @@ const ruInternal = {
       'Теперь Wotold может работать полностью на устройстве, без облака — бесплатно навсегда. Попробовать?',
     engineAnnouncementOpen: 'Открыть',
     engineAnnouncementDismiss: 'Позже',
+    // [M12-v1.1] Banner variants
+    engineAnnouncementDefault: {
+      eyebrow: 'Локальный режим',
+      title: 'Обрабатывай звонки без облака',
+      beforeLabel: 'Было',
+      beforeValue: 'Облако',
+      afterLabel: 'Стало',
+      afterValue: 'Локально · бесплатно',
+    },
+    engineAnnouncementFailures: {
+      eyebrow: 'Частые ошибки',
+      title: 'Переключись на локальный режим',
+      beforeLabel: 'Сбоев за 24ч',
+      beforeValue: '{count}',
+    },
+    engineAnnouncementQuota: {
+      eyebrow: 'Лимит облака',
+      title: 'Переходи на локальный — без лимитов',
+      beforeLabel: 'Использовано',
+      beforeValue: '{pct}%',
+    },
     channelMic: 'Вы · микрофон',
     channelSystem: 'Собеседник · системный звук',
     waveformFmt: '16 кГц моно · WAV · {time}',
@@ -391,14 +412,19 @@ const ruInternal = {
     sectionAppearance: 'Внешний вид',
     sectionAccount: 'Учётная запись',
     sectionPermissions: 'Разрешения',
-    sectionEngine: 'Движок распознавания',
-    sectionStt: 'Распознавание речи',
-    sectionPath: 'Источник сервисов',
-    sectionKeys: 'Ключи (BYO)',
-    sectionProxy: 'Сервер Wotold',
-    sectionUsage: 'Использование',
-    sectionVoice: 'Распознавание голоса',
+    sectionProcessing: 'Обработка звонков',
+    sectionRecording: 'Запись',
+    sectionSpeakers: 'Спикеры',
     sectionPrivacy: 'Конфиденциальность',
+    sectionProcessingSubtitle:
+      'Где обрабатывать ваши звонки. Локально — бесплатно, без сети. Облако — быстрее, точнее.',
+    sectionRecordingSubtitle:
+      'Горячие клавиши, язык расшифровки, авто-определение звонков.',
+    sectionSpeakersSubtitle:
+      'Узнавайте собеседников по голосу — Wotold подставит имена сам.',
+    speakersAutoBindLabel: 'Автоматически привязывать спикеров к контактам',
+    speakersAutoBindHint:
+      'Только при высокой уверенности — можно отменить прямо в звонке.',
     appearanceTitle: 'Внешний вид.',
     appearanceLede:
       'Тема и акцент применяются мгновенно — переключи и сравни. Все экраны реагируют одновременно.',
@@ -539,9 +565,12 @@ const ruInternal = {
   permissions: {
     rowMic: 'Микрофон',
     rowMicDesc: 'Записывает то, что говоришь ты.',
-    rowScreen: 'Запись экрана (системный звук)',
+    rowScreen: 'Захват системного звука',
     rowScreenDesc:
-      'Записывает то, что говорит собеседник через Zoom/Meet/Telegram. После того как разрешишь — перезапусти Wotold.',
+      'Записывает голос собеседника в FaceTime, Zoom, Telegram и других звонковых приложениях. macOS обозначает это разрешение как «Screen & System Audio Recording». После того как разрешишь — перезапусти Wotold.',
+    rowAccessibility: 'Универсальный доступ',
+    rowAccessibilityDesc:
+      'Нужно для глобальных горячих клавиш, когда на переднем плане другое приложение. Разрешить в Системных настройках → Конфиденциальность → Универсальный доступ.',
     request: 'Запросить',
     requestAgain: 'Перезапросить',
     requestTitle: 'Показать macOS-диалог запроса',
@@ -577,6 +606,29 @@ const ruInternal = {
     tokens: '{n} токенов',
     resetAt: 'Сброс счётчиков: {date}',
     noLimit: 'лимит не настроен',
+  },
+
+  // ── [M12-v1.1] Engine chip labels ──────────────────────────────────────
+  engineChip: {
+    local: 'Локально',
+    cloud_managed: 'Облако',
+    cloud_byo: 'Свои ключи',
+    localAria: 'Обработано локально на устройстве',
+    cloud_managedAria: 'Обработано в облаке Wotold',
+    cloud_byoAria: 'Обработано через собственные ключи',
+  },
+
+  // ── [M12-v1.1] Failure screen kinds ────────────────────────────────────
+  failure: {
+    brokenRecording: {
+      eyebrow: 'Ошибка файла',
+      title: 'Не удалось прочитать аудио',
+      body: 'Файл записи повреждён или имеет неподдерживаемый формат. Попробуй сохранить wav и пересмотреть запись, или удали звонок.',
+      saveWav: 'Сохранить .wav в Finder',
+      retryCloud: 'Попробовать в облаке',
+      delete: 'Удалить запись',
+      techLabel: 'Техническая причина',
+    },
   },
 
   // ── Voice model section ─────────────────────────────────────────────────
@@ -630,12 +682,30 @@ const ruInternal = {
         body: 'Напрямую к Soniox / Anthropic своими API-ключами. Без квоты Wotold.',
         quality: '●●● качество',
       },
+      active: 'активен',
     },
     presetLabel: 'Сборка моделей',
     preset: {
-      light: 'Light · быстро на любом Mac',
-      balanced: 'Balanced · оптимально для 16 ГБ',
-      quality: 'Quality · максимум, нужно 16+ ГБ',
+      light: 'Лёгкий',
+      balanced: 'Сбалансированный',
+      quality: 'Максимальный',
+    },
+    presetMeta: {
+      light: 'точность ~85% · быстро',
+      balanced: 'точность ~93% · средне',
+      quality: 'точность ~97% · медленно',
+    },
+    presetRecommend: 'Рекомендуем',
+    // Абстрактные имена моделей для UI (storage table, delete confirm и т.д.).
+    // Конкретные бренды (Whisper/Qwen/Pyannote) — только в Rust-логах и контракте.
+    modelLabel: {
+      whisperSmall: 'Модуль речи · S',
+      whisperMedium: 'Модуль речи · M',
+      whisperLarge: 'Модуль речи · L',
+      qwenSmall: 'Модуль саммари · S',
+      qwenMedium: 'Модуль саммари · M',
+      qwenLarge: 'Модуль саммари · L',
+      diarization: 'Модуль разделения · базовый',
     },
     statusInstalled: 'установлено',
     statusDownloading: 'качаем…',
@@ -675,6 +745,26 @@ const ruInternal = {
     probeMetalYes: 'Metal',
     probeMetalNo: 'без Metal',
     reprobe: 'Переоценить',
+    // ── [M12-v1.1] Probe skeleton ─────────────────────────────────────────
+    probeSkeleton: {
+      measuring: 'Оцениваем железо…',
+      timeout: 'Не удалось определить железо. Выберите сборку вручную.',
+    },
+    // ── [M12-v1.1] Storage delete confirm modal ───────────────────────────
+    storageConfirm: {
+      title: 'Удалить активную модель?',
+      body: 'Текущая сборка переключится на «{fallback}». Модель можно скачать снова в любое время.',
+      confirm: 'Удалить',
+      cancel: 'Отмена',
+    },
+    // ── [M12-v1.1] Rediscovery chip ───────────────────────────────────────
+    rediscovery: {
+      eyebrow: 'Локальный режим',
+      title: 'Обрабатывай звонки прямо на Mac',
+      body: 'Без облака, бесплатно навсегда. Скачивается один раз — потом работает офлайн.',
+      install: 'Попробовать локальный режим',
+      dismiss: 'Больше не показывать',
+    },
     // ── M12.7.3 Onboarding engine step ───────────────────────────────────
     // (вложено сюда так как онбординг строит ключи `onboarding.engine.*`,
     //  но они логически часть local-engine модуля)
@@ -727,19 +817,30 @@ const ruInternal = {
       recommendedTag: 'РЕКОМ.',
       feat: {
         light: {
-          stt: 'Whisper Small — быстрое распознавание',
-          llm: 'Qwen 1.5B — компактные саммари',
+          stt: 'Распознавание · базовое, быстро',
+          llm: 'Саммари · базовое, компактно',
         },
         balanced: {
-          stt: 'Whisper Medium — высокая точность',
-          llm: 'Qwen 3B — точные саммари',
+          stt: 'Распознавание · стандартное, точно',
+          llm: 'Саммари · стандартное, развёрнуто',
         },
         quality: {
-          stt: 'Whisper Large v3 — максимум',
-          llm: 'Qwen 7B — лучшее качество',
+          stt: 'Распознавание · максимальное, очень точно',
+          llm: 'Саммари · максимальное, лучшее качество',
         },
       },
       featSpeakers: 'Распознаёт до 4 голосов',
+      // [M12-v1.1] Preview state
+      previewCta: 'Что входит в сборку?',
+      previewEyebrow: 'Предпросмотр',
+      previewTitle: 'Вот как это работает',
+      previewTranscript1: '— [Вы] Добрый день, как ваши дела?',
+      previewTranscript2: '— [Собеседник] Всё отлично, спасибо!',
+      previewTranscript3: '— [Вы] Тогда переходим к делу.',
+      previewTranscript4: '— [Собеседник] Отлично, я готов.',
+      previewProcessed: 'обработано за {ms} мс · локально',
+      previewInstall: 'Установить · {size} ГБ',
+      previewBack: '← Назад',
     },
     saving: 'Сохраняем…',
     finishBtn: 'Готово',
