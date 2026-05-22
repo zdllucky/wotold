@@ -32,8 +32,12 @@ pub mod voice_backfill;
 
 // [M13.1.3b] Per-chunk pipeline для chunked pipelined transcription.
 // Standalone от pipeline::run — параллельный entry point, не подключён к
-// recording flow до M13.1.5b sprint'а.
+// recording flow до M13.1.5c sprint'а.
 pub mod chunk_runner;
+
+// [M13.1.5b step 1] Orchestrator main loop — silence-aware rotate triggering
+// + chunk_runner enqueue. Standalone, тестируется через mock channels.
+pub mod chunk_orchestrator;
 
 pub use merge::{merge_tracks, render_transcript_md};
 pub use settings::PipelineSettings;

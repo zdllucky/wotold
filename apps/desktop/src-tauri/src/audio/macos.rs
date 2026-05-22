@@ -7,7 +7,7 @@ use serde_json::Value;
 use tauri::AppHandle;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -24,6 +24,21 @@ const STOP_TIMEOUT_SECS: u64 = 10;
 pub struct LevelPayload {
     pub mic: f32,
     pub system: f32,
+}
+
+/// [M13.1.5b] Опциональные каналы для chunk_orchestrator. Если переданы в
+/// `audio::macos::start`, dispatcher фан-аутит каждый `"level"` event в
+/// `rms_tx` + `"rotated"` event в `rotate_tx` (помимо обычной emit'у webview
+/// событий). orchestrator owns rx-end'ы.
+///
+/// BC: `start()` принимает `Option<OrchestratorChannels>`, `None` сохраняет
+/// текущее behavior (no fan-out, recording happy path не тронут).
+#[derive(Debug, Clone)]
+pub struct OrchestratorChannels {
+    /// `(timestamp_ms_от_started_at, max(mic, system))` для silence_detector.
+    pub rms_tx: Sender<(u64, f32)>,
+    /// Raw sidecar JSON `{event:"rotated", duration_sec, mic_bytes, system_bytes}`.
+    pub rotate_tx: Sender<Value>,
 }
 
 /// Активная сессия записи macOS-аудио. Хранит дескриптор sidecar-процесса +
@@ -61,6 +76,7 @@ pub async fn start(
     call_id: String,
     mic_path: PathBuf,
     system_path: PathBuf,
+    orchestrator: Option<OrchestratorChannels>,
 ) -> Result<RecordingSession, AppError> {
     if let Some(parent) = mic_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -104,15 +120,27 @@ pub async fn start(
             // events to frontend, и сигналит terminal через oneshot.
             let (terminal_tx, terminal_rx) = oneshot::channel::<Value>();
             let app_clone = app.clone();
+            let started_at = chrono::Utc::now();
+            // [M13.1.5b] Pass started_at into dispatcher so it can compute
+            // `timestamp_ms` for orchestrator's silence_detector. Cheap copy
+            // (DateTime<Utc> is Copy).
+            let started_for_dispatcher = started_at;
             let dispatcher = tokio::spawn(async move {
-                run_dispatcher(rx, app_clone, terminal_tx).await;
+                run_dispatcher(
+                    rx,
+                    app_clone,
+                    terminal_tx,
+                    orchestrator,
+                    started_for_dispatcher,
+                )
+                .await;
             });
 
             Ok(RecordingSession {
                 call_id,
                 mic_path,
                 system_path,
-                started_at: chrono::Utc::now(),
+                started_at,
                 child,
                 terminal_rx,
                 _dispatcher: dispatcher,
@@ -216,10 +244,16 @@ pub async fn stop(mut session: RecordingSession) -> Result<StopResult, AppError>
 /// в Tauri webview `audio:level` события для frontend meter, остальные
 /// passthrough логирует. При `stopped`/`error` шлёт Value в terminal_tx и
 /// завершается.
+///
+/// [M13.1.5b] Если orchestrator каналы переданы — фан-аутит `"level"` →
+/// `rms_tx` (с timestamp_ms от `started_at`) + `"rotated"` → `rotate_tx`.
+/// Webview emit'ы всегда happen независимо от orchestrator state.
 async fn run_dispatcher(
     mut rx: Receiver<CommandEvent>,
     app: AppHandle,
     terminal_tx: oneshot::Sender<Value>,
+    orchestrator: Option<OrchestratorChannels>,
+    started_at: chrono::DateTime<chrono::Utc>,
 ) {
     let mut terminal_tx = Some(terminal_tx);
     while let Some(event) = rx.recv().await {
@@ -239,6 +273,15 @@ async fn run_dispatcher(
                                 as f32,
                         };
                         EventBus::new(Some(&app)).audio_level(&payload);
+                        // [M13.1.5b] Fan-out к chunk_orchestrator, если активен.
+                        if let Some(channels) = orchestrator.as_ref() {
+                            let elapsed =
+                                (chrono::Utc::now() - started_at).num_milliseconds().max(0) as u64;
+                            let combined = payload.mic.max(payload.system);
+                            // try_send — если orchestrator буфер полный или умер,
+                            // дропаем sample, не блокируем dispatcher.
+                            let _ = channels.rms_tx.try_send((elapsed, combined));
+                        }
                     }
                     "rotated" => {
                         // [M13.1.2] Sidecar закрыл предыдущий chunk WAV и открыл
@@ -246,6 +289,10 @@ async fn run_dispatcher(
                         // (frontend или Rust-side listener) enqueue'ил pipeline
                         // job на закрытый chunk файл.
                         EventBus::new(Some(&app)).audio_rotated(&json);
+                        if let Some(channels) = orchestrator.as_ref() {
+                            // rotate event редкий (раз в 10мин), full send OK.
+                            let _ = channels.rotate_tx.send(json.clone()).await;
+                        }
                     }
                     "stopped" | "error" => {
                         if let Some(tx) = terminal_tx.take() {

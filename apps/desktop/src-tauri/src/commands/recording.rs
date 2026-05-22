@@ -87,7 +87,9 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     let mic_path = state.store.mic_path(&call.id);
     let system_path = state.store.system_path(&call.id);
 
-    match audio_macos::start(&app, call.id.clone(), mic_path, system_path).await {
+    // [M13.1.5b] orchestrator=None — recording happy path неизменён.
+    // Wiring chunked pipeline в start_recording — следующий sprint (M13.1.5c).
+    match audio_macos::start(&app, call.id.clone(), mic_path, system_path, None).await {
         Ok(session) => {
             *guard = Some(session);
             EventBus::new(Some(&app)).recording_state_changed();
