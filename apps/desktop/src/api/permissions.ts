@@ -10,10 +10,11 @@ export type PermissionStatus =
 export interface PermissionsStatus {
   microphone: PermissionStatus;
   screen_recording: PermissionStatus;
+  accessibility: PermissionStatus;
 }
 
-export type PermissionTarget = 'microphone' | 'screen_recording' | 'all';
-export type SystemPane = 'microphone' | 'screen_recording';
+export type PermissionTarget = 'microphone' | 'screen_recording' | 'accessibility' | 'all';
+export type SystemPane = 'microphone' | 'screen_recording' | 'accessibility';
 
 export function getAudioPermissions(): Promise<PermissionsStatus> {
   return invoke<PermissionsStatus>('get_audio_permissions');

@@ -32,6 +32,7 @@ function mkCall(overrides: Partial<Call> = {}): Call {
     upload_bytes: null,
     paused_at: null,
     paused_total_ms: 0,
+    processing_via: null,
     created_at: '2026-05-20T16:04:30Z',
     updated_at: '2026-05-20T16:05:42Z',
     ...overrides,

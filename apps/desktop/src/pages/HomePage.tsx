@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 import { humanError } from '../api/errors';
+import { localEngineGetActiveEngine } from '../api/local-engine';
 import {
   listCalls,
   type Call,
@@ -58,9 +59,11 @@ export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
   // ready-звонкам. Делается one-shot после listCalls; дёшево на N≤50.
   const [pendingSpeakers, setPendingSpeakers] = useState(0);
   // [M12.7.5] Local engine announcement — показывается existing users
-  // (≥1 ready call) один раз пока не dismiss/accept. Click → SettingsPage
-  // (см. onOpenCall pattern). LocalStorage flag persist'ится в settings.
+  // (≥1 ready call). [M12-v1.1] 7-day re-show + variant.
   const [showEngineAnnouncement, setShowEngineAnnouncement] = useState(false);
+  type BannerVariant = 'default' | 'failures' | 'quota';
+  const [bannerVariant, setBannerVariant] = useState<BannerVariant>('default');
+  const [bannerFailureCount, setBannerFailureCount] = useState(0);
 
   useEffect(() => {
     invoke<AvailableUpdate | null>('check_for_update')
@@ -76,18 +79,38 @@ export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
     listCalls()
       .then((calls) => {
         setRecentCalls(calls.slice(0, 50));
-        // [M12.7.5] Banner trigger: existing user (≥1 ready call) +
-        // флаг ещё не выставлен. Probe не зовём здесь — Settings → Engine
-        // сам сделает probe при открытии.
+        // [M12.7.5/v1.1] Banner trigger: existing user (≥1 ready call) +
+        // 7-day re-show logic.
         const hasReady = calls.some((c) => c.status === 'ready');
         if (hasReady) {
-          getSetting(SETTINGS_KEYS.LOCAL_ENGINE_ANNOUNCEMENT_SEEN)
-            .then((v) => {
-              if (v !== '1') setShowEngineAnnouncement(true);
-            })
-            .catch(() => {
+          void (async () => {
+            try {
+              const dismissedAt = await getSetting(SETTINGS_KEYS.LOCAL_ENGINE_ANNOUNCEMENT_DISMISSED_AT);
+              const shouldShow =
+                !dismissedAt ||
+                Date.now() - new Date(dismissedAt).getTime() > 7 * 24 * 3600 * 1000;
+              if (!shouldShow) return;
+              // Don't show banner if already on local engine.
+              const activeEngine = await localEngineGetActiveEngine().catch(() => null);
+              if (activeEngine === 'local') return;
+              // Determine variant: count failures in last 24h
+              const cutoff = Date.now() - 24 * 3600 * 1000;
+              const failCount = calls.filter(
+                (c) =>
+                  c.status === 'failed' &&
+                  new Date(c.updated_at).getTime() > cutoff,
+              ).length;
+              if (failCount >= 3) {
+                setBannerVariant('failures');
+                setBannerFailureCount(failCount);
+              } else {
+                setBannerVariant('default');
+              }
+              setShowEngineAnnouncement(true);
+            } catch {
               /* best-effort */
-            });
+            }
+          })();
         }
       })
       .catch((e: unknown) => console.warn('listCalls (home) failed', e));
@@ -95,9 +118,10 @@ export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
 
   const dismissEngineAnnouncement = () => {
     setShowEngineAnnouncement(false);
-    void setSetting(SETTINGS_KEYS.LOCAL_ENGINE_ANNOUNCEMENT_SEEN, '1').catch(
-      (e: unknown) => console.warn('persist announcement flag failed', e),
-    );
+    void setSetting(
+      SETTINGS_KEYS.LOCAL_ENGINE_ANNOUNCEMENT_DISMISSED_AT,
+      new Date().toISOString(),
+    ).catch((e: unknown) => console.warn('persist announcement dismiss failed', e));
   };
 
   // [B17] Aggregate unconfirmed speakers across ready calls.
@@ -271,44 +295,112 @@ export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
         {subtitle}
       </p>
 
-      {showEngineAnnouncement && (
-        <div
-          className="activity-strip"
-          role="region"
-          aria-label={t('home.engineAnnouncementAria')}
-          style={{
-            maxWidth: 580,
-            marginBottom: 32,
-            fontFamily: 'var(--font-sans)',
-          }}
-        >
-          <div style={{ flex: 1 }}>
-            <div className="small-caps" style={{ marginBottom: 4 }}>
-              {t('home.engineAnnouncementTitle')}
-            </div>
-            <div style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-              {t('home.engineAnnouncementBody')}
+      {showEngineAnnouncement && (() => {
+        const variantClass =
+          bannerVariant === 'failures'
+            ? 'engine-announcement--failures'
+            : bannerVariant === 'quota'
+              ? 'engine-announcement--quota'
+              : '';
+        const eyebrow =
+          bannerVariant === 'failures'
+            ? t('home.engineAnnouncementFailures.eyebrow')
+            : bannerVariant === 'quota'
+              ? t('home.engineAnnouncementQuota.eyebrow')
+              : t('home.engineAnnouncementDefault.eyebrow');
+        const title =
+          bannerVariant === 'failures'
+            ? t('home.engineAnnouncementFailures.title')
+            : bannerVariant === 'quota'
+              ? t('home.engineAnnouncementQuota.title')
+              : t('home.engineAnnouncementDefault.title');
+        return (
+          <div
+            className={['engine-announcement', variantClass].filter(Boolean).join(' ')}
+            role="region"
+            aria-label={t('home.engineAnnouncementAria')}
+          >
+            <div>
+              <p
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9.5,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  color: 'var(--ink-3)',
+                  margin: '0 0 6px',
+                }}
+              >
+                {eyebrow}
+              </p>
+              <p
+                style={{
+                  fontFamily: 'var(--font-serif)',
+                  fontSize: 17,
+                  letterSpacing: '-0.01em',
+                  margin: '0 0 8px',
+                }}
+              >
+                {title}
+              </p>
+              <div className="engine-announcement-ba">
+                {bannerVariant === 'default' && (
+                  <>
+                    <div className="engine-announcement-ba-item">
+                      <span className="engine-announcement-ba-label">
+                        {t('home.engineAnnouncementDefault.beforeLabel')}
+                      </span>
+                      <span className="engine-announcement-ba-value">
+                        {t('home.engineAnnouncementDefault.beforeValue')}
+                      </span>
+                    </div>
+                    <span className="engine-announcement-ba-arrow" aria-hidden="true">→</span>
+                    <div className="engine-announcement-ba-item">
+                      <span className="engine-announcement-ba-label">
+                        {t('home.engineAnnouncementDefault.afterLabel')}
+                      </span>
+                      <span className="engine-announcement-ba-value">
+                        {t('home.engineAnnouncementDefault.afterValue')}
+                      </span>
+                    </div>
+                  </>
+                )}
+                {bannerVariant === 'failures' && (
+                  <div className="engine-announcement-ba-item">
+                    <span className="engine-announcement-ba-label">
+                      {t('home.engineAnnouncementFailures.beforeLabel')}
+                    </span>
+                    <span className="engine-announcement-ba-value">
+                      {t('home.engineAnnouncementFailures.beforeValue', {
+                        count: String(bannerFailureCount),
+                      })}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="engine-announcement-actions">
+                <button
+                  type="button"
+                  className="btn btn--primary btn--sm"
+                  onClick={() => {
+                    dismissEngineAnnouncement();
+                    onOpenSettings?.();
+                  }}
+                >
+                  {t('home.engineAnnouncementOpen')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--quiet btn--sm"
+                  onClick={dismissEngineAnnouncement}
+                >
+                  {t('home.engineAnnouncementDismiss')}
+                </button>
+              </div>
             </div>
           </div>
-          <button
-            type="button"
-            className="btn btn--primary btn--sm"
-            onClick={() => {
-              dismissEngineAnnouncement();
-              onOpenSettings?.();
-            }}
-          >
-            {t('home.engineAnnouncementOpen')}
-          </button>
-          <button
-            type="button"
-            className="btn btn--quiet btn--sm"
-            onClick={dismissEngineAnnouncement}
-          >
-            {t('home.engineAnnouncementDismiss')}
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {isIdle && (
         <div

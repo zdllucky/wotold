@@ -222,6 +222,29 @@ pub enum ModelStatus {
     },
 }
 
+/// Быстрая проверка: файл есть на диске + ненулевой размер → `Present`, иначе
+/// `Absent`. Без SHA256 — для списков/UI где скорость важнее верификации.
+/// SHA256-проверка (corruption) делается только в `check_status` перед реальным
+/// использованием модели.
+pub async fn check_status_fast(
+    app_data_dir: &Path,
+    id: &str,
+) -> Result<ModelStatus, AppError> {
+    let entry = lookup(id).ok_or_else(|| AppError::Other(format!("unknown model id: {id}")))?;
+    let path = model_path(app_data_dir, id);
+    let meta = tokio::fs::metadata(&path).await;
+    match meta {
+        Ok(m) if m.len() > 0 => Ok(ModelStatus::Present {
+            id: id.to_string(),
+            bytes_total: m.len(),
+        }),
+        _ => Ok(ModelStatus::Absent {
+            id: id.to_string(),
+            bytes_total: entry.size_bytes,
+        }),
+    }
+}
+
 /// Потоковый SHA256 + размер. Стриминг чтобы не держать в RAM 4GB.
 async fn file_sha256(path: &Path) -> Result<(String, u64), std::io::Error> {
     use tokio::io::AsyncReadExt;

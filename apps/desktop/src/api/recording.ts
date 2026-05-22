@@ -28,6 +28,9 @@ export interface Call {
   /** [W2] Накопленное время на паузе в миллисекундах. Pipeline и UI вычитают
    *  это из (ended_at - started_at) для фактической длительности аудио. */
   paused_total_ms: number;
+  /** [M12-v1.1] Движок обработки. Null для звонков до трекинга — EngineChip
+   *  просто не рендерится. */
+  processing_via: 'local' | 'cloud_managed' | 'cloud_byo' | null;
   created_at: string;
   updated_at: string;
 }
