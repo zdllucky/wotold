@@ -39,6 +39,11 @@ pub mod chunk_runner;
 // + chunk_runner enqueue. Standalone, тестируется через mock channels.
 pub mod chunk_orchestrator;
 
+// [M13.1.5d] Assembly per-chunk transcripts → две DiarizedTranscript с
+// timestamp-offset. Используется в `run_local_inner` чтобы пропустить
+// full-file STT когда chunks_completed > 0.
+pub mod chunk_assembly;
+
 pub use merge::{merge_tracks, render_transcript_md};
 pub use settings::PipelineSettings;
 pub use stage::Stage;
@@ -470,38 +475,63 @@ async fn run_local_inner(
     .await?;
 
     // 4. Stage Transcribe — mic + system параллельно через whisper-cli sidecar.
-    let mic_stt =
-        LocalWhisperProvider::for_preset(&ctx.app_data_dir, whisper_id, TrackKind::MicOwner)
+    //
+    // [M13.1.5d] Если за время записи chunk_orchestrator насобирал per-chunk
+    // транскрипты (CHUNKED_PIPELINE=ON в start_recording) — пропускаем
+    // full-file STT и собираем mic/sys из DB. Cloud engine сюда не доходит
+    // (run_inner ветка), для local engine с chunked OFF в `call_chunks`
+    // ничего нет → assembly возвращает None → fall back на full-file STT.
+    let (mic_t, sys_t) = match chunk_assembly::load_chunked_transcripts(pool, &ctx.call_id).await? {
+        Some(tracks) => {
+            log::info!(
+                "call {}: using chunked transcripts (skip full-file STT)",
+                ctx.call_id
+            );
+            // UI ожидает progress на Stage::Transcribe — эмитим 100%
+            // мгновенно чтобы прогресс-бар не висел.
+            let step = Stage::Transcribe.step();
+            emit_progress(pool, Some(app), &ctx.call_id, step, 100, None, None).await;
+            tracks
+        }
+        None => {
+            let mic_stt = LocalWhisperProvider::for_preset(
+                &ctx.app_data_dir,
+                whisper_id,
+                TrackKind::MicOwner,
+            )
             .with_app(app.clone())
             .await;
-    let sys_stt =
-        LocalWhisperProvider::for_preset(&ctx.app_data_dir, whisper_id, TrackKind::System)
-            .with_app(app.clone())
-            .await;
-    let opts = TranscriptionOpts {
-        lang: s.stt_lang.clone(),
-        diarization: true,
-        prompt: None,
+            let sys_stt =
+                LocalWhisperProvider::for_preset(&ctx.app_data_dir, whisper_id, TrackKind::System)
+                    .with_app(app.clone())
+                    .await;
+            let opts = TranscriptionOpts {
+                lang: s.stt_lang.clone(),
+                diarization: true,
+                prompt: None,
+            };
+            run_stage(
+                pool,
+                Some(app),
+                &ctx.call_id,
+                Stage::Transcribe,
+                None,
+                async {
+                    let mic_fut = mic_stt.transcribe(&ctx.mic_path, opts.clone());
+                    let sys_fut = sys_stt.transcribe(&ctx.system_path, opts.clone());
+                    let (mic_r, sys_r) = tokio::join!(mic_fut, sys_fut);
+                    let mic = mic_r.map_err(|e| {
+                        AppError::Other(format!("local_engine_stt_failed (mic): {e}"))
+                    })?;
+                    let sys = sys_r.map_err(|e| {
+                        AppError::Other(format!("local_engine_stt_failed (system): {e}"))
+                    })?;
+                    Ok::<_, AppError>((mic, sys))
+                },
+            )
+            .await?
+        }
     };
-
-    let (mic_t, sys_t) = run_stage(
-        pool,
-        Some(app),
-        &ctx.call_id,
-        Stage::Transcribe,
-        None,
-        async {
-            let mic_fut = mic_stt.transcribe(&ctx.mic_path, opts.clone());
-            let sys_fut = sys_stt.transcribe(&ctx.system_path, opts.clone());
-            let (mic_r, sys_r) = tokio::join!(mic_fut, sys_fut);
-            let mic = mic_r
-                .map_err(|e| AppError::Other(format!("local_engine_stt_failed (mic): {e}")))?;
-            let sys = sys_r
-                .map_err(|e| AppError::Other(format!("local_engine_stt_failed (system): {e}")))?;
-            Ok::<_, AppError>((mic, sys))
-        },
-    )
-    .await?;
 
     let lang_detected = mic_t
         .lang_detected

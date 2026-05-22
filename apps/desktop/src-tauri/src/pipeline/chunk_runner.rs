@@ -59,13 +59,22 @@ pub struct ChunkRunOutput {
     pub segment_count: usize,
 }
 
-/// Запустить chunk pipeline (STT-only в Phase 1, diarization+embeddings —
-/// Phase 2). Возвращает tail для prev_prompt следующего chunk'а или Err.
-/// При Err DB row переводится в `failed`, caller обычно skip'ает chunk
-/// (orchestrator решает — retry или нет).
+/// Запустить chunk pipeline (STT only, dual-track в Phase 1). Транскрибирует
+/// mic + system параллельно через два provider'а. Возвращает tail из mic'а
+/// для prev_prompt следующего chunk'а.
+///
+/// Семантика ошибок:
+/// - **Mic fail** — fatal: mark_chunk_failed + Err (owner voice = критичен).
+/// - **System fail, mic ok** — degraded ok: mark_chunk_done с system=None,
+///   warn log. Assembly обрабатывает None как пустой system track.
+/// - **Both fail** — same as mic fail.
+///
+/// Diarization per-chunk + per-segment embeddings для global re-clustering —
+/// Phase 2 (M13.2.*); chunk_runner будет расширен без breaking changes.
 pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
     pool: &SqlitePool,
-    provider: &P,
+    mic_provider: &P,
+    system_provider: &P,
     input: ChunkRunInput,
 ) -> Result<ChunkRunOutput, AppError> {
     let ChunkRunInput {
@@ -74,7 +83,7 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         start_ms: _,
         end_ms,
         mic_path,
-        system_path: _,
+        system_path,
         prev_prompt,
         lang,
     } = input;
@@ -82,30 +91,69 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
     // 1. FSM gate: pending → processing.
     db::chunks::mark_chunk_processing(pool, &call_id, chunk_idx).await?;
 
-    // 2. Запуск STT с prompt-priming.
-    let opts = TranscriptionOpts {
-        lang,
+    // 2. Параллельный mic+system STT. Prompt-priming идёт только в mic —
+    //    system track имеет другой speaker (собеседник), prev_prompt от
+    //    owner-mic дал бы ложный bias.
+    let mic_opts = TranscriptionOpts {
+        lang: lang.clone(),
         diarization: true,
         prompt: prev_prompt,
     };
+    let sys_opts = TranscriptionOpts {
+        lang,
+        diarization: true,
+        prompt: None,
+    };
 
-    let transcript = match provider.transcribe(&mic_path, opts).await {
+    let mic_fut = mic_provider.transcribe(&mic_path, mic_opts);
+    let sys_fut = system_provider.transcribe(&system_path, sys_opts);
+    let (mic_res, sys_res) = tokio::join!(mic_fut, sys_fut);
+
+    let mic_transcript = match mic_res {
         Ok(t) => t,
         Err(e) => {
-            let reason = format!("transcribe: {e}");
+            let reason = format!("transcribe mic: {e}");
             let _ = db::chunks::mark_chunk_failed(pool, &call_id, chunk_idx, &reason).await;
             return Err(translate_transcription_error(e));
         }
     };
 
+    // System failure — degraded ok: pипипing logs + None в DB.
+    let sys_transcript = match sys_res {
+        Ok(t) => Some(t),
+        Err(e) => {
+            log::warn!("chunk {call_id}/{chunk_idx} system STT failed (degraded ok): {e}");
+            None
+        }
+    };
+
     // 3. Serialize → DB persist.
-    let transcript_json = serde_json::to_string(&transcript)
-        .map_err(|e| AppError::Other(format!("transcript serialize: {e}")))?;
+    let mic_json = serde_json::to_string(&mic_transcript)
+        .map_err(|e| AppError::Other(format!("mic transcript serialize: {e}")))?;
+    let sys_json = match sys_transcript.as_ref() {
+        Some(t) => Some(
+            serde_json::to_string(t)
+                .map_err(|e| AppError::Other(format!("system transcript serialize: {e}")))?,
+        ),
+        None => None,
+    };
 
-    let segment_count = transcript.segments.len();
-    let transcript_tail = extract_tail_words(&transcript, 50);
+    let segment_count = mic_transcript.segments.len()
+        + sys_transcript
+            .as_ref()
+            .map(|t| t.segments.len())
+            .unwrap_or(0);
+    let transcript_tail = extract_tail_words(&mic_transcript, 50);
 
-    db::chunks::mark_chunk_done(pool, &call_id, chunk_idx, end_ms, &transcript_json).await?;
+    db::chunks::mark_chunk_done(
+        pool,
+        &call_id,
+        chunk_idx,
+        end_ms,
+        &mic_json,
+        sys_json.as_deref(),
+    )
+    .await?;
 
     Ok(ChunkRunOutput {
         transcript_tail,
@@ -258,45 +306,91 @@ mod tests {
     async fn success_path_marks_done_and_returns_tail() {
         let db_t = fresh_db().await;
         setup_chunk(&db_t.pool, "c1", 0).await;
-        let provider = MockProvider::ok(fake_transcript(vec!["Привет.", "Как дела?"]));
-        let out = run_chunk(&db_t.pool, &provider, input("c1", 0, None))
+        let mic = MockProvider::ok(fake_transcript(vec!["Привет.", "Как дела?"]));
+        let sys = MockProvider::ok(fake_transcript(vec!["Здравствуйте."]));
+        let out = run_chunk(&db_t.pool, &mic, &sys, input("c1", 0, None))
             .await
             .unwrap();
         assert!(out.transcript_tail.contains("Как дела"));
-        assert_eq!(out.segment_count, 2);
+        // mic = 2 segments + sys = 1 segment.
+        assert_eq!(out.segment_count, 3);
         let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
             .await
             .unwrap();
         assert_eq!(rows[0].status, "done");
         assert_eq!(rows[0].end_ms, Some(600_000));
         assert!(rows[0].transcript_json.is_some());
+        assert!(rows[0].system_transcript_json.is_some());
     }
 
     #[tokio::test]
-    async fn prev_prompt_propagated_to_provider() {
+    async fn prev_prompt_propagated_to_mic_only() {
         let db_t = fresh_db().await;
         setup_chunk(&db_t.pool, "c1", 1).await;
-        let provider = MockProvider::ok(fake_transcript(vec!["Дальше."]));
+        let mic = MockProvider::ok(fake_transcript(vec!["Дальше."]));
+        let sys = MockProvider::ok(fake_transcript(vec!["Ответ."]));
         let _ = run_chunk(
             &db_t.pool,
-            &provider,
+            &mic,
+            &sys,
             input("c1", 1, Some("последние слова чанка 0")),
         )
         .await
         .unwrap();
-        let opts = provider.last_opts.lock().unwrap().clone().unwrap();
-        assert_eq!(opts.prompt.as_deref(), Some("последние слова чанка 0"));
+        let mic_opts = mic.last_opts.lock().unwrap().clone().unwrap();
+        let sys_opts = sys.last_opts.lock().unwrap().clone().unwrap();
+        assert_eq!(mic_opts.prompt.as_deref(), Some("последние слова чанка 0"));
+        // System не должен получать mic prev_prompt (другой speaker).
+        assert!(sys_opts.prompt.is_none());
     }
 
     #[tokio::test]
-    async fn provider_error_marks_failed_and_propagates_err() {
+    async fn mic_error_marks_failed_and_propagates_err() {
         let db_t = fresh_db().await;
         setup_chunk(&db_t.pool, "c1", 0).await;
-        let provider = MockProvider::err(TranscriptionError::Provider("simulated".into()));
-        let err = run_chunk(&db_t.pool, &provider, input("c1", 0, None))
+        let mic = MockProvider::err(TranscriptionError::Provider("simulated mic fail".into()));
+        let sys = MockProvider::ok(fake_transcript(vec!["something"]));
+        let err = run_chunk(&db_t.pool, &mic, &sys, input("c1", 0, None))
             .await
             .unwrap_err();
-        assert!(format!("{err}").contains("simulated"));
+        assert!(format!("{err}").contains("simulated mic fail"));
+        let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
+            .await
+            .unwrap();
+        assert_eq!(rows[0].status, "failed");
+    }
+
+    #[tokio::test]
+    async fn system_error_degraded_ok_mic_persisted_sys_none() {
+        // Mic ok, system fails → chunk done с system_transcript_json=NULL.
+        let db_t = fresh_db().await;
+        setup_chunk(&db_t.pool, "c1", 0).await;
+        let mic = MockProvider::ok(fake_transcript(vec!["mic content"]));
+        let sys = MockProvider::err(TranscriptionError::Provider("sys boom".into()));
+        let out = run_chunk(&db_t.pool, &mic, &sys, input("c1", 0, None))
+            .await
+            .unwrap();
+        // segment_count учитывает только mic когда sys = None.
+        assert_eq!(out.segment_count, 1);
+        let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
+            .await
+            .unwrap();
+        assert_eq!(rows[0].status, "done");
+        assert!(rows[0].transcript_json.is_some());
+        assert!(rows[0].system_transcript_json.is_none());
+    }
+
+    #[tokio::test]
+    async fn both_tracks_fail_marks_failed() {
+        let db_t = fresh_db().await;
+        setup_chunk(&db_t.pool, "c1", 0).await;
+        let mic = MockProvider::err(TranscriptionError::Provider("mic dead".into()));
+        let sys = MockProvider::err(TranscriptionError::Provider("sys dead".into()));
+        let err = run_chunk(&db_t.pool, &mic, &sys, input("c1", 0, None))
+            .await
+            .unwrap_err();
+        // Mic fail доминирует — это критичная ошибка.
+        assert!(format!("{err}").contains("mic dead"));
         let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
             .await
             .unwrap();
@@ -326,7 +420,7 @@ mod tests {
         let db_t = fresh_db().await;
         setup_chunk(&db_t.pool, "c1", 0).await;
         let provider = MockProvider::ok(transcript);
-        let out = run_chunk(&db_t.pool, &provider, input("c1", 0, None))
+        let out = run_chunk(&db_t.pool, &provider, &provider, input("c1", 0, None))
             .await
             .unwrap();
         let word_count = out.transcript_tail.split_whitespace().count();
@@ -349,7 +443,7 @@ mod tests {
         .unwrap();
         // НЕ создаём chunk row.
         let provider = MockProvider::ok(fake_transcript(vec!["test"]));
-        let err = run_chunk(&db_t.pool, &provider, input("c1", 0, None))
+        let err = run_chunk(&db_t.pool, &provider, &provider, input("c1", 0, None))
             .await
             .unwrap_err();
         assert!(format!("{err}").contains("not in 'pending'"));
