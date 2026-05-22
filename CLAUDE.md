@@ -20,7 +20,7 @@
 | R8 | Аудио НЕ через память прокси-воркера — только R2 + presigned-URL |
 | R9 | Local-движок (M12) — только macOS в MVP, Linux/Windows trait+`unimplemented!()` |
 | R10 | Local-движок: модели не бандлятся в installer (~50MB), download on-demand |
-| R11 | Local STT — offline-only (sherpa-onnx Whisper), нет streaming/real-time |
+| R11 | Local STT — offline-only (sherpa-onnx Whisper). Live realtime captions НЕ делаем. Chunked 10-мин post-processing (M13, planned) допустим: тот же offline pipeline, разрез только для UX (pipelining + crash-safety). |
 | R12 | Local-LLM саммари по качеству ниже cloud — UI явно показывает «●●○» |
 | R12-bis | Авто-удаление моделей при смене preset НЕ делаем — explicit storage UI (M12.4.4-bis) |
 | R13 | Слишком слабое железо НЕ блокирует Local — probe рекомендует Light с warning |
