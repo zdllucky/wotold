@@ -142,6 +142,7 @@ pub async fn start(
 /// proper rotate_pending channel в session для синхронной верификации что
 /// файл закрыт перед enqueue'ом pipeline-job'а. Сейчас orchestrator должен
 /// слушать `audio:rotated` event на Tauri side.
+#[allow(dead_code)]
 pub async fn rotate(
     session: &mut RecordingSession,
     next_mic_path: PathBuf,

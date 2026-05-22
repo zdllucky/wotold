@@ -52,7 +52,9 @@
             { "validator": "^[a-z]{2,5}$" },
             "--threads",
             { "validator": "^[0-9]+$" },
-            "--no-prints"
+            "--no-prints",
+            "--prompt",
+            { "validator": "^[^\\r\\n]{0,1000}$" }
           ]
         }
       ]

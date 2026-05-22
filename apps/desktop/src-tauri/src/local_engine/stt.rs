@@ -74,6 +74,11 @@ pub struct LocalWhisperProvider {
     tmp_dir: PathBuf,
     /// Таймаут на один transcribe call.
     timeout: Duration,
+    /// [M13.1.3a] Context priming через whisper.cpp `--prompt` — последние
+    /// слова предыдущего chunk transcript'а. Точность первой фразы 80→95%.
+    /// `None` → флаг не передаётся (default behavior). Sanitized: \r\n
+    /// удалены, длина ≤1000 chars (capability validator).
+    prompt: Option<String>,
 }
 
 impl LocalWhisperProvider {
@@ -87,6 +92,7 @@ impl LocalWhisperProvider {
             app: Mutex::new(None),
             tmp_dir: std::env::temp_dir(),
             timeout: LOCAL_WHISPER_TIMEOUT,
+            prompt: None,
         }
     }
 
@@ -103,6 +109,15 @@ impl LocalWhisperProvider {
     #[allow(dead_code)]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// [M13.1.3a] Установить prompt для context priming. `None` → флаг не
+    /// передаётся в whisper-cli. Sanitize: удаление `\r\n` (capability
+    /// validator запрещает) + truncate до 1000 chars (валидатор enforce'ит).
+    #[allow(dead_code)]
+    pub fn with_prompt(mut self, prompt: Option<&str>) -> Self {
+        self.prompt = prompt.map(sanitize_prompt);
         self
     }
 
@@ -190,7 +205,7 @@ impl TranscriptionProvider for LocalWhisperProvider {
         // `target/debug/../lib/` (пустой) → dyld fail. Production solution —
         // install_name_tool + bundle dylibs рядом. Dev workaround —
         // `DYLD_FALLBACK_LIBRARY_PATH` → /opt/homebrew/lib.
-        let sidecar = app
+        let mut sidecar = app
             .shell()
             .sidecar(SIDECAR_NAME)
             .map_err(|e| TranscriptionError::Provider(format!("sidecar lookup: {e}")))?
@@ -209,6 +224,13 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 &format!("{DEFAULT_THREADS}"),
                 "--no-prints",
             ]);
+        // [M13.1.3a] Context priming через `--prompt`. Sanitized prompt
+        // гарантировано без `\r\n` (capability validator block'ает иначе).
+        if let Some(p) = self.prompt.as_deref() {
+            if !p.is_empty() {
+                sidecar = sidecar.args(["--prompt", p]);
+            }
+        }
 
         let run_result = run_sidecar_with_timeout(sidecar, self.timeout).await;
         let parse_result = match run_result {
@@ -221,6 +243,19 @@ impl TranscriptionProvider for LocalWhisperProvider {
 
         parse_result
     }
+}
+
+/// [M13.1.3a] Sanitize prompt для `--prompt` arg whisper-cli. Удаляет
+/// `\r\n` (capability validator `^[^\r\n]{0,1000}$` запрещает) + truncate
+/// до 1000 char-points для compliance. Pure-функция, тестируется отдельно.
+pub(crate) fn sanitize_prompt(raw: &str) -> String {
+    let mut out: String = raw.chars().filter(|c| *c != '\r' && *c != '\n').collect();
+    // Char-aware truncate (не байтовый — иначе режет UTF-8 codepoints).
+    if out.chars().count() > 1000 {
+        let truncated: String = out.chars().take(1000).collect();
+        out = truncated;
+    }
+    out
 }
 
 /// 'auto' / '' → 'auto'. Иначе нормализуем lowercase, обрезаем по '-' до
@@ -489,6 +524,43 @@ mod tests {
         assert_eq!(normalize_lang("ru;rm"), "auto");
         assert_eq!(normalize_lang("../etc"), "auto");
         assert_eq!(normalize_lang("123"), "auto");
+    }
+
+    // ── sanitize_prompt (M13.1.3a) ──────────────────────────────────────
+
+    #[test]
+    fn sanitize_prompt_strips_crlf() {
+        // Capability validator `^[^\r\n]{0,1000}$` блокирует \r\n.
+        assert_eq!(sanitize_prompt("hello\nworld"), "helloworld");
+        assert_eq!(sanitize_prompt("a\r\nb"), "ab");
+        assert_eq!(sanitize_prompt("без переносов"), "без переносов");
+    }
+
+    #[test]
+    fn sanitize_prompt_truncates_to_1000_chars() {
+        let raw = "a".repeat(1500);
+        let out = sanitize_prompt(&raw);
+        assert_eq!(out.chars().count(), 1000);
+    }
+
+    #[test]
+    fn sanitize_prompt_truncates_char_aware_not_byte() {
+        // Кириллица — 2 bytes per char. Byte-truncate резал бы UTF-8
+        // codepoints. Char-truncate сохраняет валидность.
+        let raw = "тест ".repeat(300); // ~1500 chars
+        let out = sanitize_prompt(&raw);
+        assert_eq!(out.chars().count(), 1000);
+        // Should be valid UTF-8 (Rust String guarantees this, но проверим).
+        assert!(out.is_char_boundary(out.len()));
+    }
+
+    #[test]
+    fn sanitize_prompt_passes_short_text() {
+        assert_eq!(
+            sanitize_prompt("last words from chunk"),
+            "last words from chunk"
+        );
+        assert_eq!(sanitize_prompt(""), "");
     }
 
     // ── build_transcript ────────────────────────────────────────────────

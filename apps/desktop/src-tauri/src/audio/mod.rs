@@ -51,6 +51,10 @@ pub mod permissions;
 // embedding chunks per speaker_tag. Платформо-независимый (hound crate).
 pub mod wav_chunker;
 
+// [M13.1.1] Silence-aware cut detector — pure-функция поиска тихого
+// сегмента в RMS-buffer для chunked transcription. Без platform deps.
+pub mod silence_detector;
+
 #[cfg(target_os = "windows")]
 pub mod windows;
 
