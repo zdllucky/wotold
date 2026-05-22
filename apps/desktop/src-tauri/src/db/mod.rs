@@ -9,6 +9,9 @@ use crate::AppError;
 
 mod action_items;
 mod calls;
+// [M13.1.3b] Chunked pipelined transcription — call_chunks table helpers.
+// pub(crate) чтобы pipeline::chunk_runner мог вызывать insert/mark/list.
+pub(crate) mod chunks;
 mod contacts;
 mod settings;
 // [Phase 3 R9] pub(crate) чтобы pipeline::voice_backfill мог вызывать

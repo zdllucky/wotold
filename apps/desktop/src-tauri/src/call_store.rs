@@ -118,6 +118,47 @@ impl CallStore {
         self.call_dir(call_id).join(kind.filename())
     }
 
+    // ── [M13.1.3b] Chunk paths ───────────────────────────────────────────
+    //
+    // Структура: `calls/<call_id>/chunks/<idx>/{mic,system}.wav`. Каждый
+    // chunk изолирован в своей поддиректории — лёгкая очистка по chunk_idx
+    // при failed-chunk retry + понятно где partial recovery после crash'а.
+
+    /// Корневая директория для всех chunks одного звонка.
+    #[allow(dead_code)]
+    pub fn chunks_dir(&self, call_id: &str) -> PathBuf {
+        self.call_dir(call_id).join("chunks")
+    }
+
+    /// Директория конкретного chunk'а (содержит mic.wav + system.wav).
+    #[allow(dead_code)]
+    pub fn chunk_dir(&self, call_id: &str, idx: u32) -> PathBuf {
+        self.chunks_dir(call_id).join(idx.to_string())
+    }
+
+    /// Путь к mic.wav конкретного chunk'а.
+    #[allow(dead_code)]
+    pub fn chunk_mic_path(&self, call_id: &str, idx: u32) -> PathBuf {
+        self.chunk_dir(call_id, idx).join("mic.wav")
+    }
+
+    /// Путь к system.wav конкретного chunk'а.
+    #[allow(dead_code)]
+    pub fn chunk_system_path(&self, call_id: &str, idx: u32) -> PathBuf {
+        self.chunk_dir(call_id, idx).join("system.wav")
+    }
+
+    /// Создать chunk-директорию (idempotent). Возвращает path для удобства
+    /// chaining (caller обычно сразу же открывает mic/system WAV там).
+    #[allow(dead_code)]
+    pub async fn ensure_chunk_dir(&self, call_id: &str, idx: u32) -> Result<PathBuf, AppError> {
+        let dir = self.chunk_dir(call_id, idx);
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .map_err(|e| AppError::Other(format!("ensure_chunk_dir: {e}")))?;
+        Ok(dir)
+    }
+
     /// Корневой `app_data_dir` (для legacy callsite'ов — `voice_model::*`).
     pub fn app_data_dir(&self) -> &Path {
         &self.app_data_dir
@@ -289,5 +330,31 @@ mod tests {
         assert!(!store.calls_root().exists());
         // Идемпотентно.
         store.remove_all_calls().await.unwrap();
+    }
+
+    #[test]
+    fn chunk_paths_canonical_structure() {
+        let dir = tempdir().unwrap();
+        let store = CallStore::new(dir.path().to_path_buf());
+        let mic = store.chunk_mic_path("abc-123", 5);
+        let sys = store.chunk_system_path("abc-123", 5);
+        assert!(mic.ends_with("calls/abc-123/chunks/5/mic.wav"));
+        assert!(sys.ends_with("calls/abc-123/chunks/5/system.wav"));
+        // chunks_dir и chunk_dir вкладываются последовательно.
+        assert_eq!(
+            store.chunk_dir("abc-123", 5).parent().unwrap(),
+            store.chunks_dir("abc-123")
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_chunk_dir_creates_recursively() {
+        let dir = tempdir().unwrap();
+        let store = CallStore::new(dir.path().to_path_buf());
+        let path = store.ensure_chunk_dir("c1", 3).await.unwrap();
+        assert!(path.exists());
+        assert!(path.is_dir());
+        // Idempotent.
+        store.ensure_chunk_dir("c1", 3).await.unwrap();
     }
 }
