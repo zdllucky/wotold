@@ -16,7 +16,9 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { listCalls, type Call } from '../api/recording';
+import { useAudioLevel } from '../hooks/useAudioLevel';
 import { useI18n } from '../i18n';
+import { EngineChip, type EngineKind } from '../components/EngineChip';
 
 import { RecEq } from './RecEq';
 import { RecMiniButton } from './RecMiniButton';
@@ -29,7 +31,11 @@ function activeCallId(
   return status.callId;
 }
 
-export function RecStrip() {
+interface RecStripProps {
+  activeEngine?: EngineKind | null;
+}
+
+export function RecStrip({ activeEngine }: RecStripProps = {}) {
   const { t } = useI18n();
   const rec = useRecording();
   const callId = activeCallId(rec.status);
@@ -67,6 +73,15 @@ export function RecStrip() {
     [isPaused, t],
   );
 
+  // Live audio levels — mic + system tracks. max(mic, system) per index чтобы
+  // бары реагировали на любой источник (твой голос ИЛИ собеседник через
+  // process tap). RecEq смотрит на levels.slice(-3) — recompute дешёвый.
+  const isRecordingActive = rec.status.kind === 'recording';
+  const audio = useAudioLevel(isRecordingActive);
+  const levels = useMemo(() => {
+    return audio.mic.map((m, i) => Math.max(m, audio.system[i] ?? 0));
+  }, [audio.mic, audio.system]);
+
   if (rec.status.kind === 'idle') return null;
 
   const onTogglePause = () => {
@@ -90,11 +105,12 @@ export function RecStrip() {
       aria-live="polite"
       data-paused={isPaused ? 'true' : 'false'}
     >
-      <RecEq paused={isPaused} />
+      <RecEq paused={isPaused} levels={levels} />
 
       <div className="rec-strip-meta">
         <div className="rec-strip-meta-row">
           <span className="rec-strip-label">{label}</span>
+          {activeEngine && <EngineChip kind={activeEngine} variant="recording" />}
           <span className="rec-strip-timer">
             {formatElapsed(rec.elapsedSec)}
           </span>

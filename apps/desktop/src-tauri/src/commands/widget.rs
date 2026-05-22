@@ -11,9 +11,15 @@
 //! commands return `AppError::NotFound`; the frontend should swallow this so
 //! the main UX still works without the widget.
 
-use tauri::{AppHandle, LogicalPosition, Manager, Monitor, State};
+use std::time::Duration;
+
+use tauri::{AppHandle, LogicalPosition, Manager, Monitor, State, WebviewWindow};
 
 use crate::{state::AppState, AppError};
+
+/// Snap animation tuning. ~200ms total over 12 frames at 60Hz.
+const SNAP_FRAMES: u32 = 12;
+const SNAP_FRAME_MS: u64 = 16;
 
 const WIDGET_LABEL: &str = "recording-widget";
 const MAIN_LABEL: &str = "main";
@@ -84,6 +90,72 @@ pub async fn persist_widget_position(
     crate::db::set_setting(db, "recording.widget.x", &sx.to_string()).await?;
     crate::db::set_setting(db, "recording.widget.y", &sy.to_string()).await?;
     Ok(())
+}
+
+/// [Widget v3] После того как drag settled, прибиваем widget к ближайшей
+/// вертикальной стороне монитора (left/right edge) с MARGIN. Y сохраняется
+/// где отпустил (clamp в safe area). Анимация — easeOutCubic по SNAP_FRAMES
+/// кадрам, ~200ms total. Финальная позиция persist'ится в settings.
+///
+/// Вызывается из `lib.rs` после 400ms idle на `Moved` event. Caller обязан
+/// выставить `is_animating=true` ДО вызова чтобы Moved events от наших
+/// `set_position` не триггерили recursive snap.
+pub async fn snap_to_nearest_side(
+    app: AppHandle,
+    widget: WebviewWindow,
+    db: sqlx::SqlitePool,
+    current_x: f64,
+    current_y: f64,
+) {
+    let center_x = current_x + WIDGET_W / 2.0;
+    let center_y = current_y + WIDGET_H / 2.0;
+
+    let monitor = monitor_at_point(&app, center_x, center_y)
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return;
+    };
+
+    let scale = monitor.scale_factor();
+    let mon_x = monitor.position().x as f64 / scale;
+    let mon_y = monitor.position().y as f64 / scale;
+    let mon_w = monitor.size().width as f64 / scale;
+    let mon_h = monitor.size().height as f64 / scale;
+
+    // LEFT vs RIGHT по центру widget'а относительно центра монитора.
+    let target_x = if center_x < mon_x + mon_w / 2.0 {
+        mon_x + MARGIN
+    } else {
+        mon_x + mon_w - WIDGET_W - MARGIN
+    };
+
+    let min_y = mon_y + SAFE_AREA_TOP;
+    let max_y = mon_y + mon_h - WIDGET_H - MARGIN;
+    let target_y = current_y.clamp(min_y, max_y);
+
+    // easeOutCubic анимация: t' = 1 − (1 − t)^3.
+    for i in 1..=SNAP_FRAMES {
+        let t = i as f64 / SNAP_FRAMES as f64;
+        let eased = 1.0 - (1.0 - t).powi(3);
+        let x = current_x + (target_x - current_x) * eased;
+        let y = current_y + (target_y - current_y) * eased;
+        if let Err(e) = widget.set_position(LogicalPosition::new(x, y)) {
+            log::warn!("snap step failed: {e}");
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(SNAP_FRAME_MS)).await;
+    }
+
+    if let Err(e) = persist_widget_position(&app, &db, target_x, target_y).await {
+        log::warn!("snap persist failed: {e}");
+    }
+}
+
+/// Найти монитор содержащий точку (logical coords). Адаптация
+/// `current_cursor_monitor` для произвольной точки, не только cursor.
+fn monitor_at_point(app: &AppHandle, x: f64, y: f64) -> Option<Monitor> {
+    let monitors = app.available_monitors().ok()?;
+    monitors.into_iter().find(|m| point_in_monitor(m, x, y))
 }
 
 async fn read_saved_position(state: &State<'_, AppState>) -> Option<(f64, f64)> {
