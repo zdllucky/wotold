@@ -8,8 +8,6 @@
 //! Style: mirror `db::calls::lifecycle` — thin SQL functions, без
 //! бизнес-логики. Бизнес-логика живёт в [`crate::pipeline::chunk_runner`].
 
-#![allow(dead_code)] // Wiring в recording flow — Phase 1.5/M13.1.5b sprint.
-
 use std::path::Path;
 
 use sqlx::{Row, SqlitePool};
@@ -23,7 +21,11 @@ pub struct ChunkRow {
     pub chunk_idx: u32,
     pub start_ms: i64,
     pub end_ms: Option<i64>,
+    /// Read только tests'ами / UI inspectors (Phase 3). Production assembly
+    /// читает transcript_json + system_transcript_json напрямую.
+    #[allow(dead_code)]
     pub mic_path: String,
+    #[allow(dead_code)]
     pub system_path: String,
     pub status: String,
     /// [M13.1.5d] Сериализованный `DiarizedTranscript` mic-дорожки.
@@ -32,6 +34,9 @@ pub struct ChunkRow {
     /// `None` для legacy chunks (M13.1.5c, mic-only) или когда system STT
     /// деградировал — assembly обрабатывает это как пустой system track.
     pub system_transcript_json: Option<String>,
+    /// Phase 2 (M13.2.2) per-chunk WeSpeaker embeddings для cross-chunk
+    /// speaker re-clustering. Сейчас всегда None — заполняется в Phase 2.
+    #[allow(dead_code)]
     pub embeddings_json: Option<String>,
 }
 
