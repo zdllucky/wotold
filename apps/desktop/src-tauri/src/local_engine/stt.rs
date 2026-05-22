@@ -550,11 +550,17 @@ mod tests {
                 },
                 WhisperSegment {
                     text: "real text".into(),
-                    offsets: WhisperOffsets { from: 900, to: 2000 },
+                    offsets: WhisperOffsets {
+                        from: 900,
+                        to: 2000,
+                    },
                 },
                 WhisperSegment {
                     text: "(silence)".into(),
-                    offsets: WhisperOffsets { from: 2000, to: 2500 },
+                    offsets: WhisperOffsets {
+                        from: 2000,
+                        to: 2500,
+                    },
                 },
             ],
         };

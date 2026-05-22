@@ -110,8 +110,8 @@ pub async fn snap_to_nearest_side(
     let center_x = current_x + WIDGET_W / 2.0;
     let center_y = current_y + WIDGET_H / 2.0;
 
-    let monitor = monitor_at_point(&app, center_x, center_y)
-        .or_else(|| app.primary_monitor().ok().flatten());
+    let monitor =
+        monitor_at_point(&app, center_x, center_y).or_else(|| app.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else {
         return;
     };
@@ -122,8 +122,7 @@ pub async fn snap_to_nearest_side(
     let mon_w = monitor.size().width as f64 / scale;
     let mon_h = monitor.size().height as f64 / scale;
 
-    let (target_x, target_y) =
-        compute_snap_target(center_x, current_y, mon_x, mon_y, mon_w, mon_h);
+    let (target_x, target_y) = compute_snap_target(center_x, current_y, mon_x, mon_y, mon_w, mon_h);
 
     // easeOutCubic анимация: t' = 1 − (1 − t)^3.
     for i in 1..=SNAP_FRAMES {
@@ -392,8 +391,14 @@ mod tests {
         #[case] expected_y: f64,
     ) {
         let (tx, ty) = compute_snap_target(center_x, current_y, MON_X, MON_Y, MON_W, MON_H);
-        assert!((tx - expected_x).abs() < 0.001, "tx={tx} expected={expected_x}");
-        assert!((ty - expected_y).abs() < 0.001, "ty={ty} expected={expected_y}");
+        assert!(
+            (tx - expected_x).abs() < 0.001,
+            "tx={tx} expected={expected_x}"
+        );
+        assert!(
+            (ty - expected_y).abs() < 0.001,
+            "ty={ty} expected={expected_y}"
+        );
     }
 
     #[test]
