@@ -12,7 +12,49 @@
     {
       "identifier": "shell:allow-execute",
       "allow": [
-        { "name": "binaries/wotold-audio", "sidecar": true, "args": false }
+        { "name": "binaries/wotold-audio", "sidecar": true, "args": false },
+        {
+          "name": "binaries/wotold-llama",
+          "sidecar": true,
+          "args": [
+            "-m",
+            { "validator": "^[A-Za-z0-9._/\\-]+$" },
+            "--temp",
+            { "validator": "^[0-9]+(\\.[0-9]+)?$" },
+            "--ctx-size",
+            { "validator": "^[0-9]+$" },
+            "--n-predict",
+            { "validator": "^[0-9]+$" },
+            "--threads",
+            { "validator": "^[0-9]+$" },
+            "--no-conversation",
+            "--no-display-prompt",
+            "--simple-io",
+            "--log-disable",
+            "-f",
+            { "validator": "^[A-Za-z0-9._/\\-]+$" }
+          ]
+        },
+        {
+          "name": "binaries/wotold-whisper",
+          "sidecar": true,
+          "args": [
+            "-m",
+            { "validator": "^[A-Za-z0-9._/\\-]+$" },
+            "-f",
+            { "validator": "^[A-Za-z0-9._/\\-]+$" },
+            "--output-json-full",
+            "-of",
+            { "validator": "^[A-Za-z0-9._/\\-]+$" },
+            "-l",
+            { "validator": "^[a-z]{2,5}$" },
+            "--threads",
+            { "validator": "^[0-9]+$" },
+            "--no-prints",
+            "--print-progress",
+            "false"
+          ]
+        }
       ]
     },
     {

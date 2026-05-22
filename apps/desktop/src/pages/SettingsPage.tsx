@@ -35,6 +35,7 @@ import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
 import { ByoKeysSection } from './ByoKeysSection';
+import { LocalEngineSection } from './LocalEngineSection';
 import { PermissionsSection } from './PermissionsSection';
 import { UsageSection } from './UsageSection';
 import { VoiceModelSection } from './VoiceModelSection';
@@ -43,6 +44,7 @@ type SectionId =
   | 'account'
   | 'appearance'
   | 'permissions'
+  | 'engine'
   | 'stt'
   | 'path'
   | 'keys'
@@ -206,6 +208,9 @@ export function SettingsPage() {
   const NAV: SectionMeta[] = [
     { id: 'appearance', label: t('settings.sectionAppearance') },
     { id: 'account', label: t('settings.sectionAccount') },
+    // [M12.5.1] Engine picker — после Account, перед Permissions.
+    // Логически «вот ваш движок → вот разрешения для записи».
+    { id: 'engine', label: t('settings.sectionEngine') },
     { id: 'permissions', label: t('settings.sectionPermissions') },
     { id: 'stt', label: t('settings.sectionStt') },
     { id: 'path', label: t('settings.sectionPath') },
@@ -289,6 +294,12 @@ export function SettingsPage() {
         {section === 'account' && (
           <SectionShell title={t('settings.accountTitle')} lede={t('settings.accountLede')}>
             <AccountSection />
+          </SectionShell>
+        )}
+
+        {section === 'engine' && (
+          <SectionShell title={t('settings.engineTitle')} lede={t('settings.engineLede')}>
+            <LocalEngineSection />
           </SectionShell>
         )}
 

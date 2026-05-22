@@ -100,6 +100,12 @@ export const en: TranslationStrings = {
     updateAvailable: 'Version {version} available (currently {current}).',
     updateInstall: 'Update now',
     updateInstalling: 'Installing…',
+    engineAnnouncementAria: 'Local mode is now available',
+    engineAnnouncementTitle: 'Local mode is here',
+    engineAnnouncementBody:
+      'Wotold can now run fully on your device, no cloud — free forever. Try it?',
+    engineAnnouncementOpen: 'Open',
+    engineAnnouncementDismiss: 'Later',
     channelMic: 'You · microphone',
     channelSystem: 'Other party · system audio',
     waveformFmt: '16 kHz mono · WAV · {time}',
@@ -360,6 +366,7 @@ export const en: TranslationStrings = {
     sectionAppearance: 'Appearance',
     sectionAccount: 'Account',
     sectionPermissions: 'Permissions',
+    sectionEngine: 'Recognition engine',
     sectionStt: 'Speech recognition',
     sectionPath: 'Service source',
     sectionKeys: 'Keys (BYO)',
@@ -387,6 +394,9 @@ export const en: TranslationStrings = {
     permissionsTitle: 'System permissions.',
     permissionsLede:
       'Wotold needs two macOS permissions: microphone and screen recording for system audio. Without them recording will not start.',
+    engineTitle: 'Recognition engine.',
+    engineLede:
+      'Where your calls are processed. Local — free, offline, all on device. Cloud — best quality, needs internet.',
     sttTitle: 'Speech recognition.',
     sttLede:
       'STT provider and recap language. Auto switches between Soniox and Gladia on failure.',
@@ -572,6 +582,70 @@ export const en: TranslationStrings = {
       'SHA256 mismatch — file corrupted or model version changed. Try again.',
   },
 
+  localEngine: {
+    engineLabel: 'Where to process calls',
+    engine: {
+      local: {
+        title: 'Locally on this device',
+        body: 'No network, no fees, your data stays on your Mac. Models download once.',
+        quality: '●●○ quality',
+      },
+      cloud_managed: {
+        title: 'Wotold Cloud (Pro)',
+        body: 'Top quality, fast, no local load. Requires internet.',
+        quality: '●●● quality',
+      },
+      cloud_byo: {
+        title: 'Your own provider keys',
+        body: 'Direct to Soniox / Anthropic with your API keys. No Wotold quota.',
+        quality: '●●● quality',
+      },
+    },
+    presetLabel: 'Model bundle',
+    preset: {
+      light: 'Light · fast on any Mac',
+      balanced: 'Balanced · best for 16 GB',
+      quality: 'Quality · max, needs 16+ GB',
+    },
+    statusInstalled: 'installed',
+    statusDownloading: 'downloading…',
+    statusAbsent: 'not installed',
+    installedFootprint: 'Installed: {size}',
+    manageStorage: 'Free up space',
+    storageTitle: 'Model storage',
+    storageLede:
+      'What is installed locally. Delete unused models to reclaim space. Wotold never deletes models on its own.',
+    storageFootnote: 'Deleting does not affect already-processed calls.',
+    colName: 'Model',
+    colSize: 'Size',
+    colLastUsed: 'Used',
+    colState: 'State',
+    download: 'Download',
+    downloadAria: 'Download {name}',
+    delete: 'Delete',
+    deleteAria: 'Delete {name}',
+    close: 'Close',
+    statusActive: 'active',
+    statusCorrupted: 'corrupted',
+    deleteActiveConfirmTitle: 'Delete the active model?',
+    deleteActiveConfirmMsg:
+      'Model {id} is used by the current bundle. Deleting will switch the bundle. Proceed?',
+    qualityConfirmTitle: 'Quality on this Mac',
+    qualityConfirmMsg:
+      'Quality is designed for 16+ GB RAM. On your Mac processing may be very slow. Use anyway?',
+    deleteConfirmTitle: 'Delete model',
+    deleteConfirmMsg: 'Delete {id} from disk? You can re-download later.',
+    verifyFailed: 'Checksum mismatch for {id} — file corrupted, try again.',
+    hwBannerTitle: 'Hardware suggestion',
+    hwBannerBody: 'You have {cpu} · {ram} GB. The {preset} bundle fits best.',
+    hwBannerApply: 'Apply',
+    hwBannerDismiss: 'Dismiss',
+    probeSummary: '{cpu} · {ram} GB · {metal} — recommend {preset}',
+    probeMetalYes: 'Metal',
+    probeMetalNo: 'no Metal',
+    reprobe: 'Re-probe',
+  },
+
   onboarding: {
     stepLabel: 'Step 0{step} of 0{total} · {label}',
     step1Label: 'Welcome',
@@ -589,7 +663,8 @@ export const en: TranslationStrings = {
     feature1: '— Microphone and system audio recorded separately',
     feature2: '— Transcript with participant recognition',
     feature3: '— Auto recap and tasks list',
-    feature4: '— Search conversations directly in Claude via MCP',
+    feature4: '— Runs locally on your device, free, offline',
+    feature5: '— Search conversations directly in Claude via MCP',
     fieldName: 'Name',
     fieldRole: 'Role',
     fieldGreeting: 'Short intro',
@@ -600,6 +675,36 @@ export const en: TranslationStrings = {
     enterName: 'Enter a name.',
     consentBody:
       'Wotold will record your microphone and the other party’s audio during calls. Before starting, make sure the other party is informed about the recording. Under RU/KZ law, recording conversations without notification may be unlawful.',
+    engineStepLabel: 'Engine',
+    engineHeadline: 'Choosing\nyour engine.',
+    engineLede:
+      'Wotold can run fully on your Mac, no cloud calls. We picked the best preset for your hardware.',
+    engine: {
+      probeEyebrow: 'Your Mac',
+      downloadCta: 'Download and continue (~{size} GB)',
+      chooseAnotherCta: 'Pick a different preset',
+      collapsePickerCta: 'Hide presets',
+      useCloudCta: 'Use cloud instead',
+      downloadingLabel: 'Downloading {id}',
+      cancelDownloadCta: 'Cancel and continue with cloud',
+      verifyFailed: 'Checksum mismatch for {id}. Try again.',
+      recommendedTag: 'REC',
+      feat: {
+        light: {
+          stt: 'Whisper Small — fast transcription',
+          llm: 'Qwen 1.5B — compact summaries',
+        },
+        balanced: {
+          stt: 'Whisper Medium — high accuracy',
+          llm: 'Qwen 3B — accurate summaries',
+        },
+        quality: {
+          stt: 'Whisper Large v3 — top tier',
+          llm: 'Qwen 7B — best quality',
+        },
+      },
+      featSpeakers: 'Up to 4 speakers',
+    },
     saving: 'Saving…',
     finishBtn: 'Done',
     stepAria: 'Step {step} of {total}',

@@ -493,6 +493,89 @@
 
 ---
 
+## M12 · Локальный движок (Local Engine)
+
+> Источник истины: [`M12_LOCAL_ENGINE_PRD.md`](M12_LOCAL_ENGINE_PRD.md) v0.2 (hardware-probe-driven onboarding). Аддендум к паспорту. PDCA по [`CLAUDE.md`](../CLAUDE.md) §«Воркфлоу для фича-тасок».
+>
+> Назначение: третий путь — `local` engine на sherpa-onnx Whisper + sortformer + llama.cpp. Free навсегда, без сети, без $/user. Cloud-managed становится Pro.
+
+### M12.4 Model Catalog scaffold (PRD §9 step 1)
+
+- [x] **Rust scaffolding** — модуль [apps/desktop/src-tauri/src/local_engine/{mod,models,preset}.rs](apps/desktop/src-tauri/src/local_engine/) (macOS-only `#[cfg(target_os = "macos")]`). `MODEL_CATALOG` на 6 entries (whisper-small/medium/large-v3, gemma3-2b, qwen25-3b/7b). SHA256 = placeholder `TODO_SHA256` (64 нуля) — by design гейт до PRD §14 pre-flight.
+- [x] **Tauri commands** — `local_engine_list_catalog`, `_model_status/_download/_delete`, `_get/set_active_preset`. Atomic `.partial → final` после SHA256. Events `model:progress`, `model:done`. Идемпотентность всех операций.
+- [x] **TDD tests** — 13 unit-тестов в [local_engine/models.rs](apps/desktop/src-tauri/src/local_engine/models.rs) + [preset.rs](apps/desktop/src-tauri/src/local_engine/preset.rs).
+- [x] **Migration prep** — `SETTING_ACTIVE_PRESET = 'local_engine.active_preset'` константа. `local_engine.active` через M12.6.
+- [ ] **Security** — `/security-scan` обязателен на этот модуль (W5) до merge.
+- [x] **Pre-flight gate (PRD §14)** — `scripts/refresh-model-catalog.sh` написан + прогнан: реальные SHA256 + размеры получены для 6 моделей (Whisper small/medium/large-v3 у ggerganov + Qwen 2.5 1.5B/3B/7B у bartowski). **Gemma 3 2B заменён на Qwen 2.5 1.5B** для Light preset из-за Google TOS gating (PRD §11 O1 deviation, документировано).
+
+### M12.1 LocalWhisperProvider (PRD §9 step 2)
+
+- [x] **Whisper provider real** — [local_engine/stt.rs](apps/desktop/src-tauri/src/local_engine/stt.rs) спавнит `wotold-whisper` sidecar (whisper.cpp `whisper-cli`). sherpa-onnx Whisper отклонён — несовместим с ggerganov .bin форматом каталога. Sidecar получает `-m <model.bin> -f <audio.wav> --output-json-full -of <stem> -l <lang>`, парсит `<stem>.json`. Per-track speaker tagging (mic → `speaker:owner`, system → `speaker:0`). 12 tests (lang normalize, JSON parse, mic vs system tagging, sort, NaN guard).
+- [x] **Sidecar binary register** — `wotold-whisper` добавлен в `tauri.conf.json::externalBin` + `capabilities/default.json::shell:allow-execute` с args validator'ами. Placeholder бинарь + build инструкции в [binaries/README.md](apps/desktop/src-tauri/binaries/README.md).
+- [ ] **Acceptance integration test** — bundled WAV (RU+2 спикера) → snapshot DiarizedTranscript. Требует реального `whisper-cli` бинаря в `binaries/`.
+
+### M12.2 LocalDiarizer (PRD §9 step 3)
+
+- [x] **Diarizer trait** — [local_engine/diarization.rs](apps/desktop/src-tauri/src/local_engine/diarization.rs) с `SortformerDiarizer` stub. `MAX_LOCAL_SPEAKERS=4`, `SPEAKER_UNKNOWN` для excess. `apply_speaker_cap` pure-фн с 4 unit-тестами.
+- [x] **Merge timestamps** — [local_engine/merge.rs](apps/desktop/src-tauri/src/local_engine/merge.rs) whisperX-style overlap, owner-bind, NaN guard, sort. 7 unit-тестов.
+- [x] **Owner bind** — `force_owner_track` фиксирует mic-track в `SPEAKER_OWNER` (M3.7).
+- [ ] **Sortformer real wire-up DEFERRED** — sherpa-onnx in-process requires segmentation + embedding model catalog entries (отдельные `.onnx` файлы). MVP local-route использует упрощённую диаризацию (system track → `speaker:0`); существующий B3.x voice clustering работает на сэмплах per-call. Multi-speaker diarization приходит когда sortformer model entries добавятся в MODEL_CATALOG.
+
+### M12.3 LocalLlamaProvider (PRD §9 step 4)
+
+- [x] **O2 решено: sidecar** (`wotold-llama` через tauri-plugin-shell). PRD §11 O2 default подтверждён.
+- [x] **Real LlmProvider** — [local_engine/llm.rs](apps/desktop/src-tauri/src/local_engine/llm.rs) `generate()` спавнит `llama-cli` sidecar с prompt-файлом, парсит первый сбалансированный JSON-объект из stdout, валидирует `title/summary`. 5min timeout с kill-on-drop. 15 tests (build_prompt, extract_json brace counting, escape handling, validate shape).
+- [x] **Sidecar binary register** — `wotold-llama` в externalBin + capability whitelist со строгими args validators. Placeholder + build instructions в [binaries/README.md](apps/desktop/src-tauri/binaries/README.md).
+- [x] **Prompt** — `LOCAL_LLM_SYSTEM_PROMPT` (PRD §M12.3.3 «only JSON» + few-shot ru пример) + 2 regression-теста.
+
+### M12.6 Pipeline integration (PRD §9 step 5)
+
+- [x] **Migration 0011** — [migrations/0011_local_engine_active.sql](apps/desktop/src-tauri/migrations/0011_local_engine_active.sql) backfill из `provider_path` (managed→cloud_managed, byo→cloud_byo, иначе local).
+- [x] **EngineKind enum** — [local_engine/engine.rs](apps/desktop/src-tauri/src/local_engine/engine.rs) с `load_or_default` + `save` + legacy mapping. 5 unit-тестов.
+- [x] **Selector Tauri commands** — `local_engine_get/set_active_engine`.
+- [x] **`pipeline::run` Phase 3 — Local route real** — `run_local_inner` ([pipeline/mod.rs](apps/desktop/src-tauri/src/pipeline/mod.rs)): resolve preset → проверка моделей → STT (mic+system параллельно через whisper-cli sidecar) → merge artifacts → recognize speakers (existing B3.x) → recap через llama-cli sidecar → persist via shared `recap::persist_recap_from_json` helper → `touch_usage` для UI last_used. Cloud route не тронут. Контракт ошибок: `local_engine_model_missing`, `local_engine_stt_failed`, `local_engine_llm_failed`, `local_whisper_timeout`, `local_llm_timeout`, `local_engine_no_app_handle`, `local_engine_preset_not_set` (PRD §M12.6.5 UI fallback markers).
+- [x] **recap::persist_recap_from_json extracted** — общий helper для cloud (`recap::run`) и local (`run_local_inner`); один post-processing pipeline (action_items + title + recap.md).
+- [x] **Tests** — `pipeline_run_requires_app_handle_for_local_engine` валидирует precondition.
+- [ ] **Cancellation flow** — SIGTERM на sidecar при call delete during processing. `tauri_plugin_shell::Child::kill()` интеграция приходит со spawn-handle tracking (B16 P0 расширение).
+
+### M12.7 Hardware probe (PRD §9 step 6)
+
+- [x] **`probe_hardware()`** — [local_engine/hw_probe.rs](apps/desktop/src-tauri/src/local_engine/hw_probe.rs) через `sysctl` (machdep.cpu.brand_string, hw.memsize, hw.optional.arm64). HwReport кеш в `local_engine.hw_report`.
+- [x] **`recommend_preset()`** — pure-фн с 5 правилами PRD §M12.7.2. 7 unit-тестов.
+- [x] **Wire-format match** — `HwArch::X8664` сериализуется как `"x86_64"` (regression test).
+- [x] **Tauri command** — `local_engine_hw_probe(force?)` с кешем в settings.
+
+### M12.5 Settings UI «Движок распознавания» (PRD §9 step 7)
+
+- [x] **Design Gate alignment** — выдан перед .tsx (Surface / Reference / Tokens / Classes / A11y).
+- [x] **Engine picker** — 3 radio-карточки (Local · Cloud · BYO) с `●●○ / ●●●` quality badges + i18n. Atelier v2 tokens only.
+- [x] **Preset picker (когда Local)** — Light/Balanced/Quality с `.dot--{success|accent|muted}` статусом, GB-размер.
+- [x] **Storage management modal (M12.4.4-bis)** — таблица catalog с name · size · last_used_at · active badge · × delete. Confirm-modal жёстче при удалении активной модели (PRD §M12.5.4). Migration 0012 `local_engine_model_usage` для last_used_at tracking.
+- [x] **Probe summary block (M12.5.2.5)** — `.subtle` строка «CPU · RAM · Metal — рекомендуем preset» + `.btn--quiet` «Переоценить» (форс probe).
+- [x] **Hardware probe banner** — `.activity-strip` с Apply/Dismiss.
+- [x] **Quality confirm** — `ask()` на RAM < 16 GB (PRD §M12.5.4).
+- [x] **i18n ru/kk/en** — `localEngine.*` namespace, no jargon.
+- [ ] **6 theme×accent manual QA** — visual verification (PRD §M12.5.6 acceptance).
+
+### M12 onboarding + i18n + docs (PRD §9 steps 8-10)
+
+- [x] **Onboarding step 1** — `feature4: 'Локально на устройстве, бесплатно, без сети'` (ru/kk/en).
+- [x] **i18n ru/kk/en** — `localEngine.*` + `settings.{sectionEngine,engineTitle,engineLede}`.
+- [x] **`docs/PRIVACY.md`** — v0.2: local-first TL;DR + per-engine таблица + section «При Local-движке».
+- [x] **README user-facing** — local-first pitch в начале + раздел «Чем Wotold отличается» + per-engine privacy таблица.
+- [x] **M12.7.3 Onboarding step «Engine setup»** — новый 4-й шаг для macOS-юзеров между Owner и Permissions+Consent. Probe-карта + 3 кнопки (download / choose another / use cloud) + download progress + cancel handling. Non-macOS пропускает (R9). [OnboardingEngineStep.tsx](apps/desktop/src/pages/OnboardingEngineStep.tsx) + расширение [OnboardingPage.tsx](apps/desktop/src/pages/OnboardingPage.tsx) до 4 шагов на macOS.
+- [x] **M12.7.5 Existing-users announcement banner** — `.activity-strip` в [HomePage.tsx](apps/desktop/src/pages/HomePage.tsx) для users с ≥1 ready call. Open → SettingsPage; Dismiss → persist `local_engine_announcement_seen=1`. i18n ru/kk/en.
+
+### M12 чек-лист «можно стартовать» (PRD §14)
+
+- [ ] sherpa-onnx version с Whisper + sortformer проверен (changelog crate).
+- [ ] O2 решён: crate vs sidecar для llama (предпочтительно sidecar).
+- [x] HuggingFace URL'ы + SHA256 для 6 моделей — `scripts/refresh-model-catalog.sh` + вставлено в `MODEL_CATALOG`. Whisper small/medium/large-v3 (ggerganov) + Qwen 2.5 1.5B/3B/7B (bartowski). Gemma deviation — Qwen 1.5B.
+- [ ] CI build matrix готова к feature flag `local-engine` (macOS arm64+x86_64 only).
+- [ ] PRD review'ен заказчиком; O1–O5 closed или accepted.
+
+---
+
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
 См. раздел 12 паспорта. Здесь только маркеры — детали и причины там.
@@ -507,3 +590,9 @@
 | R6 | macOS-сборка без Apple-нотаризации |
 | R7 | Free Cloudflare без auto-апгрейда тарифа |
 | R8 | Аудио НЕ через память воркера |
+| R9 | Local-движок в MVP — только macOS (M1.4 / R4 для Win/Linux) |
+| R10 | Модели не бандлятся в installer (~50MB), download по требованию |
+| R11 | Real-time / streaming local STT — НЕ делаем (sherpa offline-only) |
+| R12 | Качество local-LLM саммари ниже cloud — UI показывает «●●○» явно |
+| R12-bis | Авто-удаление моделей при смене preset — НЕ делаем (explicit storage UI) |
+| R13 | Слишком слабое железо НЕ блокирует Local — показывается с warning |

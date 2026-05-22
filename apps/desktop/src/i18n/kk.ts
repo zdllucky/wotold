@@ -99,6 +99,12 @@ export const kk: TranslationStrings = {
     updateAvailable: '{version} нұсқасы қолжетімді (қазір {current}).',
     updateInstall: 'Қазір жаңарту',
     updateInstalling: 'Орнатудамыз…',
+    engineAnnouncementAria: 'Жергілікті режим қол жетімді',
+    engineAnnouncementTitle: 'Жергілікті режим қол жетімді',
+    engineAnnouncementBody:
+      'Wotold енді бұлтсыз, толығымен құрылғыда жұмыс істей алады — мәңгі тегін. Көру керек пе?',
+    engineAnnouncementOpen: 'Ашу',
+    engineAnnouncementDismiss: 'Кейін',
     channelMic: 'Сіз · микрофон',
     channelSystem: 'Әңгімелесуші · жүйелік дыбыс',
     waveformFmt: '16 кГц моно · WAV · {time}',
@@ -358,6 +364,7 @@ export const kk: TranslationStrings = {
     sectionAppearance: 'Сыртқы түрі',
     sectionAccount: 'Аккаунт',
     sectionPermissions: 'Рұқсаттар',
+    sectionEngine: 'Тану қозғалтқышы',
     sectionStt: 'Сөйлеуді тану',
     sectionPath: 'Қызмет көзі',
     sectionKeys: 'Кілттер (BYO)',
@@ -385,6 +392,9 @@ export const kk: TranslationStrings = {
     permissionsTitle: 'Жүйелік рұқсаттар.',
     permissionsLede:
       'Wotold-қа екі macOS рұқсаты керек: микрофон және жүйелік дыбыс үшін экран жазу. Олсыз жазу басталмайды.',
+    engineTitle: 'Тану қозғалтқышы.',
+    engineLede:
+      'Қоңырауларыңыз қайда өңделеді. Жергілікті — тегін, желісіз, бәрі құрылғыда. Бұлт — ең жақсы сапа, интернет қажет.',
     sttTitle: 'Сөйлеуді тану.',
     sttLede:
       'STT провайдері және қорытынды тілі. Auto Soniox пен Gladia арасында ақаулар кезінде ауысады.',
@@ -566,6 +576,70 @@ export const kk: TranslationStrings = {
       'SHA256 сәйкес келмеді — файл зақымдалған немесе модель нұсқасы ауысқан. Қайта көріңіз.',
   },
 
+  localEngine: {
+    engineLabel: 'Қоңырауларды өңдеу орны',
+    engine: {
+      local: {
+        title: 'Осы құрылғыда',
+        body: 'Желісіз, тегін, деректер Mac-та қалады. Модельдер бір рет жүктеледі.',
+        quality: '●●○ сапа',
+      },
+      cloud_managed: {
+        title: 'Wotold бұлты (Pro)',
+        body: 'Ең жақсы сапа, жылдам, жергілікті жүктемесіз. Интернет қажет.',
+        quality: '●●● сапа',
+      },
+      cloud_byo: {
+        title: 'Өз провайдер кілттеріңіз',
+        body: 'Soniox / Anthropic тікелей өз API кілттеріңізбен. Wotold квотасы жоқ.',
+        quality: '●●● сапа',
+      },
+    },
+    presetLabel: 'Модель жиынтығы',
+    preset: {
+      light: 'Light · кез келген Mac-та жылдам',
+      balanced: 'Balanced · 16 ГБ үшін оптималды',
+      quality: 'Quality · ең үлкен, 16+ ГБ қажет',
+    },
+    statusInstalled: 'орнатылған',
+    statusDownloading: 'жүктелуде…',
+    statusAbsent: 'орнатылмаған',
+    installedFootprint: 'Орнатылған: {size}',
+    manageStorage: 'Орын босату',
+    storageTitle: 'Модельдер сақтауы',
+    storageLede:
+      'Жергілікті орнатылғаны. Орынды босату үшін қолданбайтын модельдерді жойыңыз. Wotold модельдерді өзі жоймайды.',
+    storageFootnote: 'Жою өңделген қоңырауларға әсер етпейді.',
+    colName: 'Модель',
+    colSize: 'Көлемі',
+    colLastUsed: 'Қолданылды',
+    colState: 'Күй',
+    download: 'Жүктеу',
+    downloadAria: '{name} жүктеу',
+    delete: 'Жою',
+    deleteAria: '{name} жою',
+    close: 'Жабу',
+    statusActive: 'белсенді',
+    statusCorrupted: 'зақымдалған',
+    deleteActiveConfirmTitle: 'Белсенді модельді жою?',
+    deleteActiveConfirmMsg:
+      '{id} модель қазіргі жиынтықпен қолданылуда. Жою жиынтықты ауыстырады. Жалғастыру керек пе?',
+    qualityConfirmTitle: 'Quality осы Mac-та',
+    qualityConfirmMsg:
+      'Quality 16+ ГБ-қа есептелген. Сіздің Mac-та өңдеу өте баяу болуы мүмкін. Сонда да қолдану керек пе?',
+    deleteConfirmTitle: 'Модельді жою',
+    deleteConfirmMsg: '{id} модельді жою керек пе? Кейін қайта жүктеуге болады.',
+    verifyFailed: '{id} үшін бақылау сомасы сәйкес келмеді — файл зақымдалған, қайта көріңіз.',
+    hwBannerTitle: 'Аппараттық кеңес',
+    hwBannerBody: 'Сізде {cpu} · {ram} ГБ. {preset} жиынтығы жақсы келеді.',
+    hwBannerApply: 'Қолдану',
+    hwBannerDismiss: 'Жасыру',
+    probeSummary: '{cpu} · {ram} ГБ · {metal} — {preset} ұсынылады',
+    probeMetalYes: 'Metal',
+    probeMetalNo: 'Metal жоқ',
+    reprobe: 'Қайта тексеру',
+  },
+
   onboarding: {
     stepLabel: '0{step} / 0{total} қадам · {label}',
     step1Label: 'Танысу',
@@ -583,7 +657,8 @@ export const kk: TranslationStrings = {
     feature1: '— Микрофон мен жүйелік дыбысты бөлек жазу',
     feature2: '— Қатысушыларды тану арқылы транскрипт',
     feature3: '— Авто-қорытынды және тапсырмалар тізімі',
-    feature4: '— Әңгімелерді тікелей Claude-та MCP арқылы іздеу',
+    feature4: '— Құрылғыда жергілікті, тегін, желісіз',
+    feature5: '— Әңгімелерді тікелей Claude-та MCP арқылы іздеу',
     fieldName: 'Аты',
     fieldRole: 'Рөл',
     fieldGreeting: 'Қысқаша таныстыру',
@@ -594,6 +669,36 @@ export const kk: TranslationStrings = {
     enterName: 'Атыңызды енгізіңіз.',
     consentBody:
       'Wotold қоңыраулар кезінде микрофоныңыз бен әңгімелесушінің дыбысын жазады. Бастамас бұрын әңгімелесушінің жазу туралы хабардар екенін тексеріңіз. ҚР/РФ заңы бойынша екінші тарапты хабардар етпей жазу заң бұзу болуы мүмкін.',
+    engineStepLabel: 'Қозғалтқыш',
+    engineHeadline: 'Mac-қа\nқозғалтқыш таңдау.',
+    engineLede:
+      'Wotold толығымен жергілікті жұмыс істей алады, бұлтсыз. Аппаратыңызға ең қолайлы пресет таңдалды.',
+    engine: {
+      probeEyebrow: 'Сіздің Mac',
+      downloadCta: 'Жүктеп жалғастыру (~{size} ГБ)',
+      chooseAnotherCta: 'Басқа пресет таңдау',
+      collapsePickerCta: 'Пресеттерді жасыру',
+      useCloudCta: 'Оның орнына бұлтты қолдану',
+      downloadingLabel: '{id} жүктелуде',
+      cancelDownloadCta: 'Болдырмау және бұлтпен жалғастыру',
+      verifyFailed: '{id} үшін бақылау сомасы сәйкес келмеді. Қайта көріңіз.',
+      recommendedTag: 'ҰСЫН.',
+      feat: {
+        light: {
+          stt: 'Whisper Small — жылдам тану',
+          llm: 'Qwen 1.5B — ықшам қорытындылар',
+        },
+        balanced: {
+          stt: 'Whisper Medium — жоғары дәлдік',
+          llm: 'Qwen 3B — дәл қорытындылар',
+        },
+        quality: {
+          stt: 'Whisper Large v3 — максимум',
+          llm: 'Qwen 7B — ең жақсы сапа',
+        },
+      },
+      featSpeakers: '4 дауысқа дейін',
+    },
     saving: 'Сақтаудамыз…',
     finishBtn: 'Дайын',
     stepAria: '{step} / {total} қадам',

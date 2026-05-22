@@ -277,6 +277,15 @@ async fn run_inner(
     // read_setting() inline + duplicate чтения preferred_language с regenerate_recap.
     let s = PipelineSettings::load(pool).await?;
 
+    // [M12.6 Phase 3] Local engine — отдельный route. Использует
+    // LocalWhisperProvider (sidecar) + LocalLlamaProvider (sidecar). Остальные
+    // stages (merge artifacts, recognize speakers через WeSpeaker, action_items
+    // persist) переиспользуются 1:1.
+    #[cfg(target_os = "macos")]
+    if s.engine == crate::local_engine::engine::EngineKind::Local {
+        return run_local_inner(pool, ctx, app, &s).await;
+    }
+
     let providers = build_providers(
         &s.stt_provider,
         &s.provider_path,
@@ -375,6 +384,234 @@ async fn run_inner(
     emit_progress(pool, app, &ctx.call_id, recap_step, 0, None, None).await;
     stage_recap(pool, ctx, &s, &merged, lang_detected.as_deref()).await;
     emit_progress(pool, app, &ctx.call_id, recap_step, 100, None, None).await;
+
+    Ok(())
+}
+
+/// [M12.6 Phase 3] Local-engine pipeline route. Полностью offline:
+/// LocalWhisperProvider (whisper.cpp sidecar) → merge → cluster (WeSpeaker
+/// in-process) → LocalLlamaProvider (llama.cpp sidecar) → recap.md.
+///
+/// Контракт ошибок per PRD §M12.6.5:
+/// - missing model → `local_engine_model_missing`
+/// - sidecar/STT crash → `local_engine_stt_failed`
+/// - LLM crash → `local_engine_llm_failed`
+/// - timeout → `local_whisper_timeout` / `local_llm_timeout`
+///
+/// UI (M12.5) показывает Cloud-fallback offer по этим маркерам.
+#[cfg(target_os = "macos")]
+async fn run_local_inner(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    app: Option<&AppHandle>,
+    s: &PipelineSettings,
+) -> Result<(), AppError> {
+    use crate::local_engine::{
+        engine::EngineKind,
+        llm::{LocalLlamaProvider, LOCAL_LLM_SYSTEM_PROMPT},
+        models::{self, ModelStatus},
+        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
+        stt::{LocalWhisperProvider, TrackKind},
+    };
+    use crate::providers::llm::{LlmProvider, LlmRequest};
+
+    debug_assert_eq!(s.engine, EngineKind::Local);
+    let app = app.ok_or_else(|| {
+        AppError::Other("local_engine_no_app_handle: pipeline requires Tauri runtime".into())
+    })?;
+
+    // 1. Резолвим preset → model ids. Без preset (юзер прошёл onboarding но
+    //    выбрал Cloud, потом откатился) — fail с явным reason.
+    let preset_str = db::get_setting(pool, SETTING_ACTIVE_PRESET).await?;
+    let preset = preset_str
+        .as_deref()
+        .and_then(LocalEnginePreset::from_str)
+        .ok_or_else(|| {
+            AppError::Other(
+                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings → Движок"
+                    .into(),
+            )
+        })?;
+    let whisper_id = preset.whisper_model_id();
+    let llm_id = preset.llm_model_id();
+
+    // 2. Проверяем что обе модели на диске + SHA OK.
+    for id in [whisper_id, llm_id] {
+        let status = models::check_status(&ctx.app_data_dir, id.as_str()).await?;
+        if !matches!(status, ModelStatus::Present { .. }) {
+            return Err(AppError::Other(format!(
+                "local_engine_model_missing: модель {} не установлена, скачайте в Settings → Движок",
+                id.as_str()
+            )));
+        }
+    }
+
+    // 3. Stage Upload — pseudo-step (audio verify + sidecar model load занимают
+    //    1-2 сек, UI не получает per-byte progress).
+    let upload_hint = audio_byte_total(&ctx.mic_path, &ctx.system_path).await;
+    run_stage(
+        pool,
+        Some(app),
+        &ctx.call_id,
+        Stage::Upload,
+        upload_hint,
+        async { stage_upload(upload_hint).await },
+    )
+    .await?;
+
+    // 4. Stage Transcribe — mic + system параллельно через whisper-cli sidecar.
+    let mic_stt =
+        LocalWhisperProvider::for_preset(&ctx.app_data_dir, whisper_id, TrackKind::MicOwner)
+            .with_app(app.clone())
+            .await;
+    let sys_stt =
+        LocalWhisperProvider::for_preset(&ctx.app_data_dir, whisper_id, TrackKind::System)
+            .with_app(app.clone())
+            .await;
+    let opts = TranscriptionOpts {
+        lang: s.stt_lang.clone(),
+        diarization: true,
+    };
+
+    let (mic_t, sys_t) = run_stage(
+        pool,
+        Some(app),
+        &ctx.call_id,
+        Stage::Transcribe,
+        None,
+        async {
+            let mic_fut = mic_stt.transcribe(&ctx.mic_path, opts.clone());
+            let sys_fut = sys_stt.transcribe(&ctx.system_path, opts.clone());
+            let (mic_r, sys_r) = tokio::join!(mic_fut, sys_fut);
+            let mic = mic_r
+                .map_err(|e| AppError::Other(format!("local_engine_stt_failed (mic): {e}")))?;
+            let sys = sys_r
+                .map_err(|e| AppError::Other(format!("local_engine_stt_failed (system): {e}")))?;
+            Ok::<_, AppError>((mic, sys))
+        },
+    )
+    .await?;
+
+    let lang_detected = mic_t
+        .lang_detected
+        .clone()
+        .or_else(|| sys_t.lang_detected.clone());
+
+    // 5. Stage MergeArtifacts — переиспользуем cloud helper (он не знает про
+    //    engine, просто пишет transcript.md + raw_stt.json).
+    let merged = run_stage(
+        pool,
+        Some(app),
+        &ctx.call_id,
+        Stage::MergeArtifacts,
+        None,
+        async { stage_merge_artifacts(&ctx.call_dir, &mic_t, &sys_t).await },
+    )
+    .await?;
+
+    db::set_call_meta(pool, &ctx.call_id, lang_detected.as_deref(), "local").await?;
+
+    let owner = db::ensure_owner_contact(pool).await?;
+    if let Err(e) = db::auto_bind_owner_speaker(pool, &ctx.call_id, &owner.id, OWNER_TAG).await {
+        log::warn!("auto_bind_owner_speaker {} failed: {e}", ctx.call_id);
+    }
+    ensure_anonymous_speakers_present(pool, &ctx.call_id, &merged).await;
+
+    // 6. Stage RecognizeSpeakers — WeSpeaker cluster (B3.x) переиспользуется
+    //    как для cloud-движка. Diarization для local пока упрощённая (system
+    //    track всё в speaker:0) — кластер видит «одного» дополнительного спикера
+    //    но это ок: voice biometrics matching работает на сэмплах per-call.
+    let cluster_result = run_stage(
+        pool,
+        Some(app),
+        &ctx.call_id,
+        Stage::RecognizeSpeakers,
+        None,
+        async { stage_recognize_speakers(pool, ctx, &merged).await },
+    )
+    .await;
+    if let Err(e) = cluster_result {
+        log::warn!(
+            "cluster pipeline {} failed (non-fatal — skip voice match): {e}",
+            ctx.call_id
+        );
+    }
+
+    if let Err(e) = run_auto_bind(pool, Some(app), &ctx.call_id, s).await {
+        log::warn!("auto_bind {} failed (non-fatal): {e}", ctx.call_id);
+    }
+
+    // 7. Stage Recap — local LLM. Failed_reason set + recap.md skipped при
+    //    ошибке; pipeline всё равно завершает Ok(()) (M4 паспорта — recap
+    //    деривативная штука, регенерация по кнопке).
+    let recap_step = Stage::Recap.step();
+    emit_progress(pool, Some(app), &ctx.call_id, recap_step, 0, None, None).await;
+
+    let known_speakers = recap::build_known_speakers_block(pool, &ctx.call_id)
+        .await
+        .ok()
+        .flatten();
+    // PRD §M12.3.3: для маленькой модели используем LOCAL_LLM_SYSTEM_PROMPT
+    // («only JSON» + few-shot), не Anthropic-промпт. Cloud-prompt
+    // ([`recap::build_system_prompt`]) на 2-7B model'и часто ломается.
+    let system_prompt = format!(
+        "{LOCAL_LLM_SYSTEM_PROMPT}\n\nLang: {lang}\n{known}",
+        lang = lang_detected.as_deref().unwrap_or("ru"),
+        known = known_speakers
+            .as_deref()
+            .map(|s| format!("\n## Known participants\n{s}"))
+            .unwrap_or_default()
+    );
+
+    // Transcript.md обязан существовать — `stage_merge_artifacts` его пишет.
+    // Если файл недоступен (race / disk issue), recap должен fail с явным
+    // reason, а не silently дёрнуть LLM на пустом входе (получится пустой recap).
+    let llm_result = match tokio::fs::read_to_string(ctx.call_dir.join("transcript.md")).await {
+        Ok(transcript_md) if !transcript_md.trim().is_empty() => {
+            let llm = LocalLlamaProvider::for_preset(&ctx.app_data_dir, llm_id)
+                .with_app(app.clone())
+                .await;
+            llm.generate(LlmRequest {
+                model: None,
+                system: system_prompt,
+                input: transcript_md,
+                max_tokens: Some(4096),
+            })
+            .await
+        }
+        Ok(_) => Err(crate::providers::llm::LlmError::Provider(
+            "local_engine_transcript_empty".into(),
+        )),
+        Err(e) => Err(crate::providers::llm::LlmError::Provider(format!(
+            "local_engine_transcript_read: {e}"
+        ))),
+    };
+
+    match llm_result {
+        Ok(json_value) => {
+            if let Err(e) =
+                recap::persist_recap_from_json(pool, &ctx.call_id, &ctx.call_dir, json_value).await
+            {
+                let _ = db::set_recap_failed_reason(
+                    pool,
+                    &ctx.call_id,
+                    Some(&format!("local_engine_recap_persist: {e}")),
+                )
+                .await;
+            } else {
+                let _ = db::set_recap_failed_reason(pool, &ctx.call_id, None).await;
+                // Storage UI «активно X дней назад».
+                let _ = models::touch_usage(pool, whisper_id.as_str()).await;
+                let _ = models::touch_usage(pool, llm_id.as_str()).await;
+            }
+        }
+        Err(e) => {
+            let reason = format!("local_engine_llm_failed: {e}");
+            log::warn!("{reason}");
+            let _ = db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await;
+        }
+    }
+    emit_progress(pool, Some(app), &ctx.call_id, recap_step, 100, None, None).await;
 
     Ok(())
 }
@@ -871,6 +1108,11 @@ mod tests {
             proxy_base_url: DEFAULT_PROXY_BASE_URL.into(),
             preferred_language: "auto".into(),
             auto_bind,
+            // [M12.6] Тесты этого модуля проверяют auto_bind, не engine
+            // routing — фиксируем CloudManaged чтобы избежать fail-fast
+            // ветки в run_inner.
+            #[cfg(target_os = "macos")]
+            engine: crate::local_engine::engine::EngineKind::CloudManaged,
         }
     }
 
@@ -1019,6 +1261,95 @@ mod tests {
         assert!(
             after.failed_reason.as_deref() != Some("стрый fail"),
             "старый failed_reason должен быть перезаписан"
+        );
+    }
+
+    // ============================================================
+    // [M12.6 Phase 2] EngineKind::Local — fail-fast guard
+    // ============================================================
+
+    /// [M12.6 Phase 3] Local engine route без AppHandle (headless test
+    /// runner) должен вернуть осмысленную ошибку, а не паниковать. Сейчас
+    /// run_local_inner требует AppHandle для shell sidecar — без него Err
+    /// с маркером `local_engine_no_app_handle`.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn pipeline_run_requires_app_handle_for_local_engine() {
+        let db = fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let device = arc_device("dev-1");
+
+        let engine = crate::local_engine::engine::load_or_default(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            engine,
+            crate::local_engine::engine::EngineKind::Local,
+            "migration 0011 должна выставить Local для свежей установки"
+        );
+
+        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        let ctx = PipelineCtx {
+            call_id: call.id.clone(),
+            call_dir: tmpdir.path().join(&call.id),
+            mic_path: tmpdir.path().join("mic.wav"),
+            system_path: tmpdir.path().join("sys.wav"),
+            device_id: device,
+            app_data_dir: tmpdir.path().to_path_buf(),
+        };
+
+        let result = run(&db.pool, ctx, None).await;
+        let err = result.expect_err("Local engine без app handle → Err");
+        let s = err.to_string();
+        assert!(
+            s.contains("local_engine_no_app_handle"),
+            "ожидаемый маркер local_engine_no_app_handle, got: {s}"
+        );
+
+        let after = db::get_call(&db.pool, &call.id)
+            .await
+            .unwrap()
+            .expect("call row");
+        assert_eq!(after.status, "failed");
+    }
+
+    /// Контр-кейс: если пользователь явно переключился на CloudManaged
+    /// (через Settings M12.5), pipeline идёт по обычному cloud-пути и
+    /// упирается в отсутствие аудио — НЕ в engine fail-fast.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn pipeline_run_does_not_fail_fast_when_cloud_managed_active() {
+        let db = fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let device = arc_device("dev-1");
+
+        // Переключаем engine на CloudManaged (имитация Settings UI swap).
+        crate::local_engine::engine::save(
+            &db.pool,
+            crate::local_engine::engine::EngineKind::CloudManaged,
+        )
+        .await
+        .unwrap();
+
+        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        let ctx = PipelineCtx {
+            call_id: call.id.clone(),
+            call_dir: tmpdir.path().join(&call.id),
+            mic_path: tmpdir.path().join("mic.wav"),
+            system_path: tmpdir.path().join("sys.wav"),
+            device_id: device,
+            app_data_dir: tmpdir.path().to_path_buf(),
+        };
+
+        let _ = run(&db.pool, ctx, None).await;
+        let after = db::get_call(&db.pool, &call.id)
+            .await
+            .unwrap()
+            .expect("call row");
+        let reason = after.failed_reason.as_deref().unwrap_or("");
+        assert!(
+            !reason.contains("local_engine_not_yet_wired"),
+            "при CloudManaged engine fail-fast НЕ должен срабатывать, got: {reason}"
         );
     }
 }

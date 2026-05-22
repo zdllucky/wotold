@@ -35,6 +35,10 @@ mod llm_hint;
 mod matching;
 #[allow(dead_code)]
 mod merge_signals;
+// [M12] Локальный движок (PRD M12). Расположен macOS-only — на других
+// платформах cfg внутри `local_engine/mod.rs` оставляет модуль пустым (R9).
+#[cfg(target_os = "macos")]
+mod local_engine;
 mod pipeline;
 mod providers;
 mod secrets;
@@ -461,9 +465,8 @@ pub fn run() {
             // background to RGBA(0,0,0,0) пилл-окно выглядит как
             // прозрачный pill ВНУТРИ непрозрачного 320×84 прямоугольника.
             if let Some(widget) = tauri::Manager::get_webview_window(app, "recording-widget") {
-                if let Err(e) = widget.set_background_color(Some(tauri::webview::Color(
-                    0, 0, 0, 0,
-                ))) {
+                if let Err(e) = widget.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)))
+                {
                     log::warn!("widget set_background_color transparent failed: {e}");
                 }
             }
@@ -601,6 +604,27 @@ pub fn run() {
             commands::disable_call_detect,
             #[cfg(target_os = "macos")]
             commands::is_call_detect_enabled,
+            // [M12.4] Local engine model catalog + preset (macOS only — R9).
+            #[cfg(target_os = "macos")]
+            commands::local_engine_list_catalog,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_model_status,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_model_download,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_model_delete,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_get_active_preset,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_set_active_preset,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_hw_probe,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_get_active_engine,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_set_active_engine,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_storage_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

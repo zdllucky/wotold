@@ -113,6 +113,19 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
         .await
         .map_err(|e| AppError::Other(format!("llm: {e}")))?;
 
+    persist_recap_from_json(pool, ctx.call_id, ctx.call_dir, json_value).await
+}
+
+/// [M12.6 Phase 3] Извлечь action_items + title + recap.md из готового JSON.
+/// Используется обоими LLM-путями (Anthropic через proxy + LocalLlamaProvider)
+/// чтобы post-processing был идентичный. Cloud path вызывает после
+/// `provider.generate()`, local path — из `pipeline::run_local_inner`.
+pub async fn persist_recap_from_json(
+    pool: &SqlitePool,
+    call_id: &str,
+    call_dir: &Path,
+    json_value: serde_json::Value,
+) -> Result<(), AppError> {
     let recap: RecapJson = serde_json::from_value(json_value)
         .map_err(|e| AppError::Other(format!("recap JSON shape: {e}")))?;
 
@@ -136,16 +149,16 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
         })
         .collect();
 
-    db::replace_action_items(pool, ctx.call_id, &action_inputs).await?;
+    db::replace_action_items(pool, call_id, &action_inputs).await?;
 
     // [B17 V4.0] Persist generated title в calls.title. Игнорируем пустой
     // (LLM мог не вытянуть осмысленный headline) — fallback на дату в UI.
     if !recap.title.trim().is_empty() {
-        db::set_call_title(pool, ctx.call_id, &recap.title).await?;
+        db::set_call_title(pool, call_id, &recap.title).await?;
     }
 
     let md = render_recap_md(&recap, &contacts, &action_inputs);
-    tokio::fs::write(ctx.call_dir.join("recap.md"), md).await?;
+    tokio::fs::write(call_dir.join("recap.md"), md).await?;
 
     Ok(())
 }
@@ -171,7 +184,10 @@ fn match_contact_id(contacts: &[db::Contact], hint: &str) -> Option<String> {
         .map(|c| c.id.clone())
 }
 
-fn build_system_prompt(lang_detected: Option<&str>, known_speakers: Option<&str>) -> String {
+pub(crate) fn build_system_prompt(
+    lang_detected: Option<&str>,
+    known_speakers: Option<&str>,
+) -> String {
     let lang = lang_detected.unwrap_or("ru");
     let known_block = known_speakers
         .map(|s| format!("\n\n## Known participants\n{s}"))
@@ -229,7 +245,7 @@ Read the diarized transcript and produce ONE valid JSON object (NO markdown fenc
 /// Собирает «Known participants» блок для LLM-контекста: для каждой
 /// подтверждённой привязки speaker_tag → contact выводит строку с display_name
 /// + опц. org/role. Если привязок нет — None (блок не добавляется).
-async fn build_known_speakers_block(
+pub(crate) async fn build_known_speakers_block(
     pool: &SqlitePool,
     call_id: &str,
 ) -> Result<Option<String>, AppError> {

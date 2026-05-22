@@ -1,0 +1,195 @@
+//! [M12.4.2] Tauri commands для local-engine model catalog + preset.
+//!
+//! Frontend (Settings UI, M12.5) дёргает:
+//!
+//! - `local_engine_model_status(id)` — per-model snapshot
+//! - `local_engine_model_download(id)` — start download (idempotent)
+//! - `local_engine_model_delete(id)` — disk cleanup
+//! - `local_engine_get_active_preset()` — current setting (`null` до выбора)
+//! - `local_engine_set_active_preset(preset)` — atomic swap + сообщает какие
+//!   модели надо доскачать (фронт сам зовёт `model_download`)
+//! - `local_engine_list_catalog()` — для UI рендера list-modal «Освободить место»
+//!
+//! Все ошибки → `AppError` маппятся на string в bindings (см. error.rs). На
+//! не-macOS платформах модуль не компилируется (R9) — commands отдают
+//! `unimplemented` через cfg-gate.
+
+#![cfg(target_os = "macos")]
+
+use serde::Serialize;
+use tauri::{AppHandle, State};
+
+use crate::{
+    local_engine::{
+        engine::{self, EngineKind},
+        hw_probe::{self, HwReport},
+        models::{self, ModelKind, ModelStatus, MODEL_CATALOG},
+        preset::{LocalEnginePreset, PresetSpec, SETTING_ACTIVE_PRESET},
+    },
+    state::AppState,
+    AppError,
+};
+
+/// Settings KV ключ для cached `HwReport` JSON (PRD §M12.7.1).
+const SETTING_HW_REPORT: &str = "local_engine.hw_report";
+
+#[derive(Serialize)]
+pub struct CatalogEntry {
+    pub id: &'static str,
+    pub kind: ModelKind,
+    pub display_name: &'static str,
+    pub size_bytes: u64,
+    pub license_url: &'static str,
+}
+
+#[tauri::command]
+pub fn local_engine_list_catalog() -> Vec<CatalogEntry> {
+    MODEL_CATALOG
+        .iter()
+        .map(|m| CatalogEntry {
+            id: m.id.as_str(),
+            kind: m.kind,
+            display_name: m.display_name,
+            size_bytes: m.size_bytes,
+            license_url: m.license_url,
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub async fn local_engine_model_status(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<ModelStatus, AppError> {
+    models::check_status(&state.app_data_dir, &id).await
+}
+
+/// [M12.4.4-bis] Сводная таблица для Storage management UI:
+/// каталог + статус на диске + last_used_at + badge активности.
+#[derive(Serialize)]
+pub struct StorageRow {
+    pub id: &'static str,
+    pub kind: ModelKind,
+    pub display_name: &'static str,
+    pub size_bytes: u64,
+    pub status: ModelStatus,
+    pub last_used_at: Option<String>,
+    /// `true` если модель входит в текущий active preset.
+    pub is_active: bool,
+}
+
+#[tauri::command]
+pub async fn local_engine_storage_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<StorageRow>, AppError> {
+    let usage = models::list_usage(&state.db).await?;
+    let active_preset = crate::db::get_setting(&state.db, SETTING_ACTIVE_PRESET)
+        .await?
+        .as_deref()
+        .and_then(LocalEnginePreset::from_str);
+    let active_ids: [Option<&'static str>; 2] = active_preset
+        .map(|p| {
+            [
+                Some(p.whisper_model_id().as_str()),
+                Some(p.llm_model_id().as_str()),
+            ]
+        })
+        .unwrap_or([None, None]);
+
+    let mut rows = Vec::with_capacity(MODEL_CATALOG.len());
+    for entry in MODEL_CATALOG.iter() {
+        let status = models::check_status(&state.app_data_dir, entry.id.as_str()).await?;
+        rows.push(StorageRow {
+            id: entry.id.as_str(),
+            kind: entry.kind,
+            display_name: entry.display_name,
+            size_bytes: entry.size_bytes,
+            status,
+            last_used_at: usage.get(entry.id.as_str()).cloned(),
+            is_active: active_ids.iter().any(|a| *a == Some(entry.id.as_str())),
+        });
+    }
+    Ok(rows)
+}
+
+#[tauri::command]
+pub async fn local_engine_model_download(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    id: String,
+) -> Result<(), AppError> {
+    models::download(&state.app_data_dir, &id, Some(&app)).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn local_engine_model_delete(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), AppError> {
+    models::delete(&state.app_data_dir, &id).await
+}
+
+#[tauri::command]
+pub async fn local_engine_get_active_preset(
+    state: State<'_, AppState>,
+) -> Result<Option<PresetSpec>, AppError> {
+    let raw = crate::db::get_setting(&state.db, SETTING_ACTIVE_PRESET).await?;
+    Ok(raw
+        .as_deref()
+        .and_then(LocalEnginePreset::from_str)
+        .map(PresetSpec::from))
+}
+
+#[tauri::command]
+pub async fn local_engine_set_active_preset(
+    state: State<'_, AppState>,
+    preset: String,
+) -> Result<PresetSpec, AppError> {
+    let parsed = LocalEnginePreset::from_str(&preset)
+        .ok_or_else(|| AppError::Other(format!("unknown preset: {preset}")))?;
+    crate::db::set_setting(&state.db, SETTING_ACTIVE_PRESET, parsed.as_str()).await?;
+    Ok(PresetSpec::from(parsed))
+}
+
+/// [M12.6] Текущий engine — `local | cloud_managed | cloud_byo`.
+#[tauri::command]
+pub async fn local_engine_get_active_engine(
+    state: State<'_, AppState>,
+) -> Result<EngineKind, AppError> {
+    engine::load_or_default(&state.db).await
+}
+
+/// [M12.6] Atomic swap engine. Влияет на следующую запись; старые звонки
+/// сохраняют свой движок (PRD §M12.6.6).
+#[tauri::command]
+pub async fn local_engine_set_active_engine(
+    state: State<'_, AppState>,
+    engine: String,
+) -> Result<EngineKind, AppError> {
+    let parsed = EngineKind::from_str(&engine)
+        .ok_or_else(|| AppError::Other(format!("unknown engine: {engine}")))?;
+    engine::save(&state.db, parsed).await
+}
+
+/// [M12.7] Hardware probe + cache. Первый вызов делает реальный probe и
+/// сохраняет JSON в settings; последующие отдают из кэша (UI hint: «обновить»
+/// доступен через `force=true`).
+#[tauri::command]
+pub async fn local_engine_hw_probe(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> Result<HwReport, AppError> {
+    if !force.unwrap_or(false) {
+        if let Some(json) = crate::db::get_setting(&state.db, SETTING_HW_REPORT).await? {
+            if let Ok(report) = serde_json::from_str::<HwReport>(&json) {
+                return Ok(report);
+            }
+        }
+    }
+    let report = hw_probe::probe_hardware();
+    let json = serde_json::to_string(&report)
+        .map_err(|e| AppError::Other(format!("hw_report serialize: {e}")))?;
+    crate::db::set_setting(&state.db, SETTING_HW_REPORT, &json).await?;
+    Ok(report)
+}

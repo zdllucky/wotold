@@ -17,6 +17,9 @@ use sqlx::SqlitePool;
 
 use crate::{db, AppError};
 
+#[cfg(target_os = "macos")]
+use crate::local_engine::engine::{self, EngineKind};
+
 // === Setting keys (private — наружу только typed PipelineSettings) ===
 
 const SETTING_STT_PROVIDER: &str = "stt_provider";
@@ -60,6 +63,12 @@ pub struct PipelineSettings {
     pub proxy_base_url: String,
     pub preferred_language: String,
     pub auto_bind: Option<AutoBindConfig>,
+    /// [M12.6] Активный engine — резюмирует выбор пользователя в Settings →
+    /// «Движок распознавания». На macOS читается из `local_engine.active`
+    /// (наследие из миграции 0011 + Settings UI M12.5). На не-macOS — всегда
+    /// `cloud_managed` (R9 — local движок недоступен).
+    #[cfg(target_os = "macos")]
+    pub engine: EngineKind,
 }
 
 impl PipelineSettings {
@@ -99,6 +108,9 @@ impl PipelineSettings {
             None
         };
 
+        #[cfg(target_os = "macos")]
+        let engine = engine::load_or_default(pool).await?;
+
         Ok(Self {
             stt_provider,
             provider_path,
@@ -107,6 +119,8 @@ impl PipelineSettings {
             proxy_base_url,
             preferred_language,
             auto_bind,
+            #[cfg(target_os = "macos")]
+            engine,
         })
     }
 
@@ -300,6 +314,8 @@ mod tests {
             proxy_base_url: DEFAULT_PROXY_BASE_URL.into(),
             preferred_language: lang.into(),
             auto_bind: None,
+            #[cfg(target_os = "macos")]
+            engine: EngineKind::CloudManaged,
         }
     }
 }

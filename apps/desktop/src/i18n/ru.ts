@@ -105,6 +105,13 @@ const ruInternal = {
     updateAvailable: 'Доступна версия {version} (сейчас {current}).',
     updateInstall: 'Обновить сейчас',
     updateInstalling: 'Устанавливаем…',
+    // [M12.7.5] Local-engine announcement для existing users.
+    engineAnnouncementAria: 'Появился локальный режим',
+    engineAnnouncementTitle: 'Появился локальный режим',
+    engineAnnouncementBody:
+      'Теперь Wotold может работать полностью на устройстве, без облака — бесплатно навсегда. Попробовать?',
+    engineAnnouncementOpen: 'Открыть',
+    engineAnnouncementDismiss: 'Позже',
     channelMic: 'Вы · микрофон',
     channelSystem: 'Собеседник · системный звук',
     waveformFmt: '16 кГц моно · WAV · {time}',
@@ -384,6 +391,7 @@ const ruInternal = {
     sectionAppearance: 'Внешний вид',
     sectionAccount: 'Учётная запись',
     sectionPermissions: 'Разрешения',
+    sectionEngine: 'Движок распознавания',
     sectionStt: 'Распознавание речи',
     sectionPath: 'Источник сервисов',
     sectionKeys: 'Ключи (BYO)',
@@ -410,6 +418,9 @@ const ruInternal = {
     permissionsTitle: 'Разрешения системы.',
     permissionsLede:
       'Wotold нужны два разрешения macOS: микрофон и запись экрана для системного звука. Без них запись не начнётся.',
+    engineTitle: 'Движок распознавания.',
+    engineLede:
+      'Где обрабатываются ваши звонки. Локальный — бесплатно и без сети, всё на устройстве. Облачный — лучшее качество, требуется интернет.',
     sttTitle: 'Распознавание речи.',
     sttLede:
       'Поставщик STT и язык вывода для рекапа. Auto переключается между Soniox и Gladia при сбоях.',
@@ -600,6 +611,75 @@ const ruInternal = {
       'SHA256 не совпал — файл повреждён или сменилась версия модели. Попробуй снова.',
   },
 
+  // ── Local engine (M12) ──────────────────────────────────────────────────
+  localEngine: {
+    engineLabel: 'Где обрабатывать звонки',
+    engine: {
+      local: {
+        title: 'Локально на устройстве',
+        body: 'Без сети, без оплат, ваши данные не покидают Mac. Скачиваются модели один раз.',
+        quality: '●●○ качество',
+      },
+      cloud_managed: {
+        title: 'Облако Wotold (Pro)',
+        body: 'Лучшее качество, быстро, без локальной нагрузки. Требуется интернет.',
+        quality: '●●● качество',
+      },
+      cloud_byo: {
+        title: 'Свои ключи провайдеров',
+        body: 'Напрямую к Soniox / Anthropic своими API-ключами. Без квоты Wotold.',
+        quality: '●●● качество',
+      },
+    },
+    presetLabel: 'Сборка моделей',
+    preset: {
+      light: 'Light · быстро на любом Mac',
+      balanced: 'Balanced · оптимально для 16 ГБ',
+      quality: 'Quality · максимум, нужно 16+ ГБ',
+    },
+    statusInstalled: 'установлено',
+    statusDownloading: 'качаем…',
+    statusAbsent: 'не установлено',
+    installedFootprint: 'Установлено: {size}',
+    manageStorage: 'Освободить место',
+    storageTitle: 'Хранилище моделей',
+    storageLede:
+      'Что установлено локально. Удалите неиспользуемые модели чтобы освободить место. Wotold не удаляет модели сам.',
+    storageFootnote: 'Удаление не трогает уже обработанные звонки.',
+    colName: 'Модель',
+    colSize: 'Размер',
+    colLastUsed: 'Активно',
+    colState: 'Статус',
+    download: 'Скачать',
+    downloadAria: 'Скачать {name}',
+    delete: 'Удалить',
+    deleteAria: 'Удалить {name}',
+    close: 'Закрыть',
+    statusActive: 'активна',
+    statusCorrupted: 'повреждена',
+    deleteActiveConfirmTitle: 'Удалить активную модель?',
+    deleteActiveConfirmMsg:
+      'Модель {id} используется текущей сборкой. Удаление переключит сборку. Продолжить?',
+    qualityConfirmTitle: 'Quality на этом Mac',
+    qualityConfirmMsg:
+      'Quality рассчитан на 16+ ГБ оперативной памяти. На вашем Mac обработка может быть очень медленной. Всё равно использовать?',
+    deleteConfirmTitle: 'Удалить модель',
+    deleteConfirmMsg: 'Удалить {id} с диска? Скачать можно будет снова.',
+    verifyFailed: 'Контрольная сумма не совпала для {id} — файл повреждён, попробуйте снова.',
+    hwBannerTitle: 'Рекомендация по железу',
+    hwBannerBody:
+      'У вас {cpu} · {ram} ГБ. Лучше всего подойдёт сборка {preset}.',
+    hwBannerApply: 'Применить',
+    hwBannerDismiss: 'Скрыть',
+    probeSummary: '{cpu} · {ram} ГБ · {metal} — рекомендуем {preset}',
+    probeMetalYes: 'Metal',
+    probeMetalNo: 'без Metal',
+    reprobe: 'Переоценить',
+    // ── M12.7.3 Onboarding engine step ───────────────────────────────────
+    // (вложено сюда так как онбординг строит ключи `onboarding.engine.*`,
+    //  но они логически часть local-engine модуля)
+  },
+
   // ── Onboarding ──────────────────────────────────────────────────────────
   onboarding: {
     stepLabel: 'Шаг 0{step} из 0{total} · {label}',
@@ -618,7 +698,8 @@ const ruInternal = {
     feature1: '— Запись микрофона и системного звука раздельно',
     feature2: '— Расшифровка с распознаванием участников',
     feature3: '— Авто-саммари и список задач',
-    feature4: '— Поиск по разговорам прямо в Claude через MCP',
+    feature4: '— Локально на устройстве, бесплатно, без сети',
+    feature5: '— Поиск по разговорам прямо в Claude через MCP',
     fieldName: 'Имя',
     fieldRole: 'Роль',
     fieldGreeting: 'Краткое представление',
@@ -629,6 +710,37 @@ const ruInternal = {
     enterName: 'Введи имя.',
     consentBody:
       'Wotold будет записывать твой микрофон и звук собеседника во время звонков. Перед началом убедись, что собеседник предупреждён о записи. По закону РФ/РК запись переговоров без уведомления может быть нарушением.',
+    // [M12.7.3] Engine setup step (macOS only — между Owner и Permissions+Consent).
+    engineStepLabel: 'Движок',
+    engineHeadline: 'Подбираем\nдвижок под Mac.',
+    engineLede:
+      'Wotold может работать полностью локально, без отправки звонков в облако. Подобрали оптимальный для вашего железа.',
+    engine: {
+      probeEyebrow: 'Ваш Mac',
+      downloadCta: 'Скачать и продолжить (~{size} GB)',
+      chooseAnotherCta: 'Выбрать другой пресет',
+      collapsePickerCta: 'Скрыть пресеты',
+      useCloudCta: 'Использовать облако вместо локального',
+      downloadingLabel: 'Качаем {id}',
+      cancelDownloadCta: 'Отменить и продолжить с облаком',
+      verifyFailed: 'Контрольная сумма не совпала для {id}. Попробуйте ещё раз.',
+      recommendedTag: 'РЕКОМ.',
+      feat: {
+        light: {
+          stt: 'Whisper Small — быстрое распознавание',
+          llm: 'Qwen 1.5B — компактные саммари',
+        },
+        balanced: {
+          stt: 'Whisper Medium — высокая точность',
+          llm: 'Qwen 3B — точные саммари',
+        },
+        quality: {
+          stt: 'Whisper Large v3 — максимум',
+          llm: 'Qwen 7B — лучшее качество',
+        },
+      },
+      featSpeakers: 'Распознаёт до 4 голосов',
+    },
     saving: 'Сохраняем…',
     finishBtn: 'Готово',
     stepAria: 'Шаг {step} из {total}',
