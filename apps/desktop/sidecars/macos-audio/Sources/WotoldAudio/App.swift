@@ -2,12 +2,14 @@ import Foundation
 
 // JSON line protocol:
 //   stdin  →  { "cmd": "start", "mic_path": "/abs/mic.wav", "system_path": "/abs/system.wav" }
+//             { "cmd": "rotate", "next_mic_path": "/abs/...", "next_system_path": "/abs/..." }
 //             { "cmd": "stop" }
 //             { "cmd": "ping" }
 //             { "cmd": "call_detect_start" }   [S2] standalone probe mode
 //             { "cmd": "call_detect_stop"  }
 //   stdout ←  { "event": "started" }
 //             { "event": "level", "mic": 0.12, "system": 0.34 }  [B14] каждые 100ms
+//             { "event": "rotated", "duration_sec": N, "mic_bytes": N, "system_bytes": N }
 //             { "event": "stopped", "duration_sec": N, "mic_bytes": N, "system_bytes": N }
 //             { "event": "error",   "message": "..." }
 //             { "event": "pong" }
@@ -126,6 +128,38 @@ struct WotoldAudioMain {
                 }
                 emit(["event": "started"])
                 startLevelTimer(mic: mic, system: system)
+
+            case "rotate":
+                // [M13] Атомарный chunk-rotation: flush+close current WAV,
+                // open new one. Tap/IOProc остаются активными, latestRms +
+                // level-timer тоже продолжают работать без перерыва.
+                guard let nextMic = obj["next_mic_path"] as? String,
+                      let nextSystem = obj["next_system_path"] as? String,
+                      !nextMic.isEmpty, !nextSystem.isEmpty
+                else {
+                    emitError("next_mic_path and next_system_path required for rotate")
+                    continue
+                }
+                let micResult: (durationSec: Double, micBytes: UInt64)
+                do {
+                    micResult = try mic.rotate(to: URL(fileURLWithPath: nextMic))
+                } catch {
+                    emitError("mic rotate failed: \(error.localizedDescription)")
+                    continue
+                }
+                let sysBytes: UInt64
+                do {
+                    sysBytes = try system.rotate(to: URL(fileURLWithPath: nextSystem))
+                } catch {
+                    emitError("system rotate failed: \(error.localizedDescription)")
+                    continue
+                }
+                emit([
+                    "event": "rotated",
+                    "duration_sec": micResult.durationSec,
+                    "mic_bytes": Int(micResult.micBytes),
+                    "system_bytes": Int(sysBytes),
+                ])
 
             case "stop":
                 stopLevelTimer()

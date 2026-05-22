@@ -134,6 +134,34 @@ pub async fn start(
 }
 
 /// Отправляет stop команду, ждёт `stopped` через terminal channel, закрывает sidecar.
+/// [M13.1.2] Атомарный chunk-rotation: close current WAV + open new ones.
+/// Sidecar emit'ит `rotated` event обратно через dispatcher, который
+/// конвертирует его в Tauri webview event `audio:rotated` для orchestrator.
+///
+/// Phase 1 foundation: fire-and-forget — НЕ await'аем ack. Phase 1.5 добавит
+/// proper rotate_pending channel в session для синхронной верификации что
+/// файл закрыт перед enqueue'ом pipeline-job'а. Сейчас orchestrator должен
+/// слушать `audio:rotated` event на Tauri side.
+pub async fn rotate(
+    session: &mut RecordingSession,
+    next_mic_path: PathBuf,
+    next_system_path: PathBuf,
+) -> Result<(), AppError> {
+    let cmd = serde_json::json!({
+        "cmd": "rotate",
+        "next_mic_path": next_mic_path.to_string_lossy(),
+        "next_system_path": next_system_path.to_string_lossy(),
+    })
+    .to_string()
+        + "\n";
+    session
+        .child
+        .write(cmd.as_bytes())
+        .map_err(|e| AppError::Other(format!("sidecar rotate write failed: {e}")))?;
+    // Phase 1: ack приходит через dispatcher → audio:rotated Tauri event.
+    Ok(())
+}
+
 pub async fn stop(mut session: RecordingSession) -> Result<StopResult, AppError> {
     let stop_cmd = b"{\"cmd\":\"stop\"}\n";
     session
@@ -210,6 +238,13 @@ async fn run_dispatcher(
                                 as f32,
                         };
                         EventBus::new(Some(&app)).audio_level(&payload);
+                    }
+                    "rotated" => {
+                        // [M13.1.2] Sidecar закрыл предыдущий chunk WAV и открыл
+                        // новый. Эмитим Tauri webview event чтобы orchestrator
+                        // (frontend или Rust-side listener) enqueue'ил pipeline
+                        // job на закрытый chunk файл.
+                        EventBus::new(Some(&app)).audio_rotated(&json);
                     }
                     "stopped" | "error" => {
                         if let Some(tx) = terminal_tx.take() {

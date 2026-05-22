@@ -58,11 +58,14 @@ final class AudioRecorder {
 
         let writer = try WAVWriter(url: micURL, sampleRate: 16_000, channels: 1)
 
+        // [M13] processBuffer читает writer/converter/outFormat из self.*, а не
+        // из captured params — это позволяет атомарно swap'нуть self.wavWriter
+        // в rotate(to:) без замены закрытого tap'а.
         input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
             [weak self] inBuffer, _ in
             guard let self else { return }
             self.queue.async { [weak self] in
-                self?.processBuffer(inBuffer, converter: conv, outFormat: outFormat, writer: writer)
+                self?.processBuffer(inBuffer)
             }
         }
 
@@ -88,12 +91,14 @@ final class AudioRecorder {
         flushTimer = timer
     }
 
-    private func processBuffer(
-        _ inBuffer: AVAudioPCMBuffer,
-        converter: AVAudioConverter,
-        outFormat: AVAudioFormat,
-        writer: WAVWriter
-    ) {
+    private func processBuffer(_ inBuffer: AVAudioPCMBuffer) {
+        // Reads writer/converter/outFormat из self.* — rotate(to:) может
+        // атомарно swap'нуть wavWriter под нами без замены tap'а.
+        guard let converter = self.converter,
+              let outFormat = self.outputFormat,
+              let writer = self.wavWriter
+        else { return }
+
         // Грубая оценка capacity: ratio sample rates × входные кадры + запас.
         let ratio = outFormat.sampleRate / inBuffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(inBuffer.frameLength) * ratio) + 1024
@@ -134,6 +139,34 @@ final class AudioRecorder {
 
         // [B14] RMS post-write — frontend читает latestRms через эмит таймер.
         latestRms = computeInt16Rms(outBuffer)
+    }
+
+    /// [M13] Атомарно завершает текущий chunk WAV и открывает новый. Tap
+    /// остаётся installed, processBuffer продолжает писать в self.wavWriter
+    /// который мы только что подменили. Sync executes на queue — гарантирует
+    /// что между close-old и open-new в processBuffer не зайдёт другой buffer.
+    /// Возвращает duration + bytes ПРЕДЫДУЩЕГО chunk'а.
+    func rotate(to url: URL) throws -> (durationSec: Double, micBytes: UInt64) {
+        return try queue.sync { [weak self] in
+            guard let self = self, self.engine != nil else {
+                throw NSError(
+                    domain: "WotoldAudio",
+                    code: 10,
+                    userInfo: [NSLocalizedDescriptionKey: "rotate called before start"]
+                )
+            }
+            // Close current chunk.
+            try self.wavWriter?.close()
+            let oldDuration = self.startTime.map { Date().timeIntervalSince($0) } ?? 0
+            let oldBytes = self.bytesWritten
+
+            // Open new chunk WAV — same format (16kHz mono i16).
+            let newWriter = try WAVWriter(url: url, sampleRate: 16_000, channels: 1)
+            self.wavWriter = newWriter
+            self.startTime = Date()
+            self.bytesWritten = 0
+            return (durationSec: oldDuration, micBytes: oldBytes)
+        }
     }
 
     func stop() throws -> (durationSec: Double, micBytes: UInt64) {
