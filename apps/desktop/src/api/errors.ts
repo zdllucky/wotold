@@ -60,7 +60,7 @@ const PATTERNS: ErrorPattern[] = [
   {
     match: /(screen[\s-]?cap|screencapture|screenrecording|nsscreen)/i,
     human: 'Нет доступа к записи системного звука.',
-    hint: 'Открой Настройки → Запись экрана и включи Wotold, потом перезапусти приложение.',
+    hint: 'Открой Настройки → Захват системного звука и включи Wotold, потом перезапусти приложение.',
   },
 
   // Recording

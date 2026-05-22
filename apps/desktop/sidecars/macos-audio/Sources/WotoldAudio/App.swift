@@ -42,7 +42,8 @@ struct WotoldAudioMain {
     // [B14] Start a 100ms repeating timer that emits {"event":"level"} с
     // current RMS из mic + system recorders. Idempotent — повторный вызов
     // переустанавливает таймер.
-    static func startLevelTimer(mic: AudioRecorder, system: SystemAudioRecorder) {
+    @available(macOS 14.4, *)
+    static func startLevelTimer(mic: AudioRecorder, system: ProcessTapRecorder) {
         stopLevelTimer()
         let t = DispatchSource.makeTimerSource(queue: levelQueue)
         t.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
@@ -63,7 +64,11 @@ struct WotoldAudioMain {
 
     static func main() async {
         let mic = AudioRecorder()
-        let system = SystemAudioRecorder()
+        guard #available(macOS 14.4, *) else {
+            emitError("macOS 14.4+ required for system audio capture (Core Audio Process Tap)")
+            return
+        }
+        let system = ProcessTapRecorder()
 
         while let line = readLine(strippingNewline: true) {
             if line.isEmpty { continue }
@@ -91,6 +96,9 @@ struct WotoldAudioMain {
                 }
                 if target == "screen_recording" || target == "all" {
                     _ = requestScreenRecordingAccess()
+                }
+                if target == "accessibility" || target == "all" {
+                    _ = requestAccessibilityAccess()
                 }
                 emit(permissionsEvent())
 

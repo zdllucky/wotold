@@ -15,42 +15,32 @@ import { ask } from '@tauri-apps/plugin-dialog';
 import { humanError } from '../api/errors';
 
 import {
-  AUTO_BIND_THRESHOLDS,
   CALL_DETECT_COOLDOWNS,
   getSetting,
   setSetting,
   PREFERRED_LANGUAGES,
   SETTINGS_DEFAULTS,
   SETTINGS_KEYS,
-  type AutoBindThreshold,
   type CallDetectCooldown,
   type PreferredLanguage,
-  type ProviderPath,
-  type SttProvider,
 } from '../api/settings';
 import { useI18n } from '../i18n';
-import { InputField, Select, Skeleton } from '../ui';
+import { Select, Skeleton } from '../ui';
 import { HotkeyCapture } from '../components/HotkeyCapture';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
-import { ByoKeysSection } from './ByoKeysSection';
 import { LocalEngineSection } from './LocalEngineSection';
 import { PermissionsSection } from './PermissionsSection';
-import { UsageSection } from './UsageSection';
 import { VoiceModelSection } from './VoiceModelSection';
 
 type SectionId =
   | 'account'
   | 'appearance'
   | 'permissions'
-  | 'engine'
-  | 'stt'
-  | 'path'
-  | 'keys'
-  | 'proxy'
-  | 'usage'
-  | 'voice'
+  | 'processing'
+  | 'recording'
+  | 'speakers'
   | 'privacy';
 
 interface SectionMeta {
@@ -59,39 +49,12 @@ interface SectionMeta {
   hidden?: boolean;
 }
 
-function isSttProvider(v: string | null): v is SttProvider {
-  return v === 'auto' || v === 'soniox' || v === 'gladia';
-}
-
-function isProviderPath(v: string | null): v is ProviderPath {
-  return v === 'managed' || v === 'byo';
-}
-
-function isValidProxyUrl(v: string): boolean {
-  if (!v) return true;
-  try {
-    const u = new URL(v);
-    return u.protocol === 'https:' || u.protocol === 'http:';
-  } catch {
-    return false;
-  }
-}
-
 export function SettingsPage() {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState<SectionId>('appearance');
-  const [sttProvider, setSttProvider] = useState<SttProvider>(SETTINGS_DEFAULTS.STT_PROVIDER);
-  const [providerPath, setProviderPath] = useState<ProviderPath>(SETTINGS_DEFAULTS.PROVIDER_PATH);
-  const [llmModel, setLlmModel] = useState<string>(SETTINGS_DEFAULTS.LLM_MODEL);
   const [preferredLanguage, setPreferredLanguage] = useState<PreferredLanguage>(
     SETTINGS_DEFAULTS.PREFERRED_LANGUAGE,
-  );
-  const [autoBindEnabled, setAutoBindEnabled] = useState<boolean>(
-    SETTINGS_DEFAULTS.AUTO_BIND_ENABLED,
-  );
-  const [autoBindThreshold, setAutoBindThreshold] = useState<AutoBindThreshold>(
-    SETTINGS_DEFAULTS.AUTO_BIND_THRESHOLD,
   );
   const [callDetectEnabled, setCallDetectEnabled] = useState<boolean>(
     SETTINGS_DEFAULTS.CALL_DETECT_ENABLED,
@@ -99,8 +62,6 @@ export function SettingsPage() {
   const [callDetectCooldown, setCallDetectCooldown] = useState<CallDetectCooldown>(
     SETTINGS_DEFAULTS.CALL_DETECT_COOLDOWN_MIN,
   );
-  const [proxyUrl, setProxyUrl] = useState<string>('');
-  const [proxyUrlError, setProxyUrlError] = useState<string | null>(null);
   // [W1] Hotkey settings — canonical string format ('Cmd+Shift+KeyR'). Пустая
   // = default из hotkey.ts. UI label/preview через HotkeyCapture.
   const [toggleHotkey, setToggleHotkey] = useState<string>('');
@@ -110,40 +71,14 @@ export function SettingsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [
-          stt,
-          path,
-          model,
-          proxy,
-          lang,
-          autoBind,
-          autoBindT,
-          toggleHk,
-          pauseHk,
-          cdEnabled,
-          cdCooldown,
-        ] = await Promise.all([
-          getSetting(SETTINGS_KEYS.STT_PROVIDER),
-          getSetting(SETTINGS_KEYS.PROVIDER_PATH),
-          getSetting(SETTINGS_KEYS.LLM_MODEL),
-          getSetting(SETTINGS_KEYS.PROXY_BASE_URL),
+        const [lang, toggleHk, pauseHk, cdEnabled, cdCooldown] = await Promise.all([
           getSetting(SETTINGS_KEYS.PREFERRED_LANGUAGE),
-          getSetting(SETTINGS_KEYS.AUTO_BIND_ENABLED),
-          getSetting(SETTINGS_KEYS.AUTO_BIND_THRESHOLD),
           getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE),
           getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE),
           getSetting(SETTINGS_KEYS.CALL_DETECT_ENABLED),
           getSetting(SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN),
         ]);
-        if (isSttProvider(stt)) setSttProvider(stt);
-        if (isProviderPath(path)) setProviderPath(path);
-        if (model) setLlmModel(model);
-        if (proxy) setProxyUrl(proxy);
         if (lang) setPreferredLanguage(lang as PreferredLanguage);
-        setAutoBindEnabled(autoBind === '1');
-        if (autoBindT && AUTO_BIND_THRESHOLDS.includes(autoBindT as AutoBindThreshold)) {
-          setAutoBindThreshold(autoBindT as AutoBindThreshold);
-        }
         if (toggleHk) setToggleHotkey(toggleHk);
         if (pauseHk) setPauseHotkey(pauseHk);
         setCallDetectEnabled(cdEnabled === '1');
@@ -203,21 +138,18 @@ export function SettingsPage() {
     );
   }
 
-  const effectiveProxyUrl = proxyUrl.trim() || SETTINGS_DEFAULTS.PROXY_BASE_URL;
-
+  // Sidebar — 7 sections. BYO path, proxy URL override, и usage спрятаны в UI:
+  // path хардкодим = 'managed', usage встроен в Processing (cloud branch).
   const NAV: SectionMeta[] = [
     { id: 'appearance', label: t('settings.sectionAppearance') },
     { id: 'account', label: t('settings.sectionAccount') },
-    // [M12.5.1] Engine picker — после Account, перед Permissions.
-    // Логически «вот ваш движок → вот разрешения для записи».
-    { id: 'engine', label: t('settings.sectionEngine') },
+    // «Обработка звонков» — объединяет engine choice + (для cloud) usage.
+    { id: 'processing', label: t('settings.sectionProcessing') },
     { id: 'permissions', label: t('settings.sectionPermissions') },
-    { id: 'stt', label: t('settings.sectionStt') },
-    { id: 'path', label: t('settings.sectionPath') },
-    { id: 'keys', label: t('settings.sectionKeys'), hidden: providerPath !== 'byo' },
-    { id: 'proxy', label: t('settings.sectionProxy'), hidden: providerPath !== 'managed' },
-    { id: 'usage', label: t('settings.sectionUsage'), hidden: providerPath !== 'managed' },
-    { id: 'voice', label: t('settings.sectionVoice') },
+    // «Запись» — recap language, hotkeys, call-detect probe.
+    { id: 'recording', label: t('settings.sectionRecording') },
+    // «Спикеры» — voice biometric model + auto-bind toggle.
+    { id: 'speakers', label: t('settings.sectionSpeakers') },
     { id: 'privacy', label: t('settings.sectionPrivacy') },
   ];
 
@@ -297,8 +229,11 @@ export function SettingsPage() {
           </SectionShell>
         )}
 
-        {section === 'engine' && (
-          <SectionShell title={t('settings.engineTitle')} lede={t('settings.engineLede')}>
+        {section === 'processing' && (
+          <SectionShell
+            title={t('settings.engineTitle')}
+            lede={t('settings.sectionProcessingSubtitle')}
+          >
             <LocalEngineSection />
           </SectionShell>
         )}
@@ -312,24 +247,12 @@ export function SettingsPage() {
           </SectionShell>
         )}
 
-        {section === 'stt' && (
-          <SectionShell title={t('settings.sttTitle')} lede={t('settings.sttLede')}>
+        {section === 'recording' && (
+          <SectionShell
+            title={t('settings.sttTitle')}
+            lede={t('settings.sectionRecordingSubtitle')}
+          >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 540 }}>
-              <div className="field">
-                <label className="field-label">{t('settings.sttProviderLabel')}</label>
-                <Select<SttProvider>
-                  value={sttProvider}
-                  options={[
-                    { value: 'auto', label: t('settings.sttProviderAuto') },
-                    { value: 'soniox', label: 'Soniox' },
-                    { value: 'gladia', label: 'Gladia' },
-                  ]}
-                  onChange={(v) => {
-                    setSttProvider(v);
-                    void persist(SETTINGS_KEYS.STT_PROVIDER, v);
-                  }}
-                />
-              </div>
               <div className="field">
                 <label className="field-label">{t('settings.sttRecapLangLabel')}</label>
                 <Select<PreferredLanguage>
@@ -347,93 +270,6 @@ export function SettingsPage() {
                   {t('settings.sttRecapLangHint')}
                 </span>
               </div>
-              <InputField
-                label={t('settings.sttModelLabel')}
-                type="text"
-                value={llmModel}
-                onChange={(e) => setLlmModel(e.target.value)}
-                onBlur={() => {
-                  const trimmed = llmModel.trim();
-                  setLlmModel(trimmed);
-                  void persist(SETTINGS_KEYS.LLM_MODEL, trimmed);
-                }}
-                placeholder={t('settings.sttModelPlaceholder')}
-                hint={t('settings.sttModelHint')}
-              />
-
-              {/* [V7] Auto-bind opt-in. Default OFF (R2 паспорта). При включении
-                  показывается threshold-селектор и каноничный privacy-warning. */}
-              <div className="field">
-                <label className="field-label">
-                  {t('settings.autoBindLabel')}
-                </label>
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 12,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={autoBindEnabled}
-                    onChange={(e) => {
-                      const v = e.target.checked;
-                      setAutoBindEnabled(v);
-                      void persist(SETTINGS_KEYS.AUTO_BIND_ENABLED, v ? '1' : '0');
-                    }}
-                    style={{ marginTop: 4 }}
-                  />
-                  <span
-                    style={{
-                      fontFamily: 'var(--font-serif)',
-                      fontSize: 14,
-                      color: 'var(--ink-2)',
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {t('settings.autoBindCheckboxLabel')}
-                  </span>
-                </label>
-                <span
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--subtle)',
-                    marginTop: 6,
-                    fontStyle: 'italic',
-                  }}
-                >
-                  {t('settings.autoBindHint')}
-                </span>
-              </div>
-              {autoBindEnabled && (
-                <div className="field">
-                  <label className="field-label">
-                    {t('settings.autoBindThresholdLabel')}
-                  </label>
-                  <Select<AutoBindThreshold>
-                    value={autoBindThreshold}
-                    options={AUTO_BIND_THRESHOLDS.map((n) => ({
-                      value: n,
-                      label: t('settings.autoBindThresholdOption', { n }),
-                    }))}
-                    onChange={(v) => {
-                      setAutoBindThreshold(v);
-                      void persist(SETTINGS_KEYS.AUTO_BIND_THRESHOLD, v);
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--subtle)',
-                      marginTop: 2,
-                    }}
-                  >
-                    {t('settings.autoBindThresholdHint')}
-                  </span>
-                </div>
-              )}
 
               {/* [W1] Configurable recording hotkeys. */}
               <div
@@ -608,128 +444,11 @@ export function SettingsPage() {
           </SectionShell>
         )}
 
-        {section === 'path' && (
-          <SectionShell title={t('settings.pathTitle')} lede={t('settings.pathLede')}>
-            <PathToggle
-              value={providerPath}
-              onChange={(v) => {
-                setProviderPath(v);
-                void persist(SETTINGS_KEYS.PROVIDER_PATH, v);
-                if (v === 'byo') setSection('keys');
-                if (v === 'managed') setSection('proxy');
-              }}
-            />
-            <div
-              style={{
-                marginTop: 24,
-                padding: '14px 16px',
-                background: 'var(--bg-2)',
-                borderRadius: 8,
-                fontFamily: 'var(--font-serif)',
-                fontSize: 14,
-                color: 'var(--ink-2)',
-                fontStyle: 'italic',
-                lineHeight: 1.55,
-                maxWidth: 560,
-              }}
-            >
-              {providerPath === 'managed'
-                ? t('settings.pathManagedExplain')
-                : t('settings.pathByoExplain')}
-            </div>
-          </SectionShell>
-        )}
-
-        {section === 'keys' && providerPath === 'byo' && (
-          <SectionShell title={t('settings.keysTitle')} lede={t('settings.keysLede')}>
-            <div
-              style={{
-                background: 'var(--paper)',
-                border: '1px solid var(--line)',
-                borderRadius: 8,
-                padding: 18,
-                marginBottom: 36,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 18,
-                maxWidth: 700,
-                flexWrap: 'wrap',
-              }}
-            >
-              <span className="small-caps">{t('settings.pathTogglePath')}</span>
-              <PathToggle
-                value={providerPath}
-                onChange={(v) => {
-                  setProviderPath(v);
-                  void persist(SETTINGS_KEYS.PROVIDER_PATH, v);
-                  if (v === 'managed') setSection('proxy');
-                }}
-                compact
-              />
-              <span
-                className="muted"
-                style={{
-                  fontFamily: 'var(--font-serif)',
-                  fontStyle: 'italic',
-                  fontSize: 13,
-                  marginLeft: 'auto',
-                }}
-              >
-                {t('settings.pathKeychainNote')}
-              </span>
-            </div>
-            <ByoKeysSection />
-          </SectionShell>
-        )}
-
-        {section === 'proxy' && providerPath === 'managed' && (
-          <SectionShell title={t('settings.proxyTitle')} lede={t('settings.proxyLede')}>
-            <p
-              className="muted"
-              style={{
-                fontSize: 13,
-                marginTop: 0,
-                marginBottom: 14,
-                maxWidth: 560,
-              }}
-            >
-              {t('settings.proxyEndpointLabel')} <code className="mono">{effectiveProxyUrl}</code>
-              {!proxyUrl.trim() && (
-                <span className="subtle">{t('settings.proxyDefaultMark')}</span>
-              )}
-            </p>
-            <div style={{ maxWidth: 560 }}>
-              <InputField
-                label={t('settings.proxyCustomLabel')}
-                type="text"
-                placeholder={SETTINGS_DEFAULTS.PROXY_BASE_URL}
-                value={proxyUrl}
-                onChange={(e) => setProxyUrl(e.target.value)}
-                onBlur={() => {
-                  const trimmed = proxyUrl.trim();
-                  if (!isValidProxyUrl(trimmed)) {
-                    setProxyUrlError(t('settings.proxyInvalidUrl'));
-                    return;
-                  }
-                  setProxyUrl(trimmed);
-                  setProxyUrlError(null);
-                  void persist(SETTINGS_KEYS.PROXY_BASE_URL, trimmed);
-                }}
-                hint={t('settings.proxyCustomHint')}
-                error={proxyUrlError ?? undefined}
-              />
-            </div>
-          </SectionShell>
-        )}
-
-        {section === 'usage' && providerPath === 'managed' && (
-          <SectionShell title={t('settings.usageTitle')} lede={t('settings.usageLede')}>
-            <UsageSection />
-          </SectionShell>
-        )}
-
-        {section === 'voice' && (
-          <SectionShell title={t('settings.voiceTitle')} lede={t('settings.voiceLede')}>
+        {section === 'speakers' && (
+          <SectionShell
+            title={t('settings.voiceTitle')}
+            lede={t('settings.sectionSpeakersSubtitle')}
+          >
             <VoiceModelSection />
           </SectionShell>
         )}
@@ -761,59 +480,6 @@ function SectionShell({ title, lede, children }: SectionShellProps) {
       </p>
       {children}
     </>
-  );
-}
-
-// ── Path toggle — rounded-pill 2-button per artboard §9 path toggle card
-interface PathToggleProps {
-  value: ProviderPath;
-  onChange: (v: ProviderPath) => void;
-  compact?: boolean;
-}
-
-function PathToggle({ value, onChange, compact }: PathToggleProps) {
-  const { t } = useI18n();
-  const inner: Array<[ProviderPath, string]> = [
-    ['byo', t('settings.pathByoToggle')],
-    ['managed', t('settings.pathManagedToggle')],
-  ];
-  return (
-    <div
-      style={{
-        display: 'inline-flex',
-        border: '1px solid var(--line)',
-        borderRadius: 999,
-        padding: 3,
-        background: 'var(--bg)',
-      }}
-    >
-      {inner.map(([key, label]) => {
-        const active = value === key;
-        return (
-          <button
-            key={key}
-            type="button"
-            className={`mono${active ? '' : ' muted'}`}
-            onClick={() => onChange(key)}
-            aria-pressed={active}
-            style={{
-              fontSize: 11,
-              padding: compact ? '5px 12px' : '6px 14px',
-              border: 'none',
-              borderRadius: 999,
-              background: active ? 'var(--accent)' : 'transparent',
-              color: active ? 'var(--accent-fg)' : undefined,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 

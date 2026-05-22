@@ -106,6 +106,26 @@ export const en: TranslationStrings = {
       'Wotold can now run fully on your device, no cloud — free forever. Try it?',
     engineAnnouncementOpen: 'Open',
     engineAnnouncementDismiss: 'Later',
+    engineAnnouncementDefault: {
+      eyebrow: 'Local mode',
+      title: 'Process calls without the cloud',
+      beforeLabel: 'Before',
+      beforeValue: 'Cloud',
+      afterLabel: 'After',
+      afterValue: 'Local · free',
+    },
+    engineAnnouncementFailures: {
+      eyebrow: 'Frequent errors',
+      title: 'Switch to local mode',
+      beforeLabel: 'Failures in 24h',
+      beforeValue: '{count}',
+    },
+    engineAnnouncementQuota: {
+      eyebrow: 'Cloud quota',
+      title: 'Go local — no limits',
+      beforeLabel: 'Used',
+      beforeValue: '{pct}%',
+    },
     channelMic: 'You · microphone',
     channelSystem: 'Other party · system audio',
     waveformFmt: '16 kHz mono · WAV · {time}',
@@ -366,14 +386,19 @@ export const en: TranslationStrings = {
     sectionAppearance: 'Appearance',
     sectionAccount: 'Account',
     sectionPermissions: 'Permissions',
-    sectionEngine: 'Recognition engine',
-    sectionStt: 'Speech recognition',
-    sectionPath: 'Service source',
-    sectionKeys: 'Keys (BYO)',
-    sectionProxy: 'Wotold server',
-    sectionUsage: 'Usage',
-    sectionVoice: 'Voice recognition',
+    sectionProcessing: 'Call processing',
+    sectionRecording: 'Recording',
+    sectionSpeakers: 'Speakers',
     sectionPrivacy: 'Privacy',
+    sectionProcessingSubtitle:
+      'Where your calls are processed. Local — free, offline. Cloud — faster, more accurate.',
+    sectionRecordingSubtitle:
+      'Hotkeys, transcription language, auto call detection.',
+    sectionSpeakersSubtitle:
+      'Recognize speakers by voice — Wotold tags names automatically.',
+    speakersAutoBindLabel: 'Auto-bind speakers to contacts',
+    speakersAutoBindHint:
+      'Only when confident — can be undone right in the call.',
     appearanceTitle: 'Appearance.',
     appearanceLede:
       'Theme and accent apply instantly — switch and compare. All screens respond simultaneously.',
@@ -510,9 +535,12 @@ export const en: TranslationStrings = {
   permissions: {
     rowMic: 'Microphone',
     rowMicDesc: 'Records what you say.',
-    rowScreen: 'Screen recording (system audio)',
+    rowScreen: 'System audio capture',
     rowScreenDesc:
-      'Records what the other party says in Zoom/Meet/Telegram. After granting — restart Wotold.',
+      'Captures the other party\'s voice in FaceTime, Zoom, Telegram and other call apps. macOS labels this permission as «Screen & System Audio Recording». After granting — restart Wotold.',
+    rowAccessibility: 'Accessibility (Universal Access)',
+    rowAccessibilityDesc:
+      'Required for global hotkeys when other apps are in focus. Grant in System Settings → Privacy → Accessibility.',
     request: 'Request',
     requestAgain: 'Re-request',
     requestTitle: 'Show macOS request dialog',
@@ -549,6 +577,27 @@ export const en: TranslationStrings = {
     tokens: '{n} tokens',
     resetAt: 'Counters reset: {date}',
     noLimit: 'no limit configured',
+  },
+
+  engineChip: {
+    local: 'Local',
+    cloud_managed: 'Cloud',
+    cloud_byo: 'Own keys',
+    localAria: 'Processed locally on this device',
+    cloud_managedAria: 'Processed in Wotold cloud',
+    cloud_byoAria: 'Processed via your own API keys',
+  },
+
+  failure: {
+    brokenRecording: {
+      eyebrow: 'File error',
+      title: 'Could not read audio',
+      body: 'The recording file is corrupted or in an unsupported format. Try saving the wav and re-importing, or delete the call.',
+      saveWav: 'Save .wav to Finder',
+      retryCloud: 'Try in cloud',
+      delete: 'Delete recording',
+      techLabel: 'Technical reason',
+    },
   },
 
   voiceModel: {
@@ -600,12 +649,28 @@ export const en: TranslationStrings = {
         body: 'Direct to Soniox / Anthropic with your API keys. No Wotold quota.',
         quality: '●●● quality',
       },
+      active: 'active',
     },
     presetLabel: 'Model bundle',
     preset: {
-      light: 'Light · fast on any Mac',
-      balanced: 'Balanced · best for 16 GB',
-      quality: 'Quality · max, needs 16+ GB',
+      light: 'Light',
+      balanced: 'Balanced',
+      quality: 'Maximum',
+    },
+    presetMeta: {
+      light: 'accuracy ~85% · fast',
+      balanced: 'accuracy ~93% · medium',
+      quality: 'accuracy ~97% · slow',
+    },
+    presetRecommend: 'Recommended',
+    modelLabel: {
+      whisperSmall: 'Speech module · S',
+      whisperMedium: 'Speech module · M',
+      whisperLarge: 'Speech module · L',
+      qwenSmall: 'Summary module · S',
+      qwenMedium: 'Summary module · M',
+      qwenLarge: 'Summary module · L',
+      diarization: 'Diarization module · basic',
     },
     statusInstalled: 'installed',
     statusDownloading: 'downloading…',
@@ -644,6 +709,23 @@ export const en: TranslationStrings = {
     probeMetalYes: 'Metal',
     probeMetalNo: 'no Metal',
     reprobe: 'Re-probe',
+    probeSkeleton: {
+      measuring: 'Checking hardware…',
+      timeout: 'Could not detect hardware. Pick a bundle manually.',
+    },
+    storageConfirm: {
+      title: 'Delete active model?',
+      body: 'The current bundle will switch to "{fallback}". You can re-download the model at any time.',
+      confirm: 'Delete',
+      cancel: 'Cancel',
+    },
+    rediscovery: {
+      eyebrow: 'Local mode',
+      title: 'Process calls directly on your Mac',
+      body: 'No cloud, free forever. Download once, works offline.',
+      install: 'Try local mode',
+      dismiss: 'Don\'t show again',
+    },
   },
 
   onboarding: {
@@ -691,19 +773,29 @@ export const en: TranslationStrings = {
       recommendedTag: 'REC',
       feat: {
         light: {
-          stt: 'Whisper Small — fast transcription',
-          llm: 'Qwen 1.5B — compact summaries',
+          stt: 'Transcription · basic, fast',
+          llm: 'Summary · basic, compact',
         },
         balanced: {
-          stt: 'Whisper Medium — high accuracy',
-          llm: 'Qwen 3B — accurate summaries',
+          stt: 'Transcription · standard, accurate',
+          llm: 'Summary · standard, detailed',
         },
         quality: {
-          stt: 'Whisper Large v3 — top tier',
-          llm: 'Qwen 7B — best quality',
+          stt: 'Transcription · maximum, very accurate',
+          llm: 'Summary · maximum, best quality',
         },
       },
       featSpeakers: 'Up to 4 speakers',
+      previewCta: 'What\'s in the bundle?',
+      previewEyebrow: 'Preview',
+      previewTitle: 'Here\'s how it works',
+      previewTranscript1: '— [You] Good morning, how are you?',
+      previewTranscript2: '— [Other] All good, thanks!',
+      previewTranscript3: '— [You] Great, let\'s get started.',
+      previewTranscript4: '— [Other] Ready when you are.',
+      previewProcessed: 'processed in {ms} ms · locally',
+      previewInstall: 'Install · {size} GB',
+      previewBack: '← Back',
     },
     saving: 'Saving…',
     finishBtn: 'Done',

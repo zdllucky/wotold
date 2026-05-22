@@ -105,6 +105,26 @@ export const kk: TranslationStrings = {
       'Wotold енді бұлтсыз, толығымен құрылғыда жұмыс істей алады — мәңгі тегін. Көру керек пе?',
     engineAnnouncementOpen: 'Ашу',
     engineAnnouncementDismiss: 'Кейін',
+    engineAnnouncementDefault: {
+      eyebrow: 'Жергілікті режим',
+      title: 'Қоңырауларды бұлтсыз өңдеу',
+      beforeLabel: 'Бұрын',
+      beforeValue: 'Бұлт',
+      afterLabel: 'Қазір',
+      afterValue: 'Жергілікті · тегін',
+    },
+    engineAnnouncementFailures: {
+      eyebrow: 'Жиі қателер',
+      title: 'Жергілікті режимге ауысу',
+      beforeLabel: '24 сағ. қате',
+      beforeValue: '{count}',
+    },
+    engineAnnouncementQuota: {
+      eyebrow: 'Бұлт квотасы',
+      title: 'Жергілікті — лимитсіз',
+      beforeLabel: 'Пайдаланылды',
+      beforeValue: '{pct}%',
+    },
     channelMic: 'Сіз · микрофон',
     channelSystem: 'Әңгімелесуші · жүйелік дыбыс',
     waveformFmt: '16 кГц моно · WAV · {time}',
@@ -364,14 +384,19 @@ export const kk: TranslationStrings = {
     sectionAppearance: 'Сыртқы түрі',
     sectionAccount: 'Аккаунт',
     sectionPermissions: 'Рұқсаттар',
-    sectionEngine: 'Тану қозғалтқышы',
-    sectionStt: 'Сөйлеуді тану',
-    sectionPath: 'Қызмет көзі',
-    sectionKeys: 'Кілттер (BYO)',
-    sectionProxy: 'Wotold сервері',
-    sectionUsage: 'Пайдалану',
-    sectionVoice: 'Дауысты тану',
+    sectionProcessing: 'Қоңырауларды өңдеу',
+    sectionRecording: 'Жазу',
+    sectionSpeakers: 'Сөйлеушілер',
     sectionPrivacy: 'Құпиялылық',
+    sectionProcessingSubtitle:
+      'Қоңырауларыңыз қайда өңделеді. Жергілікті — тегін, желісіз. Бұлт — жылдамырақ, дәлірек.',
+    sectionRecordingSubtitle:
+      'Жылдам пернелер, тілді тану, авто қоңырау анықтау.',
+    sectionSpeakersSubtitle:
+      'Сөйлеушілерді дауыс бойынша танып, аттарын өздігінен қойсын.',
+    speakersAutoBindLabel: 'Сөйлеушілерді контактілерге автоматты байланыстыру',
+    speakersAutoBindHint:
+      'Тек жоғары сенімділікте — қоңырауда болғанда болдырмауға болады.',
     appearanceTitle: 'Сыртқы түрі.',
     appearanceLede:
       'Тақырып пен акцент бірден қолданылады — ауыстырып салыстырыңыз. Барлық экрандар бір уақытта жауап береді.',
@@ -506,9 +531,12 @@ export const kk: TranslationStrings = {
   permissions: {
     rowMic: 'Микрофон',
     rowMicDesc: 'Сіз айтқанды жазады.',
-    rowScreen: 'Экран жазу (жүйелік дыбыс)',
+    rowScreen: 'Жүйелік дыбысты түсіру',
     rowScreenDesc:
-      'Әңгімелесуші Zoom/Meet/Telegram арқылы айтқанын жазады. Рұқсат бергеннен кейін Wotold-ты қайта іске қосыңыз.',
+      'FaceTime, Zoom, Telegram сияқты қоңырау қосымшаларында әңгімелесушінің дауысын жазады. macOS бұл рұқсатты «Screen & System Audio Recording» деп белгілейді. Рұқсат бергеннен кейін Wotold-ты қайта іске қосыңыз.',
+    rowAccessibility: 'Жалпы қол жеткізу',
+    rowAccessibilityDesc:
+      'Басқа қолданба алдыңғы жақта болғанда жаһандық пернелер тіркесімдері үшін қажет. Жүйе баптаулары → Құпиялылық → Жалпы қол жеткізу бөлімінде рұқсат беріңіз.',
     request: 'Сұрау',
     requestAgain: 'Қайта сұрау',
     requestTitle: 'macOS сұраныс диалогын көрсету',
@@ -543,6 +571,27 @@ export const kk: TranslationStrings = {
     tokens: '{n} токен',
     resetAt: 'Есептегіш қалпына келуі: {date}',
     noLimit: 'лимит бапталмаған',
+  },
+
+  engineChip: {
+    local: 'Жергілікті',
+    cloud_managed: 'Бұлт',
+    cloud_byo: 'Өз кілттер',
+    localAria: 'Осы құрылғыда өңделді',
+    cloud_managedAria: 'Wotold бұлтында өңделді',
+    cloud_byoAria: 'Өз API кілттерімен өңделді',
+  },
+
+  failure: {
+    brokenRecording: {
+      eyebrow: 'Файл қатесі',
+      title: 'Аудиоды оқу мүмкін болмады',
+      body: 'Жазба файлы зақымдалған немесе форматы қолдау табылмайды. WAV файлын сақтап, қайта жүктеп көріңіз немесе қоңырауды жойыңыз.',
+      saveWav: 'WAV-ды Finder-ге сақтау',
+      retryCloud: 'Бұлтта жазу',
+      delete: 'Жазбаны жою',
+      techLabel: 'Техникалық себеп',
+    },
   },
 
   voiceModel: {
@@ -594,12 +643,28 @@ export const kk: TranslationStrings = {
         body: 'Soniox / Anthropic тікелей өз API кілттеріңізбен. Wotold квотасы жоқ.',
         quality: '●●● сапа',
       },
+      active: 'белсенді',
     },
     presetLabel: 'Модель жиынтығы',
     preset: {
-      light: 'Light · кез келген Mac-та жылдам',
-      balanced: 'Balanced · 16 ГБ үшін оптималды',
-      quality: 'Quality · ең үлкен, 16+ ГБ қажет',
+      light: 'Жеңіл',
+      balanced: 'Теңгерімді',
+      quality: 'Максималды',
+    },
+    presetMeta: {
+      light: 'дәлдік ~85% · жылдам',
+      balanced: 'дәлдік ~93% · орташа',
+      quality: 'дәлдік ~97% · баяу',
+    },
+    presetRecommend: 'Ұсынылады',
+    modelLabel: {
+      whisperSmall: 'Сөйлеу модулі · S',
+      whisperMedium: 'Сөйлеу модулі · M',
+      whisperLarge: 'Сөйлеу модулі · L',
+      qwenSmall: 'Қорытынды модулі · S',
+      qwenMedium: 'Қорытынды модулі · M',
+      qwenLarge: 'Қорытынды модулі · L',
+      diarization: 'Бөлу модулі · базалық',
     },
     statusInstalled: 'орнатылған',
     statusDownloading: 'жүктелуде…',
@@ -638,6 +703,23 @@ export const kk: TranslationStrings = {
     probeMetalYes: 'Metal',
     probeMetalNo: 'Metal жоқ',
     reprobe: 'Қайта тексеру',
+    probeSkeleton: {
+      measuring: 'Аппаратты тексеруде…',
+      timeout: 'Аппаратты анықтау мүмкін болмады. Жиынтықты қолмен таңдаңыз.',
+    },
+    storageConfirm: {
+      title: 'Белсенді модельді жою?',
+      body: 'Ағымдағы жиынтық «{fallback}» жиынтығына ауысады. Модельді кез келген уақытта қайта жүктеуге болады.',
+      confirm: 'Жою',
+      cancel: 'Болдырмау',
+    },
+    rediscovery: {
+      eyebrow: 'Жергілікті режим',
+      title: 'Қоңырауларды Mac-та өңдеу',
+      body: 'Бұлтсыз, мәңгі тегін. Бір рет жүктеу — офлайн жұмыс.',
+      install: 'Жергілікті режимді қолдану',
+      dismiss: 'Енді көрсетпеу',
+    },
   },
 
   onboarding: {
@@ -685,19 +767,29 @@ export const kk: TranslationStrings = {
       recommendedTag: 'ҰСЫН.',
       feat: {
         light: {
-          stt: 'Whisper Small — жылдам тану',
-          llm: 'Qwen 1.5B — ықшам қорытындылар',
+          stt: 'Тану · базалық, жылдам',
+          llm: 'Қорытынды · базалық, ықшам',
         },
         balanced: {
-          stt: 'Whisper Medium — жоғары дәлдік',
-          llm: 'Qwen 3B — дәл қорытындылар',
+          stt: 'Тану · стандартты, дәл',
+          llm: 'Қорытынды · стандартты, толық',
         },
         quality: {
-          stt: 'Whisper Large v3 — максимум',
-          llm: 'Qwen 7B — ең жақсы сапа',
+          stt: 'Тану · максималды, өте дәл',
+          llm: 'Қорытынды · максималды, ең жақсы сапа',
         },
       },
       featSpeakers: '4 дауысқа дейін',
+      previewCta: 'Жиынтықта не бар?',
+      previewEyebrow: 'Алдын ала қарау',
+      previewTitle: 'Осылай жұмыс істейді',
+      previewTranscript1: '— [Сіз] Қайырлы таң, қалыңыз қалай?',
+      previewTranscript2: '— [Серігіңіз] Жақсы, рахмет!',
+      previewTranscript3: '— [Сіз] Тамаша, іске кірісейік.',
+      previewTranscript4: '— [Серігіңіз] Дайынмын.',
+      previewProcessed: '{ms} мс ішінде өңделді · жергілікті',
+      previewInstall: 'Орнату · {size} ГБ',
+      previewBack: '← Артқа',
     },
     saving: 'Сақтаудамыз…',
     finishBtn: 'Дайын',
