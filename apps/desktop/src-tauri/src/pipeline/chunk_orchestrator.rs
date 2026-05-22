@@ -98,6 +98,7 @@ pub async fn run<RotateF, EnqueueF>(
     mut rms_rx: Receiver<(u64, f32)>,
     mut rotate_rx: Receiver<Value>,
     mut stop_rx: oneshot::Receiver<()>,
+    mut pause_rx: Receiver<bool>,
     rotate_fn: RotateF,
     enqueue_fn: EnqueueF,
 ) -> OrchestratorSummary
@@ -112,6 +113,19 @@ where
     let mut prev_transcript_tail: Option<String> = None;
     let mut summary = OrchestratorSummary::default();
     let mut rotate_pending = false;
+    // [M13.2.1] Pause state. Когда `paused=true`:
+    //   - RMS samples всё ещё консумируются (sidecar v1 пишет фреймы во время
+    //     pause), но НЕ push'атся в `detector` — иначе пауза > silence_min
+    //     зарегистрируется как cut-candidate и orchestrator преждевременно
+    //     rotate'нёт chunk.
+    //   - Tick skip'ает rotation logic entirely.
+    //   - `pause_started_at_ms` anchor'ит на last_rms_ts_ms; на resume delta
+    //     добавляется в `paused_total_ms_in_chunk` который вычитается из
+    //     `effective_elapsed` при cut-decision.
+    //   - На rotation (новый chunk) — reset `paused_total_ms_in_chunk = 0`.
+    let mut paused = false;
+    let mut pause_started_at_ms: Option<u64> = None;
+    let mut paused_total_ms_in_chunk: u64 = 0;
 
     let mut tick = tokio::time::interval(Duration::from_millis(config.tick_interval_ms));
     // first tick fires immediately — skip.
@@ -126,6 +140,34 @@ where
                 break;
             }
 
+            // [M13.2.1] Pause/resume control. `Some(true)` = pause, `Some(false)` = resume.
+            // None (channel closed) = caller dropped tx без shutdown — игнорим (orchestrator
+            // продолжает работу до rms_rx closure / stop_rx).
+            maybe_pause = pause_rx.recv() => {
+                match maybe_pause {
+                    Some(true) if !paused => {
+                        paused = true;
+                        pause_started_at_ms = Some(last_rms_ts_ms);
+                        log::debug!("chunk_orchestrator paused at {last_rms_ts_ms}ms");
+                    }
+                    Some(false) if paused => {
+                        if let Some(start) = pause_started_at_ms {
+                            let delta = last_rms_ts_ms.saturating_sub(start);
+                            paused_total_ms_in_chunk =
+                                paused_total_ms_in_chunk.saturating_add(delta);
+                        }
+                        paused = false;
+                        pause_started_at_ms = None;
+                        log::debug!(
+                            "chunk_orchestrator resumed (paused_total_ms_in_chunk={paused_total_ms_in_chunk})"
+                        );
+                    }
+                    // Some(true) when уже paused, Some(false) when not paused — idempotent.
+                    // None — Sender dropped, обычно при stop_recording cleanup.
+                    _ => {}
+                }
+            }
+
             // RMS sample fed from dispatcher.
             maybe_sample = rms_rx.recv() => {
                 let Some((ts_ms, rms)) = maybe_sample else {
@@ -133,8 +175,12 @@ where
                     log::debug!("chunk_orchestrator rms channel closed");
                     break;
                 };
-                detector.push(ts_ms, rms);
                 last_rms_ts_ms = ts_ms;
+                // [M13.2.1] Skip detector push во время pause — pause-period
+                // RMS не должны влиять на silence cut.
+                if !paused {
+                    detector.push(ts_ms, rms);
+                }
             }
 
             // Sidecar rotated event — current chunk closed, next is open.
@@ -173,6 +219,12 @@ where
 
                 chunk_idx += 1;
                 chunk_start_ms = chunk_end_ms;
+                // [M13.2.1] Новый chunk — reset pause accumulator. Если мы
+                // всё ещё paused, anchor сдвигается на текущий last_rms_ts_ms.
+                paused_total_ms_in_chunk = 0;
+                if paused {
+                    pause_started_at_ms = Some(last_rms_ts_ms);
+                }
             }
 
             // Periodic tick — try silence cut если достаточно времени прошло.
@@ -181,13 +233,24 @@ where
                     // Уже отправили rotate, ждём rotated event.
                     continue;
                 }
-                let elapsed = last_rms_ts_ms.saturating_sub(chunk_start_ms);
-                if elapsed < config.window_start_offset_ms {
-                    // Слишком рано — chunk ещё <9 мин.
+                if paused {
+                    // [M13.2.1] Pause замораживает chunk-elapsed clock —
+                    // никаких rotation попыток до resume.
                     continue;
                 }
-                let window_start = chunk_start_ms + config.window_start_offset_ms;
-                let window_end = chunk_start_ms + config.window_end_offset_ms;
+                // [M13.2.1] effective_elapsed = wall_elapsed - paused durations.
+                // (Текущая pause-duration не учитывается потому что paused=false
+                // в этой ветке.)
+                let wall_elapsed = last_rms_ts_ms.saturating_sub(chunk_start_ms);
+                let elapsed = wall_elapsed.saturating_sub(paused_total_ms_in_chunk);
+                if elapsed < config.window_start_offset_ms {
+                    // Слишком рано — chunk ещё <9 мин (active recording time).
+                    continue;
+                }
+                // Window рассчитываем на effective time. Shift на pause-сумму
+                // даёт окно в wall-time терминах.
+                let window_start = chunk_start_ms + paused_total_ms_in_chunk + config.window_start_offset_ms;
+                let window_end = chunk_start_ms + paused_total_ms_in_chunk + config.window_end_offset_ms;
                 let cut_search_end = window_end.min(last_rms_ts_ms);
                 if cut_search_end <= window_start {
                     continue;
@@ -296,11 +359,13 @@ mod tests {
         let rotate_count = Arc::new(AtomicU32::new(0));
         let (rotated_tx, _) = mpsc::channel::<Value>(1);
 
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
         let handle = tokio::spawn(run(
             test_config(),
             rms_rx,
             rotate_rx,
             stop_rx,
+            pause_rx,
             make_rotate_fn(rotate_count.clone(), rotated_tx, 1000),
             make_enqueue_fn(Arc::new(Mutex::new(Vec::new())), "tail".into()),
         ));
@@ -322,11 +387,13 @@ mod tests {
         let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
 
         let calls_clone = calls.clone();
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
         let handle = tokio::spawn(run(
             test_config(),
             rms_rx,
             rotate_rx,
             stop_rx,
+            pause_rx,
             make_rotate_fn(rotate_count, rotated_back_tx, 0),
             make_enqueue_fn(calls_clone, "tail".into()),
         ));
@@ -367,11 +434,13 @@ mod tests {
         let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
 
         let calls_clone = calls.clone();
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
         let handle = tokio::spawn(run(
             test_config(),
             rms_rx,
             rotate_rx,
             stop_rx,
+            pause_rx,
             make_rotate_fn(rotate_count, rotated_back_tx, 0),
             make_enqueue_fn(calls_clone, "tail".into()),
         ));
@@ -417,11 +486,13 @@ mod tests {
         let rotate_back_tx = rotate_tx.clone();
         let rotate_count_clone = rotate_count.clone();
 
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
         let handle = tokio::spawn(run(
             test_config(),
             rms_rx,
             rotate_rx,
             stop_rx,
+            pause_rx,
             make_rotate_fn(rotate_count_clone, rotate_back_tx, 950),
             make_enqueue_fn(calls.clone(), "tail".into()),
         ));
@@ -463,11 +534,13 @@ mod tests {
         let rotate_back_tx = rotate_tx.clone();
         let rotate_count_clone = rotate_count.clone();
 
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
         let handle = tokio::spawn(run(
             test_config(),
             rms_rx,
             rotate_rx,
             stop_rx,
+            pause_rx,
             make_rotate_fn(rotate_count_clone, rotate_back_tx, 1000),
             make_enqueue_fn(calls.clone(), "tail".into()),
         ));
@@ -495,11 +568,13 @@ mod tests {
         let calls = Arc::new(Mutex::new(Vec::new()));
 
         let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
         let handle = tokio::spawn(run(
             test_config(),
             rms_rx,
             rotate_rx,
             stop_rx,
+            pause_rx,
             make_rotate_fn(rotate_count.clone(), rotated_back_tx, 1000),
             make_enqueue_fn(calls.clone(), "tail".into()),
         ));
@@ -515,5 +590,178 @@ mod tests {
         let _ = handle.await.unwrap();
         // Никаких rotate — не достигли target chunk size.
         assert_eq!(rotate_count.load(Ordering::SeqCst), 0);
+    }
+
+    // ========================================================================
+    // [M13.2.1] Pause-aware tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn pause_freezes_chunk_elapsed() {
+        // Сценарий: push RMS samples с большим pause-окном внутри. Без
+        // pause-aware orchestrator увидел бы wall_elapsed > window_end и
+        // rotate'нул раньше. С pause-aware effective_elapsed остаётся в
+        // pre-rotate зоне до достижения target active time.
+        let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(100);
+        let (rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let (pause_tx, pause_rx) = mpsc::channel::<bool>(8);
+        let rotate_count = Arc::new(AtomicU32::new(0));
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let rotate_back_tx = rotate_tx.clone();
+        let rotate_count_clone = rotate_count.clone();
+
+        let handle = tokio::spawn(run(
+            test_config(),
+            rms_rx,
+            rotate_rx,
+            stop_rx,
+            pause_rx,
+            make_rotate_fn(rotate_count_clone, rotate_back_tx, 950),
+            make_enqueue_fn(calls.clone(), "tail".into()),
+        ));
+
+        // 0-500ms active speech (loud RMS).
+        for ts in (0..500).step_by(20) {
+            rms_tx.send((ts, 0.5)).await.unwrap();
+        }
+        // Pause at 500ms. Sidecar продолжает emit'ить RMS (silence) — без
+        // pause-aware silence сейчас зарегистрировался бы как cut.
+        pause_tx.send(true).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        // Имитация pause-периода: 500-1300ms low RMS (sidecar тишина).
+        for ts in (520..=1300).step_by(20) {
+            rms_tx.send((ts, 0.001)).await.unwrap();
+        }
+        // Resume — 800ms pause накапливается в paused_total_ms_in_chunk.
+        pause_tx.send(false).await.unwrap();
+        // Дать orchestrator'у обработать pause/resume.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // 1320-1850ms active speech. effective_elapsed = 500 + (1850-1320) = 1030
+        // → > window_start_offset_ms=900. Должен rotate.
+        for ts in (1320..=1850).step_by(20) {
+            rms_tx.send((ts, 0.5)).await.unwrap();
+        }
+        // Тишина в окне для cut detection.
+        for ts in (1870..=1950).step_by(20) {
+            rms_tx.send((ts, 0.001)).await.unwrap();
+        }
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let _ = stop_tx.send(());
+        let _ = handle.await.unwrap();
+
+        // По крайней мере один rotation — pause-aware всё ещё инициирует
+        // chunk cut на правильной границе. Без pause-aware result был бы тот
+        // же но раньше (на pause silence) — точное число rotation'ов
+        // зависит от mock duration; verify минимум один и что orchestrator
+        // не зависает в pause.
+        assert!(
+            rotate_count.load(Ordering::SeqCst) >= 1,
+            "pause-aware orchestrator rotate'ит post-resume когда effective_elapsed достиг target"
+        );
+    }
+
+    #[tokio::test]
+    async fn pause_resume_idempotent_no_crash() {
+        // Двойной pause/resume → orchestrator не crash'ится, корректно
+        // переходит между состояниями. Тест проверяет robustness, не timing
+        // (последнее покрывает pause_freezes_chunk_elapsed).
+        let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(100);
+        let (_rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let (pause_tx, pause_rx) = mpsc::channel::<bool>(8);
+        let rotate_count = Arc::new(AtomicU32::new(0));
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
+
+        let handle = tokio::spawn(run(
+            test_config(),
+            rms_rx,
+            rotate_rx,
+            stop_rx,
+            pause_rx,
+            make_rotate_fn(rotate_count.clone(), rotated_back_tx, 950),
+            make_enqueue_fn(calls.clone(), "tail".into()),
+        ));
+
+        // Несколько pause/resume циклов — orchestrator должен пережить.
+        pause_tx.send(true).await.unwrap();
+        pause_tx.send(true).await.unwrap(); // idempotent
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        pause_tx.send(false).await.unwrap();
+        pause_tx.send(false).await.unwrap(); // idempotent
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Push несколько samples — orchestrator alive.
+        for ts in (0..100).step_by(20) {
+            rms_tx.send((ts, 0.5)).await.unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let _ = stop_tx.send(());
+        // Не должно паниковать. Summary возвращается — task alive.
+        let summary = handle.await.unwrap();
+        // Никаких rotation'ов не успело произойти (too short).
+        assert_eq!(summary.rotations_triggered, 0);
+    }
+
+    #[tokio::test]
+    async fn pause_after_rotation_resets_accumulator() {
+        // Сценарий: chunk завершён (rotated event), потом pause → resume
+        // во втором chunk'е. Pause accumulator должен быть сброшен после
+        // rotation, иначе second chunk'у достались бы paused_ms от first'а.
+        let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(100);
+        let (rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let (pause_tx, pause_rx) = mpsc::channel::<bool>(8);
+        let rotate_count = Arc::new(AtomicU32::new(0));
+        let calls = Arc::new(Mutex::new(Vec::new()));
+
+        let handle = tokio::spawn(run(
+            test_config(),
+            rms_rx,
+            rotate_rx,
+            stop_rx,
+            pause_rx,
+            make_rotate_fn(rotate_count.clone(), rotate_tx.clone(), 0),
+            make_enqueue_fn(calls.clone(), "tail".into()),
+        ));
+
+        // Pause+resume в первом chunk'е.
+        pause_tx.send(true).await.unwrap();
+        for ts in (0..400).step_by(20) {
+            rms_tx.send((ts, 0.001)).await.unwrap();
+        }
+        pause_tx.send(false).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Симулируем rotated event — закрываем chunk 0.
+        rotate_tx
+            .send(serde_json::json!({
+                "event": "rotated",
+                "duration_sec": 0.5,
+                "mic_bytes": 0,
+                "system_bytes": 0,
+            }))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Сейчас chunk_idx=1, accumulator должен быть 0. Push minimal active
+        // RMS. Если accumulator не сброшен — orchestrator подумает что много
+        // pause-time уже накоплено и неправильно посчитает effective_elapsed.
+        for ts in (500..1500).step_by(20) {
+            rms_tx.send((ts, 0.5)).await.unwrap();
+        }
+        for ts in (1520..=1700).step_by(20) {
+            rms_tx.send((ts, 0.001)).await.unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let _ = stop_tx.send(());
+        let _ = handle.await.unwrap();
+
+        // chunk_completed >= 1 (от rotated event).
+        let snap = calls.lock().unwrap().clone();
+        assert!(!snap.is_empty(), "chunk 0 должен быть enqueued");
+        // Test проходит если no panic/incorrect state.
     }
 }

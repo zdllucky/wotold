@@ -169,6 +169,9 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     if state.orchestrator.lock().await.take().is_some() {
         log::debug!("orchestrator handle detached on stop (will exit via channel closure)");
     }
+    // [M13.2.1] Drop pause_tx — pause_rx closure внутри orchestrator переключит
+    // его recv() arm в None branch (no-op), не break'аем loop.
+    state.orchestrator_pause_tx.lock().await.take();
 
     let result = audio_macos::stop(session).await;
 
@@ -224,6 +227,12 @@ pub async fn pause_recording(
     };
 
     crate::db::pause_call(&state.db, &call_id).await?;
+    // [M13.2.1] Fire-and-forget pause сигнал в orchestrator (если активен).
+    // Channel buffer=8 покрывает burst pause/resume; на full — drop OK
+    // (next pause/resume цикл починит state).
+    if let Some(tx) = state.orchestrator_pause_tx.lock().await.as_ref() {
+        let _ = tx.try_send(true);
+    }
     let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
     EventBus::new(Some(&app)).recording_state_changed();
     Ok(RecordingState {
@@ -251,6 +260,10 @@ pub async fn resume_recording(
     };
 
     crate::db::resume_call(&state.db, &call_id).await?;
+    // [M13.2.1] Fire-and-forget resume сигнал в orchestrator.
+    if let Some(tx) = state.orchestrator_pause_tx.lock().await.as_ref() {
+        let _ = tx.try_send(false);
+    }
     let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
     EventBus::new(Some(&app)).recording_state_changed();
     Ok(RecordingState {
@@ -310,6 +323,11 @@ struct ChunkedSetup {
     /// `stop_tx` — каноничный путь shutdown'а. Phase 1 не использует (channels
     /// закроются natural'но), но держим для будущего pause-aware orchestrator.
     _stop_tx: oneshot::Sender<()>,
+    /// [M13.2.1] Pause/resume control. Pause-aware orchestrator skip'ает
+    /// rotation timer пока запись на pause. `pause_tx` moved в AppState
+    /// в `spawn_orchestrator`.
+    pause_tx: mpsc::Sender<bool>,
+    pause_rx: mpsc::Receiver<bool>,
     mic_provider: Arc<dyn TranscriptionProvider>,
     system_provider: Arc<dyn TranscriptionProvider>,
     stt_lang: String,
@@ -377,6 +395,9 @@ async fn prepare_chunked_setup(
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(256);
     let (rotate_tx, rotate_rx) = mpsc::channel::<serde_json::Value>(8);
     let (stop_tx, stop_rx) = oneshot::channel::<()>();
+    // [M13.2.1] pause/resume control channel. Buffer 8 — burst tolerance
+    // для рук-сёрфингов pause/resume в UI; orchestrator drain'ит мгновенно.
+    let (pause_tx, pause_rx) = mpsc::channel::<bool>(8);
 
     Ok(Some(ChunkedSetup {
         channels: OrchestratorChannels { rms_tx, rotate_tx },
@@ -384,6 +405,8 @@ async fn prepare_chunked_setup(
         rotate_rx,
         stop_rx,
         _stop_tx: stop_tx,
+        pause_tx,
+        pause_rx,
         mic_provider,
         system_provider,
         stt_lang,
@@ -404,6 +427,8 @@ async fn spawn_orchestrator(
         rotate_rx,
         stop_rx,
         _stop_tx,
+        pause_tx,
+        pause_rx,
         mic_provider,
         system_provider,
         stt_lang,
@@ -430,6 +455,7 @@ async fn spawn_orchestrator(
             rms_rx,
             rotate_rx,
             stop_rx,
+            pause_rx,
             rotate_fn,
             enqueue_fn,
         )
@@ -445,6 +471,7 @@ async fn spawn_orchestrator(
     });
 
     *state.orchestrator.lock().await = Some(handle);
+    *state.orchestrator_pause_tx.lock().await = Some(pause_tx);
     log::info!("chunk_orchestrator spawned for call {call_id_str}");
 }
 
