@@ -505,7 +505,9 @@
 - [x] **Tauri commands** — `local_engine_list_catalog`, `_model_status/_download/_delete`, `_get/set_active_preset`. Atomic `.partial → final` после SHA256. Events `model:progress`, `model:done`. Идемпотентность всех операций.
 - [x] **TDD tests** — 13 unit-тестов в [local_engine/models.rs](apps/desktop/src-tauri/src/local_engine/models.rs) + [preset.rs](apps/desktop/src-tauri/src/local_engine/preset.rs).
 - [x] **Migration prep** — `SETTING_ACTIVE_PRESET = 'local_engine.active_preset'` константа. `local_engine.active` через M12.6.
-- [ ] **Security** — `/security-scan` обязателен на этот модуль (W5) до merge.
+- [x] **Security M-2/M-3 baseline** — `write_user_only` создаёт prompt-файл с `O_EXCL` + `0o600` (защита от race + чужого чтения в shared /tmp). Whisper output JSON `chmod 0o600` после whisper-cli exit. `ensure_path_under` блокирует `..` сегменты + проверяет prefix перед каждым sidecar spawn. Capability validator теперь явно помечен как «последняя граница» в capabilities/default.json.
+- [x] **Security M-4 refresh-script guard** — `WOTOLD_CATALOG_REFRESH_CONFIRMED=1` ENV-gate против случайного запуска + блок ⚠️ SECURITY в шапке скрипта с cross-check workflow.
+- [ ] **`/security-scan`** на `local_engine/{models,llm,stt}.rs` + `capabilities/default.json` + `scripts/refresh-model-catalog.sh` — обязателен перед production release (W5). CLAUDE.md security-triggers table обновлён.
 - [x] **Pre-flight gate (PRD §14)** — `scripts/refresh-model-catalog.sh` написан + прогнан: реальные SHA256 + размеры получены для 6 моделей (Whisper small/medium/large-v3 у ggerganov + Qwen 2.5 1.5B/3B/7B у bartowski). **Gemma 3 2B заменён на Qwen 2.5 1.5B** для Light preset из-за Google TOS gating (PRD §11 O1 deviation, документировано).
 
 ### M12.1 LocalWhisperProvider (PRD §9 step 2)

@@ -147,6 +147,10 @@ ECC-агенты для теста:
 | Auth flow (`M10`) | OIDC callback, CSRF на /v1/auth/callback, токен-handling |
 | Audio sidecar permissions (`M1.3`) | Запись без согласия (C1), повышение привилегий в Swift-процессе |
 | Cascade delete (`C5`) | Утечка остаточных семплов, неполная очистка `voice_samples.source_call` |
+| `local_engine/models.rs` (M12.4) | SHA256-only защита от подмены HF releases; tamper resistance, partial-download race |
+| `local_engine/llm.rs` + `local_engine/stt.rs` (M12.3/M12.1) | Sidecar args injection (capability validators), path traversal через `..` (Rust `ensure_path_under` defense-in-depth), temp file leak (transcript в /tmp без 0o600 perms), zombie процессы на timeout (kill vs drop) |
+| `capabilities/default.json` (M12) | Sidecar whitelist correctness, args validator regex anchoring |
+| `scripts/refresh-model-catalog.sh` (M12) | Bootstrap trust на HF CDN — cross-check workflow + ENV-guard |
 
 ## Терминология взаимодействия
 

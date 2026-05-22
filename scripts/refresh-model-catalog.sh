@@ -5,9 +5,28 @@
 # Запускается раз при настройке M12.4 и каждый раз когда апгрейдим версии моделей.
 # Выводит готовый блок Rust-кода для вставки в local_engine/models.rs.
 #
+# ⚠️  SECURITY (Review M-4):
+#
+# Скрипт доверяет SHA256 от HuggingFace CDN (через X-Linked-Etag header или
+# paths-info API). Если HF когда-либо compromised, выданный hash может быть
+# attacker-controlled — потом он pinin'ится в MODEL_CATALOG и все юзеры
+# скачают «правильный по нашей точке зрения» файл. Bootstrap integrity gap.
+#
+# Mitigation: перед commit обновлённого `MODEL_CATALOG`:
+#   1. Запустить скрипт с разных машин / IP / VPN → сравнить выводы.
+#   2. Cross-check каждой SHA256 против upstream-публикованных checksums:
+#      - whisper.cpp: https://huggingface.co/ggerganov/whisper.cpp →
+#        files page показывает SHA в File info → Etag column.
+#      - bartowski/Qwen*: проверить против commit hashes в `model card`
+#        или скачать локально и `shasum -a 256`.
+#   3. Refresh не запускать на CI/build-машинах автоматически — только
+#      ручной dev-flow с явным diff review.
+#
+# Чтобы случайно не запустить — установить WOTOLD_CATALOG_REFRESH_CONFIRMED=1.
+#
 # Использование:
-#   ./scripts/refresh-model-catalog.sh           # выводит в stdout
-#   ./scripts/refresh-model-catalog.sh > out.rs  # в файл
+#   WOTOLD_CATALOG_REFRESH_CONFIRMED=1 ./scripts/refresh-model-catalog.sh           # stdout
+#   WOTOLD_CATALOG_REFRESH_CONFIRMED=1 ./scripts/refresh-model-catalog.sh > out.rs  # в файл
 #
 # Зависимости: curl, jq
 
@@ -15,6 +34,19 @@
 # не находит match (1 → exit), а это нормальная ситуация (используем fallback
 # на paths-info API). Каждая критичная команда оборачивается в `|| true`.
 set -eu
+
+# [Security] Guard от случайного запуска. См. блок ⚠️  SECURITY выше.
+if [[ "${WOTOLD_CATALOG_REFRESH_CONFIRMED:-0}" != "1" ]]; then
+  cat >&2 <<'EOF'
+⚠️  refresh-model-catalog.sh обновляет SHA256 pins в MODEL_CATALOG из
+   HuggingFace CDN. Скрипт ДОВЕРЯЕТ ответам HF. Перед запуском прочитайте
+   блок ⚠️  SECURITY в начале скрипта (cross-check workflow).
+
+   Когда готовы — установите ENV и перезапустите:
+     WOTOLD_CATALOG_REFRESH_CONFIRMED=1 ./scripts/refresh-model-catalog.sh
+EOF
+  exit 2
+fi
 
 # Каталог моделей. Формат: id|repo|file
 #

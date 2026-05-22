@@ -87,9 +87,12 @@ pub fn apply_speaker_cap(segments: Vec<SpeakerSegment>) -> Vec<SpeakerSegment> {
     segments
         .into_iter()
         .map(|s| {
+            // [Review L2] `unwrap_or_else` evaluates clone только когда
+            // parse_speaker_index вернул None — `unwrap_or` всегда клонировал
+            // даже на успешном parse.
             let cap_tag = parse_speaker_index(&s.speaker_tag)
                 .map(cap_speaker_tag)
-                .unwrap_or(s.speaker_tag.clone());
+                .unwrap_or_else(|| s.speaker_tag.clone());
             SpeakerSegment {
                 speaker_tag: cap_tag,
                 ..s

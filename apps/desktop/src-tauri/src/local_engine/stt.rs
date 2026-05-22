@@ -39,6 +39,7 @@ use crate::providers::transcription::{
 };
 
 use super::models::{model_path, ModelId};
+use super::sidecar::SidecarGuard;
 
 /// Имя whisper.cpp sidecar бинаря.
 const SIDECAR_NAME: &str = "wotold-whisper";
@@ -144,6 +145,22 @@ impl TranscriptionProvider for LocalWhisperProvider {
             .join(format!("wotold-whisper-{}", uuid::Uuid::new_v4()));
         let json_path = stem.with_extension("json");
 
+        // [Security M-3] Defense-in-depth: блокируем `..` в любом из путей.
+        // Capability validator `^[A-Za-z0-9._/\-]+$` пропускает traversal —
+        // Rust обязан страховать.
+        for p in [&self.model_path, audio_path, &stem] {
+            if p.components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                return Err(TranscriptionError::Provider(format!(
+                    "path traversal blocked: {}",
+                    p.display()
+                )));
+            }
+        }
+        super::llm::ensure_path_under(&stem, &self.tmp_dir)
+            .map_err(TranscriptionError::Provider)?;
+
         let model_str = self
             .model_path
             .to_str()
@@ -222,8 +239,9 @@ async fn run_sidecar_with_timeout(
     let (mut rx, child) = sidecar
         .spawn()
         .map_err(|e| TranscriptionError::Provider(format!("sidecar spawn: {e}")))?;
-    // whisper-cli не читает stdin (audio через `-f`). Открытый stdin
-    // pipe writer закроется при drop/kill.
+    // [M12.6.4] SidecarGuard — RAII kill при cancel/panic. Без него
+    // whisper-cli переживает task abort на часы (large model в processing).
+    let mut guard = Some(SidecarGuard::new(child));
 
     let mut exit_code: Option<i32> = None;
     let drained = tokio::time::timeout(timeout, async {
@@ -245,7 +263,9 @@ async fn run_sidecar_with_timeout(
 
     match drained {
         Ok(Ok(())) => {
-            drop(child);
+            if let Some(g) = guard.take() {
+                g.release();
+            }
             if let Some(code) = exit_code {
                 if code != 0 {
                     return Err(TranscriptionError::Provider(format!(
@@ -256,15 +276,18 @@ async fn run_sidecar_with_timeout(
             Ok(())
         }
         Ok(Err(e)) => {
-            let _ = child.kill();
+            if let Some(g) = guard.take() {
+                g.kill();
+            }
             Err(e)
         }
         Err(_) => {
-            // [PRD §M12.6.4] timeout — явный SIGKILL. `drop(child)` НЕ убивает
-            // процесс (tauri-plugin-shell не имеет Drop impl на CommandChild,
-            // только закрывает stdin pipe). Без kill() зомби-whisper жрёт CPU
-            // до завершения транскрипции (часами на large модели).
-            let _ = child.kill();
+            // [PRD §M12.6.4] timeout / cancel → SIGKILL через SidecarGuard.
+            // Defense-in-depth: даже если эта ветка не достигнута (task abort),
+            // `guard` всё равно убьёт child через Drop при unwind.
+            if let Some(g) = guard.take() {
+                g.kill();
+            }
             Err(TranscriptionError::Provider("local_whisper_timeout".into()))
         }
     }
@@ -303,6 +326,19 @@ async fn parse_whisper_json(
     path: &Path,
     track: TrackKind,
 ) -> Result<DiarizedTranscript, TranscriptionError> {
+    // [Security M-2] whisper-cli создаёт output JSON с default umask (обычно
+    // 0o644). Содержимое — расшифровка звонка, sensitive. Tighten до 0o600
+    // ДО чтения чтобы между write и cleanup чужой process не успел прочитать.
+    // На non-unix — no-op (Linux/Windows под R9 пока не поддерживаются).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = tokio::fs::metadata(path).await {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            let _ = tokio::fs::set_permissions(path, perms).await;
+        }
+    }
     let raw = tokio::fs::read_to_string(path)
         .await
         .map_err(|e| TranscriptionError::Provider(format!("read whisper json: {e}")))?;

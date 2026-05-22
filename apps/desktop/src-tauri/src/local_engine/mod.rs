@@ -34,4 +34,5 @@ pub mod llm;
 pub mod merge;
 pub mod models;
 pub mod preset;
+pub mod sidecar;
 pub mod stt;
