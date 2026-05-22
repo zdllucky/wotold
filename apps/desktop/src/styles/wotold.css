@@ -1411,11 +1411,12 @@ textarea:focus-visible {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 999px;
-  /* Heavier shadow для отрыва от desktop — система не рисует shadow вокруг
-   * transparent окна, поэтому всю работу делает CSS. */
+  /* Softer shadow — плотнее прижата к pill, не создаёт квадратного halo на
+   * светлых обоях. Тяжёлая тень с 20-24px blur выглядела как тёмный квадрат
+   * вокруг капсулы из-за прозрачного окна 320×84. */
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.06),
-    0 6px 20px rgba(0, 0, 0, 0.18);
+    0 4px 12px rgba(0, 0, 0, 0.18);
   font-family: var(--font-sans);
   font-size: 12px;
   color: var(--ink);
@@ -1424,17 +1425,24 @@ textarea:focus-visible {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  /* Полупрозрачный по умолчанию чтобы не мешал; на hover становится полностью
+   * непрозрачным — UX prevents accidental visibility burden во время звонка. */
+  opacity: 0.55;
+  transition: opacity 180ms ease;
+}
+.rec-float:hover {
+  opacity: 1;
 }
 /* Dark theme: surface is dark, shadow stays subtle on dark backdrop. */
 :root[data-theme='dark'] .rec-float {
   background: var(--bg-1, #1a1a1a);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.4),
-    0 8px 24px rgba(0, 0, 0, 0.55);
+    0 4px 12px rgba(0, 0, 0, 0.35);
 }
 .rec-float[data-active='false'] {
   cursor: default;
-  opacity: 0.6;
+  opacity: 0.35;
 }
 .rec-float-eq {
   flex-shrink: 0;
@@ -1491,9 +1499,11 @@ textarea:focus-visible {
  * `transparent: true` + `set_background_color(0,0,0,0)` + inline-styled
  * transparent backgrounds в main.tsx делают WKWebView полностью прозрачным.
  *
- * NOTE: НЕ ставим `pointer-events: none` — иначе Tauri's data-tauri-drag-
- * region mousedown listener не фаирится (DOM просто не делегирует event'ы
- * элементам с pointer-events: none). Drag важнее edge-to-edge click-through. */
+ * Drag — через NSWindow.setMovableByWindowBackground:YES в Rust setup hook
+ * (lib.rs:make_widget_draggable_by_background). AppKit ловит mousedown на
+ * window level до WKWebView, работает на тачпаде синхронно без IPC.
+ * Кнопки в .rec-float-actions получают клики штатно (gesture recognizer
+ * движется только при заметном movement). */
 html.recording-widget,
 html.recording-widget body,
 html.recording-widget #root {
@@ -1502,7 +1512,6 @@ html.recording-widget #root {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  -webkit-app-region: no-drag;
 }
 html.recording-widget body {
   min-height: 0;
@@ -1519,4 +1528,149 @@ html.recording-widget #root {
 html.recording-widget .rec-float {
   width: 280px;
   flex-shrink: 0;
+}
+
+/* ── [M12-v1.1] EngineChip ──────────────────────────────────────────────── */
+.engine-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-2);
+  color: var(--ink-2);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.engine-chip--local {
+  color: var(--accent);
+}
+.engine-chip--local .engine-chip-dot {
+  background: var(--accent);
+}
+.engine-chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ink-2);
+}
+.engine-chip--header,
+.engine-chip--recording {
+  background: none;
+  padding: 0;
+  font-size: 11px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .engine-chip { transition: none; }
+}
+
+/* ── [M12-v1.1] Engine announcement banner ──────────────────────────────── */
+.engine-announcement {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  padding: 22px 28px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  max-width: 620px;
+  margin-bottom: 32px;
+}
+.engine-announcement--failures {
+  border-left-color: var(--signal);
+}
+.engine-announcement--quota {
+  border-left-color: var(--warning, oklch(75% 0.18 60));
+}
+.engine-announcement-ba {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 12px 0;
+}
+.engine-announcement-ba-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.engine-announcement-ba-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+}
+.engine-announcement-ba-value {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.engine-announcement-ba-arrow {
+  color: var(--ink-3);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.engine-announcement-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+/* ── [M12-v1.1] Probe skeleton ──────────────────────────────────────────── */
+.probe-skeleton-row {
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .probe-skeleton-row { animation: none; opacity: 0.6; }
+}
+
+/* ── [M12-v1.1] Rediscovery chip card ───────────────────────────────────── */
+.rediscovery-chip {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  padding: 18px 22px;
+  margin-bottom: 20px;
+}
+.rediscovery-chip-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+/* ── [M12-v1.1] Engine/model badges ─────────────────────────────────────── */
+.badge--active {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  padding: 2px 6px; background: var(--success-soft); color: var(--success);
+  border-radius: 3px;
+}
+.badge--recommend {
+  display: inline-flex; align-items: center;
+  font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 1px 5px; background: var(--accent-soft); color: var(--accent);
+  border-radius: 3px;
 }

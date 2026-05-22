@@ -59,6 +59,10 @@ export function RecFloat() {
   const downPos = useRef<{ x: number; y: number } | null>(null);
 
   const onMouseDownBody = (e: ReactMouseEvent<HTMLDivElement>) => {
+    // Просто запоминаем стартовую позицию для click-vs-drag discrimination.
+    // Реальный NSWindow drag запускается Tauri'ем синхронно из document-level
+    // listener'а на elements с data-tauri-drag-region (работает только если
+    // app.macOSPrivateApi: true в tauri.conf.json).
     downPos.current = { x: e.screenX, y: e.screenY };
   };
 
@@ -98,9 +102,10 @@ export function RecFloat() {
     })();
   };
 
-  // [S8] Hybrid drag: data-tauri-drag-region на root → весь widget кроме
-  // actions is draggable via NSWindow. `="false"` на actions выключает
-  // drag для области кнопок (Tauri 2 traverses closest() и respects override).
+  // Drag через data-tauri-drag-region — Tauri document-level mousedown listener
+  // запускает NSWindow drag синхронно до того как React handlers сработают.
+  // Требует app.macOSPrivateApi: true в tauri.conf.json — иначе NSWindow не
+  // принимает drag events из transparent webview.
   return (
     <div
       className="rec-float"

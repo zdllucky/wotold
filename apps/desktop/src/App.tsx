@@ -11,6 +11,8 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, SETTINGS_KEYS } from './api/settings';
 import { getActivePipelineCount } from './api/calls';
+import { localEngineGetActiveEngine } from './api/local-engine';
+import type { EngineKind } from './components/EngineChip';
 import { I18nProvider, useI18n } from './i18n';
 import { RecordingProvider, useRecording } from './recording/RecordingContext';
 import { RecStrip } from './recording/RecStrip';
@@ -53,6 +55,7 @@ function AppShell() {
   // не учитывался → счётчик зависал, как и stale processing записи после
   // crash recovery (status sweep'нулся, а в-памяти counter всё равно 0).
   const [activePipelines, setActivePipelines] = useState(0);
+  const [activeEngine, setActiveEngine] = useState<EngineKind | null>(null);
 
   const navLabel = (id: Exclude<Page, 'ds'>): string => {
     switch (id) {
@@ -76,6 +79,14 @@ function AppShell() {
         setBootstrap('app');
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    localEngineGetActiveEngine()
+      .then(setActiveEngine)
+      .catch(() => {
+        /* graceful — engine may be unavailable on first run */
+      });
   }, []);
 
   // [V8.2] Active-pipeline counter — DB source of truth. На mount считаем
@@ -153,6 +164,7 @@ function AppShell() {
   // доступен через DevTools (⌥⌘I в Tauri dev shell).
   useEffect(() => {
     if (typeof document === 'undefined') return;
+    if (import.meta.env.DEV) return; // right-click allowed in dev
     const ALLOW = 'input, textarea, [contenteditable="true"], .markdown, .markdown *, .transcript-row, .transcript-row *, .transcript-text, .title, .display, .subtitle, code, pre, kbd, [data-selectable], [data-selectable] *';
     const onContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
@@ -286,7 +298,7 @@ function AppShell() {
       <main className="app-main">
         {/* [W3] Persistent recording strip. Renders null when idle, so layout
             is unchanged for non-recording sessions. */}
-        <RecStrip />
+        <RecStrip activeEngine={activeEngine} />
         {/* [S5] Auto-detect call suggestion banner. Listens to backend
             `recording:suggested`; renders null when no pending suggestion. */}
         <SuggestBanner />

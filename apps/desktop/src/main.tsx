@@ -33,6 +33,11 @@ if (isRecordingWidget) {
   transparentize(document.documentElement);
   transparentize(document.body);
   transparentize(root);
+  // Drag-region на body чтобы вся область окна (включая transparent margin
+  // вокруг pill) ловила mousedown и запускала NSWindow drag. Кнопки
+  // .rec-float-actions имеют data-tauri-drag-region="false" — Tauri 2
+  // уважает override через closest(), поэтому pause/stop НЕ инициируют drag.
+  document.body.setAttribute('data-tauri-drag-region', '');
 }
 
 ReactDOM.createRoot(root).render(

@@ -469,6 +469,18 @@ pub fn run() {
                 {
                     log::warn!("widget set_background_color transparent failed: {e}");
                 }
+                // [Bug #4] Apply canJoinAllSpaces eagerly at window creation —
+                // visibleOnAllWorkspaces в tauri.conf иногда не применяется к
+                // окнам со стартовым visible:false. Без этого виджет «прибит»
+                // к Space на котором был show'ен и не следует за Ctrl+Arrow.
+                if let Err(e) = widget.set_visible_on_all_workspaces(true) {
+                    log::warn!("widget set_visible_on_all_workspaces (setup) failed: {e}");
+                }
+                // [Widget v4] NSWindow.movableByWindowBackground = YES —
+                // native macOS drag without IPC. Работает на тачпаде где
+                // IPC-based startDragging промахивается мимо currentEvent.
+                #[cfg(target_os = "macos")]
+                make_widget_draggable_by_background(&widget);
             }
 
             // [S7] Persist floating-widget position when user drags it. We
@@ -477,16 +489,27 @@ pub fn run() {
             // we don't want to thrash SQLite. The timer captures the last
             // position seen and commits it once drag settles.
             if let Some(widget) = tauri::Manager::get_webview_window(app, "recording-widget") {
+                use std::sync::atomic::{AtomicBool, Ordering};
                 use std::sync::Mutex as StdMutex;
                 use std::time::{Duration, Instant};
 
                 let pending = std::sync::Arc::new(StdMutex::new(None::<(f64, f64, Instant)>));
+                // Флаг чтобы snap-анимация (которая дёргает set_position и
+                // фаирит Moved events) не триггерила сама себя рекурсивно.
+                let is_animating = std::sync::Arc::new(AtomicBool::new(false));
+
                 let pending_for_event = pending.clone();
+                let is_animating_for_event = is_animating.clone();
                 let widget_for_event = widget.clone();
                 let app_for_persist = handle.clone();
 
                 widget.on_window_event(move |event| {
                     if !matches!(event, tauri::WindowEvent::Moved(_)) {
+                        return;
+                    }
+                    // Snap animation в процессе — Moved events это наши собственные
+                    // set_position вызовы. Игнорируем, иначе recursive snap.
+                    if is_animating_for_event.load(Ordering::Relaxed) {
                         return;
                     }
                     // Read scale + physical position fresh — Tauri gives us
@@ -514,6 +537,8 @@ pub fn run() {
                     // First Moved after settle — spawn debounce task that
                     // polls until 400ms pass without another Moved.
                     let pending_for_task = pending_for_event.clone();
+                    let is_animating_for_task = is_animating_for_event.clone();
+                    let widget_for_task = widget_for_event.clone();
                     let app_for_task = app_for_persist.clone();
                     tauri::async_runtime::spawn(async move {
                         loop {
@@ -528,17 +553,21 @@ pub fn run() {
                             if let Ok(mut g) = pending_for_task.lock() {
                                 *g = None;
                             }
+                            // [Widget v3] Drag settled → snap к ближайшей
+                            // вертикальной стороне с анимацией. is_animating
+                            // выставляется ДО snap чтобы Moved events от наших
+                            // set_position не триггерили recursive debounce.
+                            is_animating_for_task.store(true, Ordering::Relaxed);
                             let state = tauri::Manager::state::<state::AppState>(&app_for_task);
-                            if let Err(e) = commands::widget::persist_widget_position(
-                                &app_for_task,
-                                &state.db,
+                            commands::widget::snap_to_nearest_side(
+                                app_for_task.clone(),
+                                widget_for_task.clone(),
+                                state.db.clone(),
                                 x,
                                 y,
                             )
-                            .await
-                            {
-                                log::warn!("persist widget position: {e}");
-                            }
+                            .await;
+                            is_animating_for_task.store(false, Ordering::Relaxed);
                             return;
                         }
                     });
@@ -628,4 +657,49 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// [Widget v4] Включить native NSWindow drag из любой точки фона.
+///
+/// `data-tauri-drag-region` / `-webkit-app-region: drag` оба идут через IPC
+/// или webview rendering layer, что на тачпаде ломается: палец отпускается
+/// быстрее чем IPC долетает, `[NSApp currentEvent]` уже не mousedown а
+/// mouseUp, `performWindowDragWithEvent:` no-op'ит.
+///
+/// Прямой `NSWindow.setMovableByWindowBackground:YES` — нативный путь macOS.
+/// AppKit ловит mousedown в NSWindow level до того как event попадёт в
+/// WKWebView. Drag начинается синхронно, без IPC.
+///
+/// Кнопки в widget'е переопределяют CSS `-webkit-app-region: no-drag`, что
+/// блокирует window drag на этих субвью — клики работают.
+///
+/// # Safety
+///
+/// `ns_window` pointer гарантированно валиден от Tauri пока окно
+/// существует. `setMovableByWindowBackground:` — простой setter без
+/// эксцепшнов / side effects, поэтому unsafe block тривиален.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn make_widget_draggable_by_background(widget: &tauri::WebviewWindow) {
+    use objc::msg_send;
+    use objc::runtime::{Object, YES};
+    use objc::sel;
+    use objc::sel_impl;
+
+    let ns_window = match widget.ns_window() {
+        Ok(ptr) => ptr,
+        Err(e) => {
+            log::warn!("widget ns_window unavailable: {e}");
+            return;
+        }
+    };
+    if ns_window.is_null() {
+        log::warn!("widget ns_window is null");
+        return;
+    }
+    // SAFETY: NSWindow* lives as long as the widget window; setter is no-throw.
+    unsafe {
+        let ns_window = ns_window as *mut Object;
+        let _: () = msg_send![ns_window, setMovableByWindowBackground: YES];
+    }
 }

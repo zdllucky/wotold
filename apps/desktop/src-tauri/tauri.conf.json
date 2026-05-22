@@ -10,6 +10,7 @@
     "beforeBuildCommand": "../../scripts/build-audio-sidecar.sh && pnpm build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -44,7 +45,6 @@
         "skipTaskbar": true,
         "visible": false,
         "focus": false,
-        "acceptFirstMouse": true,
         "shadow": false,
         "visibleOnAllWorkspaces": true
       }
