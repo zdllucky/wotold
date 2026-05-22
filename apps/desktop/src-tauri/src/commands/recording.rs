@@ -161,16 +161,23 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     let mic_path = session.mic_path.clone();
     let system_path = session.system_path.clone();
 
-    // [M13.1.5c] Drop orchestrator handle. Task сам exit'ит когда sidecar
-    // terminate'нёт (rms_rx + rotate_rx закрываются на drop dispatcher'а).
-    // Не await'им и не abort'им — иначе stop_recording завис бы или прервали
-    // бы in-flight chunk_runner (DB row остался бы в `processing`). Dropping
-    // JoinHandle detach'ит task, он сам finalize'ит в фоне.
-    if state.orchestrator.lock().await.take().is_some() {
-        log::debug!("orchestrator handle detached on stop (will exit via channel closure)");
+    // [M13 review fix] Signal stop через oneshot — это каноничный path для
+    // orchestrator exit. До fix'а `stop_tx` дропался в `spawn_orchestrator`
+    // → `stop_rx` сразу closed → premature exit. Теперь stop_tx живёт в
+    // AppState и здесь take()→send() даёт чистый shutdown.
+    if let Some(stop_tx) = state.orchestrator_stop_tx.lock().await.take() {
+        let _ = stop_tx.send(());
+        log::debug!("orchestrator stop signal sent");
     }
-    // [M13.2.1] Drop pause_tx — pause_rx closure внутри orchestrator переключит
-    // его recv() arm в None branch (no-op), не break'аем loop.
+    // [M13.1.5c] Detach orchestrator handle. Task сам exit'ит через stop_rx
+    // (см. выше). Не await'им и не abort'им — иначе stop_recording завис бы
+    // на in-flight chunk_runner или прервали бы его (DB row остался бы в
+    // `processing`). Detach'нутый task finalize'ит в фоне.
+    if state.orchestrator.lock().await.take().is_some() {
+        log::debug!("orchestrator handle detached on stop");
+    }
+    // [M13.2.1] Drop pause_tx — recv() arm orchestrator'а получит None →
+    // wildcard match → no-op. Stop сигнал выше уже триггерит break.
     state.orchestrator_pause_tx.lock().await.take();
 
     let result = audio_macos::stop(session).await;
@@ -320,9 +327,10 @@ struct ChunkedSetup {
     rms_rx: mpsc::Receiver<(u64, f32)>,
     rotate_rx: mpsc::Receiver<serde_json::Value>,
     stop_rx: oneshot::Receiver<()>,
-    /// `stop_tx` — каноничный путь shutdown'а. Phase 1 не использует (channels
-    /// закроются natural'но), но держим для будущего pause-aware orchestrator.
-    _stop_tx: oneshot::Sender<()>,
+    /// [M13 review fix] Moved в AppState в `spawn_orchestrator` чтобы пережить
+    /// возврат функции. Иначе оригинальный `_stop_tx` дропался → `stop_rx`
+    /// сразу closed → orchestrator exit преждевременно.
+    stop_tx: oneshot::Sender<()>,
     /// [M13.2.1] Pause/resume control. Pause-aware orchestrator skip'ает
     /// rotation timer пока запись на pause. `pause_tx` moved в AppState
     /// в `spawn_orchestrator`.
@@ -404,7 +412,7 @@ async fn prepare_chunked_setup(
         rms_rx,
         rotate_rx,
         stop_rx,
-        _stop_tx: stop_tx,
+        stop_tx,
         pause_tx,
         pause_rx,
         mic_provider,
@@ -426,7 +434,7 @@ async fn spawn_orchestrator(
         rms_rx,
         rotate_rx,
         stop_rx,
-        _stop_tx,
+        stop_tx,
         pause_tx,
         pause_rx,
         mic_provider,
@@ -472,6 +480,7 @@ async fn spawn_orchestrator(
 
     *state.orchestrator.lock().await = Some(handle);
     *state.orchestrator_pause_tx.lock().await = Some(pause_tx);
+    *state.orchestrator_stop_tx.lock().await = Some(stop_tx);
     log::info!("chunk_orchestrator spawned for call {call_id_str}");
 }
 

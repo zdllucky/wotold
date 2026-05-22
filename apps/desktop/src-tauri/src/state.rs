@@ -5,7 +5,7 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Manager};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::{
     audio::{call_detect::CallDetectHandle, macos::RecordingSession},
@@ -41,6 +41,14 @@ pub struct AppState {
     /// запущен. Cleared в stop_recording одновременно с handle'ом.
     /// Pause/resume Tauri commands делают `try_send` fire-and-forget.
     pub orchestrator_pause_tx: Arc<Mutex<Option<mpsc::Sender<bool>>>>,
+    /// [M13 review fix] Sender oneshot stop-сигнала для orchestrator. Если бы
+    /// мы оставили `stop_tx` в локальной переменной `spawn_orchestrator`, она
+    /// бы дропалась при возврате функции → `stop_rx` сразу видит closed канал
+    /// и orchestrator exit'ил преждевременно. Храним в AppState чтобы tx
+    /// жил столько же сколько recording session. `stop_recording` делает
+    /// `take()` — sender дропается, orchestrator корректно exit'ит на
+    /// `stop_rx` arm.
+    pub orchestrator_stop_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
 }
 
 pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
@@ -83,6 +91,7 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         call_detect: Arc::new(crate::audio::call_detect::CallDetectController::new()),
         orchestrator: Arc::new(Mutex::new(None)),
         orchestrator_pause_tx: Arc::new(Mutex::new(None)),
+        orchestrator_stop_tx: Arc::new(Mutex::new(None)),
     })
 }
 

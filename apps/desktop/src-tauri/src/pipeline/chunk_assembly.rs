@@ -53,6 +53,18 @@ pub async fn load_chunked_transcripts(
     let mut lang_detected: Option<String> = None;
 
     for row in &done {
+        // [M13 review fix] Защита от corrupt/legacy row с отрицательным
+        // start_ms — каст в f64 даст negative offset, segments shift'нутся
+        // в прошлое. SQLite не enforce'ит CHECK на этой колонке.
+        if row.start_ms < 0 {
+            log::warn!(
+                "chunk_assembly: skip chunk {}/{} with negative start_ms={}",
+                row.call_id,
+                row.chunk_idx,
+                row.start_ms
+            );
+            continue;
+        }
         let offset_sec = row.start_ms as f64 / 1000.0;
 
         // mic — guaranteed Some (filter выше), но clippy не любит unwrap.
@@ -92,11 +104,22 @@ pub async fn load_chunked_transcripts(
         }
     }
 
-    let duration_sec = mic_segments
+    // [M13 review fix] Authoritative duration = max chunk.end_ms across done
+    // chunks. Fallback на max segment.end если end_ms NULL (legacy/partial row).
+    // Без этого если последний chunk имел пустой mic+system (короткая фраза),
+    // duration был бы меньше реального call duration (≤10 min undercount).
+    let duration_from_chunks = done
+        .iter()
+        .filter_map(|r| r.end_ms)
+        .max()
+        .map(|ms| ms as f64 / 1000.0)
+        .unwrap_or(0.0);
+    let duration_from_segments = mic_segments
         .iter()
         .chain(sys_segments.iter())
         .map(|s| s.end)
         .fold(0.0_f64, f64::max);
+    let duration_sec = duration_from_chunks.max(duration_from_segments);
 
     let mic_t = DiarizedTranscript {
         version: 1,
@@ -243,8 +266,10 @@ mod tests {
         // chunk_1 start_ms=600_000 → offset 600.0 sec.
         assert!((mic_t.segments[1].start - 601.5).abs() < 1e-9);
         assert!((mic_t.segments[1].end - 602.5).abs() < 1e-9);
-        // duration_sec — max end среди всех сегментов.
-        assert!((mic_t.duration_sec - 602.5).abs() < 1e-9);
+        // [M13 review fix] duration_sec = max(chunk.end_ms / 1000) если он >
+        // max segment.end. chunk_1.end_ms = 1_200_000 → 1200s, segments max
+        // = 602.5s → берётся 1200.0 (authoritative).
+        assert!((mic_t.duration_sec - 1200.0).abs() < 1e-9);
     }
 
     #[tokio::test]

@@ -16,9 +16,7 @@
 //! расширен без breaking changes сигнатуры (новые fields в Output).
 //!
 //! Wiring в recording flow (start_recording orchestration через
-//! CHUNKED_PIPELINE feature flag) — M13.1.5b sprint.
-
-#![allow(dead_code)] // Wiring в recording flow — следующий sprint.
+//! CHUNKED_PIPELINE feature flag) — M13.1.5c sprint (complete).
 
 use std::path::PathBuf;
 
@@ -35,8 +33,10 @@ use crate::{db, AppError};
 pub struct ChunkRunInput {
     pub call_id: String,
     pub chunk_idx: u32,
-    /// Smещение start chunk'а от начала записи (ms). Используется для
-    /// timestamp-offset при merge'е в финальный transcript.
+    /// Smещение start chunk'а от начала записи (ms). Передаётся через
+    /// `insert_chunk` в DB row (откуда assembly читает через ChunkRow.start_ms),
+    /// в самом `run_chunk` не используется напрямую.
+    #[allow(dead_code)]
     pub start_ms: u64,
     /// End chunk'а (ms от начала записи). Известен после rotation на стороне
     /// orchestrator'а (chunk_start_next_ms = chunk_end_this_ms).
@@ -56,6 +56,9 @@ pub struct ChunkRunInput {
 #[derive(Debug, Clone)]
 pub struct ChunkRunOutput {
     pub transcript_tail: String,
+    /// Для логирования / Phase 3 UI прогресса. Caller (orchestrator) сейчас
+    /// не использует — но tests + future code будут.
+    #[allow(dead_code)]
     pub segment_count: usize,
 }
 
@@ -113,12 +116,19 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         Ok(t) => t,
         Err(e) => {
             let reason = format!("transcribe mic: {e}");
-            let _ = db::chunks::mark_chunk_failed(pool, &call_id, chunk_idx, &reason).await;
+            // [M13 review fix] Log db-mark-failed error (но всё равно propagate
+            // STT error). Без этого если pool exhausted, row застрял бы в
+            // `processing` и причина silently swallow'нулась.
+            if let Err(db_err) =
+                db::chunks::mark_chunk_failed(pool, &call_id, chunk_idx, &reason).await
+            {
+                log::error!("chunk {call_id}/{chunk_idx} mark_failed after mic error: {db_err}");
+            }
             return Err(translate_transcription_error(e));
         }
     };
 
-    // System failure — degraded ok: pипипing logs + None в DB.
+    // System failure — degraded ok: piping logs + None в DB.
     let sys_transcript = match sys_res {
         Ok(t) => Some(t),
         Err(e) => {

@@ -328,6 +328,12 @@ pub async fn set_call_title(pool: &SqlitePool, call_id: &str, title: &str) -> Re
 /// помечаются `failed`. Это означает что в прошлой сессии запись или
 /// пайплайн были прерваны (краш, force-quit, потеря питания). Возвращает
 /// количество затронутых строк — пригодится для лога.
+///
+/// [M13 review fix] Также sweep'аем `call_chunks` в `processing` — без этого
+/// crash во время chunk_runner оставлял бы row застрявшим, и
+/// `chunk_assembly::load_chunked_transcripts` молча skip'ал бы его (filter
+/// status='done'), что приводило бы к silent data loss для chunk'а в
+/// финальном transcript'е.
 pub async fn sweep_stale_calls(pool: &SqlitePool) -> Result<u64, AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     let res = sqlx::query(
@@ -340,6 +346,18 @@ pub async fn sweep_stale_calls(pool: &SqlitePool) -> Result<u64, AppError> {
     .bind(&now)
     .execute(pool)
     .await?;
+    // Sweep stuck chunks (idempotent — no-op если ничего не застряло).
+    let chunks_swept = sqlx::query(
+        "UPDATE call_chunks
+         SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+         WHERE status = 'processing'",
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if chunks_swept > 0 {
+        log::warn!("sweep_stale_chunks: {chunks_swept} processing chunks → failed");
+    }
     Ok(res.rows_affected())
 }
 

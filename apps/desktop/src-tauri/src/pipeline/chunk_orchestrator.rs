@@ -15,11 +15,8 @@
 //! Pure-ish — все side effects идут через closure callbacks. Testable через
 //! mock channels + mock fn (см. unit tests внизу).
 //!
-//! **Не подключён к recording flow.** `commands::recording::start_recording`
-//! сейчас передаёт `orchestrator=None` в `audio::macos::start`. Wiring через
-//! `CHUNKED_PIPELINE` feature flag — отдельный sprint (M13.1.5c).
-
-#![allow(dead_code)] // Wiring в recording flow — следующий sprint.
+//! Wired в recording flow через `CHUNKED_PIPELINE` feature flag (M13.1.5c).
+//! Pause-aware (M13.2.1) — `pause_rx` arm замораживает rotation timer.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -35,6 +32,9 @@ use crate::audio::silence_detector::SilenceDetector;
 #[derive(Debug, Clone, Copy)]
 pub struct ChunkOrchestratorConfig {
     /// Target длительность chunk'а — center окна поиска тишины (ms).
+    /// Документационный — фактические границы окна задаются через
+    /// window_start_offset_ms/window_end_offset_ms. Оставлен для clarity.
+    #[allow(dead_code)]
     pub target_chunk_ms: u64,
     /// Окно поиска тишины относительно chunk start: `[start_off, end_off]` ms.
     pub window_start_offset_ms: u64,
@@ -238,19 +238,27 @@ where
                     // никаких rotation попыток до resume.
                     continue;
                 }
+                // [M13 review fix] Cap paused_total_ms_in_chunk на
+                // window_end_offset_ms чтобы экстремально длинная пауза
+                // (> target_chunk_ms) не shift'ила window так далеко в
+                // future что cut_search_end <= window_start навсегда —
+                // тогда chunk never rotate'ит. Capped pause всё ещё
+                // freezes timer effectively (orchestrator continues
+                // active accounting), но не блокирует rotation forever.
+                let capped_paused = paused_total_ms_in_chunk.min(config.window_end_offset_ms);
                 // [M13.2.1] effective_elapsed = wall_elapsed - paused durations.
                 // (Текущая pause-duration не учитывается потому что paused=false
                 // в этой ветке.)
                 let wall_elapsed = last_rms_ts_ms.saturating_sub(chunk_start_ms);
-                let elapsed = wall_elapsed.saturating_sub(paused_total_ms_in_chunk);
+                let elapsed = wall_elapsed.saturating_sub(capped_paused);
                 if elapsed < config.window_start_offset_ms {
                     // Слишком рано — chunk ещё <9 мин (active recording time).
                     continue;
                 }
                 // Window рассчитываем на effective time. Shift на pause-сумму
                 // даёт окно в wall-time терминах.
-                let window_start = chunk_start_ms + paused_total_ms_in_chunk + config.window_start_offset_ms;
-                let window_end = chunk_start_ms + paused_total_ms_in_chunk + config.window_end_offset_ms;
+                let window_start = chunk_start_ms + capped_paused + config.window_start_offset_ms;
+                let window_end = chunk_start_ms + capped_paused + config.window_end_offset_ms;
                 let cut_search_end = window_end.min(last_rms_ts_ms);
                 if cut_search_end <= window_start {
                     continue;
