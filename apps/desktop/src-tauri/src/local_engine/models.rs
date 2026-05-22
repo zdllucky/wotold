@@ -626,6 +626,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn check_status_fast_present_when_file_exists_nonzero() {
+        let dir = tempdir().unwrap();
+        let p = model_path(dir.path(), "whisper-small");
+        fs::create_dir_all(p.parent().unwrap()).await.unwrap();
+        fs::write(&p, b"some-bytes").await.unwrap();
+        let status = check_status_fast(dir.path(), "whisper-small").await.unwrap();
+        match status {
+            ModelStatus::Present { id, bytes_total } => {
+                assert_eq!(id, "whisper-small");
+                assert_eq!(bytes_total, 10);
+            }
+            s => panic!("expected Present, got {s:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_status_fast_absent_when_zero_bytes() {
+        let dir = tempdir().unwrap();
+        let p = model_path(dir.path(), "whisper-small");
+        fs::create_dir_all(p.parent().unwrap()).await.unwrap();
+        fs::write(&p, b"").await.unwrap();
+        let status = check_status_fast(dir.path(), "whisper-small").await.unwrap();
+        match status {
+            ModelStatus::Absent { id, .. } => assert_eq!(id, "whisper-small"),
+            s => panic!("expected Absent, got {s:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_status_fast_absent_when_missing() {
+        let dir = tempdir().unwrap();
+        let status = check_status_fast(dir.path(), "qwen25-1_5b").await.unwrap();
+        match status {
+            ModelStatus::Absent { id, bytes_total } => {
+                assert_eq!(id, "qwen25-1_5b");
+                // bytes_total = catalog entry size, not 0
+                assert!(bytes_total > 0);
+            }
+            s => panic!("expected Absent, got {s:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_status_fast_rejects_unknown_id() {
+        let dir = tempdir().unwrap();
+        let err = check_status_fast(dir.path(), "not-real").await;
+        assert!(err.is_err());
+    }
+
+    #[tokio::test]
+    async fn check_status_fast_does_not_compute_sha256() {
+        // Если бы fast-path делал SHA256, то «не-валидный» payload вернул
+        // бы Corrupted (как делает обычный check_status). Fast возвращает
+        // Present игнорируя содержимое.
+        let dir = tempdir().unwrap();
+        let p = model_path(dir.path(), "whisper-small");
+        fs::create_dir_all(p.parent().unwrap()).await.unwrap();
+        fs::write(&p, b"not-a-real-model-payload").await.unwrap();
+        let status = check_status_fast(dir.path(), "whisper-small").await.unwrap();
+        assert!(matches!(status, ModelStatus::Present { .. }));
+    }
+
+    #[tokio::test]
     async fn delete_is_idempotent() {
         let dir = tempdir().unwrap();
         // Удаление отсутствующей модели — no-op (not an error).

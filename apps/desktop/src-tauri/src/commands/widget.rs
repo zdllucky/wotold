@@ -122,16 +122,8 @@ pub async fn snap_to_nearest_side(
     let mon_w = monitor.size().width as f64 / scale;
     let mon_h = monitor.size().height as f64 / scale;
 
-    // LEFT vs RIGHT по центру widget'а относительно центра монитора.
-    let target_x = if center_x < mon_x + mon_w / 2.0 {
-        mon_x + MARGIN
-    } else {
-        mon_x + mon_w - WIDGET_W - MARGIN
-    };
-
-    let min_y = mon_y + SAFE_AREA_TOP;
-    let max_y = mon_y + mon_h - WIDGET_H - MARGIN;
-    let target_y = current_y.clamp(min_y, max_y);
+    let (target_x, target_y) =
+        compute_snap_target(center_x, current_y, mon_x, mon_y, mon_w, mon_h);
 
     // easeOutCubic анимация: t' = 1 − (1 − t)^3.
     for i in 1..=SNAP_FRAMES {
@@ -225,6 +217,33 @@ fn point_in_monitor(monitor: &Monitor, x: f64, y: f64) -> bool {
 
 /// [S8] Clamp logical position into safe area of whichever monitor contains
 /// the widget. Enforces MARGIN от боковых/нижнего краёв и SAFE_AREA_TOP сверху
+/// Pure-функция для snap-to-vertical-side. Считает target (x, y) от центра
+/// widget'а + bounds монитора. Decoupled от Tauri/AppHandle ради unit-тестов.
+///
+/// Контракт:
+/// - X притягивается к LEFT (mon_x + MARGIN) если widget center в левой
+///   половине монитора, иначе к RIGHT (mon_x + mon_w − WIDGET_W − MARGIN).
+/// - Y сохраняется как `current_y`, но clamp'ится в `[SAFE_AREA_TOP, mon_h
+///   − WIDGET_H − MARGIN]` чтобы pill не уезжал под menu bar или нижний край.
+pub(crate) fn compute_snap_target(
+    center_x: f64,
+    current_y: f64,
+    mon_x: f64,
+    mon_y: f64,
+    mon_w: f64,
+    mon_h: f64,
+) -> (f64, f64) {
+    let target_x = if center_x < mon_x + mon_w / 2.0 {
+        mon_x + MARGIN
+    } else {
+        mon_x + mon_w - WIDGET_W - MARGIN
+    };
+    let min_y = mon_y + SAFE_AREA_TOP;
+    let max_y = mon_y + mon_h - WIDGET_H - MARGIN;
+    let target_y = current_y.clamp(min_y, max_y);
+    (target_x, target_y)
+}
+
 /// (под menu bar). Returns the clamped pair — used при persistence after drag
 /// to keep widget away from screen edges.
 pub fn clamp_to_safe_area(app: &AppHandle, x: f64, y: f64) -> (f64, f64) {
@@ -299,6 +318,7 @@ pub async fn restore_main_window(app: AppHandle) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     // Sanity checks for the constants — guard against accidental renames.
     // The labels in `tauri.conf.json` (windows[].label) MUST stay in sync
@@ -307,5 +327,85 @@ mod tests {
     fn labels_match_tauri_config() {
         assert_eq!(WIDGET_LABEL, "recording-widget");
         assert_eq!(MAIN_LABEL, "main");
+    }
+
+    // Monitor fixture: single 1920×1080 at origin (0,0), scale 1.
+    // mon_x=0, mon_y=0, mon_w=1920, mon_h=1080.
+    const MON_X: f64 = 0.0;
+    const MON_Y: f64 = 0.0;
+    const MON_W: f64 = 1920.0;
+    const MON_H: f64 = 1080.0;
+
+    #[test]
+    fn snap_center_left_half_goes_to_left_edge() {
+        // center_x=400 < mon_w/2=960 → snap LEFT
+        let (tx, _) = compute_snap_target(400.0, 500.0, MON_X, MON_Y, MON_W, MON_H);
+        assert_eq!(tx, MON_X + MARGIN);
+    }
+
+    #[test]
+    fn snap_center_right_half_goes_to_right_edge() {
+        // center_x=1500 > mon_w/2=960 → snap RIGHT
+        let (tx, _) = compute_snap_target(1500.0, 500.0, MON_X, MON_Y, MON_W, MON_H);
+        assert_eq!(tx, MON_X + MON_W - WIDGET_W - MARGIN);
+    }
+
+    #[test]
+    fn snap_center_exactly_at_midpoint_goes_to_right() {
+        // center_x=mon_w/2 → `<` strict → не выбирает LEFT, идёт в RIGHT
+        let (tx, _) = compute_snap_target(960.0, 500.0, MON_X, MON_Y, MON_W, MON_H);
+        assert_eq!(tx, MON_X + MON_W - WIDGET_W - MARGIN);
+    }
+
+    #[test]
+    fn snap_y_clamped_to_safe_area_top() {
+        // current_y=10 (под menu bar) → clamp к SAFE_AREA_TOP
+        let (_, ty) = compute_snap_target(400.0, 10.0, MON_X, MON_Y, MON_W, MON_H);
+        assert_eq!(ty, MON_Y + SAFE_AREA_TOP);
+    }
+
+    #[test]
+    fn snap_y_clamped_to_safe_area_bottom() {
+        // current_y слишком близко к низу → clamp к mon_h − WIDGET_H − MARGIN
+        let (_, ty) = compute_snap_target(400.0, 2000.0, MON_X, MON_Y, MON_W, MON_H);
+        assert_eq!(ty, MON_Y + MON_H - WIDGET_H - MARGIN);
+    }
+
+    #[test]
+    fn snap_y_preserved_when_in_safe_area() {
+        // current_y=500 (середина монитора) → сохраняется
+        let (_, ty) = compute_snap_target(400.0, 500.0, MON_X, MON_Y, MON_W, MON_H);
+        assert_eq!(ty, 500.0);
+    }
+
+    #[rstest]
+    // Y < SAFE_AREA_TOP=32 → clamp ко top
+    #[case(100.0, 10.0, MON_X + MARGIN, MON_Y + SAFE_AREA_TOP)] // TL corner
+    #[case(1800.0, 10.0, MON_X + MON_W - WIDGET_W - MARGIN, MON_Y + SAFE_AREA_TOP)] // TR
+    // Y > mon_h − WIDGET_H − MARGIN=984 → clamp к bottom
+    #[case(100.0, 1050.0, MON_X + MARGIN, MON_Y + MON_H - WIDGET_H - MARGIN)] // BL
+    #[case(1800.0, 1050.0, MON_X + MON_W - WIDGET_W - MARGIN, MON_Y + MON_H - WIDGET_H - MARGIN)] // BR
+    fn snap_four_corners(
+        #[case] center_x: f64,
+        #[case] current_y: f64,
+        #[case] expected_x: f64,
+        #[case] expected_y: f64,
+    ) {
+        let (tx, ty) = compute_snap_target(center_x, current_y, MON_X, MON_Y, MON_W, MON_H);
+        assert!((tx - expected_x).abs() < 0.001, "tx={tx} expected={expected_x}");
+        assert!((ty - expected_y).abs() < 0.001, "ty={ty} expected={expected_y}");
+    }
+
+    #[test]
+    fn snap_second_monitor_uses_local_bounds() {
+        // Внешний 2560×1440 монитор справа от primary (offset 1920, 0).
+        // Widget на 3200, 500 (центр right-half второго монитора) → snap к
+        // RIGHT edge ВТОРОГО монитора, не первого.
+        let mon2_x = 1920.0;
+        let mon2_w = 2560.0;
+        let mon2_h = 1440.0;
+        let (tx, _) = compute_snap_target(3200.0, 500.0, mon2_x, MON_Y, mon2_w, mon2_h);
+        assert_eq!(tx, mon2_x + mon2_w - WIDGET_W - MARGIN);
+        assert!(tx > 1920.0, "tx должен быть на втором мониторе");
     }
 }
