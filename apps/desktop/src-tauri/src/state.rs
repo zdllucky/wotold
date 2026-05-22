@@ -5,7 +5,7 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Manager};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 use crate::{
     audio::{call_detect::CallDetectHandle, macos::RecordingSession},
@@ -36,6 +36,11 @@ pub struct AppState {
     /// Orchestrator умирает natural'но когда sidecar terminates (rms_rx закрывается).
     /// stop_recording просто делает `take()` — `await` не нужен.
     pub orchestrator: Arc<Mutex<Option<JoinHandle<OrchestratorSummary>>>>,
+    /// [M13.2.1] Sender для pause/resume сигналов в активный orchestrator
+    /// (`true` = pause, `false` = resume). `None` если orchestrator не
+    /// запущен. Cleared в stop_recording одновременно с handle'ом.
+    /// Pause/resume Tauri commands делают `try_send` fire-and-forget.
+    pub orchestrator_pause_tx: Arc<Mutex<Option<mpsc::Sender<bool>>>>,
 }
 
 pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
@@ -77,6 +82,7 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         pipeline_tasks: Arc::new(Mutex::new(HashMap::new())),
         call_detect: Arc::new(crate::audio::call_detect::CallDetectController::new()),
         orchestrator: Arc::new(Mutex::new(None)),
+        orchestrator_pause_tx: Arc::new(Mutex::new(None)),
     })
 }
 
