@@ -226,10 +226,7 @@ pub enum ModelStatus {
 /// `Absent`. Без SHA256 — для списков/UI где скорость важнее верификации.
 /// SHA256-проверка (corruption) делается только в `check_status` перед реальным
 /// использованием модели.
-pub async fn check_status_fast(
-    app_data_dir: &Path,
-    id: &str,
-) -> Result<ModelStatus, AppError> {
+pub async fn check_status_fast(app_data_dir: &Path, id: &str) -> Result<ModelStatus, AppError> {
     let entry = lookup(id).ok_or_else(|| AppError::Other(format!("unknown model id: {id}")))?;
     let path = model_path(app_data_dir, id);
     let meta = tokio::fs::metadata(&path).await;
@@ -631,7 +628,9 @@ mod tests {
         let p = model_path(dir.path(), "whisper-small");
         fs::create_dir_all(p.parent().unwrap()).await.unwrap();
         fs::write(&p, b"some-bytes").await.unwrap();
-        let status = check_status_fast(dir.path(), "whisper-small").await.unwrap();
+        let status = check_status_fast(dir.path(), "whisper-small")
+            .await
+            .unwrap();
         match status {
             ModelStatus::Present { id, bytes_total } => {
                 assert_eq!(id, "whisper-small");
@@ -647,7 +646,9 @@ mod tests {
         let p = model_path(dir.path(), "whisper-small");
         fs::create_dir_all(p.parent().unwrap()).await.unwrap();
         fs::write(&p, b"").await.unwrap();
-        let status = check_status_fast(dir.path(), "whisper-small").await.unwrap();
+        let status = check_status_fast(dir.path(), "whisper-small")
+            .await
+            .unwrap();
         match status {
             ModelStatus::Absent { id, .. } => assert_eq!(id, "whisper-small"),
             s => panic!("expected Absent, got {s:?}"),
@@ -684,7 +685,9 @@ mod tests {
         let p = model_path(dir.path(), "whisper-small");
         fs::create_dir_all(p.parent().unwrap()).await.unwrap();
         fs::write(&p, b"not-a-real-model-payload").await.unwrap();
-        let status = check_status_fast(dir.path(), "whisper-small").await.unwrap();
+        let status = check_status_fast(dir.path(), "whisper-small")
+            .await
+            .unwrap();
         assert!(matches!(status, ModelStatus::Present { .. }));
     }
 
