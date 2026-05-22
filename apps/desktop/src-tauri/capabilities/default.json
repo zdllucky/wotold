@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set: core + updater (M11.6) + dialog (confirms) + shell (audio sidecar + OAuth open) + deep-link",
+  "description": "Default capability set: core + updater (M11.6) + dialog (confirms) + shell (audio sidecar + OAuth open + M12 local-engine sidecars) + deep-link. [Security M-3] args.validator regex здесь — последняя граница. Primary control — Rust-side path construction (constants + UUIDs) + ensure_path_under() в local_engine::llm.",
   "windows": ["main", "recording-widget"],
   "permissions": [
     "core:default",

@@ -39,6 +39,7 @@ use tokio::sync::Mutex;
 use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 
 use super::models::{model_path, ModelId};
+use super::sidecar::SidecarGuard;
 
 /// Имя sidecar бинаря — совпадает с `tauri.conf.json::externalBin` и
 /// capability whitelist'ом. Файлы на диске: `binaries/wotold-llama-<triple>`.
@@ -130,15 +131,35 @@ impl LlmProvider for LocalLlamaProvider {
 
         // 1. Сериализуем prompt в файл. llama-cli `-f` читает целиком с диска,
         //    не страдает от stdin escaping на UTF-8 кириллице.
+        //
+        // [Security M-2] Создаём с mode 0o600 + O_CREAT|O_EXCL — sensitive
+        //    транскрипт не должен быть readable other users в shared /tmp.
+        //    `std::env::temp_dir()` на macOS обычно даёт user-scoped
+        //    /var/folders, но defense-in-depth: explicit perms.
         let prompt = build_prompt(&request);
         let prompt_path = self
             .tmp_dir
             .join(format!("wotold-llama-{}.txt", uuid::Uuid::new_v4()));
-        tokio::fs::write(&prompt_path, &prompt)
+        write_user_only(&prompt_path, prompt.as_bytes())
             .await
             .map_err(|e| LlmError::Provider(format!("prompt write: {e}")))?;
 
         // 2. Спавним sidecar. Args строго соответствуют capability validator'ам.
+        // [Security M-3] Defense-in-depth path checks ДО передачи в sidecar:
+        //    model_path обязан быть под `local_engine/models/` директорией,
+        //    prompt_path — под tmp_dir. `..` сегменты блокируются.
+        // model_path под app_data_dir (constants → no '..'). Validate inline.
+        if self
+            .model_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(LlmError::Provider(
+                "model path contains '..' segment".into(),
+            ));
+        }
+        ensure_path_under(&prompt_path, &self.tmp_dir).map_err(LlmError::Provider)?;
+
         let max_tokens = request
             .max_tokens
             .map(|n| n.clamp(256, 8192))
@@ -194,6 +215,49 @@ impl LlmProvider for LocalLlamaProvider {
     }
 }
 
+/// [Security M-3] Defense-in-depth: проверить что path не содержит `..`
+/// сегментов И начинается с разрешённого prefix. Capability validator
+/// `^[A-Za-z0-9._/\-]+$` пропускает `../../etc/passwd` — это последняя
+/// граница. Канонических `.canonicalize()` НЕ делаем (path может не
+/// существовать на момент проверки — например, output stem whisper-cli).
+///
+/// Returns Err если найден `..` сегмент или prefix не совпадает.
+pub(super) fn ensure_path_under(path: &Path, allowed_prefix: &Path) -> Result<(), String> {
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(format!("path {} contains '..' segment", path.display()));
+    }
+    if !path.starts_with(allowed_prefix) {
+        return Err(format!(
+            "path {} not under prefix {}",
+            path.display(),
+            allowed_prefix.display()
+        ));
+    }
+    Ok(())
+}
+
+/// [Security M-2] Запись в файл с mode 0o600 (owner read/write only).
+/// `O_EXCL` гарантирует что файл не существовал ранее — защита от race
+/// или симлинк-атаки в shared /tmp. Помечен `pub(super)` для переиспользования
+/// в [`super::stt`].
+pub(super) async fn write_user_only(path: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
+    // `tokio::fs::OpenOptions::mode` принимает u32 — это не Unix-only ext,
+    // а нативный tokio метод (на не-unix просто no-op).
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true) // = O_CREAT | O_EXCL
+        .mode(0o600)
+        .open(path)
+        .await?;
+    file.write_all(bytes).await?;
+    file.flush().await?;
+    Ok(())
+}
+
 /// Собрать финальный prompt: system + двойной перенос + transcript.
 fn build_prompt(request: &LlmRequest) -> String {
     let mut s = String::with_capacity(request.system.len() + request.input.len() + 4);
@@ -215,10 +279,10 @@ async fn run_sidecar_with_timeout(
     let (mut rx, child) = sidecar
         .spawn()
         .map_err(|e| LlmError::Provider(format!("sidecar spawn: {e}")))?;
-    // [M12.3.6] llama-cli не читает stdin (prompt передан через `-f`), но
-    // `tauri-plugin-shell::CommandChild` всё равно держит PipeWriter
-    // открытым до drop. Это не блокирует процесс — llama-cli просто игнорит
-    // stdin. Закрытие происходит при `drop(child)` или `child.kill()`.
+    // [M12.3.6 + M12.6.4] llama-cli не читает stdin (prompt через `-f`).
+    // `SidecarGuard` гарантирует SIGKILL процессу при cancel / panic /
+    // unhandled Err — без него process переживает abort task'а на 5+ минут.
+    let mut guard = Some(SidecarGuard::new(child));
 
     let mut stdout = Vec::<u8>::new();
     let mut exit_code: Option<i32> = None;
@@ -246,8 +310,11 @@ async fn run_sidecar_with_timeout(
 
     match drained {
         Ok(Ok(())) => {
-            // Terminated event already received — процесс мёртв, drop = no-op.
-            drop(child);
+            // Terminated event received — процесс мёртв. Release guard
+            // чтобы Drop не пытался killить уже-завершившийся pid.
+            if let Some(g) = guard.take() {
+                g.release();
+            }
             if let Some(code) = exit_code {
                 if code != 0 {
                     return Err(LlmError::Provider(format!(
@@ -259,18 +326,20 @@ async fn run_sidecar_with_timeout(
             Ok(String::from_utf8_lossy(&stdout).into_owned())
         }
         Ok(Err(e)) => {
-            // Sidecar Error event получен — child может быть ещё жив.
-            // Явный kill чтобы не оставлять зомби.
-            let _ = child.kill();
+            // Sidecar Error event — child может быть ещё жив, явный kill.
+            if let Some(g) = guard.take() {
+                g.kill();
+            }
             Err(e)
         }
         Err(_) => {
-            // [PRD §M12.3.6] Таймаут — child всё ещё работает, нужен явный
-            // SIGKILL. `tauri_plugin_shell::CommandChild::kill()` →
-            // `SharedChild::kill()` → POSIX kill(SIGKILL). `drop(child)`
-            // НЕ убивает процесс (плагин не имеет Drop impl), только закрывает
-            // stdin pipe writer.
-            let _ = child.kill();
+            // [PRD §M12.3.6 + M12.6.4] Timeout / cancel — child работает,
+            // нужен SIGKILL. `tauri_plugin_shell::CommandChild::kill()` →
+            // `SharedChild::kill()` → POSIX kill(SIGKILL). При abort task'а
+            // `guard` всё равно drop'нется и убьёт процесс (defense-in-depth).
+            if let Some(g) = guard.take() {
+                g.kill();
+            }
             Err(LlmError::Provider("local_llm_timeout".into()))
         }
     }
@@ -278,6 +347,16 @@ async fn run_sidecar_with_timeout(
 
 /// Найти первый сбалансированный JSON-объект в строке. Модель может
 /// выдать чуть-чуть мусора до/после; ищем по brace-counter.
+///
+/// # UTF-8 safety
+///
+/// Функция итерирует raw `u8`, но это безопасно для UTF-8 строк по
+/// определению кодировки: continuation bytes (0x80..=0xBF) НЕ пересекаются
+/// с ASCII-кодами которые мы трекаем (`"` 0x22, `{` 0x7B, `}` 0x7D, `\` 0x5C).
+/// Любой multi-byte Unicode codepoint имеет ведущий byte ≥ 0xC0 — тоже вне
+/// нашего набора. Поэтому мы не можем «случайно» войти в строку посреди
+/// многобайтового символа. Регрессия покрыта `extract_json_handles_escaped_quote_in_string`
+/// + `extract_json_handles_nested_braces` тестами.
 fn extract_json_object(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
     let start = bytes.iter().position(|&b| b == b'{')?;
@@ -502,5 +581,73 @@ mod tests {
         let v: Value = serde_json::from_str("[\"not\", \"object\"]").unwrap();
         let err = validate_recap_shape(v).unwrap_err();
         assert!(err.to_string().contains("not object"));
+    }
+
+    // ── write_user_only ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn write_user_only_creates_file_with_0600_perms() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("prompt.txt");
+        write_user_only(&path, b"sensitive transcript")
+            .await
+            .unwrap();
+        let meta = tokio::fs::metadata(&path).await.unwrap();
+        let mode = meta.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "expected 0o600, got 0o{mode:o}");
+        let body = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(body, "sensitive transcript");
+    }
+
+    #[tokio::test]
+    async fn write_user_only_refuses_existing_path() {
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("existing.txt");
+        tokio::fs::write(&path, b"prior").await.unwrap();
+        // O_EXCL → AlreadyExists. Защита от race / симлинк подмены.
+        let err = write_user_only(&path, b"new").await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+    }
+
+    // ── ensure_path_under ───────────────────────────────────────────────
+
+    #[test]
+    fn ensure_path_under_accepts_path_inside_prefix() {
+        assert!(ensure_path_under(
+            Path::new("/data/local_engine/models/whisper-small.bin"),
+            Path::new("/data/local_engine"),
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn ensure_path_under_rejects_dotdot_segment() {
+        let err = ensure_path_under(
+            Path::new("/data/local_engine/../etc/passwd"),
+            Path::new("/data/local_engine"),
+        )
+        .expect_err("`..` сегмент → Err");
+        assert!(err.contains("'..' segment"));
+    }
+
+    #[test]
+    fn ensure_path_under_rejects_path_outside_prefix() {
+        let err = ensure_path_under(Path::new("/etc/passwd"), Path::new("/data/local_engine"))
+            .expect_err("вне prefix → Err");
+        assert!(err.contains("not under prefix"));
+    }
+
+    #[test]
+    fn ensure_path_under_handles_relative_paths_safely() {
+        // Relative paths не starts_with absolute prefix — должны быть отклонены.
+        let err = ensure_path_under(
+            Path::new("models/whisper.bin"),
+            Path::new("/data/local_engine"),
+        )
+        .expect_err("relative → Err");
+        assert!(err.contains("not under prefix"));
     }
 }
