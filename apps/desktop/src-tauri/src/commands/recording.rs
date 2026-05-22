@@ -1,17 +1,35 @@
 //! Commands for start/stop recording + audio permissions.
 
+use std::sync::Arc;
+
 use serde::Serialize;
+use sqlx::SqlitePool;
 use tauri::{AppHandle, State};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::{
-    audio::macos as audio_macos,
+    audio::macos::{self as audio_macos, OrchestratorChannels, RecordingSession},
     audio::permissions::{self, PermissionsStatus},
-    db::Call,
+    call_store::CallStore,
+    db::{self, Call},
     events::EventBus,
+    local_engine::{
+        engine::{EngineKind, SETTING_ACTIVE_ENGINE},
+        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
+        stt::{LocalWhisperProvider, TrackKind},
+    },
+    pipeline::{
+        chunk_orchestrator::{self, ChunkOrchestratorConfig},
+        chunk_runner::{self, ChunkRunInput},
+    },
+    providers::transcription::TranscriptionProvider,
     services::pipeline_runner::PipelineRunner,
     state::AppState,
     AppError,
 };
+
+/// [M13.1.5c] Settings key для feature flag. См. PRD §M13.1.5.
+const SETTING_CHUNKED_PIPELINE: &str = "recording.chunked_pipeline";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RecordingState {
@@ -87,11 +105,38 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     let mic_path = state.store.mic_path(&call.id);
     let system_path = state.store.system_path(&call.id);
 
-    // [M13.1.5b] orchestrator=None — recording happy path неизменён.
-    // Wiring chunked pipeline в start_recording — следующий sprint (M13.1.5c).
-    match audio_macos::start(&app, call.id.clone(), mic_path, system_path, None).await {
+    // [M13.1.5c] Если CHUNKED_PIPELINE=ON + engine=local — настраиваем каналы
+    // для chunk_orchestrator. Cloud engine ignor'ит флаг (server-side streaming
+    // даёт минимальный win от chunking). При любых ошибках setup (preset не
+    // задан, модель не скачана) — откатываемся на happy path без chunked.
+    let chunked_setup = match prepare_chunked_setup(&app, &state, &call.id).await {
+        Ok(setup) => setup,
+        Err(e) => {
+            log::warn!("chunked_pipeline disabled (setup failed): {e}; falling back to full-file");
+            None
+        }
+    };
+    let orchestrator_channels = chunked_setup.as_ref().map(|s| s.channels.clone());
+
+    match audio_macos::start(
+        &app,
+        call.id.clone(),
+        mic_path,
+        system_path,
+        orchestrator_channels,
+    )
+    .await
+    {
         Ok(session) => {
             *guard = Some(session);
+            drop(guard);
+
+            // Spawn orchestrator только если setup succeed'ил — session уже
+            // в state.recording, rotate_fn будет lock'ать тот же Mutex.
+            if let Some(setup) = chunked_setup {
+                spawn_orchestrator(&state, &app, &call.id, setup).await;
+            }
+
             EventBus::new(Some(&app)).recording_state_changed();
             Ok(call)
         }
@@ -115,6 +160,16 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     let call_id = session.call_id.clone();
     let mic_path = session.mic_path.clone();
     let system_path = session.system_path.clone();
+
+    // [M13.1.5c] Drop orchestrator handle. Task сам exit'ит когда sidecar
+    // terminate'нёт (rms_rx + rotate_rx закрываются на drop dispatcher'а).
+    // Не await'им и не abort'им — иначе stop_recording завис бы или прервали
+    // бы in-flight chunk_runner (DB row остался бы в `processing`). Dropping
+    // JoinHandle detach'ит task, он сам finalize'ит в фоне.
+    if state.orchestrator.lock().await.take().is_some() {
+        log::debug!("orchestrator handle detached on stop (will exit via channel closure)");
+    }
+
     let result = audio_macos::stop(session).await;
 
     let call = match result {
@@ -239,4 +294,223 @@ pub fn open_system_privacy_pane(pane: String) -> Result<(), AppError> {
         .spawn()
         .map_err(|e| AppError::Other(format!("open failed: {e}")))?;
     Ok(())
+}
+
+// ============================================================================
+// [M13.1.5c] Chunked pipeline wiring helpers
+// ============================================================================
+
+/// Owned bundle для setup chunked pipeline'а — channels + provider + stop_tx.
+/// Создаётся в `prepare_chunked_setup`, разбирается в `spawn_orchestrator`.
+struct ChunkedSetup {
+    channels: OrchestratorChannels,
+    rms_rx: mpsc::Receiver<(u64, f32)>,
+    rotate_rx: mpsc::Receiver<serde_json::Value>,
+    stop_rx: oneshot::Receiver<()>,
+    /// `stop_tx` — каноничный путь shutdown'а. Phase 1 не использует (channels
+    /// закроются natural'но), но держим для будущего pause-aware orchestrator.
+    _stop_tx: oneshot::Sender<()>,
+    provider: Arc<dyn TranscriptionProvider>,
+    stt_lang: String,
+}
+
+/// Прочитать settings + (если оба условия true) построить provider + channels.
+/// Возвращает `Ok(None)` если chunked не активирован — это норм happy path.
+/// `Err` зарезервирован для config errors которые имеет смысл log'нуть.
+async fn prepare_chunked_setup(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    call_id: &str,
+) -> Result<Option<ChunkedSetup>, AppError> {
+    let _ = call_id;
+
+    let chunked_on = matches!(
+        db::get_setting(&state.db, SETTING_CHUNKED_PIPELINE)
+            .await?
+            .as_deref(),
+        Some("1") | Some("true")
+    );
+    if !chunked_on {
+        return Ok(None);
+    }
+
+    let engine = db::get_setting(&state.db, SETTING_ACTIVE_ENGINE)
+        .await?
+        .as_deref()
+        .and_then(EngineKind::from_str);
+    if !matches!(engine, Some(EngineKind::Local)) {
+        log::debug!("chunked_pipeline flag set but engine != local; skipping orchestrator");
+        return Ok(None);
+    }
+
+    // Build LocalWhisperProvider mirror'ом логики pipeline::run.
+    let preset = db::get_setting(&state.db, SETTING_ACTIVE_PRESET)
+        .await?
+        .as_deref()
+        .and_then(LocalEnginePreset::from_str)
+        .ok_or_else(|| {
+            AppError::Other(
+                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings".into(),
+            )
+        })?;
+    let whisper_id = preset.whisper_model_id();
+    let provider =
+        LocalWhisperProvider::for_preset(&state.app_data_dir, whisper_id, TrackKind::MicOwner)
+            .with_app(app.clone())
+            .await;
+    let provider: Arc<dyn TranscriptionProvider> = Arc::new(provider);
+
+    // STT lang — auto по умолчанию (см. pipeline::run).
+    let stt_lang = db::get_setting(&state.db, "stt_lang")
+        .await?
+        .unwrap_or_else(|| "auto".to_string());
+
+    let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(256);
+    let (rotate_tx, rotate_rx) = mpsc::channel::<serde_json::Value>(8);
+    let (stop_tx, stop_rx) = oneshot::channel::<()>();
+
+    Ok(Some(ChunkedSetup {
+        channels: OrchestratorChannels { rms_tx, rotate_tx },
+        rms_rx,
+        rotate_rx,
+        stop_rx,
+        _stop_tx: stop_tx,
+        provider,
+        stt_lang,
+    }))
+}
+
+/// Spawn'нуть chunk_orchestrator task с rotate_fn + enqueue_fn closures.
+/// Handle store'ится в `AppState.orchestrator`.
+async fn spawn_orchestrator(
+    state: &State<'_, AppState>,
+    _app: &AppHandle,
+    call_id: &str,
+    setup: ChunkedSetup,
+) {
+    let ChunkedSetup {
+        channels: _,
+        rms_rx,
+        rotate_rx,
+        stop_rx,
+        _stop_tx,
+        provider,
+        stt_lang,
+    } = setup;
+
+    let session_ref = state.recording.clone();
+    let pool = state.db.clone();
+    let store = state.store.clone();
+    let call_id_str = call_id.to_string();
+
+    let rotate_fn = make_rotate_fn(call_id_str.clone(), store.clone(), session_ref);
+    let enqueue_fn = make_enqueue_fn(
+        call_id_str.clone(),
+        pool.clone(),
+        store.clone(),
+        provider.clone(),
+        stt_lang,
+    );
+
+    let handle = tauri::async_runtime::spawn(async move {
+        let summary = chunk_orchestrator::run(
+            ChunkOrchestratorConfig::default(),
+            rms_rx,
+            rotate_rx,
+            stop_rx,
+            rotate_fn,
+            enqueue_fn,
+        )
+        .await;
+        log::info!(
+            "chunk_orchestrator finished: rotations={} chunks_done={} rotate_err={} enqueue_err={}",
+            summary.rotations_triggered,
+            summary.chunks_completed,
+            summary.rotate_errors,
+            summary.enqueue_errors,
+        );
+        summary
+    });
+
+    *state.orchestrator.lock().await = Some(handle);
+    log::info!("chunk_orchestrator spawned for call {call_id_str}");
+}
+
+/// Closure factory для rotate-callback. Lock'аем `state.recording` Mutex чтобы
+/// получить `&mut RecordingSession` для `audio_macos::rotate`.
+fn make_rotate_fn(
+    call_id: String,
+    store: Arc<CallStore>,
+    session: Arc<Mutex<Option<RecordingSession>>>,
+) -> impl Fn(u32) -> chunk_orchestrator::RotateFut + Send + Sync + 'static {
+    move |chunk_idx_closing| {
+        let call_id = call_id.clone();
+        let store = store.clone();
+        let session = session.clone();
+        Box::pin(async move {
+            let next_idx = chunk_idx_closing + 1;
+            store
+                .ensure_chunk_dir(&call_id, next_idx)
+                .await
+                .map_err(|e| format!("ensure_chunk_dir({next_idx}): {e}"))?;
+            let next_mic = store.chunk_mic_path(&call_id, next_idx);
+            let next_system = store.chunk_system_path(&call_id, next_idx);
+            let mut guard = session.lock().await;
+            let Some(s) = guard.as_mut() else {
+                return Err("recording session gone before rotate".to_string());
+            };
+            audio_macos::rotate(s, next_mic, next_system)
+                .await
+                .map_err(|e| format!("audio rotate: {e}"))
+        })
+    }
+}
+
+/// Closure factory для enqueue-callback. Pre-insert'ит chunk row, потом
+/// запускает `chunk_runner::run_chunk`. Возвращает transcript_tail для
+/// prev_prompt следующего chunk'а.
+fn make_enqueue_fn(
+    call_id: String,
+    pool: SqlitePool,
+    store: Arc<CallStore>,
+    provider: Arc<dyn TranscriptionProvider>,
+    lang: String,
+) -> impl Fn(u32, u64, u64, Option<String>) -> chunk_orchestrator::EnqueueFut + Send + Sync + 'static
+{
+    move |chunk_idx, start_ms, end_ms, prev_prompt| {
+        let call_id = call_id.clone();
+        let pool = pool.clone();
+        let store = store.clone();
+        let provider = provider.clone();
+        let lang = lang.clone();
+        Box::pin(async move {
+            let mic_path = store.chunk_mic_path(&call_id, chunk_idx);
+            let system_path = store.chunk_system_path(&call_id, chunk_idx);
+            db::chunks::insert_chunk(
+                &pool,
+                &call_id,
+                chunk_idx,
+                start_ms,
+                &mic_path,
+                &system_path,
+            )
+            .await
+            .map_err(|e| format!("insert_chunk({chunk_idx}): {e}"))?;
+
+            let input = ChunkRunInput {
+                call_id: call_id.clone(),
+                chunk_idx,
+                start_ms,
+                end_ms,
+                mic_path,
+                system_path,
+                prev_prompt,
+                lang: lang.clone(),
+            };
+            let out = chunk_runner::run_chunk(&pool, provider.as_ref(), input)
+                .await
+                .map_err(|e| format!("run_chunk({chunk_idx}): {e}"))?;
+            Ok(Some(out.transcript_tail))
+        })
+    }
 }
