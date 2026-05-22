@@ -9,6 +9,8 @@ pub mod admin;
 pub mod call_detection;
 pub mod calls;
 pub mod contacts;
+#[cfg(target_os = "macos")]
+pub mod local_engine;
 pub mod pipeline;
 pub mod recording;
 pub mod secrets;
@@ -24,6 +26,8 @@ pub use admin::*;
 pub use call_detection::*;
 pub use calls::*;
 pub use contacts::*;
+#[cfg(target_os = "macos")]
+pub use local_engine::*;
 pub use pipeline::*;
 pub use recording::*;
 pub use secrets::*;

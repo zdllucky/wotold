@@ -49,6 +49,9 @@ export const SETTINGS_KEYS = {
    *  Если пусто — fallback на top-right primary monitor. */
   RECORDING_WIDGET_X: 'recording.widget.x',
   RECORDING_WIDGET_Y: 'recording.widget.y',
+  /** [M12.7.5] One-time announcement баннер для existing users о local engine.
+   *  '1' = баннер закрыт (либо принят → переход в Settings, либо dismiss). */
+  LOCAL_ENGINE_ANNOUNCEMENT_SEEN: 'local_engine_announcement_seen',
 } as const;
 
 export const SETTINGS_DEFAULTS = {

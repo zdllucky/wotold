@@ -296,6 +296,7 @@ function AppShell() {
               setDetailCallId(id);
               setPage('calls');
             }}
+            onOpenSettings={() => setPage('settings')}
           />
         )}
         {page === 'calls' &&

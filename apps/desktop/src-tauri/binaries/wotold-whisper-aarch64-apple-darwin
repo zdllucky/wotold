@@ -1,0 +1,4 @@
+#!/bin/sh
+# Placeholder whisper-cli binary. See binaries/README.md for build instructions.
+echo '{"error":"placeholder whisper-cli — real binary missing"}' >&2
+exit 99

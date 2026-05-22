@@ -1,0 +1,6 @@
+#!/bin/sh
+# Placeholder llama-cli binary. Real binary is built per binaries/README.md.
+# This stub exits with error so production code paths fail loudly instead of
+# silently producing empty output.
+echo '{"error":"placeholder llama-cli — real binary missing, see binaries/README.md"}' >&2
+exit 99

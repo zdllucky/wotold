@@ -4,3 +4,4 @@ export * from './transcript.js';
 export * from './recap.js';
 export * from './proxy-api.js';
 export * from './updater.js';
+export * from './local-engine.js';

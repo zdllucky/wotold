@@ -34,9 +34,11 @@ interface AvailableUpdate {
 interface HomePageProps {
   /** Опциональный колбэк навигации в детали звонка. */
   onOpenCall?: (callId: string) => void;
+  /** [M12.7.5] Колбэк навигации в Settings → Engine для announcement banner. */
+  onOpenSettings?: () => void;
 }
 
-export function HomePage({ onOpenCall }: HomePageProps = {}) {
+export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
   const { locale, t } = useI18n();
   const rec = useRecording();
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
@@ -55,6 +57,10 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
   // [B17] «Ждут подтверждения» — сумма неподтверждённых спикеров по всем
   // ready-звонкам. Делается one-shot после listCalls; дёшево на N≤50.
   const [pendingSpeakers, setPendingSpeakers] = useState(0);
+  // [M12.7.5] Local engine announcement — показывается existing users
+  // (≥1 ready call) один раз пока не dismiss/accept. Click → SettingsPage
+  // (см. onOpenCall pattern). LocalStorage flag persist'ится в settings.
+  const [showEngineAnnouncement, setShowEngineAnnouncement] = useState(false);
 
   useEffect(() => {
     invoke<AvailableUpdate | null>('check_for_update')
@@ -68,9 +74,31 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       .catch((e: unknown) => console.warn('getSetting consent failed', e));
 
     listCalls()
-      .then((calls) => setRecentCalls(calls.slice(0, 50)))
+      .then((calls) => {
+        setRecentCalls(calls.slice(0, 50));
+        // [M12.7.5] Banner trigger: existing user (≥1 ready call) +
+        // флаг ещё не выставлен. Probe не зовём здесь — Settings → Engine
+        // сам сделает probe при открытии.
+        const hasReady = calls.some((c) => c.status === 'ready');
+        if (hasReady) {
+          getSetting(SETTINGS_KEYS.LOCAL_ENGINE_ANNOUNCEMENT_SEEN)
+            .then((v) => {
+              if (v !== '1') setShowEngineAnnouncement(true);
+            })
+            .catch(() => {
+              /* best-effort */
+            });
+        }
+      })
       .catch((e: unknown) => console.warn('listCalls (home) failed', e));
   }, []);
+
+  const dismissEngineAnnouncement = () => {
+    setShowEngineAnnouncement(false);
+    void setSetting(SETTINGS_KEYS.LOCAL_ENGINE_ANNOUNCEMENT_SEEN, '1').catch(
+      (e: unknown) => console.warn('persist announcement flag failed', e),
+    );
+  };
 
   // [B17] Aggregate unconfirmed speakers across ready calls.
   useEffect(() => {
@@ -242,6 +270,45 @@ export function HomePage({ onOpenCall }: HomePageProps = {}) {
       <p className="subtitle" style={{ maxWidth: 540, marginBottom: 38 }}>
         {subtitle}
       </p>
+
+      {showEngineAnnouncement && (
+        <div
+          className="activity-strip"
+          role="region"
+          aria-label={t('home.engineAnnouncementAria')}
+          style={{
+            maxWidth: 580,
+            marginBottom: 32,
+            fontFamily: 'var(--font-sans)',
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div className="small-caps" style={{ marginBottom: 4 }}>
+              {t('home.engineAnnouncementTitle')}
+            </div>
+            <div style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+              {t('home.engineAnnouncementBody')}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn--primary btn--sm"
+            onClick={() => {
+              dismissEngineAnnouncement();
+              onOpenSettings?.();
+            }}
+          >
+            {t('home.engineAnnouncementOpen')}
+          </button>
+          <button
+            type="button"
+            className="btn btn--quiet btn--sm"
+            onClick={dismissEngineAnnouncement}
+          >
+            {t('home.engineAnnouncementDismiss')}
+          </button>
+        </div>
+      )}
 
       {isIdle && (
         <div
