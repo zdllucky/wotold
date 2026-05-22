@@ -37,6 +37,9 @@ const PRESET_MODELS: Record<LocalEnginePreset, { whisper: string; llm: string; s
   quality: { whisper: 'whisper-large-v3', llm: 'qwen25-7b', sizeGb: 5.5 },
 };
 
+/** [M12-D5] Pyannote ~6 MB — добавляем в download queue для multi-speaker. */
+const PYANNOTE_MODEL_ID = 'pyannote-segmentation';
+
 interface ProgressState {
   modelId: string;
   pct: number;
@@ -146,8 +149,9 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
       await localEngineSetActivePreset(chosenPreset);
 
       // Соберём список моделей которые нужно скачать (skip present).
+      // Включаем pyannote для multi-speaker diarization (PRD §M12-D5).
       const models = PRESET_MODELS[chosenPreset];
-      const ids = [models.whisper, models.llm];
+      const ids = [models.whisper, models.llm, PYANNOTE_MODEL_ID];
       const queue: string[] = [];
       for (const id of ids) {
         const status = await localEngineModelStatus(id);

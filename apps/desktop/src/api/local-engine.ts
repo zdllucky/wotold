@@ -14,7 +14,7 @@ import type {
 /** Запись каталога (без url/sha256 — те приватны для backend). */
 export interface LocalEngineCatalogEntry {
   id: string;
-  kind: 'stt' | 'llm';
+  kind: 'stt' | 'llm' | 'diarization';
   display_name: string;
   size_bytes: number;
   license_url: string;
@@ -59,7 +59,7 @@ export function localEngineHwProbe(force = false): Promise<HwReport> {
 /** [M12.4.4-bis] Сводная таблица для Settings → Storage UI. */
 export interface LocalEngineStorageRow {
   id: string;
-  kind: 'stt' | 'llm';
+  kind: 'stt' | 'llm' | 'diarization';
   display_name: string;
   size_bytes: number;
   status: ModelStatus;

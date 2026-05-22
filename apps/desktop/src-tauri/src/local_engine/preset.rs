@@ -65,9 +65,20 @@ impl LocalEnginePreset {
     /// Оба model id'а для preset'а. Удобно для cleanup и status-aggregation
     /// в UI («установить Balanced — скачать обе модели»). Wire-up в M12.5
     /// Settings UI (Design Gate'нутая секция picker'а preset'ов).
+    ///
+    /// Не включает pyannote-segmentation — она shared across presets и
+    /// optional (degraded mode без неё). См. `shared_model_ids`.
     #[allow(dead_code)]
     pub fn required_model_ids(&self) -> [ModelId; 2] {
         [self.whisper_model_id(), self.llm_model_id()]
+    }
+
+    /// [M12-D5] Модели общие для всех presets — pyannote segmentation для
+    /// multi-speaker диаризации. Optional: без неё system track остаётся
+    /// single-bucket (degraded но рабочий).
+    #[allow(dead_code)]
+    pub fn shared_model_ids() -> [ModelId; 1] {
+        [ModelId::PYANNOTE_SEGMENTATION]
     }
 }
 

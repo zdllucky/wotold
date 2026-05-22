@@ -497,6 +497,15 @@ async fn run_local_inner(
         .clone()
         .or_else(|| sys_t.lang_detected.clone());
 
+    // 4.5. [M12-D5] Multi-speaker diarization на system track. До этого
+    //    шага все system segments имеют `speaker:0` (TrackKind::System default
+    //    в [`local_engine::stt`]). Sherpa-onnx pyannote segmentation + WeSpeaker
+    //    embedding кластеризует фрагменты → каждый sys segment получает
+    //    `speaker:0..4` (cap=4). Diarization non-fatal: при отсутствии моделей
+    //    или voice-onnx feature off → fall back на оригинальный sys_t,
+    //    система-трек остаётся single-bucket (degraded но рабочий).
+    let sys_t = diarize_system_track(&ctx.app_data_dir, &ctx.system_path, sys_t).await;
+
     // 5. Stage MergeArtifacts — переиспользуем cloud helper (он не знает про
     //    engine, просто пишет transcript.md + raw_stt.json).
     let merged = run_stage(
@@ -614,6 +623,78 @@ async fn run_local_inner(
     emit_progress(pool, Some(app), &ctx.call_id, recap_step, 100, None, None).await;
 
     Ok(())
+}
+
+/// [M12-D5] Прогнать system-track через sherpa-onnx OfflineSpeakerDiarization
+/// и смерджить speaker tags в `sys_t.segments`.
+///
+/// Non-fatal: при отсутствии pyannote / WeSpeaker модели или ошибке inference
+/// возвращаем оригинальный `sys_t` без изменений — system track останется
+/// single-bucket (`speaker:0`), pipeline продолжит работать в degraded режиме.
+///
+/// Шаги:
+///
+/// - Проверка наличия pyannote-segmentation на диске (MODEL_CATALOG).
+/// - Проверка наличия WeSpeaker (B3.7c, `voice_model.rs`).
+/// - Spawn `SortformerDiarizer` + `.diarize(system_path)`.
+/// - Apply `merge::merge_word_with_speaker` на sys_t.segments.
+/// - Вернуть обновлённый sys_t.
+#[cfg(target_os = "macos")]
+async fn diarize_system_track(
+    app_data_dir: &Path,
+    system_path: &Path,
+    sys_t: DiarizedTranscript,
+) -> DiarizedTranscript {
+    use crate::local_engine::{
+        diarization::{Diarizer, SortformerDiarizer},
+        merge,
+        models::{self, ModelId, ModelStatus},
+    };
+
+    // 1. Pyannote segmentation: catalog entry должен быть present.
+    let seg_path = models::model_path(app_data_dir, ModelId::PYANNOTE_SEGMENTATION.as_str());
+    let seg_present = matches!(
+        models::check_status(app_data_dir, ModelId::PYANNOTE_SEGMENTATION.as_str()).await,
+        Ok(ModelStatus::Present { .. })
+    );
+    if !seg_present {
+        log::info!(
+            "diarize_system_track: pyannote-segmentation отсутствует — fall back на single-bucket"
+        );
+        return sys_t;
+    }
+
+    // 2. WeSpeaker embedding (B3.7c) — отдельный путь от model catalog.
+    let emb_path = crate::voice_model::model_path(app_data_dir);
+    if !emb_path.exists() {
+        log::info!(
+            "diarize_system_track: WeSpeaker embedder ({}) отсутствует — fall back",
+            emb_path.display()
+        );
+        return sys_t;
+    }
+
+    // 3-5. Diarize + merge. Любая ошибка → fall back (degraded).
+    let diarizer = SortformerDiarizer::new(seg_path, emb_path);
+    let speaker_segments = match diarizer.diarize(system_path).await {
+        Ok(segs) => segs,
+        Err(e) => {
+            log::warn!("diarize_system_track: sortformer err: {e} — fall back на single-bucket");
+            return sys_t;
+        }
+    };
+
+    let merged_segments = merge::merge_word_with_speaker(&sys_t.segments, &speaker_segments);
+    log::info!(
+        "diarize_system_track: {} STT segments + {} speaker segments → {} merged",
+        sys_t.segments.len(),
+        speaker_segments.len(),
+        merged_segments.len()
+    );
+    DiarizedTranscript {
+        segments: merged_segments,
+        ..sys_t
+    }
 }
 
 /// [Phase 3 R2] Stage 1 — Upload. В текущей реализации no-op

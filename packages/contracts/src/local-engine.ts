@@ -13,7 +13,7 @@ export type LocalEnginePreset = 'light' | 'balanced' | 'quality';
 export type EngineKind = 'local' | 'cloud_managed' | 'cloud_byo';
 
 /** Тип модели в каталоге. */
-export type LocalModelKind = 'stt' | 'llm';
+export type LocalModelKind = 'stt' | 'llm' | 'diarization';
 
 /**
  * Запись в hardcoded MODEL_CATALOG (PRD §M12.4.1).

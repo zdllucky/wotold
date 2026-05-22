@@ -67,6 +67,11 @@ MODELS=(
   "qwen25-1_5b|bartowski/Qwen2.5-1.5B-Instruct-GGUF|Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
   "qwen25-3b|bartowski/Qwen2.5-3B-Instruct-GGUF|Qwen2.5-3B-Instruct-Q4_K_M.gguf"
   "qwen25-7b|bartowski/Qwen2.5-7B-Instruct-GGUF|Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+  # [M12-D5] Speaker diarization (sherpa-onnx OfflineSpeakerDiarization).
+  # pyannote segmentation — single model.onnx ~6 MB на HF mirror.
+  # WeSpeaker embedding — reuse `voice_model.rs` (B3.7c) ~26 MB, не в этом
+  # каталоге; см. `voice_model::MODEL_URL` + SHA.
+  "pyannote-segmentation|csukuangfj/sherpa-onnx-pyannote-segmentation-3-0|model.onnx"
 )
 
 # Проверка зависимостей
@@ -109,21 +114,22 @@ for line in "${MODELS[@]}"; do
   fi
 
   # Определяем kind по id
-  if [[ "$id" == whisper-* ]]; then
-    kind="ModelKind::Stt"
-  else
-    kind="ModelKind::Llm"
-  fi
+  case "$id" in
+    whisper-*)        kind="ModelKind::Stt" ;;
+    pyannote-*)       kind="ModelKind::Diarization" ;;
+    *)                kind="ModelKind::Llm" ;;
+  esac
 
   # Human-readable display name
   case "$id" in
-    whisper-small)    display="Whisper Small (RU+EN)" ;;
-    whisper-medium)   display="Whisper Medium (RU+EN)" ;;
-    whisper-large-v3) display="Whisper Large v3" ;;
-    qwen25-1_5b)      display="Qwen 2.5 (1.5B)" ;;
-    qwen25-3b)        display="Qwen 2.5 (3B)" ;;
-    qwen25-7b)        display="Qwen 2.5 (7B)" ;;
-    *)                display="$id" ;;
+    whisper-small)         display="Whisper Small (RU+EN)" ;;
+    whisper-medium)        display="Whisper Medium (RU+EN)" ;;
+    whisper-large-v3)      display="Whisper Large v3" ;;
+    qwen25-1_5b)           display="Qwen 2.5 (1.5B)" ;;
+    qwen25-3b)             display="Qwen 2.5 (3B)" ;;
+    qwen25-7b)             display="Qwen 2.5 (7B)" ;;
+    pyannote-segmentation) display="Pyannote Segmentation 3.0" ;;
+    *)                     display="$id" ;;
   esac
 
   cat <<EOF

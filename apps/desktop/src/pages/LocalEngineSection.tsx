@@ -58,6 +58,9 @@ const PRESET_TO_MODELS: Record<LocalEnginePreset, { whisper: string; llm: string
   quality: { whisper: 'whisper-large-v3', llm: 'qwen25-7b' },
 };
 
+/** [M12-D5] Optional модель для multi-speaker diarization (degraded без неё). */
+const PYANNOTE_MODEL_ID = 'pyannote-segmentation';
+
 interface ModelProgress {
   pct: number;
   bytesDone: number;
@@ -232,9 +235,10 @@ export function LocalEngineSection() {
       try {
         const saved = await localEngineSetActivePreset(next);
         setPreset(saved);
-        // Авто-старт download'ов на отсутствующие модели preset'а.
+        // Авто-старт download'ов на отсутствующие модели preset'а +
+        // pyannote (shared, optional но рекомендованная).
         const needed = PRESET_TO_MODELS[next];
-        for (const id of [needed.whisper, needed.llm]) {
+        for (const id of [needed.whisper, needed.llm, PYANNOTE_MODEL_ID]) {
           const status = statuses[id];
           if (!status || status.state === 'absent' || status.state === 'corrupted') {
             void localEngineModelDownload(id).catch((err) => setError(humanError(err)));
