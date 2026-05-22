@@ -521,7 +521,7 @@
 - [x] **Diarizer trait** — [local_engine/diarization.rs](apps/desktop/src-tauri/src/local_engine/diarization.rs) с `SortformerDiarizer` stub. `MAX_LOCAL_SPEAKERS=4`, `SPEAKER_UNKNOWN` для excess. `apply_speaker_cap` pure-фн с 4 unit-тестами.
 - [x] **Merge timestamps** — [local_engine/merge.rs](apps/desktop/src-tauri/src/local_engine/merge.rs) whisperX-style overlap, owner-bind, NaN guard, sort. 7 unit-тестов.
 - [x] **Owner bind** — `force_owner_track` фиксирует mic-track в `SPEAKER_OWNER` (M3.7).
-- [ ] **Sortformer real wire-up DEFERRED** — sherpa-onnx in-process requires segmentation + embedding model catalog entries (отдельные `.onnx` файлы). MVP local-route использует упрощённую диаризацию (system track → `speaker:0`); существующий B3.x voice clustering работает на сэмплах per-call. Multi-speaker diarization приходит когда sortformer model entries добавятся в MODEL_CATALOG.
+- [x] **Sortformer real wire-up (M12-D5)** — pyannote-segmentation-3-0 (~6 MB) добавлен в MODEL_CATALOG как `ModelKind::Diarization`. WeSpeaker (voice_model.rs B3.7c reuse) — embedding. `SortformerDiarizer::diarize_real` за `#[cfg(feature = "voice-onnx")]`: `Wave::read` → `OfflineSpeakerDiarization::process` через `tokio::task::spawn_blocking` → cap=4 → `SpeakerSegment`. `pipeline::diarize_system_track` non-fatal helper: при отсутствии моделей / voice-onnx off → degraded fall back (system track остаётся `speaker:0`). Auto-download pyannote добавлен в OnboardingEngineStep + Settings preset switch. Без real Inference в тестах: `diarize_real_fails_on_missing_segmentation_model`.
 
 ### M12.3 LocalLlamaProvider (PRD §9 step 4)
 

@@ -4,15 +4,22 @@
 //! одном вызове), local движок разделяет: STT (M12.1) → отдельная диаризация
 //! (этот модуль) → merge timestamps (PRD §M12.2.3).
 //!
-//! Реализация — sherpa-onnx sortformer (3D-Speaker модель). Cap = 4 спикера
-//! (R12 / PRD §M12.2.2). Stub сейчас, реальный wire-up — после §14 pre-flight.
+//! Реализация — sherpa-onnx `OfflineSpeakerDiarization`:
+//! - Segmentation: pyannote-segmentation-3-0 (~6 MB, MODEL_CATALOG entry
+//!   `pyannote-segmentation`).
+//! - Embedding: WeSpeaker (`voice_model.rs`, ~26 MB, B3.7c reuse).
+//! - Clustering: `FastClusteringConfig` дефолт (k auto-detected).
+//! - Cap = 4 спикера (R12 / PRD §M12.2.5).
+//!
+//! Real wire-up за `#[cfg(feature = "voice-onnx")]` чтобы default build
+//! не тянул heavy ONNX runtime (~30 МБ static lib).
 //!
 //! # Owner-bind (M3.7, PRD §M12.2.4)
 //!
 //! Mic-дорожка не диаризуется — это всегда `speaker:owner`. В пайплайне
 //! только system-дорожка попадает сюда. Owner-bind происходит на merge step.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -53,22 +60,141 @@ pub trait Diarizer: Send + Sync {
     async fn diarize(&self, audio: &Path) -> Result<Vec<SpeakerSegment>, DiarizerError>;
 }
 
-/// Sherpa-onnx sortformer stub. Реальный wire-up — после §14 pre-flight.
+/// Sherpa-onnx-based diarizer. Конструируется в pipeline после resolve
+/// преsеta + presence check моделей.
+///
+/// Real implementation за `voice-onnx` feature. Без feature `diarize()`
+/// возвращает `NotImplemented` — pipeline должен фолбэк'нуться (для local
+/// route это означает «single-bucket system track», degraded но рабочий).
 pub struct SortformerDiarizer {
-    #[allow(dead_code)]
-    model_path: std::path::PathBuf,
+    segmentation_path: PathBuf,
+    embedding_path: PathBuf,
 }
 
 impl SortformerDiarizer {
-    pub fn new(model_path: std::path::PathBuf) -> Self {
-        Self { model_path }
+    /// Конструктор требует оба пути. Pipeline resolves их из MODEL_CATALOG +
+    /// `voice_model::model_path` для WeSpeaker.
+    pub fn new(segmentation_path: PathBuf, embedding_path: PathBuf) -> Self {
+        Self {
+            segmentation_path,
+            embedding_path,
+        }
+    }
+
+    /// Доступ к paths для тестов / диагностики.
+    #[allow(dead_code)]
+    pub fn segmentation_path(&self) -> &Path {
+        &self.segmentation_path
+    }
+
+    #[allow(dead_code)]
+    pub fn embedding_path(&self) -> &Path {
+        &self.embedding_path
     }
 }
 
 #[async_trait]
 impl Diarizer for SortformerDiarizer {
     async fn diarize(&self, _audio: &Path) -> Result<Vec<SpeakerSegment>, DiarizerError> {
-        Err(DiarizerError::NotImplemented)
+        #[cfg(feature = "voice-onnx")]
+        {
+            return self.diarize_real(_audio).await;
+        }
+        #[cfg(not(feature = "voice-onnx"))]
+        {
+            Err(DiarizerError::NotImplemented)
+        }
+    }
+}
+
+#[cfg(feature = "voice-onnx")]
+impl SortformerDiarizer {
+    /// Real sherpa-onnx wire-up. Шаги:
+    /// 1. Wave::read(audio) → samples f32 mono 16 kHz.
+    /// 2. OfflineSpeakerDiarization::create(config) с paths к pyannote + WeSpeaker.
+    /// 3. .process(samples) → result.sort_by_start_time().
+    /// 4. Cap = 4 + map в SpeakerSegment.
+    async fn diarize_real(&self, audio: &Path) -> Result<Vec<SpeakerSegment>, DiarizerError> {
+        use sherpa_onnx::{
+            FastClusteringConfig, OfflineSpeakerDiarization, OfflineSpeakerDiarizationConfig,
+            OfflineSpeakerSegmentationModelConfig, OfflineSpeakerSegmentationPyannoteModelConfig,
+            SpeakerEmbeddingExtractorConfig, Wave,
+        };
+
+        // Pre-flight: оба файла должны быть на диске.
+        if !self.segmentation_path.exists() {
+            return Err(DiarizerError::ModelNotFound(
+                self.segmentation_path.display().to_string(),
+            ));
+        }
+        if !self.embedding_path.exists() {
+            return Err(DiarizerError::ModelNotFound(
+                self.embedding_path.display().to_string(),
+            ));
+        }
+
+        let audio_str = audio
+            .to_str()
+            .ok_or_else(|| DiarizerError::Provider("non-utf8 audio path".into()))?
+            .to_string();
+        let seg_str = self
+            .segmentation_path
+            .to_str()
+            .ok_or_else(|| DiarizerError::Provider("non-utf8 segmentation path".into()))?
+            .to_string();
+        let emb_str = self
+            .embedding_path
+            .to_str()
+            .ok_or_else(|| DiarizerError::Provider("non-utf8 embedding path".into()))?
+            .to_string();
+
+        // sherpa-onnx APIs синхронные и могут блокировать долго (минута+
+        // на большом файле). Запускаем на blocking pool чтобы не залипать
+        // в async runtime.
+        let segments = tokio::task::spawn_blocking(move || {
+            let wave = Wave::read(&audio_str).ok_or_else(|| {
+                DiarizerError::Provider(format!("Wave::read failed for {audio_str}"))
+            })?;
+
+            let mut config = OfflineSpeakerDiarizationConfig::default();
+            config.segmentation = OfflineSpeakerSegmentationModelConfig {
+                pyannote: OfflineSpeakerSegmentationPyannoteModelConfig {
+                    model: Some(seg_str),
+                },
+                ..Default::default()
+            };
+            config.embedding = SpeakerEmbeddingExtractorConfig {
+                model: Some(emb_str),
+                ..Default::default()
+            };
+            config.clustering = FastClusteringConfig::default();
+
+            let diar = OfflineSpeakerDiarization::create(&config).ok_or_else(|| {
+                DiarizerError::Provider(
+                    "OfflineSpeakerDiarization::create returned None (model load failed)".into(),
+                )
+            })?;
+
+            let result = diar.process(wave.samples()).ok_or_else(|| {
+                DiarizerError::Provider("OfflineSpeakerDiarization::process returned None".into())
+            })?;
+
+            let raw_segments: Vec<SpeakerSegment> = result
+                .sort_by_start_time()
+                .into_iter()
+                .map(|s| SpeakerSegment {
+                    start: s.start as f64,
+                    end: s.end as f64,
+                    speaker_tag: cap_speaker_tag(s.speaker as usize),
+                })
+                .collect();
+
+            Ok::<Vec<SpeakerSegment>, DiarizerError>(raw_segments)
+        })
+        .await
+        .map_err(|e| DiarizerError::Provider(format!("blocking task join: {e}")))??;
+
+        Ok(segments)
     }
 }
 
@@ -158,13 +284,35 @@ mod tests {
         assert_eq!(out[0].speaker_tag, SPEAKER_UNKNOWN);
     }
 
+    #[test]
+    fn sortformer_stores_both_paths() {
+        let d = SortformerDiarizer::new("/tmp/seg.onnx".into(), "/tmp/emb.onnx".into());
+        assert_eq!(d.segmentation_path(), Path::new("/tmp/seg.onnx"));
+        assert_eq!(d.embedding_path(), Path::new("/tmp/emb.onnx"));
+    }
+
+    #[cfg(not(feature = "voice-onnx"))]
     #[tokio::test]
-    async fn sortformer_stub_returns_not_implemented() {
-        let d = SortformerDiarizer::new("/tmp/no.onnx".into());
+    async fn sortformer_stub_returns_not_implemented_without_feature() {
+        // Default build (no voice-onnx) — diarize всегда NotImplemented.
+        let d = SortformerDiarizer::new("/tmp/seg.onnx".into(), "/tmp/emb.onnx".into());
         let err = d
             .diarize(Path::new("/tmp/no.wav"))
             .await
             .expect_err("stub must error");
         assert!(matches!(err, DiarizerError::NotImplemented));
+    }
+
+    #[cfg(feature = "voice-onnx")]
+    #[tokio::test]
+    async fn diarize_real_fails_on_missing_segmentation_model() {
+        // Real path: первая проверка — наличие model файлов. На fake
+        // путях возвращаем ModelNotFound, не ONNX panic.
+        let d = SortformerDiarizer::new(
+            "/tmp/does-not-exist-seg.onnx".into(),
+            "/tmp/does-not-exist-emb.onnx".into(),
+        );
+        let err = d.diarize(Path::new("/tmp/no.wav")).await.expect_err("err");
+        assert!(matches!(err, DiarizerError::ModelNotFound(_)));
     }
 }

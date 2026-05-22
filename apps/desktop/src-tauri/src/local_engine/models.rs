@@ -42,12 +42,14 @@ use tokio::io::AsyncWriteExt;
 
 use crate::AppError;
 
-/// Тип модели в каталоге — STT (Whisper) или LLM (GGUF).
+/// Тип модели в каталоге — STT (Whisper) / LLM (GGUF) / Diarization
+/// (pyannote segmentation .onnx для sherpa-onnx OfflineSpeakerDiarization).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelKind {
     Stt,
     Llm,
+    Diarization,
 }
 
 /// Стабильный id записи в каталоге. Newtype-обёртка чтобы не путать со
@@ -62,6 +64,9 @@ impl ModelId {
     pub const QWEN25_1_5B: ModelId = ModelId("qwen25-1_5b");
     pub const QWEN25_3B: ModelId = ModelId("qwen25-3b");
     pub const QWEN25_7B: ModelId = ModelId("qwen25-7b");
+    /// [M12-D5] Pyannote segmentation 3.0 для sherpa-onnx
+    /// OfflineSpeakerDiarization. Shared across all 3 presets (~6 MB).
+    pub const PYANNOTE_SEGMENTATION: ModelId = ModelId("pyannote-segmentation");
 
     pub fn as_str(&self) -> &'static str {
         self.0
@@ -84,7 +89,7 @@ pub struct ModelEntry {
 /// Каталог — 3 Whisper + 3 LLM модели. SHA256 + size_bytes получены через
 /// `scripts/refresh-model-catalog.sh` (PRD §14 pre-flight) на 2026-05-22.
 /// При замене файла на HF — bump version в скрипте + регенерировать.
-pub const MODEL_CATALOG: [ModelEntry; 6] = [
+pub const MODEL_CATALOG: [ModelEntry; 7] = [
     ModelEntry {
         id: ModelId::WHISPER_SMALL,
         kind: ModelKind::Stt,
@@ -138,6 +143,15 @@ pub const MODEL_CATALOG: [ModelEntry; 6] = [
         sha256: "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423",
         size_bytes: 4_683_074_240,
         license_url: "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF",
+    },
+    ModelEntry {
+        id: ModelId::PYANNOTE_SEGMENTATION,
+        kind: ModelKind::Diarization,
+        display_name: "Pyannote Segmentation 3.0",
+        url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx",
+        sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079",
+        size_bytes: 5_992_913,
+        license_url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0",
     },
 ];
 
@@ -480,7 +494,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn catalog_has_three_stt_and_three_llm() {
+    fn catalog_has_three_stt_three_llm_one_diarization() {
         let stt = MODEL_CATALOG
             .iter()
             .filter(|m| m.kind == ModelKind::Stt)
@@ -489,11 +503,16 @@ mod tests {
             .iter()
             .filter(|m| m.kind == ModelKind::Llm)
             .count();
+        let diar = MODEL_CATALOG
+            .iter()
+            .filter(|m| m.kind == ModelKind::Diarization)
+            .count();
         assert_eq!(
             stt, 3,
             "expected 3 STT models (whisper small/medium/large-v3)"
         );
         assert_eq!(llm, 3, "expected 3 LLM models (qwen25-1_5b/3b/7b)");
+        assert_eq!(diar, 1, "expected 1 diarization model (pyannote)");
     }
 
     #[test]
