@@ -578,6 +578,48 @@
 
 ---
 
+## M13 · Chunked Pipelined Transcription
+
+> Источник истины: [`M13_CHUNKING_PRD.md`](M13_CHUNKING_PRD.md). Аддендум к паспорту (R11 переформулирована — chunked post-processing acceptable).
+>
+> Назначение: уменьшить воспринимаемое stop→ready время с **20-35 мин** до **~3-4 мин** на 2-часовом звонке через 10-минутные chunks с pipelining (chunk N обрабатывается параллельно с записью chunk N+1).
+
+**Tradeoff:** ~80% UX-выигрыша от true realtime за ~30% усилий (~2 спринта vs 3-4). Качество транскрипта 99% от baseline (silence-aware cut + whisper `--prompt` context priming + global speaker re-clustering через WeSpeaker embeddings).
+
+### Phase 1 — Silent cut + sequential pipeline (no UX surfacing)
+
+- [ ] **M13.1.1** `audio/silence_detector.rs` — RMS-buffer + поиск тишины в окне [T+9:00, T+11:00], fallback к local RMS min
+- [ ] **M13.1.2** Sidecar `rotate` команда — atomic flush + reopen WAV без drop'а сэмплов (AudioRecorder + ProcessTapRecorder)
+- [ ] **M13.1.3** `pipeline/chunk_runner.rs` — per-chunk STT + pyannote + per-segment embeddings, `LocalWhisperRequest::with_prompt` для context priming
+- [ ] **M13.1.4** DB schema — `call_chunks` table (или JSONB-поле в calls)
+- [ ] **M13.1.5** Feature flag `chunked_pipeline=false` по умолчанию
+- [ ] **M13.1.6** Smoke verify: dual-run на 30-мин фикстуре, diff transcripts ≥99%
+
+### Phase 2 — Parallel pipelining + global speaker re-clustering
+
+- [ ] **M13.2.1** `pipeline/speaker_reclustering.rs` — agglomerative single-link на cosine, threshold 0.75 (tunable)
+- [ ] **M13.2.2** Chunk N обрабатывается параллельно с записью N+1 (tokio task spawn per chunk)
+- [ ] **M13.2.3** `transcript:chunk_done` Tauri event для frontend live updates
+- [ ] **M13.2.4** Verification на multi-speaker фикстуре — global speaker IDs совпадают между chunks для одного физ. спикера
+
+### Phase 3 — UX surfacing + flag-on default
+
+- [ ] **M13.3.1** `components/ChunkProgressStrip.tsx` — список сегментов с статусом per chunk
+- [ ] **M13.3.2** Intermediate states после stop: «Готовим транскрипт… N/M готовы → Составляем саммари…»
+- [ ] **M13.3.3** i18n ключи для chunk progress (ru/en/kk)
+- [ ] **M13.3.4** Feature flag `chunked_pipeline=true` по умолчанию
+
+### M13 acceptance gates
+
+- **Performance:** stop→ready ≤ 5 мин на Balanced 2ч (vs 20-35 сейчас); Quality preset 2ч не упирается в `LOCAL_WHISPER_TIMEOUT`
+- **Quality:** transcript ≥99% bit-equivalent с full-file baseline на reference фикстуре
+- **Robustness:** crash-safety (per-chunk recovery); silence-less window → fallback к local RMS min
+- **UX:** 6 theme×accent проверены для ChunkProgressStrip
+
+**Effort:** ~2 спринта (10-15 рабочих дней).
+
+---
+
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
 См. раздел 12 паспорта. Здесь только маркеры — детали и причины там.
@@ -594,7 +636,7 @@
 | R8 | Аудио НЕ через память воркера |
 | R9 | Local-движок в MVP — только macOS (M1.4 / R4 для Win/Linux) |
 | R10 | Модели не бандлятся в installer (~50MB), download по требованию |
-| R11 | Real-time / streaming local STT — НЕ делаем (sherpa offline-only) |
+| R11 | Real-time / streaming local STT (live captions) — НЕ делаем в MVP. Chunked post-processing с pipelining (M13) допустим и запланирован — он не нарушает offline-only характер STT, только разрезает входной аудио-файл на 10-мин куски для UX-выигрыша. |
 | R12 | Качество local-LLM саммари ниже cloud — UI показывает «●●○» явно |
 | R12-bis | Авто-удаление моделей при смене preset — НЕ делаем (explicit storage UI) |
 | R13 | Слишком слабое железо НЕ блокирует Local — показывается с warning |
