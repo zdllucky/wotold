@@ -22,6 +22,10 @@ pub const PIPELINE_CANCELLED: &str = "pipeline:cancelled";
 pub const CALL_PROGRESS: &str = "call:progress";
 pub const CALL_AUTO_BOUND: &str = "call:auto_bound";
 pub const AUDIO_LEVEL: &str = "audio:level";
+/// [M13.1.2] Sidecar закрыл текущий chunk WAV и открыл новый. Payload —
+/// `{ duration_sec, mic_bytes, system_bytes }` (raw sidecar event). Orchestrator
+/// слушает чтобы enqueue'ить pipeline job на закрытый chunk.
+pub const AUDIO_ROTATED: &str = "audio:rotated";
 /// [S8] Fires whenever the backend recording session changes — start, stop,
 /// pause, resume. Both webviews (main + recording-widget) listen so their
 /// `RecordingProvider` мирror гарантированно in sync. Payload пустой —
@@ -128,6 +132,12 @@ impl<'a> EventBus<'a> {
     /// чтобы не было циклической зависимости events ↔ audio.
     pub fn audio_level<T: Serialize + Clone>(&self, payload: &T) {
         self.emit(AUDIO_LEVEL, payload);
+    }
+
+    /// [M13.1.2] `audio:rotated` raw sidecar JSON (`{duration_sec, mic_bytes,
+    /// system_bytes}`). Generic чтобы избежать events ↔ audio cycle.
+    pub fn audio_rotated<T: Serialize + Clone>(&self, payload: &T) {
+        self.emit(AUDIO_ROTATED, payload);
     }
 
     /// Generic'ом по той же причине (voice_model держит DoneEvent enum приватно).

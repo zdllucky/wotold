@@ -57,6 +57,9 @@ export const SETTINGS_KEYS = {
   LOCAL_ENGINE_ANNOUNCEMENT_DISMISSED_AT: 'local_engine_announcement_dismissed_at',
   /** [M12-v1.1] Permanent dismiss редискавери-чипа: '1' = не показывать. */
   LOCAL_ENGINE_INVITE_DISMISSED: 'local_engine_invite_dismissed',
+  /** [M13.1.5] Feature flag для chunked pipelined transcription. '1' = ON.
+   *  Default OFF — Phase 1 behind-flag rollout (см. M13_CHUNKING_PRD.md §6). */
+  CHUNKED_PIPELINE: 'recording.chunked_pipeline',
 } as const;
 
 export const SETTINGS_DEFAULTS = {

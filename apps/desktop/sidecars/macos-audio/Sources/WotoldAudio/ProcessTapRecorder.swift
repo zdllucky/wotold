@@ -173,6 +173,28 @@ final class ProcessTapRecorder: NSObject {
         flushTimer = timer
     }
 
+    /// [M13] Атомарно завершает текущий chunk WAV и открывает новый. IOProc
+    /// остаётся активным, handleAudio продолжает писать в self.wavWriter
+    /// который мы swap'аем. Sync на queue гарантирует что между close-old и
+    /// open-new в IOProc callback не зайдёт другой buffer (callback тоже
+    /// queue-bound через AudioDeviceCreateIOProcIDWithBlock).
+    /// Возвращает bytesWritten ПРЕДЫДУЩЕГО chunk'а.
+    func rotate(to url: URL) throws -> UInt64 {
+        return try queue.sync {
+            guard aggregateID != kAudioObjectUnknown, ioProcID != nil else {
+                throw Self.error("rotate called before start")
+            }
+            try wavWriter?.close()
+            let oldBytes = bytesWritten
+
+            let newWriter = try WAVWriter(url: url, sampleRate: 16_000, channels: 1)
+            wavWriter = newWriter
+            bytesWritten = 0
+            // converter reuse — input format не меняется в pre-stop period.
+            return oldBytes
+        }
+    }
+
     func stop() async throws -> StopResult {
         flushTimer?.cancel()
         flushTimer = nil
