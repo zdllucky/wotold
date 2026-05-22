@@ -287,6 +287,7 @@ mod tests {
         TranscriptionOpts {
             lang: "auto".into(),
             diarization: true,
+            prompt: None,
         }
     }
 

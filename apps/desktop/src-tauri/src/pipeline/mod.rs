@@ -30,6 +30,11 @@ pub mod settings;
 pub mod stage;
 pub mod voice_backfill;
 
+// [M13.1.3b] Per-chunk pipeline для chunked pipelined transcription.
+// Standalone от pipeline::run — параллельный entry point, не подключён к
+// recording flow до M13.1.5b sprint'а.
+pub mod chunk_runner;
+
 pub use merge::{merge_tracks, render_transcript_md};
 pub use settings::PipelineSettings;
 pub use stage::Stage;
@@ -295,6 +300,7 @@ async fn run_inner(
     let opts = TranscriptionOpts {
         lang: s.stt_lang.clone(),
         diarization: true,
+        prompt: None,
     };
     let retry_cfg = RetryConfig::default();
 
@@ -471,6 +477,7 @@ async fn run_local_inner(
     let opts = TranscriptionOpts {
         lang: s.stt_lang.clone(),
         diarization: true,
+        prompt: None,
     };
 
     let (mic_t, sys_t) = run_stage(

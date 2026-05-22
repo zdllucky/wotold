@@ -305,6 +305,7 @@ mod tests {
             TranscriptionOpts {
                 lang: "auto".into(),
                 diarization: true,
+                prompt: None,
             },
             fast_cfg(),
         )
@@ -327,6 +328,7 @@ mod tests {
             TranscriptionOpts {
                 lang: "auto".into(),
                 diarization: true,
+                prompt: None,
             },
             fast_cfg(),
         )
@@ -353,6 +355,7 @@ mod tests {
             TranscriptionOpts {
                 lang: "auto".into(),
                 diarization: true,
+                prompt: None,
             },
             fast_cfg(),
         )
@@ -370,6 +373,7 @@ mod tests {
             TranscriptionOpts {
                 lang: "auto".into(),
                 diarization: true,
+                prompt: None,
             },
             fast_cfg(),
         )

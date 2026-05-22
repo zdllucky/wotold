@@ -74,11 +74,6 @@ pub struct LocalWhisperProvider {
     tmp_dir: PathBuf,
     /// Таймаут на один transcribe call.
     timeout: Duration,
-    /// [M13.1.3a] Context priming через whisper.cpp `--prompt` — последние
-    /// слова предыдущего chunk transcript'а. Точность первой фразы 80→95%.
-    /// `None` → флаг не передаётся (default behavior). Sanitized: \r\n
-    /// удалены, длина ≤1000 chars (capability validator).
-    prompt: Option<String>,
 }
 
 impl LocalWhisperProvider {
@@ -92,7 +87,6 @@ impl LocalWhisperProvider {
             app: Mutex::new(None),
             tmp_dir: std::env::temp_dir(),
             timeout: LOCAL_WHISPER_TIMEOUT,
-            prompt: None,
         }
     }
 
@@ -109,15 +103,6 @@ impl LocalWhisperProvider {
     #[allow(dead_code)]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
-        self
-    }
-
-    /// [M13.1.3a] Установить prompt для context priming. `None` → флаг не
-    /// передаётся в whisper-cli. Sanitize: удаление `\r\n` (capability
-    /// validator запрещает) + truncate до 1000 chars (валидатор enforce'ит).
-    #[allow(dead_code)]
-    pub fn with_prompt(mut self, prompt: Option<&str>) -> Self {
-        self.prompt = prompt.map(sanitize_prompt);
         self
     }
 
@@ -224,9 +209,12 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 &format!("{DEFAULT_THREADS}"),
                 "--no-prints",
             ]);
-        // [M13.1.3a] Context priming через `--prompt`. Sanitized prompt
-        // гарантировано без `\r\n` (capability validator block'ает иначе).
-        if let Some(p) = self.prompt.as_deref() {
+        // [M13.1.3a] Context priming через `--prompt`. opts.prompt — это
+        // последние слова transcript'а chunk N-1 (M13 chunked pipeline).
+        // Sanitize (strip \r\n + 1000 char limit) обязателен — capability
+        // validator block'ает иначе spawn whisper-cli.
+        let sanitized_prompt = opts.prompt.as_deref().map(sanitize_prompt);
+        if let Some(p) = sanitized_prompt.as_deref() {
             if !p.is_empty() {
                 sidecar = sidecar.args(["--prompt", p]);
             }
@@ -489,6 +477,7 @@ mod tests {
         let opts = TranscriptionOpts {
             lang: "ru".to_string(),
             diarization: true,
+            prompt: None,
         };
         let err = p
             .transcribe(Path::new("/tmp/missing.wav"), opts)

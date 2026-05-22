@@ -14,12 +14,18 @@ pub trait TranscriptionProvider: Send + Sync {
     ) -> Result<DiarizedTranscript, TranscriptionError>;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TranscriptionOpts {
     /// 'auto' или BCP 47.
     pub lang: String,
     /// Диаризация всегда включена (M2.4).
     pub diarization: bool,
+    /// [M13.1.3a] Context priming для местного Whisper: последние ~50 слов
+    /// transcript'а предыдущего chunk'а. Cloud providers (Soniox/Gladia)
+    /// игнорируют это поле — они стримят с собственным left-context.
+    /// `None` = no priming (default, full-file flow).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
