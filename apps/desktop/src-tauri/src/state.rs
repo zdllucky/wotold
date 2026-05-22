@@ -96,3 +96,91 @@ async fn migrate_byo_to_managed(pool: &SqlitePool) -> Result<(), AppError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::migrate_byo_to_managed;
+    use crate::db;
+    use crate::db::test_support::fresh_db;
+
+    #[tokio::test]
+    async fn migrate_byo_provider_path_to_managed() {
+        let test_db = fresh_db().await;
+        db::set_setting(&test_db.pool, "provider_path", "byo")
+            .await
+            .unwrap();
+        migrate_byo_to_managed(&test_db.pool).await.unwrap();
+        let val = db::get_setting(&test_db.pool, "provider_path")
+            .await
+            .unwrap();
+        assert_eq!(val.as_deref(), Some("managed"));
+    }
+
+    #[tokio::test]
+    async fn migrate_cloud_byo_engine_to_cloud_managed() {
+        let test_db = fresh_db().await;
+        db::set_setting(&test_db.pool, "local_engine.active", "cloud_byo")
+            .await
+            .unwrap();
+        migrate_byo_to_managed(&test_db.pool).await.unwrap();
+        let val = db::get_setting(&test_db.pool, "local_engine.active")
+            .await
+            .unwrap();
+        assert_eq!(val.as_deref(), Some("cloud_managed"));
+    }
+
+    #[tokio::test]
+    async fn migrate_idempotent_for_managed() {
+        // Already managed/cloud_managed → no-op, value preserved.
+        let test_db = fresh_db().await;
+        db::set_setting(&test_db.pool, "provider_path", "managed")
+            .await
+            .unwrap();
+        db::set_setting(&test_db.pool, "local_engine.active", "local")
+            .await
+            .unwrap();
+        migrate_byo_to_managed(&test_db.pool).await.unwrap();
+        assert_eq!(
+            db::get_setting(&test_db.pool, "provider_path")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("managed")
+        );
+        assert_eq!(
+            db::get_setting(&test_db.pool, "local_engine.active")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("local")
+        );
+    }
+
+    #[tokio::test]
+    async fn migrate_no_op_on_empty_settings() {
+        // Empty settings → migration returns Ok without writing anything.
+        let test_db = fresh_db().await;
+        migrate_byo_to_managed(&test_db.pool).await.unwrap();
+        assert!(db::get_setting(&test_db.pool, "provider_path")
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn migrate_only_byo_values() {
+        // provider_path stuck on some weird non-byo value → НЕ трогаем.
+        let test_db = fresh_db().await;
+        db::set_setting(&test_db.pool, "provider_path", "weird-other")
+            .await
+            .unwrap();
+        migrate_byo_to_managed(&test_db.pool).await.unwrap();
+        assert_eq!(
+            db::get_setting(&test_db.pool, "provider_path")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("weird-other")
+        );
+    }
+}
