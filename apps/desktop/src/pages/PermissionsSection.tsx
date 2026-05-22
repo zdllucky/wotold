@@ -12,13 +12,16 @@ import {
 import { useI18n } from '../i18n';
 import { Badge, Button } from '../ui';
 
-type Target = 'microphone' | 'screen_recording';
+type Target = 'microphone' | 'screen_recording' | 'accessibility';
 
 interface Row {
   target: Target;
   pane: SystemPane;
-  labelKey: 'permissions.rowMic' | 'permissions.rowScreen';
-  descKey: 'permissions.rowMicDesc' | 'permissions.rowScreenDesc';
+  labelKey: 'permissions.rowMic' | 'permissions.rowScreen' | 'permissions.rowAccessibility';
+  descKey:
+    | 'permissions.rowMicDesc'
+    | 'permissions.rowScreenDesc'
+    | 'permissions.rowAccessibilityDesc';
 }
 
 const ROWS: Row[] = [
@@ -33,6 +36,12 @@ const ROWS: Row[] = [
     pane: 'screen_recording',
     labelKey: 'permissions.rowScreen',
     descKey: 'permissions.rowScreenDesc',
+  },
+  {
+    target: 'accessibility',
+    pane: 'accessibility',
+    labelKey: 'permissions.rowAccessibility',
+    descKey: 'permissions.rowAccessibilityDesc',
   },
 ];
 

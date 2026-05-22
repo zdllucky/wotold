@@ -18,6 +18,7 @@ import {
   type CallProgressEvent,
 } from '../api/recording';
 import { listCallSpeakers } from '../api/speakers';
+import { EngineChip } from '../components/EngineChip';
 import { List, type RowComponentProps } from 'react-window';
 import { CallRowSkeleton, Empty } from '../ui';
 import { bcp47, useI18n } from '../i18n';
@@ -495,6 +496,9 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
             {title}
           </span>
           {showTag && <CallStateTag state={uiState} />}
+          {!showTag && call.processing_via && (
+            <EngineChip kind={call.processing_via} variant="inline" />
+          )}
         </div>
         {secondary && (
           <div style={{ marginTop: 4, minWidth: 0 }}>{secondary}</div>

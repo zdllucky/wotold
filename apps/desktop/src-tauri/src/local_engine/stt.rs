@@ -179,10 +179,22 @@ impl TranscriptionProvider for LocalWhisperProvider {
         // в 'auto' (whisper-cli accepts it и сам детектит).
         let lang = normalize_lang(&opts.lang);
 
+        // whisper.cpp `--print-progress` — это bool-флаг **без значения**.
+        // Передача `false` как next arg попадала в positional input slot
+        // («input file not found 'false'»), whisper-cli не записывал JSON.
+        // `--no-prints` уже подавляет всё включая progress callback, так что
+        // флаг можно опустить.
+        //
+        // [Dev] Homebrew-built whisper-cli линкуется к `@rpath/libwhisper.1.dylib`.
+        // Если бинарь скопирован в `target/debug/binaries/`, rpath ищет
+        // `target/debug/../lib/` (пустой) → dyld fail. Production solution —
+        // install_name_tool + bundle dylibs рядом. Dev workaround —
+        // `DYLD_FALLBACK_LIBRARY_PATH` → /opt/homebrew/lib.
         let sidecar = app
             .shell()
             .sidecar(SIDECAR_NAME)
             .map_err(|e| TranscriptionError::Provider(format!("sidecar lookup: {e}")))?
+            .env("DYLD_FALLBACK_LIBRARY_PATH", "/opt/homebrew/lib")
             .args([
                 "-m",
                 &model_str,
@@ -196,8 +208,6 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 "--threads",
                 &format!("{DEFAULT_THREADS}"),
                 "--no-prints",
-                "--print-progress",
-                "false",
             ]);
 
         let run_result = run_sidecar_with_timeout(sidecar, self.timeout).await;
@@ -366,6 +376,24 @@ fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTransc
             if text.is_empty() {
                 return None;
             }
+            // Whisper hallucinates common short words/phrases at audio
+            // boundaries and silence frames. Filter exact matches only.
+            static HALLUCINATIONS: &[&str] = &[
+                "you",
+                "thank you",
+                "thanks",
+                "bye",
+                "goodbye",
+                "thanks for watching",
+                "[blank_audio]",
+                "(silence)",
+                "[music]",
+                "(music)",
+                "[applause]",
+            ];
+            if HALLUCINATIONS.contains(&text.to_lowercase().as_str()) {
+                return None;
+            }
             let speaker_tag = match track {
                 TrackKind::MicOwner => "speaker:owner".to_string(),
                 TrackKind::System => "speaker:0".to_string(),
@@ -505,6 +533,36 @@ mod tests {
     fn build_transcript_system_track_tags_speaker_zero() {
         let t = build_transcript(json_with_two_segments(), TrackKind::System);
         assert!(t.segments.iter().all(|s| s.speaker_tag == "speaker:0"));
+    }
+
+    #[test]
+    fn build_transcript_filters_whisper_hallucinations() {
+        let parsed = WhisperJsonFile {
+            result: None,
+            transcription: vec![
+                WhisperSegment {
+                    text: " you".into(), // leading space — common whisper artifact
+                    offsets: WhisperOffsets { from: 0, to: 300 },
+                },
+                WhisperSegment {
+                    text: "Thank you.".into(), // not in list → keeps
+                    offsets: WhisperOffsets { from: 300, to: 900 },
+                },
+                WhisperSegment {
+                    text: "real text".into(),
+                    offsets: WhisperOffsets { from: 900, to: 2000 },
+                },
+                WhisperSegment {
+                    text: "(silence)".into(),
+                    offsets: WhisperOffsets { from: 2000, to: 2500 },
+                },
+            ],
+        };
+        let t = build_transcript(parsed, TrackKind::System);
+        // "you" and "(silence)" filtered; "Thank you." (mixed case + period) kept
+        assert_eq!(t.segments.len(), 2);
+        assert_eq!(t.segments[0].text, "Thank you.");
+        assert_eq!(t.segments[1].text, "real text");
     }
 
     #[test]

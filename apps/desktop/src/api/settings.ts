@@ -52,6 +52,11 @@ export const SETTINGS_KEYS = {
   /** [M12.7.5] One-time announcement баннер для existing users о local engine.
    *  '1' = баннер закрыт (либо принят → переход в Settings, либо dismiss). */
   LOCAL_ENGINE_ANNOUNCEMENT_SEEN: 'local_engine_announcement_seen',
+  /** [M12-v1.1] ISO timestamp когда баннер был dismiss-нут. Позволяет
+   *  показывать повторно через 7 дней (в отличие от one-shot _SEEN). */
+  LOCAL_ENGINE_ANNOUNCEMENT_DISMISSED_AT: 'local_engine_announcement_dismissed_at',
+  /** [M12-v1.1] Permanent dismiss редискавери-чипа: '1' = не показывать. */
+  LOCAL_ENGINE_INVITE_DISMISSED: 'local_engine_invite_dismissed',
 } as const;
 
 export const SETTINGS_DEFAULTS = {

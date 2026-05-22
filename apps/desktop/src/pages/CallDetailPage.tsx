@@ -34,6 +34,7 @@ import {
 import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
+import { EngineChip } from '../components/EngineChip';
 import { useCallAudio } from '../hooks/useCallAudio';
 import { useCallDetail } from '../hooks/useCallDetail';
 import { useI18n } from '../i18n';
@@ -260,8 +261,14 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
       <header style={{ marginBottom: 22, position: 'relative' }}>
         {/* Meta — human Russian per reference §5: ВТОРНИК · 19 МАЯ · 11:24 · 32 МИН 14 СЕК */}
-        <div className="small-caps" style={{ marginBottom: 8 }}>
+        <div
+          className="small-caps"
+          style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}
+        >
           {formatHeaderMeta(call)}
+          {call.processing_via && (
+            <EngineChip kind={call.processing_via} variant="header" />
+          )}
         </div>
 
         {/* Title — LLM-generated если есть, иначе простой fallback "Звонок · 20 мая" */}

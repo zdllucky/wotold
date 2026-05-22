@@ -174,10 +174,13 @@ impl LlmProvider for LocalLlamaProvider {
             .ok_or_else(|| LlmError::Provider("non-utf8 prompt path".into()))?
             .to_string();
 
+        // [Dev] Brew-built llama-cli использует `@rpath/libllama.dylib` +
+        // `libggml*.dylib`. См. stt.rs для подробностей.
         let sidecar = app
             .shell()
             .sidecar(SIDECAR_NAME)
             .map_err(|e| LlmError::Provider(format!("sidecar lookup: {e}")))?
+            .env("DYLD_FALLBACK_LIBRARY_PATH", "/opt/homebrew/lib")
             .args([
                 "-m",
                 &model_path_str,
@@ -189,6 +192,11 @@ impl LlmProvider for LocalLlamaProvider {
                 &format!("{max_tokens}"),
                 "--threads",
                 &format!("{DEFAULT_THREADS}"),
+                // Newer llama.cpp attempts Metal shader compilation on first run
+                // which can exceed LOCAL_LLM_TIMEOUT. CPU is fast enough for
+                // 1.5–7B models on M-series and avoids GPU init entirely.
+                "-ngl",
+                "0",
                 "--no-conversation",
                 "--no-display-prompt",
                 "--simple-io",
@@ -285,15 +293,13 @@ async fn run_sidecar_with_timeout(
     let mut guard = Some(SidecarGuard::new(child));
 
     let mut stdout = Vec::<u8>::new();
+    let mut stderr = Vec::<u8>::new();
     let mut exit_code: Option<i32> = None;
     let drained = tokio::time::timeout(timeout, async {
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(b) => stdout.extend_from_slice(&b),
-                CommandEvent::Stderr(_) => {
-                    // llama-cli с --log-disable не должен писать в stderr,
-                    // но если что — игнорируем. UI получит ошибку из stdout.
-                }
+                CommandEvent::Stderr(b) => stderr.extend_from_slice(&b),
                 CommandEvent::Terminated(p) => {
                     exit_code = p.code;
                     return Ok::<(), LlmError>(());
@@ -308,6 +314,15 @@ async fn run_sidecar_with_timeout(
     })
     .await;
 
+    let stderr_snippet = || {
+        let s = String::from_utf8_lossy(&stderr);
+        if s.is_empty() {
+            String::new()
+        } else {
+            format!("; stderr: {}", &s[..s.len().min(512)])
+        }
+    };
+
     match drained {
         Ok(Ok(())) => {
             // Terminated event received — процесс мёртв. Release guard
@@ -318,8 +333,9 @@ async fn run_sidecar_with_timeout(
             if let Some(code) = exit_code {
                 if code != 0 {
                     return Err(LlmError::Provider(format!(
-                        "sidecar exit code {code}; output {} bytes",
-                        stdout.len()
+                        "sidecar exit code {code}; output {} bytes{}",
+                        stdout.len(),
+                        stderr_snippet()
                     )));
                 }
             }
@@ -340,7 +356,10 @@ async fn run_sidecar_with_timeout(
             if let Some(g) = guard.take() {
                 g.kill();
             }
-            Err(LlmError::Provider("local_llm_timeout".into()))
+            Err(LlmError::Provider(format!(
+                "local_llm_timeout{}",
+                stderr_snippet()
+            )))
         }
     }
 }

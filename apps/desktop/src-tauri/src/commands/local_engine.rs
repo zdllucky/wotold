@@ -61,7 +61,8 @@ pub async fn local_engine_model_status(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<ModelStatus, AppError> {
-    models::check_status(&state.app_data_dir, &id).await
+    // Fast path: file-existence only. SHA256 is verified lazily before model use.
+    models::check_status_fast(&state.app_data_dir, &id).await
 }
 
 /// [M12.4.4-bis] Сводная таблица для Storage management UI:
@@ -98,7 +99,9 @@ pub async fn local_engine_storage_list(
 
     let mut rows = Vec::with_capacity(MODEL_CATALOG.len());
     for entry in MODEL_CATALOG.iter() {
-        let status = models::check_status(&state.app_data_dir, entry.id.as_str()).await?;
+        // Fast path: file-existence only, no SHA256. Corruption is detected
+        // lazily before the model is actually used (check_status in STT/LLM init).
+        let status = models::check_status_fast(&state.app_data_dir, entry.id.as_str()).await?;
         rows.push(StorageRow {
             id: entry.id.as_str(),
             kind: entry.kind,
@@ -187,7 +190,11 @@ pub async fn local_engine_hw_probe(
             }
         }
     }
-    let report = hw_probe::probe_hardware();
+    // probe_hardware() spawns sysctl subprocesses (std::process::Command) —
+    // must run on a blocking thread to avoid starving the async executor.
+    let report = tokio::task::spawn_blocking(hw_probe::probe_hardware)
+        .await
+        .map_err(|e| AppError::Other(format!("hw_probe join: {e}")))?;
     let json = serde_json::to_string(&report)
         .map_err(|e| AppError::Other(format!("hw_report serialize: {e}")))?;
     crate::db::set_setting(&state.db, SETTING_HW_REPORT, &json).await?;

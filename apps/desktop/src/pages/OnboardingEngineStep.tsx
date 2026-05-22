@@ -28,6 +28,7 @@ import {
 } from '../api/local-engine';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
+import { EngineChip } from '../components/EngineChip';
 
 const PRESETS: LocalEnginePreset[] = ['light', 'balanced', 'quality'];
 
@@ -57,6 +58,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
   const [hw, setHw] = useState<HwReport | null>(null);
   const [chosenPreset, setChosenPreset] = useState<LocalEnginePreset | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [downloadQueue, setDownloadQueue] = useState<string[]>([]);
@@ -272,6 +274,85 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
   const models = PRESET_MODELS[preset];
   const presetLabel = t(`localEngine.preset.${preset}`);
 
+  if (previewMode) {
+    return (
+      <>
+        <p
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9.5,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            color: 'var(--ink-3)',
+            marginBottom: 6,
+          }}
+        >
+          {t('onboarding.engine.previewEyebrow')}
+        </p>
+        <p
+          style={{
+            fontFamily: 'var(--font-serif)',
+            fontSize: 20,
+            letterSpacing: '-0.01em',
+            marginBottom: 18,
+          }}
+        >
+          {t('onboarding.engine.previewTitle')}
+        </p>
+        <div
+          style={{
+            background: 'var(--bg-2)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '14px 18px',
+            marginBottom: 14,
+          }}
+        >
+          {[1, 2, 3, 4].map((n) => (
+            <div
+              key={n}
+              className="transcript-row"
+              style={{ fontSize: 13, lineHeight: 1.6 }}
+            >
+              {t(`onboarding.engine.previewTranscript${n}` as 'onboarding.engine.previewTranscript1')}
+            </div>
+          ))}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 24,
+          }}
+        >
+          <EngineChip kind="local" variant="inline" />
+          <span className="muted" style={{ fontSize: 12 }}>
+            {t('onboarding.engine.previewProcessed', { ms: '420' })}
+          </span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => {
+              setPreviewMode(false);
+              void startDownload();
+            }}
+          >
+            {t('onboarding.engine.previewInstall', { size: models.sizeGb })}
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => setPreviewMode(false)}
+          >
+            {t('onboarding.engine.previewBack')}
+          </button>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       {error && (
@@ -408,6 +489,13 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
           onClick={() => void startDownload()}
         >
           {t('onboarding.engine.downloadCta', { size: models.sizeGb })}
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          onClick={() => setPreviewMode(true)}
+        >
+          {t('onboarding.engine.previewCta')}
         </button>
         <button
           type="button"

@@ -16,6 +16,7 @@ const REQUEST_TIMEOUT_SECS: u64 = 120;
 pub struct PermissionsStatus {
     pub microphone: String,
     pub screen_recording: String,
+    pub accessibility: String,
 }
 
 /// Запрашивает текущий статус разрешений без триггера диалогов.
@@ -91,6 +92,11 @@ async fn one_shot(
             .to_string(),
         screen_recording: event
             .get("screen_recording")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        accessibility: event
+            .get("accessibility")
             .and_then(Value::as_str)
             .unwrap_or("unknown")
             .to_string(),
