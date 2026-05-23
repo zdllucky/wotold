@@ -30,6 +30,9 @@ use crate::{
 
 /// [M13.1.5c] Settings key для feature flag. См. PRD §M13.1.5.
 const SETTING_CHUNKED_PIPELINE: &str = "recording.chunked_pipeline";
+/// [M13 follow-up] Mic diarization toggle. Default ON. См. api/settings.ts
+/// `MIC_DIARIZATION_ENABLED`.
+const SETTING_MIC_DIARIZATION: &str = "mic_diarization_enabled";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RecordingState {
@@ -339,6 +342,8 @@ struct ChunkedSetup {
     mic_provider: Arc<dyn TranscriptionProvider>,
     system_provider: Arc<dyn TranscriptionProvider>,
     stt_lang: String,
+    /// [M13 follow-up] Sortformer на mic для multi-voice. Default ON.
+    mic_diarization: bool,
 }
 
 /// Прочитать settings + (если оба условия true) построить provider + channels.
@@ -403,6 +408,17 @@ async fn prepare_chunked_setup(
         .await?
         .unwrap_or_else(|| "auto".to_string());
 
+    // [M13 follow-up] Mic diarization — Default ON. Тот же pattern что
+    // chunked_pipeline: explicit "0" / "false" = OFF, всё прочее (включая
+    // None) = ON.
+    let mic_off = matches!(
+        db::get_setting(&state.db, SETTING_MIC_DIARIZATION)
+            .await?
+            .as_deref(),
+        Some("0") | Some("false")
+    );
+    let mic_diarization = !mic_off;
+
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(256);
     let (rotate_tx, rotate_rx) = mpsc::channel::<serde_json::Value>(8);
     let (stop_tx, stop_rx) = oneshot::channel::<()>();
@@ -421,6 +437,7 @@ async fn prepare_chunked_setup(
         mic_provider,
         system_provider,
         stt_lang,
+        mic_diarization,
     }))
 }
 
@@ -443,6 +460,7 @@ async fn spawn_orchestrator(
         mic_provider,
         system_provider,
         stt_lang,
+        mic_diarization,
     } = setup;
 
     let session_ref = state.recording.clone();
@@ -462,6 +480,8 @@ async fn spawn_orchestrator(
         // app_handle — для emit'а transcript:chunk_done event.
         state.app_data_dir.clone(),
         app.clone(),
+        // [M13 follow-up] Sortformer на mic-дорожке per-chunk.
+        mic_diarization,
     );
 
     let handle = tauri::async_runtime::spawn(async move {
@@ -534,6 +554,7 @@ fn make_enqueue_fn(
     lang: String,
     app_data_dir: std::path::PathBuf,
     app_handle: AppHandle,
+    mic_diarization: bool,
 ) -> impl Fn(u32, u64, u64, Option<String>) -> chunk_orchestrator::EnqueueFut + Send + Sync + 'static
 {
     move |chunk_idx, start_ms, end_ms, prev_prompt| {
@@ -545,6 +566,7 @@ fn make_enqueue_fn(
         let lang = lang.clone();
         let app_data_dir = app_data_dir.clone();
         let app_handle = app_handle.clone();
+        let mic_diarization = mic_diarization;
         Box::pin(async move {
             let mic_path = store.chunk_mic_path(&call_id, chunk_idx);
             let system_path = store.chunk_system_path(&call_id, chunk_idx);
@@ -570,6 +592,7 @@ fn make_enqueue_fn(
                 lang: lang.clone(),
                 app_data_dir: Some(app_data_dir.clone()),
                 app_handle: Some(app_handle.clone()),
+                mic_diarization,
             };
             let out = chunk_runner::run_chunk(
                 &pool,

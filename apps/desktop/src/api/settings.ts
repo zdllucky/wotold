@@ -60,6 +60,12 @@ export const SETTINGS_KEYS = {
   /** [M13.1.5] Feature flag для chunked pipelined transcription. '1' = ON.
    *  Default OFF — Phase 1 behind-flag rollout (см. M13_CHUNKING_PRD.md §6). */
   CHUNKED_PIPELINE: 'recording.chunked_pipeline',
+  /** [M13 follow-up] Прогнать sortformer и по mic-дорожке, чтобы поймать
+   *  гостевые голоса записанные через тот же микрофон. Owner-голос
+   *  определяется через voice biometric match против voice_samples
+   *  владельца (fallback: primary-speaker heuristic). Default ON.
+   *  '0'/'false' = выключено; остальное → ON. */
+  MIC_DIARIZATION_ENABLED: 'mic_diarization_enabled',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
@@ -80,6 +86,9 @@ export const SETTINGS_DEFAULTS = {
   /** [S1] Call-detect default OFF (R3 deviation opt-in). */
   CALL_DETECT_ENABLED: false,
   CALL_DETECT_COOLDOWN_MIN: '5' as CallDetectCooldown,
+  /** [M13 follow-up] Mic diarization — default ON per user request.
+   *  Полезно для multi-voice meeting через один микрофон. */
+  MIC_DIARIZATION_ENABLED: true,
 } as const;
 
 /** [S1] Whitelist cooldown values 3/5/10/15 min. */

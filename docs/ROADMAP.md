@@ -618,6 +618,11 @@
 
 **Effort:** ~2 спринта (10-15 рабочих дней).
 
+### M13 follow-ups
+
+- [x] **Mic-track diarization (multi-voice on microphone)** — toggle в Settings → Speakers (default ON, hint о ~10-20% slowdown). Sortformer проходит и по mic для случаев когда на микрофон попадают несколько голосов (live-meeting в одной комнате). Owner-голос определяется через voice biometric match против voice_samples владельца (`owner_identify::identify_owner_speaker`); fallback на primary-speaker by duration heuristic если samples ещё не накоплены. Cross-track owner reflection через Phase 2 reclustering. M3.7 invariant сохраняется (owner всегда `OWNER_TAG`). 7 unit-тестов в `pipeline::owner_identify`. Не затрагивает cloud paths.
+- [x] **Pipeline step label re-link** — i18n step1-5 синхронизированы с backend `Stage::step()` enum + переведены в present continuous. CallStateTag в PipelineStrip теперь dynamic через `labelOverride={progress.stageLabel}`.
+
 ---
 
 ## Принятые ограничения (НЕ «чинить» в MVP)

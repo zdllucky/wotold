@@ -49,6 +49,12 @@ pub mod chunk_assembly;
 // IDs между chunks (один физ.спикер = один global tag).
 pub mod speaker_reclustering;
 
+// [M13 follow-up] Owner identification на mic-дорожке после диаризации
+// (когда MIC_DIARIZATION_ENABLED ON). Two-stage: biometric → primary by
+// duration fallback. M3.7 invariant preserved через perетеггинг
+// выбранного local tag → OWNER_TAG.
+pub mod owner_identify;
+
 pub use merge::{merge_tracks, render_transcript_md};
 pub use settings::PipelineSettings;
 pub use stage::Stage;
@@ -552,6 +558,36 @@ async fn run_local_inner(
     //    система-трек остаётся single-bucket (degraded но рабочий).
     let sys_t = diarize_system_track(&ctx.app_data_dir, &ctx.system_path, sys_t).await;
 
+    // 4.6. [M13 follow-up] Опциональный multi-voice на mic-дорожке. Default ON
+    //    через `MIC_DIARIZATION_ENABLED`. Без этого вся mic уходила в OWNER_TAG
+    //    через assemble_transcript (force_owner_track в local_engine::merge).
+    //    С включенной настройкой sortformer выдаёт `speaker:N` tags, потом
+    //    owner_identify::identify_owner_speaker переименовывает один из них
+    //    в OWNER_TAG. На non-chunked пути embeddings собираем здесь же через
+    //    extract_clusters; cross-track reflection (owner отражается в system)
+    //    не обрабатывается без global reclustering — это limitation
+    //    non-chunked path, acceptable т.к. чанкед = default.
+    let mic_off = matches!(
+        db::get_setting(pool, "mic_diarization_enabled")
+            .await?
+            .as_deref(),
+        Some("0") | Some("false")
+    );
+    let mic_diarization = !mic_off;
+    let mic_t = if mic_diarization {
+        let mic_diarized = diarize_mic_track(&ctx.app_data_dir, &ctx.mic_path, mic_t).await;
+        relabel_owner_on_mic_full_file(
+            pool,
+            &ctx.app_data_dir,
+            &ctx.mic_path,
+            &ctx.system_path,
+            mic_diarized,
+        )
+        .await
+    } else {
+        mic_t
+    };
+
     // 5. Stage MergeArtifacts — переиспользуем cloud helper (он не знает про
     //    engine, просто пишет transcript.md + raw_stt.json).
     let merged = run_stage(
@@ -691,6 +727,88 @@ async fn diarize_system_track(
     system_path: &Path,
     sys_t: DiarizedTranscript,
 ) -> DiarizedTranscript {
+    diarize_track(app_data_dir, system_path, sys_t, "system").await
+}
+
+/// [M13 follow-up] Mirror `diarize_system_track` для mic-дорожки. Применяется
+/// когда `MIC_DIARIZATION_ENABLED` ON и engine == local. Owner-tag НЕ
+/// присваивается здесь — local `speaker:N` tags сохраняются, owner
+/// identification идёт отдельным шагом ([`owner_identify`]).
+#[cfg(target_os = "macos")]
+pub(crate) async fn diarize_mic_track(
+    app_data_dir: &Path,
+    mic_path: &Path,
+    mic_t: DiarizedTranscript,
+) -> DiarizedTranscript {
+    diarize_track(app_data_dir, mic_path, mic_t, "mic").await
+}
+
+/// [M13 follow-up] Non-chunked path post-processing: после `diarize_mic_track`
+/// на mic-дорожке local `speaker:N` tags. Извлекаем cluster embeddings
+/// через `extract_clusters`, вызываем `identify_owner_speaker` и
+/// перетеггиваем выбранный tag → `OWNER_TAG`. Cross-track reflection
+/// не обрабатывается (non-chunked = нет global remap).
+#[cfg(target_os = "macos")]
+async fn relabel_owner_on_mic_full_file(
+    pool: &SqlitePool,
+    app_data_dir: &Path,
+    mic_path: &Path,
+    system_path: &Path,
+    mut mic_t: DiarizedTranscript,
+) -> DiarizedTranscript {
+    // Embedder для cluster mean (reuse existing pipeline pattern из cloud
+    // run_cluster_pipeline). Fallback на StubEmbedder когда модель отсутствует
+    // → cluster_embeddings empty → identify_owner_speaker уходит в duration
+    // fallback (acceptable).
+    let model_path = app_data_dir.join("models").join("embedder.onnx");
+    let embedder: Box<dyn embeddings::Embedder> =
+        match embeddings::try_load_onnx_embedder(&model_path) {
+            Some(e) => e,
+            None => Box::new(StubEmbedder),
+        };
+    let clusters = match crate::pipeline::clusters::extract_clusters(
+        &mic_t.segments,
+        mic_path,
+        system_path,
+        embedder.as_ref(),
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("relabel_owner_on_mic: extract_clusters err: {e} — fallback duration");
+            std::collections::HashMap::new()
+        }
+    };
+    match crate::pipeline::owner_identify::identify_owner_speaker(pool, &mic_t.segments, &clusters)
+        .await
+    {
+        Ok(Some(owner_local_tag)) if owner_local_tag != crate::pipeline::merge::OWNER_TAG => {
+            log::info!(
+                "relabel_owner_on_mic: переменовываем {} → {}",
+                owner_local_tag,
+                crate::pipeline::merge::OWNER_TAG
+            );
+            for seg in mic_t.segments.iter_mut() {
+                if seg.speaker_tag == owner_local_tag {
+                    seg.speaker_tag = crate::pipeline::merge::OWNER_TAG.to_string();
+                }
+            }
+        }
+        Ok(_) => {}
+        Err(e) => log::warn!("relabel_owner_on_mic: identify err: {e}"),
+    }
+    mic_t
+}
+
+/// [M13 follow-up] Общий helper sortformer-диаризации (mic | system). На
+/// degraded path (нет моделей / sortformer err) — возвращаем transcript
+/// без изменений.
+#[cfg(target_os = "macos")]
+async fn diarize_track(
+    app_data_dir: &Path,
+    audio_path: &Path,
+    transcript: DiarizedTranscript,
+    track_kind: &'static str,
+) -> DiarizedTranscript {
     use crate::local_engine::{
         diarization::{Diarizer, SortformerDiarizer},
         merge,
@@ -704,42 +822,40 @@ async fn diarize_system_track(
         Ok(ModelStatus::Present { .. })
     );
     if !seg_present {
-        log::info!(
-            "diarize_system_track: pyannote-segmentation отсутствует — fall back на single-bucket"
-        );
-        return sys_t;
+        log::info!("diarize_track[{track_kind}]: pyannote-segmentation отсутствует — fall back");
+        return transcript;
     }
 
     // 2. WeSpeaker embedding (B3.7c) — отдельный путь от model catalog.
     let emb_path = crate::voice_model::model_path(app_data_dir);
     if !emb_path.exists() {
         log::info!(
-            "diarize_system_track: WeSpeaker embedder ({}) отсутствует — fall back",
+            "diarize_track[{track_kind}]: WeSpeaker embedder ({}) отсутствует — fall back",
             emb_path.display()
         );
-        return sys_t;
+        return transcript;
     }
 
     // 3-5. Diarize + merge. Любая ошибка → fall back (degraded).
     let diarizer = SortformerDiarizer::new(seg_path, emb_path);
-    let speaker_segments = match diarizer.diarize(system_path).await {
+    let speaker_segments = match diarizer.diarize(audio_path).await {
         Ok(segs) => segs,
         Err(e) => {
-            log::warn!("diarize_system_track: sortformer err: {e} — fall back на single-bucket");
-            return sys_t;
+            log::warn!("diarize_track[{track_kind}]: sortformer err: {e} — fall back");
+            return transcript;
         }
     };
 
-    let merged_segments = merge::merge_word_with_speaker(&sys_t.segments, &speaker_segments);
+    let merged_segments = merge::merge_word_with_speaker(&transcript.segments, &speaker_segments);
     log::info!(
-        "diarize_system_track: {} STT segments + {} speaker segments → {} merged",
-        sys_t.segments.len(),
+        "diarize_track[{track_kind}]: {} STT segments + {} speaker segments → {} merged",
+        transcript.segments.len(),
         speaker_segments.len(),
         merged_segments.len()
     );
     DiarizedTranscript {
         segments: merged_segments,
-        ..sys_t
+        ..transcript
     }
 }
 

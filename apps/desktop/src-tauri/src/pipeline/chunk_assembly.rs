@@ -18,6 +18,8 @@ use std::collections::HashMap;
 
 use sqlx::SqlitePool;
 
+use crate::pipeline::merge::OWNER_TAG;
+use crate::pipeline::owner_identify::identify_owner_speaker;
 use crate::pipeline::speaker_reclustering::{
     agglomerative_cluster, EmbeddingPoint, DEFAULT_COSINE_THRESHOLD,
 };
@@ -150,6 +152,32 @@ pub async fn load_chunked_transcripts(
     apply_global_remap(&mut mic_segments, &mic_segment_chunk_idx, &global_map);
     apply_global_remap(&mut sys_segments, &sys_segment_chunk_idx, &global_map);
 
+    // [M13 follow-up] Owner identification: после global remap у mic-сегментов
+    // могут быть `speaker:N` tags (если в chunk_runner работала mic diarization).
+    // Сводим их к OWNER_TAG для speaker'а который реально — владелец.
+    // Cross-track reflection: если owner отражается в system-дорожке и Phase 2
+    // reclustering объединил их (один global tag), relabel'им и system tagged.
+    //
+    // Если mic_diarization была OFF — все mic-сегменты уже OWNER_TAG'd
+    // в провайдере / force_owner_track выше; identify вернёт "owner" → no-op.
+    // Если identify вернёт None (пустой mic) — пропускаем.
+    if let Ok(Some(owner_local_tag)) =
+        identify_owner_speaker_from_cluster_map(pool, &mic_segments, &points).await
+    {
+        if owner_local_tag != OWNER_TAG {
+            for seg in mic_segments.iter_mut() {
+                if seg.speaker_tag == owner_local_tag {
+                    seg.speaker_tag = OWNER_TAG.to_string();
+                }
+            }
+            for seg in sys_segments.iter_mut() {
+                if seg.speaker_tag == owner_local_tag {
+                    seg.speaker_tag = OWNER_TAG.to_string();
+                }
+            }
+        }
+    }
+
     // [M13 review fix] Authoritative duration = max chunk.end_ms across done
     // chunks. Fallback на max segment.end если end_ms NULL (legacy/partial row).
     // Без этого если последний chunk имел пустой mic+system (короткая фраза),
@@ -202,6 +230,65 @@ fn apply_global_remap(
             }
         }
     }
+}
+
+/// [M13 follow-up] Wrapper над `owner_identify::identify_owner_speaker` —
+/// собирает per-global-tag cluster embeddings (mean-pool) из всех Phase 2
+/// EmbeddingPoint'ов, затем вызывает identification. Mean-pool нужен потому
+/// что один global tag может приходить из N chunks (после reclustering).
+async fn identify_owner_speaker_from_cluster_map(
+    pool: &SqlitePool,
+    mic_segments: &[TranscriptSegment],
+    points: &[EmbeddingPoint],
+) -> Result<Option<String>, AppError> {
+    // Aggregate per-global cluster (mean-pool across chunks). Здесь по сути
+    // ещё раз mean-pool после Phase 2 — но т.к. points содержат local tags,
+    // нужно сначала сопоставить с tags в mic_segments. Самый простой путь:
+    // взять каждую точку с local_tag совпадающим с одним из tags на mic, и
+    // pool by tag. Этого достаточно для biometric matching (cosine на
+    // mean-pool similar к single-chunk mean).
+    let mut cluster_embeddings: HashMap<String, Vec<Vec<f32>>> = HashMap::new();
+    let mic_tags: std::collections::HashSet<&str> = mic_segments
+        .iter()
+        .map(|s| s.speaker_tag.as_str())
+        .collect();
+    for p in points {
+        if mic_tags.contains(p.local_tag.as_str()) && !p.vec.is_empty() {
+            cluster_embeddings
+                .entry(p.local_tag.clone())
+                .or_default()
+                .push(p.vec.clone());
+        }
+    }
+    let mean_embeddings: HashMap<String, Vec<f32>> = cluster_embeddings
+        .into_iter()
+        .filter_map(|(tag, vecs)| {
+            if vecs.is_empty() {
+                return None;
+            }
+            let dim = vecs[0].len();
+            let mut mean = vec![0.0_f32; dim];
+            let mut count = 0_f32;
+            for v in &vecs {
+                if v.len() != dim {
+                    continue;
+                }
+                for (m, x) in mean.iter_mut().zip(v.iter()) {
+                    *m += *x;
+                }
+                count += 1.0;
+            }
+            if count == 0.0 {
+                return None;
+            }
+            for m in mean.iter_mut() {
+                *m /= count;
+            }
+            Some((tag, mean))
+        })
+        .collect();
+
+    identify_owner_speaker(pool, mic_segments, &mean_embeddings).await
 }
 
 #[cfg(test)]
