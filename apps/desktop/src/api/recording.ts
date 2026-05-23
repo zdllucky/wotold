@@ -81,3 +81,31 @@ export function resumeRecording(): Promise<RecordingState> {
 export function listCalls(): Promise<Call[]> {
   return invoke<Call[]>('list_calls');
 }
+
+// ────────────────────────────────────────────────────────────
+// [M13.3.1] Chunked pipeline — per-call chunk progress
+// ────────────────────────────────────────────────────────────
+
+/** [M13.3.1] Lightweight view над `call_chunks` row для UI ChunkProgressStrip.
+ *  Heavy fields (transcript_json / embeddings_json) не передаются — UI они не
+ *  нужны, лишний network roundtrip. */
+export interface CallChunk {
+  chunk_idx: number;
+  /** pending | processing | done | failed (status FSM из db::chunks). */
+  status: 'pending' | 'processing' | 'done' | 'failed';
+  start_ms: number;
+  end_ms: number | null;
+}
+
+export function listCallChunks(callId: string): Promise<CallChunk[]> {
+  return invoke<CallChunk[]>('list_call_chunks', { callId });
+}
+
+/** [M13.2.3] Per-chunk pipeline finished — эмитится из `chunk_runner` на
+ *  done/failed. UI patch'ит ChunkProgressStrip без полного refetch'а. */
+export interface ChunkDoneEvent {
+  call_id: string;
+  chunk_idx: number;
+  status: 'done' | 'failed';
+  segment_count: number;
+}

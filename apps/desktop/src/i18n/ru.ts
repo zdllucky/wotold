@@ -911,6 +911,15 @@ const ruInternal = {
     step4: 'Соотносим голоса с контактами',
     step5: 'Готовим саммари и задачи',
   },
+  // [M13.3.3] Chunked pipeline (длинные звонки нарезаются на 10-мин сегменты).
+  chunkProgress: {
+    label: 'Сегменты',
+    ofN: '{done} из {total}',
+    statusDone: 'готово',
+    statusFailed: 'не удалось',
+    statusProcessing: 'обрабатываем',
+    statusPending: 'ожидает',
+  },
 } as const;
 
 // Widen recursively from literal types to `string` so other locales can

@@ -12,3 +12,5 @@ export { PipelineStrip } from './PipelineStrip';
 export type { PipelineStripProps } from './PipelineStrip';
 export { CallErrorRow } from './CallErrorRow';
 export type { CallErrorRowProps } from './CallErrorRow';
+export { ChunkProgressStrip } from './ChunkProgressStrip';
+export type { ChunkProgressStripProps } from './ChunkProgressStrip';
