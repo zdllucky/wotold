@@ -919,14 +919,21 @@ async fn diarize_track(
         Ok(ModelStatus::Present { .. })
     );
     if !seg_present {
-        log::info!("diarize_track[{track_kind}]: pyannote-segmentation отсутствует — fall back");
+        // [Bug-fix #4] log::warn — pyannote-segmentation missing — это
+        // explicit gap который юзер должен видеть (toggle на Speakers UI
+        // зависит от этой модели). Раньше было log::info → невидимо в release.
+        log::warn!(
+            "diarize_track[{track_kind}]: pyannote-segmentation отсутствует — \
+             диаризация {track_kind}-дорожки не выполнена. Установите модуль в \
+             Настройки → Спикеры."
+        );
         return transcript;
     }
 
     // 2. WeSpeaker embedding (B3.7c) — отдельный путь от model catalog.
     let emb_path = crate::voice_model::model_path(app_data_dir);
     if !emb_path.exists() {
-        log::info!(
+        log::warn!(
             "diarize_track[{track_kind}]: WeSpeaker embedder ({}) отсутствует — fall back",
             emb_path.display()
         );

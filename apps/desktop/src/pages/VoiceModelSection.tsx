@@ -21,6 +21,11 @@ import {
   type VoiceModelStatus,
 } from '../api/voiceModel';
 import {
+  localEngineModelDownload,
+  localEngineModelStatus,
+} from '../api/local-engine';
+import type { ModelStatus } from '@wotold/contracts';
+import {
   getSetting,
   setSetting,
   SETTINGS_DEFAULTS,
@@ -50,6 +55,21 @@ export function VoiceModelSection() {
   const [micDiarizationEnabled, setMicDiarizationEnabled] = useState<boolean>(
     SETTINGS_DEFAULTS.MIC_DIARIZATION_ENABLED,
   );
+  // [Bug-fix #4] Pyannote-segmentation status — необходим для mic diarization.
+  // Когда missing, sortformer silently skip'ает, и юзер не видит почему голоса
+  // не разделились. Здесь делаем gap явным.
+  const [pyannoteStatus, setPyannoteStatus] = useState<ModelStatus | null>(null);
+  const [pyannoteDownloading, setPyannoteDownloading] = useState(false);
+
+  const refreshPyannote = useCallback(async () => {
+    try {
+      const s = await localEngineModelStatus('pyannote-segmentation');
+      setPyannoteStatus(s);
+    } catch {
+      // local-engine catalog не доступен — не критично, скрываем UI блок.
+      setPyannoteStatus(null);
+    }
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -61,8 +81,24 @@ export function VoiceModelSection() {
         () => null,
       );
       setMicDiarizationEnabled(micRaw !== '0' && micRaw !== 'false');
+      await refreshPyannote();
     })();
-  }, []);
+  }, [refreshPyannote]);
+
+  const handleInstallPyannote = async () => {
+    if (pyannoteDownloading) return;
+    setPyannoteDownloading(true);
+    try {
+      await localEngineModelDownload('pyannote-segmentation');
+      await refreshPyannote();
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setPyannoteDownloading(false);
+    }
+  };
+
+  const pyannoteReady = pyannoteStatus?.state === 'present';
 
   const persistAutoBind = async (next: boolean) => {
     setAutoBindEnabled(next);
@@ -295,44 +331,9 @@ export function VoiceModelSection() {
           )}
         </div>
 
-        <details style={{ marginTop: 12 }}>
-          <summary
-            style={{
-              cursor: 'pointer',
-              fontSize: 12,
-              color: 'var(--subtle)',
-              fontFamily: 'var(--font-sans)',
-              userSelect: 'none',
-            }}
-          >
-            {t('voiceModel.techDetails')}
-          </summary>
-          <dl
-            data-selectable
-            style={{
-              fontSize: 12,
-              color: 'var(--muted)',
-              fontFamily: 'var(--font-mono)',
-              marginTop: 10,
-              display: 'grid',
-              gridTemplateColumns: 'auto 1fr',
-              gap: '4px 16px',
-            }}
-          >
-            <dt>{t('voiceModel.techUrl')}</dt>
-            <dd style={{ margin: 0, wordBreak: 'break-all' }}>{info.url}</dd>
-            <dt>{t('voiceModel.techSha')}</dt>
-            <dd style={{ margin: 0, wordBreak: 'break-all' }}>{info.sha256}</dd>
-            <dt>{t('voiceModel.techSize')}</dt>
-            <dd style={{ margin: 0 }}>{formatMB(info.size_hint, t)}</dd>
-            <dt>{t('voiceModel.techFeature')}</dt>
-            <dd style={{ margin: 0 }}>
-              {info.feature_enabled
-                ? t('voiceModel.featureEnabled')
-                : t('voiceModel.featureDisabled')}
-            </dd>
-          </dl>
-        </details>
+        {/* [Bug-fix #4] Tech details expander убран — обезличиваем модуль
+            (не показываем имя архитектуры/URL/SHA256/feature flag). Размер
+            модели остался в кнопке "Скачать (~25МБ)". */}
       </div>
 
       {/* Auto-bind toggle — связан со списком voiced спикеров.
@@ -387,12 +388,11 @@ export function VoiceModelSection() {
         </label>
       </div>
 
-      {/* [M13 follow-up] Mic diarization toggle — для записей где на mic
-          попадает несколько голосов (live meetings в одной комнате).
-          Default ON. Hint предупреждает о ~10-20% slowdown.
-          Не gating'уется по status.status — даже без WeSpeaker модели
-          sortformer работает; owner identification только без biometric
-          (fallback на primary-speaker heuristic). */}
+      {/* [M13 follow-up + Bug-fix #4] Mic diarization toggle. Default ON.
+          Backend silently skip'ает diarization когда pyannote-segmentation
+          модель отсутствует — здесь явный gating: toggle disabled до
+          установки модели, with inline install button. Размер модели в
+          catalog: ~6МБ ONNX. */}
       <div
         style={{
           marginTop: 12,
@@ -400,6 +400,7 @@ export function VoiceModelSection() {
           border: '1px solid var(--line-soft)',
           borderRadius: 'var(--radius-card, 8px)',
           background: 'var(--bg)',
+          opacity: pyannoteReady ? 1 : 0.85,
         }}
       >
         <label
@@ -407,12 +408,13 @@ export function VoiceModelSection() {
             display: 'flex',
             alignItems: 'flex-start',
             gap: 12,
-            cursor: 'pointer',
+            cursor: pyannoteReady ? 'pointer' : 'not-allowed',
           }}
         >
           <input
             type="checkbox"
-            checked={micDiarizationEnabled}
+            checked={micDiarizationEnabled && pyannoteReady}
+            disabled={!pyannoteReady}
             onChange={(e) => void persistMicDiarization(e.target.checked)}
             style={{ marginTop: 4 }}
           />
@@ -439,6 +441,40 @@ export function VoiceModelSection() {
             </div>
           </div>
         </label>
+
+        {!pyannoteReady && (
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: '1px dashed var(--line-soft)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--warning, var(--subtle))',
+                lineHeight: 1.5,
+              }}
+            >
+              {t('settings.micDiarizationModelMissing')}
+            </div>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => void handleInstallPyannote()}
+              disabled={pyannoteDownloading}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              {pyannoteDownloading
+                ? t('settings.micDiarizationInstalling')
+                : t('settings.micDiarizationInstall')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

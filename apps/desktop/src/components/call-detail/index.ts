@@ -20,3 +20,5 @@ export { EvidenceTooltip } from './EvidenceTooltip';
 export { PrivacyDisclaimer } from './PrivacyDisclaimer';
 // [M14 T-15] Opt-in legacy v1 → v2 upgrade banner.
 export { LegacyRecapBanner } from './LegacyRecapBanner';
+// [Bug-fix #6] Auto-suggest recap regen after speaker bind.
+export { RecapRegenSuggestionStrip } from './RecapRegenSuggestionStrip';

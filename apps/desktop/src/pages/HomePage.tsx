@@ -21,8 +21,10 @@ import { useRecording } from '../recording/RecordingContext';
 import {
   DEFAULT_PAUSE_HOTKEY,
   DEFAULT_TOGGLE_HOTKEY,
+  formatHotkey,
   matchEvent,
   parseHotkey,
+  type ParsedHotkey,
 } from '../utils/hotkey';
 
 interface AvailableUpdate {
@@ -205,24 +207,30 @@ export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
   // pause поведение (только не-idle):
   //   recording → pause
   //   paused    → resume
+  // [Bug-fix #3] toggleHotkey/pauseHotkey подняты в state — JSX рендерит
+  // актуальный chord через formatHotkey(), а не хардкод "⌘ ⇧ R". Раньше
+  // хоткеи жили локальными var'ами в useEffect → UI не обновлялся.
+  const [toggleHotkey, setToggleHotkey] = useState<ParsedHotkey>(DEFAULT_TOGGLE_HOTKEY);
+  const [pauseHotkey, setPauseHotkey] = useState<ParsedHotkey>(DEFAULT_PAUSE_HOTKEY);
+
   useEffect(() => {
-    let toggle = DEFAULT_TOGGLE_HOTKEY;
-    let pause = DEFAULT_PAUSE_HOTKEY;
     void getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE).then((raw) => {
       const fromDb = parseHotkey(raw);
-      if (fromDb) toggle = fromDb;
+      if (fromDb) setToggleHotkey(fromDb);
     });
     void getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE).then((raw) => {
       const fromDb = parseHotkey(raw);
-      if (fromDb) pause = fromDb;
+      if (fromDb) setPauseHotkey(fromDb);
     });
+  }, []);
 
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
       if (target === 'input' || target === 'textarea' || target === 'select') return;
       if (rec.busy) return;
 
-      if (matchEvent(e, toggle)) {
+      if (matchEvent(e, toggleHotkey)) {
         e.preventDefault();
         const kind = rec.status.kind;
         if (kind === 'idle') {
@@ -238,7 +246,7 @@ export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
         return;
       }
 
-      if (matchEvent(e, pause)) {
+      if (matchEvent(e, pauseHotkey)) {
         e.preventDefault();
         const kind = rec.status.kind;
         if (kind === 'recording') {
@@ -251,7 +259,7 @@ export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rec.status.kind, rec.busy, consentAt]);
+  }, [rec.status.kind, rec.busy, consentAt, toggleHotkey, pauseHotkey]);
 
   // Stats derivation
   const now = Date.now();
@@ -417,11 +425,11 @@ export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
             onClick={onStart}
             disabled={rec.busy}
             aria-label={rec.busy ? t('home.startingAria') : t('home.startAria')}
-            title={t('home.hotkeyTitle')}
+            title={t('home.hotkeyTitle', { chord: formatHotkey(toggleHotkey) })}
           />
           <div>
             <div className="small-caps" style={{ marginBottom: 4 }}>
-              ⌘ ⇧ R
+              {formatHotkey(toggleHotkey)}
             </div>
             <div
               style={{
