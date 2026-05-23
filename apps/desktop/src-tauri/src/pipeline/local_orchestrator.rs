@@ -27,6 +27,7 @@
 use crate::local_engine::preset::LocalEnginePreset;
 use crate::pipeline::chunker;
 use crate::pipeline::classifier;
+use crate::pipeline::expert_prompts;
 use crate::pipeline::map_reduce;
 use crate::pipeline::recap;
 use crate::pipeline::summary_v2::CallType;
@@ -95,8 +96,15 @@ pub(crate) async fn run_v2_pipeline(
         .await;
     }
 
-    // 3. Phase A: single-pass main v2 generation с (опциональным) hint'ом.
-    let system = recap::build_v2_system_prompt(ctx.lang_detected, ctx.known_speakers, known_type);
+    // 3. Phase A: single-pass main v2 generation.
+    // [M14 T-07 Phase C] Expert prompt когда classifier дал call_type;
+    // universal fallback на classifier failure (no regression).
+    let system = match known_type {
+        Some(t) => {
+            expert_prompts::build_expert_system_prompt(t, ctx.lang_detected, ctx.known_speakers)
+        }
+        None => recap::build_v2_system_prompt(ctx.lang_detected, ctx.known_speakers, None),
+    };
     let request = LlmRequest {
         model: None,
         system,
@@ -190,15 +198,17 @@ mod tests {
 
         let systems = mock.captured_systems();
         assert_eq!(systems.len(), 2, "expected 2 LLM calls (classifier + main)");
-        // Main call (index 1) must contain the classification hint.
+        // [M14 T-07 Phase C] Main call (index 1) теперь использует expert
+        // prompt, не universal с Classification hint. Проверяем SPECIALIZED
+        // GUIDE marker + standup slug present.
         assert!(
-            systems[1].contains("Classification hint"),
-            "main prompt missing hint: {}",
-            systems[1]
+            systems[1].contains("SPECIALIZED GUIDE"),
+            "main prompt missing expert guide: {}",
+            &systems[1][..200.min(systems[1].len())]
         );
         assert!(
             systems[1].contains("`standup`"),
-            "main prompt missing call_type=standup hint"
+            "main prompt missing call_type=standup focus"
         );
     }
 
@@ -257,6 +267,41 @@ mod tests {
             out.push_str("\n\n");
         }
         out
+    }
+
+    #[tokio::test]
+    async fn orchestrator_short_path_uses_expert_when_known_type() {
+        // Classifier returns standup → main call должен использовать expert
+        // prompt (focused) — содержит ## Yesterday / ## Today / ## Blockers
+        // и НЕ содержит ## Customer pain / ## Demo flow.
+        let cls_response = serde_json::json!({
+            "call_type": "standup",
+            "confidence": 0.9,
+        });
+        let mock = MockProvider::new(vec![Ok(cls_response), Ok(minimal_v2_json())]);
+        let ctx = LocalOrchestratorCtx {
+            transcript_md: "**A** [0:00]:\nyesterday I did x",
+            lang_detected: Some("en"),
+            known_speakers: None,
+            preset: LocalEnginePreset::Light,
+        };
+        run_v2_pipeline(&mock, ctx).await.unwrap();
+        let systems = mock.captured_systems();
+        assert_eq!(systems.len(), 2);
+        let main_prompt = &systems[1];
+        // Focused headers for standup.
+        assert!(
+            main_prompt.contains("## Yesterday"),
+            "expert main prompt missing standup headers: {}",
+            &main_prompt[..200.min(main_prompt.len())]
+        );
+        assert!(main_prompt.contains("## Today"));
+        // Other types' SPECIALIZED headers absent.
+        assert!(!main_prompt.contains("## Customer pain"));
+        assert!(!main_prompt.contains("## Demo flow"));
+        assert!(!main_prompt.contains("## Job to be done"));
+        // SPECIALIZED GUIDE marker present.
+        assert!(main_prompt.contains("SPECIALIZED GUIDE"));
     }
 
     #[tokio::test]
