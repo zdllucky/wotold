@@ -31,12 +31,18 @@ export function PipelineStrip({ progress, defaultOpen = false }: PipelineStripPr
   return (
     <details className="proc-strip" open={defaultOpen}>
       <summary className="proc-strip-summary">
+        {/* [M13 follow-up] labelOverride = current step label вместо
+            фиксированного `callState.processing` ("распознаём"). Раньше тэг
+            всегда говорил «РАСПОЗНАЁМ» что не соответствовало реальному
+            активному шагу (на step=1 «Сохраняем», на step=4 «Сводим» и т.д.).
+            CallsPage row tag-и остаются на общем lifecycle-label'е. */}
         <CallStateTag
           state="processing"
+          labelOverride={progress.stageLabel}
           detail={`${progress.step} / ${totalSteps}`}
         />
         {/* [V6.9] Stage label с ellipsis + tooltip — длинные строки
-            («Разделили дорожки микрофона и системы») не должны ломать grid. */}
+            («Соотносим голоса с контактами») не должны ломать grid. */}
         <span
           className="proc-strip-label"
           title={progress.stageLabel}

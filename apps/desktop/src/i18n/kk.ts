@@ -845,11 +845,15 @@ export const kk: TranslationStrings = {
     details: 'толығырақ',
     pending: 'күтуде',
   },
+  // Step labels backend `Stage::step()` нөмірлеуіне сай:
+  //   1 = Upload · 2 = Transcribe · 3 = RecognizeSpeakers
+  //   4 = MergeArtifacts · 5 = Recap
+  // Барлығы осы шақта (қазір орындалып жатыр); done — ✓ checkmark.
   pipeline: {
-    step1: 'Аудионы сақтадық',
-    step2: 'Микрофон мен жүйелік дыбысты бөлдік',
-    step3: 'Сөйлеуді танымалап жатырмыз',
-    step4: 'Дауыстарды контактілермен сәйкестендіреміз',
+    step1: 'Аудионы сақтаймыз',
+    step2: 'Сөйлеуді танимыз',
+    step3: 'Дауыстарды контактілермен сәйкестендіреміз',
+    step4: 'Транскриптті жинаймыз',
     step5: 'Қорытынды мен тапсырмаларды дайындаймыз',
   },
   chunkProgress: {
