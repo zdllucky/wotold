@@ -37,6 +37,28 @@ describe('humanError', () => {
       ),
     ).not.toContain('Bad Gateway');
   });
+  // [Bug-fix] Локальный engine error patterns — должны попадать в local-
+  // specific human messages, а не в "Сервис временно занят".
+  test('local_llm_timeout → не успела ответить', () => {
+    expect(humanError('local_engine_llm_failed: provider: local_llm_timeout')).toMatch(
+      /не успела ответить/i,
+    );
+  });
+  test('local_engine_model_missing → понятный текст', () => {
+    expect(
+      humanError('local_engine_model_missing: модель qwen25-3b не установлена'),
+    ).toMatch(/не установлена/i);
+  });
+  test('local_engine_preset_not_set → понятный текст', () => {
+    expect(
+      humanError('local_engine_preset_not_set: выберите Light/Balanced/Quality'),
+    ).toMatch(/preset локального движка/i);
+  });
+  test('generic local_engine_llm_failed без timeout', () => {
+    expect(humanError('local_engine_llm_failed: provider: gbnf parse error')).toMatch(
+      /не справилась/i,
+    );
+  });
   test('mic permission', () => {
     expect(humanError(new Error('Failed: NSMicrophoneUsageDescription'))).toMatch(
       /микрофон/i,
