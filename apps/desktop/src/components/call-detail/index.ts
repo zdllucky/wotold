@@ -12,3 +12,9 @@ export { ParticipantsRow } from './ParticipantsRow';
 export { ProcessingPanel } from './ProcessingPanel';
 export { ReprocessBanner } from './ReprocessBanner';
 export { TasksPanel } from './TasksPanel';
+// [M14 T-11] V2 UI components.
+export { CallTypeBadge } from './CallTypeBadge';
+export { DecisionsBlock } from './DecisionsBlock';
+export { OpenQuestionsBlock } from './OpenQuestionsBlock';
+export { EvidenceTooltip } from './EvidenceTooltip';
+export { PrivacyDisclaimer } from './PrivacyDisclaimer';

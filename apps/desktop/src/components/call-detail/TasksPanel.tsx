@@ -1,18 +1,36 @@
 // Action items list rendered inside Tabs.Panel value="tasks".
 // Empty placeholder when no tasks; otherwise ordered list with owner +
 // due metadata. Done items получают strike-through.
+//
+// [M14 T-11] V2 enrichment: category emoji prefix (✅/💡/📝), confidence
+// badge при низкой уверенности владельца, EvidenceTooltip 💬 для quote.
 
 import type { ActionItem } from '../../api/calls';
 import type { Contact } from '../../api/contacts';
 import { Empty } from '../../ui';
 import { useI18n } from '../../i18n';
+import { EvidenceTooltip } from './EvidenceTooltip';
 
 interface TasksPanelProps {
   tasks: ActionItem[];
   contacts: Contact[];
+  /** [M14 T-11] Jump к timestamp в расшифровке (опц.). */
+  onJumpToTranscript?: (ms: number) => void;
 }
 
-export function TasksPanel({ tasks, contacts }: TasksPanelProps) {
+function categoryEmoji(category: string | null): string {
+  switch (category) {
+    case 'proposal':
+      return '💡 ';
+    case 'idea':
+      return '📝 ';
+    case 'commitment':
+    default:
+      return '✅ ';
+  }
+}
+
+export function TasksPanel({ tasks, contacts, onJumpToTranscript }: TasksPanelProps) {
   const { t } = useI18n();
   if (tasks.length === 0) {
     return <Empty description={t('callDetail.emptyTasks')} />;
@@ -22,6 +40,10 @@ export function TasksPanel({ tasks, contacts }: TasksPanelProps) {
     <ol style={{ listStyle: 'none', padding: 0, margin: 0 }}>
       {tasks.map((task, i) => {
         const owner = task.owner_contact_id ? nameById.get(task.owner_contact_id) : null;
+        const ownerInferred =
+          task.owner_confidence !== null &&
+          task.owner_confidence < 0.8 &&
+          task.owner_confidence >= 0.4;
         return (
           <li
             key={task.id}
@@ -52,15 +74,40 @@ export function TasksPanel({ tasks, contacts }: TasksPanelProps) {
                 fontSize: 16,
               }}
             >
+              {/* [M14 T-11] Category emoji prefix — ✅/💡/📝. */}
+              <span style={{ fontFamily: 'var(--font-sans)' }}>{categoryEmoji(task.category)}</span>
               {task.text}
               {owner && (
                 <span className="muted" style={{ fontSize: 13, marginLeft: 8 }}>
                   — {owner}
+                  {ownerInferred && (
+                    <span
+                      className="confidence-low"
+                      title={t('actionItem.ownerInferred')}
+                      aria-label={t('actionItem.ownerInferred')}
+                      style={{ marginLeft: 4 }}
+                    >
+                      ?
+                    </span>
+                  )}
                 </span>
               )}
               {task.due && (
                 <span className="muted" style={{ fontSize: 13, marginLeft: 8 }}>
                   {t('callDetail.taskDueShort', { date: task.due })}
+                </span>
+              )}
+              {/* [M14 T-11] Evidence tooltip 💬 для items с quote из транскрипта. */}
+              {task.evidence_quote && (
+                <span style={{ marginLeft: 6 }}>
+                  <EvidenceTooltip
+                    quote={task.evidence_quote}
+                    speaker={task.evidence_speaker}
+                    startMs={task.evidence_start_ms}
+                    onJumpToTranscript={onJumpToTranscript}
+                  >
+                    💬
+                  </EvidenceTooltip>
                 </span>
               )}
             </span>

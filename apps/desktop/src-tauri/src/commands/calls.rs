@@ -40,6 +40,26 @@ pub async fn list_call_action_items(
     crate::db::list_action_items(&state.db, &call_id).await
 }
 
+/// [M14 T-11] V2 structured summary blocks — decisions list for UI rendering.
+/// Возвращает rows ordered by `order_idx ASC`. Пустой если schema_version=1
+/// (legacy) либо если LLM не вернул decisions.
+#[tauri::command]
+pub async fn list_call_decisions(
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<Vec<crate::db::decisions::DecisionRow>, AppError> {
+    crate::db::decisions::list_decisions(&state.db, &call_id).await
+}
+
+/// [M14 T-11] V2 structured summary blocks — open questions list для UI.
+#[tauri::command]
+pub async fn list_call_open_questions(
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<Vec<crate::db::open_questions::OpenQuestionRow>, AppError> {
+    crate::db::open_questions::list_open_questions(&state.db, &call_id).await
+}
+
 #[tauri::command]
 pub async fn read_call_artifact(
     state: State<'_, AppState>,

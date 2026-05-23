@@ -648,7 +648,7 @@
 - [ ] T-10 orchestrator e2e + progress events.
 
 ### UI + Quality (T-11..T-15) — deferred
-- [ ] T-11 UI v2 (CallTypeBadge, DecisionsBlock, OpenQuestionsBlock, EvidenceTooltip, PrivacyDisclaimer for 1:1).
+- [x] **T-11 UI v2** — 5 новых React компонентов в Atelier v2 design: `CallTypeBadge` (header chip с типом звонка), `DecisionsBlock` + `OpenQuestionsBlock` (структурированные takeaways над markdown в Рекап табе), `EvidenceTooltip` (hover/click sticky popover с quote из транскрипта + jump-to-moment), `PrivacyDisclaimer` (banner для 1:1 встреч). Extended `TasksPanel`: category emoji prefix (✅/💡/📝) + confidence badge при inferred owner + evidence tooltip. 2 новые Tauri commands (`list_call_decisions`, `list_call_open_questions`) + extended Call/ActionItem TS types + useCallDetail hook fetches. 24 vitest tests. Atelier v2 CSS additions (.v2-block / .decision-row / .evidence-popover / .privacy-disclaimer / .confidence-low). Legacy markdown render остаётся для schema_version=1 (контекстный narrative + backward compat).
 - [ ] T-12 golden set + CI eval harness (10+ reference calls на ru/en/kk).
 - [ ] T-13 LLM-as-judge G-Eval (P1).
 - [ ] T-14 feature flag rollout (Labs → all).

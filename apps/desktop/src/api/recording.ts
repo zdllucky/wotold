@@ -31,6 +31,26 @@ export interface Call {
   /** [M12-v1.1] Движок обработки. Null для звонков до трекинга — EngineChip
    *  просто не рендерится. */
   processing_via: 'local' | 'cloud_managed' | 'cloud_byo' | null;
+  // [M14 T-02 / T-11] V2 summary metadata. NULL для legacy schema_version=1
+  // или ещё не обработанных звонков. UI рендерит CallTypeBadge только когда
+  // non-null + confidence ≥ 0.5; иначе fallback к engine chip + дате.
+  call_type:
+    | 'sales_discovery'
+    | 'sales_demo'
+    | 'product_sync'
+    | 'standup'
+    | 'customer_interview'
+    | 'one_on_one'
+    | 'strategy_brainstorm'
+    | 'status_update'
+    | 'other'
+    | null;
+  call_type_confidence: number | null;
+  /** 1 = legacy markdown only; 2 = full CallSummaryV2 (decisions/open_questions/evidence). */
+  summary_schema_version: number | null;
+  /** "cloud-managed" | "local-qwen-1.5b" | "local-qwen-3b" | "local-qwen-7b" */
+  summary_engine: string | null;
+  summary_pipeline_mode: string | null;
   created_at: string;
   updated_at: string;
 }

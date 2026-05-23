@@ -78,6 +78,11 @@ mod tests {
             upload_bytes: None,
             paused_at: None,
             paused_total_ms: 0,
+            call_type: None,
+            call_type_confidence: None,
+            summary_schema_version: Some(1),
+            summary_engine: None,
+            summary_pipeline_mode: None,
             created_at: "2024-01-01T10:00:00+00:00".into(),
             updated_at: "2024-01-01T10:05:00+00:00".into(),
         }

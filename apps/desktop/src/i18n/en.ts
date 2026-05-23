@@ -591,6 +591,50 @@ export const en: TranslationStrings = {
     cloud_byoAria: 'Processed via your own API keys',
   },
 
+  callType: {
+    sales_discovery: 'Sales discovery',
+    sales_demo: 'Sales demo',
+    product_sync: 'Team sync',
+    standup: 'Standup',
+    customer_interview: 'Customer interview',
+    one_on_one: '1:1',
+    strategy_brainstorm: 'Brainstorm',
+    status_update: 'Status update',
+    other: 'Call',
+  },
+
+  decisionsBlock: {
+    title: 'Decisions',
+  },
+
+  openQuestionsBlock: {
+    title: 'Open questions',
+    raisedBy: 'raised by',
+  },
+
+  evidence: {
+    fromTranscript: 'Quote from transcript',
+    jumpToMoment: 'Jump to moment',
+    lowConfidence: 'Low confidence — verify the quote',
+    speakerLabel: 'Speaker',
+  },
+
+  privacyDisclaimer: {
+    oneOnOneTitle: '🔒 This was a 1:1 meeting',
+    oneOnOneBody:
+      'Contains personal feedback. The summary shows only topics. Do not share without need.',
+  },
+
+  actionItem: {
+    ownerInferred: 'Owner inferred from context — verify',
+    unassigned: 'Unassigned',
+    category: {
+      commitment: 'commitment',
+      proposal: 'proposal',
+      idea: 'idea',
+    },
+  },
+
   failure: {
     brokenRecording: {
       eyebrow: 'File error',

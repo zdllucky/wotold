@@ -585,6 +585,50 @@ export const kk: TranslationStrings = {
     cloud_byoAria: 'Өз API кілттерімен өңделді',
   },
 
+  callType: {
+    sales_discovery: 'Сатылым танысуы',
+    sales_demo: 'Өнім демосы',
+    product_sync: 'Команда',
+    standup: 'Стендап',
+    customer_interview: 'Клиент сұхбаты',
+    one_on_one: '1:1',
+    strategy_brainstorm: 'Стратегия',
+    status_update: 'Статус',
+    other: 'Қоңырау',
+  },
+
+  decisionsBlock: {
+    title: 'Шешімдер',
+  },
+
+  openQuestionsBlock: {
+    title: 'Ашық сұрақтар',
+    raisedBy: 'көтерген',
+  },
+
+  evidence: {
+    fromTranscript: 'Транскрипттен үзінді',
+    jumpToMoment: 'Сәтке өту',
+    lowConfidence: 'Сенімділік төмен — үзіндіні тексер',
+    speakerLabel: 'Сөйлеуші',
+  },
+
+  privacyDisclaimer: {
+    oneOnOneTitle: '🔒 Бұл 1:1 кездесу болды',
+    oneOnOneBody:
+      'Жеке кері байланыс қамтылған. Қорытынды тек тақырыптарды көрсетеді. Қажетсіз бөліспе.',
+  },
+
+  actionItem: {
+    ownerInferred: 'Жауаптысы контекстен болжанды — тексер',
+    unassigned: 'Иесіз',
+    category: {
+      commitment: 'міндеттеме',
+      proposal: 'ұсыныс',
+      idea: 'идея',
+    },
+  },
+
   failure: {
     brokenRecording: {
       eyebrow: 'Файл қатесі',
