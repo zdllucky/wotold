@@ -24,7 +24,10 @@
 //! mock-имплементацию в unit тестах (без sidecar). Production использует
 //! `LocalLlamaProvider`.
 
+use crate::local_engine::preset::LocalEnginePreset;
+use crate::pipeline::chunker;
 use crate::pipeline::classifier;
+use crate::pipeline::map_reduce;
 use crate::pipeline::recap;
 use crate::pipeline::summary_v2::CallType;
 use crate::providers::llm::{LlmProvider, LlmRequest};
@@ -37,9 +40,12 @@ pub(crate) struct LocalOrchestratorCtx<'a> {
     pub transcript_md: &'a str,
     pub lang_detected: Option<&'a str>,
     pub known_speakers: Option<&'a str>,
+    /// [Phase B] Active preset — определяет chunk size + trigger threshold.
+    pub preset: LocalEnginePreset,
 }
 
-/// Запуск Phase A pipeline: classifier (best-effort) → main v2 generation.
+/// Запуск local v2 pipeline. Phase A — single-pass для коротких transcripts.
+/// Phase B — map-reduce когда transcript превышает per-preset threshold.
 ///
 /// Возвращает финальный JSON Value, который caller сразу скармливает в
 /// `recap::persist_recap_from_json`. Никакой DB I/O здесь нет.
@@ -47,7 +53,7 @@ pub(crate) async fn run_v2_pipeline(
     provider: &dyn LlmProvider,
     ctx: LocalOrchestratorCtx<'_>,
 ) -> Result<serde_json::Value, AppError> {
-    // 1. Classifier (best-effort).
+    // 1. Classifier (best-effort) — используется в обоих path'ях.
     let head = classifier::extract_classifier_head(
         ctx.transcript_md,
         classifier::MAX_CLASSIFIER_HEAD_CHARS,
@@ -69,7 +75,27 @@ pub(crate) async fn run_v2_pipeline(
         }
     };
 
-    // 2. Main v2 generation с (опциональным) hint'ом.
+    // 2. Dispatch: Phase B map-reduce для длинных transcripts.
+    let chunk_cfg = chunker::ChunkConfig::for_preset(ctx.preset);
+    if chunker::needs_chunking(ctx.transcript_md, &chunk_cfg) {
+        let chunks = chunker::chunk_transcript(ctx.transcript_md, &chunk_cfg);
+        log::info!(
+            "local map-reduce: {} chunks (transcript ~{} tokens, preset={:?})",
+            chunks.len(),
+            chunker::estimate_tokens(ctx.transcript_md),
+            ctx.preset
+        );
+        return map_reduce::run_map_reduce(
+            provider,
+            &chunks,
+            ctx.lang_detected,
+            known_type,
+            ctx.known_speakers,
+        )
+        .await;
+    }
+
+    // 3. Phase A: single-pass main v2 generation с (опциональным) hint'ом.
     let system = recap::build_v2_system_prompt(ctx.lang_detected, ctx.known_speakers, known_type);
     let request = LlmRequest {
         model: None,
@@ -157,6 +183,7 @@ mod tests {
             transcript_md: "Speaker 0: Yesterday I did X. Today I'll do Y. No blockers.",
             lang_detected: Some("ru"),
             known_speakers: None,
+            preset: LocalEnginePreset::Light,
         };
         let result = run_v2_pipeline(&mock, ctx).await.unwrap();
         assert_eq!(result["call_type"], "standup");
@@ -185,6 +212,7 @@ mod tests {
             transcript_md: "stub transcript",
             lang_detected: Some("en"),
             known_speakers: None,
+            preset: LocalEnginePreset::Light,
         };
         let result = run_v2_pipeline(&mock, ctx).await.unwrap();
         assert_eq!(result["schema_version"], 2);
@@ -212,11 +240,102 @@ mod tests {
             transcript_md: "transcript",
             lang_detected: None,
             known_speakers: None,
+            preset: LocalEnginePreset::Light,
         };
         let err = run_v2_pipeline(&mock, ctx).await.unwrap_err();
         assert!(
             err.to_string().contains("local llm"),
             "expected wrapped main-llm error, got: {err}"
+        );
+    }
+
+    fn make_long_transcript(turns: usize, chars_per_turn: usize) -> String {
+        let mut out = String::from("# Transcript\n\n");
+        for i in 0..turns {
+            out.push_str(&format!("**Speaker {}** [{}:00]:\n", i % 3, i));
+            out.push_str(&"a".repeat(chars_per_turn));
+            out.push_str("\n\n");
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn orchestrator_short_transcript_uses_single_pass() {
+        let cls_response = serde_json::json!({
+            "call_type": "standup",
+            "confidence": 0.9,
+        });
+        let mock = MockProvider::new(vec![Ok(cls_response), Ok(minimal_v2_json())]);
+        let ctx = LocalOrchestratorCtx {
+            transcript_md: "**A** [0:00]:\nshort transcript content",
+            lang_detected: Some("ru"),
+            known_speakers: None,
+            preset: LocalEnginePreset::Light,
+        };
+        run_v2_pipeline(&mock, ctx).await.unwrap();
+        let systems = mock.captured_systems();
+        assert_eq!(
+            systems.len(),
+            2,
+            "short transcript expects 2 calls (classifier + main), got {}",
+            systems.len()
+        );
+        // Main call (index 1) — full v2 prompt, не reduce.
+        assert!(systems[1].contains("OUTPUT SCHEMA"));
+        assert!(!systems[1].contains("MAP_OUTPUTS"));
+    }
+
+    #[tokio::test]
+    async fn orchestrator_long_transcript_uses_map_reduce() {
+        // Light preset: trigger_threshold = 24_000 chars. 10 turns × 3000 chars = 30K body
+        // + headers — превышает.
+        let long = make_long_transcript(10, 3000);
+        // Точно посчитаем сколько chunks chunker произведёт — это определяет
+        // количество map calls (1 на chunk) + reduce в конце.
+        let chunk_count = crate::pipeline::chunker::chunk_transcript(
+            &long,
+            &crate::pipeline::chunker::ChunkConfig::for_preset(LocalEnginePreset::Light),
+        )
+        .len();
+        // Stack: classifier + N maps + 1 reduce.
+        let mut responses: Vec<Result<serde_json::Value, LlmError>> = Vec::new();
+        responses.push(Ok(serde_json::json!({
+            "call_type": "standup",
+            "confidence": 0.85,
+        })));
+        for i in 0..chunk_count {
+            responses.push(Ok(serde_json::json!({
+                "chunk_idx": i,
+                "facts": [format!("fact {i}")],
+                "decisions_candidates": [],
+                "action_candidates": [],
+                "open_questions_candidates": [],
+                "topic_tags": [],
+                "participants_mentioned": [],
+            })));
+        }
+        responses.push(Ok(minimal_v2_json()));
+        let mock = MockProvider::new(responses);
+        let ctx = LocalOrchestratorCtx {
+            transcript_md: &long,
+            lang_detected: Some("ru"),
+            known_speakers: None,
+            preset: LocalEnginePreset::Light,
+        };
+        let result = run_v2_pipeline(&mock, ctx).await.unwrap();
+        assert_eq!(result["schema_version"], 2);
+        let systems = mock.captured_systems();
+        assert!(
+            systems.len() >= 4,
+            "long transcript should trigger map-reduce (≥4 calls), got {}",
+            systems.len()
+        );
+        // Последний call — reduce, содержит MAP_OUTPUTS.
+        let last = systems.last().unwrap();
+        assert!(
+            last.contains("MAP_OUTPUTS"),
+            "last call should be reduce, got: {}",
+            &last[..200.min(last.len())]
         );
     }
 }

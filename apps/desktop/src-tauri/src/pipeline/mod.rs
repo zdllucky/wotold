@@ -68,6 +68,13 @@ pub mod summary_validator;
 // v2 generation. Используется local_orchestrator на Phase A.
 pub(crate) mod classifier;
 
+// [M14 T-05 Phase B] Split transcript.md на token-windows по speaker-turn
+// boundaries для map-reduce на длинных звонках.
+pub(crate) mod chunker;
+
+// [M14 T-06 Phase B] Map-reduce orchestration: per-chunk map → final reduce.
+pub(crate) mod map_reduce;
+
 // [M14 T-10] Local engine orchestrator — chain classifier + main v2 gen.
 // Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
 pub(crate) mod local_orchestrator;
@@ -687,6 +694,9 @@ async fn run_local_inner(
                 transcript_md: &transcript_md,
                 lang_detected: lang_detected.as_deref(),
                 known_speakers: known_speakers.as_deref(),
+                // [M14 T-05/T-06 Phase B] Pass active preset для chunker config —
+                // длинные transcripts автоматически идут map-reduce.
+                preset,
             };
             local_orchestrator::run_v2_pipeline(&provider, orch_ctx)
                 .await
