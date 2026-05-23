@@ -1,0 +1,85 @@
+{
+  "description": "Cloud v2 sales_discovery — sanity round-trip (f32-exact confidences)",
+  "llm_input": {
+    "schema_version": 2,
+    "title": "Pricing discovery — Alice and Bob",
+    "summary": "Discovery call about enterprise pricing and rollout timeline.",
+    "key_points": [
+      "Customer evaluating annual contract",
+      "Decision deadline end of Q2",
+      "Champion identified — Bob (VP Ops)"
+    ],
+    "mom": "## Customer pain\nManual reconciliation costs 20h/week.\n\n## Stakeholders\nAlice (rep) + Bob (VP Ops).\n\n## Budget signals\nApproved for Q2 procurement.\n\n## Next steps\nSend proposal by Friday.",
+    "language": "en",
+    "call_type": "sales_discovery",
+    "call_type_confidence": 0.875,
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Alice", "role_hint": "vendor_rep" },
+      { "speaker_tag": "Speaker 1", "display_name": "Bob", "role_hint": "prospect" }
+    ],
+    "action_items": [
+      {
+        "id": "ai-001",
+        "text": "Send pricing proposal to Bob",
+        "owner_hint": "Alice",
+        "owner_confidence": 0.9375,
+        "due": "2026-06-13",
+        "due_confidence": 0.75,
+        "category": "commitment",
+        "evidence": null
+      }
+    ],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": {
+      "pain_points": ["manual reconciliation"],
+      "current_solution": null,
+      "budget_signal": "approved Q2",
+      "decision_makers": [
+        { "name": "Bob", "role": "VP Ops", "stance": "champion" }
+      ],
+      "timeline_hint": "end of Q2"
+    }
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "Pricing discovery — Alice and Bob",
+    "summary": "Discovery call about enterprise pricing and rollout timeline.",
+    "key_points": [
+      "Customer evaluating annual contract",
+      "Decision deadline end of Q2",
+      "Champion identified — Bob (VP Ops)"
+    ],
+    "mom": "## Customer pain\nManual reconciliation costs 20h/week.\n\n## Stakeholders\nAlice (rep) + Bob (VP Ops).\n\n## Budget signals\nApproved for Q2 procurement.\n\n## Next steps\nSend proposal by Friday.",
+    "language": "en",
+    "call_type": "sales_discovery",
+    "call_type_confidence": 0.875,
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Alice", "role_hint": "vendor_rep" },
+      { "speaker_tag": "Speaker 1", "display_name": "Bob", "role_hint": "prospect" }
+    ],
+    "action_items": [
+      {
+        "id": "ai-001",
+        "text": "Send pricing proposal to Bob",
+        "owner_hint": "Alice",
+        "owner_confidence": 0.9375,
+        "due": "2026-06-13",
+        "due_confidence": 0.75,
+        "category": "commitment",
+        "evidence": null
+      }
+    ],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": {
+      "pain_points": ["manual reconciliation"],
+      "current_solution": null,
+      "budget_signal": "approved Q2",
+      "decision_makers": [
+        { "name": "Bob", "role": "VP Ops", "stance": "champion" }
+      ],
+      "timeline_hint": "end of Q2"
+    }
+  }
+}

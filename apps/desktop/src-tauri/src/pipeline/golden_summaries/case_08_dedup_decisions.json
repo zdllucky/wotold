@@ -1,0 +1,53 @@
+{
+  "description": "Dedup decisions — 2 идентичных по text → 1 остаётся (first wins)",
+  "llm_input": {
+    "schema_version": 2,
+    "title": "Pricing decision",
+    "summary": "Decision call about pricing tier.",
+    "key_points": ["enterprise tier locked"],
+    "mom": "## Decisions\nLock enterprise tier at $499.",
+    "language": "en",
+    "call_type": "other",
+    "call_type_confidence": 0.5,
+    "participants": [],
+    "action_items": [],
+    "decisions": [
+      {
+        "id": "d-first",
+        "text": "Lock enterprise tier pricing at $499",
+        "evidence": null,
+        "confidence": 0.9375
+      },
+      {
+        "id": "d-dup",
+        "text": "Lock enterprise tier pricing at $499",
+        "evidence": null,
+        "confidence": 0.8125
+      }
+    ],
+    "open_questions": [],
+    "type_specific_block": null
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "Pricing decision",
+    "summary": "Decision call about pricing tier.",
+    "key_points": ["enterprise tier locked"],
+    "mom": "## Decisions\nLock enterprise tier at $499.",
+    "language": "en",
+    "call_type": "other",
+    "call_type_confidence": 0.5,
+    "participants": [],
+    "action_items": [],
+    "decisions": [
+      {
+        "id": "d-first",
+        "text": "Lock enterprise tier pricing at $499",
+        "evidence": null,
+        "confidence": 0.9375
+      }
+    ],
+    "open_questions": [],
+    "type_specific_block": null
+  }
+}

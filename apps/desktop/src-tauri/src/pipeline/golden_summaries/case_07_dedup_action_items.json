@@ -1,0 +1,75 @@
+{
+  "description": "Dedup action_items — 3 идентичных по text (Jaccard 1.0) → 1 остаётся (first wins)",
+  "llm_input": {
+    "schema_version": 2,
+    "title": "Map-reduce overlap test",
+    "summary": "Test of cross-chunk dedup.",
+    "key_points": ["dedup applied"],
+    "mom": "## Контекст\noverlap test",
+    "language": "en",
+    "call_type": "other",
+    "call_type_confidence": 0.5,
+    "participants": [],
+    "action_items": [
+      {
+        "id": "ai-first",
+        "text": "Send pricing proposal to client",
+        "owner_hint": "Alice",
+        "owner_confidence": 0.875,
+        "due": "Friday",
+        "due_confidence": 0.75,
+        "category": "commitment",
+        "evidence": null
+      },
+      {
+        "id": "ai-dup-1",
+        "text": "Send pricing proposal to client",
+        "owner_hint": "Alice",
+        "owner_confidence": 0.8125,
+        "due": "Friday",
+        "due_confidence": 0.625,
+        "category": "commitment",
+        "evidence": null
+      },
+      {
+        "id": "ai-dup-2",
+        "text": "Send pricing proposal to client",
+        "owner_hint": null,
+        "owner_confidence": 0.5,
+        "due": null,
+        "due_confidence": 0.0,
+        "category": "commitment",
+        "evidence": null
+      }
+    ],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": null
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "Map-reduce overlap test",
+    "summary": "Test of cross-chunk dedup.",
+    "key_points": ["dedup applied"],
+    "mom": "## Контекст\noverlap test",
+    "language": "en",
+    "call_type": "other",
+    "call_type_confidence": 0.5,
+    "participants": [],
+    "action_items": [
+      {
+        "id": "ai-first",
+        "text": "Send pricing proposal to client",
+        "owner_hint": "Alice",
+        "owner_confidence": 0.875,
+        "due": "Friday",
+        "due_confidence": 0.75,
+        "category": "commitment",
+        "evidence": null
+      }
+    ],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": null
+  }
+}

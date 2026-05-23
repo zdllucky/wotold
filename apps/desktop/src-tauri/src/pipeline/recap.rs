@@ -224,7 +224,10 @@ pub async fn persist_recap_from_json(
 
 /// [M14 T-02] Parse JSON value either as CallSummaryV2 (schema_version=2)
 /// или fall back to legacy RecapJson v1 + promote to v2 envelope.
-fn parse_summary_v2_or_promote_legacy(
+///
+/// [M14 T-12] `pub(crate)` для golden_eval test access — production callers
+/// без изменений.
+pub(crate) fn parse_summary_v2_or_promote_legacy(
     json_value: serde_json::Value,
     call_id: &str,
 ) -> Result<CallSummaryV2, AppError> {
@@ -246,7 +249,9 @@ fn parse_summary_v2_or_promote_legacy(
 
 /// Конвертирует legacy RecapJson в CallSummaryV2 envelope. Опускаемые поля
 /// (decisions, open_questions, evidence) — пустые/None. call_type=Other.
-fn promote_legacy_to_v2(legacy: RecapJson) -> CallSummaryV2 {
+///
+/// [M14 T-12] `pub(crate)` для golden_eval test access.
+pub(crate) fn promote_legacy_to_v2(legacy: RecapJson) -> CallSummaryV2 {
     use crate::pipeline::summary_v2::{ActionItemV2, ParticipantV2};
     let action_items = legacy
         .action_items

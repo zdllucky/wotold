@@ -1,0 +1,81 @@
+{
+  "description": "Evidence stripping — action_item с evidence.quote NOT in transcript → item dropped",
+  "transcript_md": "# Transcript\n\n**Alice** [0:00]:\nHi everyone, let's go through the demo today.\n\n**Bob** [0:15]:\nSure, I'll share my screen.\n",
+  "llm_input": {
+    "schema_version": 2,
+    "title": "Demo walkthrough",
+    "summary": "Product demo with Bob and Alice.",
+    "key_points": ["demo flow covered"],
+    "mom": "## Demo flow\n...\n## Objections\nnone",
+    "language": "en",
+    "call_type": "sales_demo",
+    "call_type_confidence": 0.875,
+    "participants": [],
+    "action_items": [
+      {
+        "id": "ai-good",
+        "text": "Continue demo walkthrough",
+        "owner_hint": null,
+        "owner_confidence": 0.5,
+        "due": null,
+        "due_confidence": 0.0,
+        "category": "proposal",
+        "evidence": {
+          "quote": "I'll share my screen",
+          "speaker": "Bob",
+          "start_ms": null,
+          "end_ms": null
+        }
+      },
+      {
+        "id": "ai-bad",
+        "text": "Fabricated commitment that has no transcript anchor",
+        "owner_hint": "Charlie",
+        "owner_confidence": 0.875,
+        "due": null,
+        "due_confidence": 0.0,
+        "category": "commitment",
+        "evidence": {
+          "quote": "totally made up phrase nowhere in the source",
+          "speaker": "Charlie",
+          "start_ms": null,
+          "end_ms": null
+        }
+      }
+    ],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": null
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "Demo walkthrough",
+    "summary": "Product demo with Bob and Alice.",
+    "key_points": ["demo flow covered"],
+    "mom": "## Demo flow\n...\n## Objections\nnone",
+    "language": "en",
+    "call_type": "sales_demo",
+    "call_type_confidence": 0.875,
+    "participants": [],
+    "action_items": [
+      {
+        "id": "ai-good",
+        "text": "Continue demo walkthrough",
+        "owner_hint": null,
+        "owner_confidence": 0.5,
+        "due": null,
+        "due_confidence": 0.0,
+        "category": "proposal",
+        "evidence": {
+          "quote": "I'll share my screen",
+          "speaker": "Bob",
+          "start_ms": null,
+          "end_ms": null
+        }
+      }
+    ],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": null
+  }
+}
