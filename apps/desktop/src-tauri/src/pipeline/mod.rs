@@ -101,6 +101,11 @@ pub(crate) mod title_regen;
 #[cfg(test)]
 mod golden_eval;
 
+// [M14 T-13] LLM-as-judge G-Eval scoring (coherence/faithfulness/relevance/
+// conciseness). Foundation для quality eval; production usage (Tauri command,
+// DB persistence, UI display) — backlog M14.5.
+pub(crate) mod g_eval;
+
 // [M14 T-10] Local engine orchestrator — chain classifier + main v2 gen.
 // Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
 pub(crate) mod local_orchestrator;
