@@ -1,6 +1,7 @@
 import type { Call } from '../../api/recording';
 import { CallStateTag } from '../call-state';
 import { useI18n } from '../../i18n';
+import { humanError } from '../../api/errors';
 import { ErrorDiagnostics } from './ErrorDiagnostics';
 import { mapFailureToUxKind } from '../../utils/failureKind';
 
@@ -82,7 +83,11 @@ export function ErrorScreen({ call, reprocessing, onRetry }: ErrorScreenProps) {
     );
   }
 
-  const reason = call.failed_reason?.trim() || t('callDetail.failBadge');
+  // [Bug-fix] humanError маппит raw backend strings (вкл. Cloudflare-wrapped
+  // 429/upstream-error JSON) в дружелюбное сообщение. Raw оригинал остаётся
+  // в ErrorDiagnostics для траблшутинга.
+  const rawReason = call.failed_reason?.trim();
+  const reason = rawReason ? humanError(rawReason) : t('callDetail.failBadge');
   const provider = call.provider?.trim() || null;
   const alternativeProvider = provider
     ? provider === 'soniox'

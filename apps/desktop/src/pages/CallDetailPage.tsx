@@ -151,7 +151,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     try {
       await reprocessCall(call.id);
     } catch (e) {
-      setError(t('callDetail.reprocessFailed', { error: String(e) }));
+      setError(t('callDetail.reprocessFailed', { error: humanError(e) }));
       // Откат optimistic patch — если backend сразу же отверг (например
       // нет аудио на диске), возвращаем status каким был.
       await refetchAll();
@@ -185,7 +185,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       // [Bug-fix #6] Регенерация прошла — recap-regen suggestion больше не нужен.
       setPendingRecapRegen(false);
     } catch (e) {
-      setError(t('callDetail.regenerateFailed', { error: String(e) }));
+      setError(t('callDetail.regenerateFailed', { error: humanError(e) }));
     } finally {
       setRegenerating(false);
     }
@@ -200,7 +200,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       await regenerateTitle(callId);
       await refetchAll();
     } catch (e) {
-      setError(t('callDetail.regenerateTitleFailed', { error: String(e) }));
+      setError(t('callDetail.regenerateTitleFailed', { error: humanError(e) }));
     } finally {
       setRegeneratingTitle(false);
     }
@@ -373,7 +373,11 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
               margin: '0 0 14px',
             }}
           >
-            {call.recap_failed_reason}
+            {/* [Bug-fix] Map raw backend errors → human messages. Cloudflare
+                proxy wraps Anthropic 429 как provider_error + raw JSON;
+                humanError ловит "upstream error / 502 / Bad Gateway" → "Сервис
+                временно занят. Попробуйте ещё раз через минуту". */}
+            {humanError(call.recap_failed_reason)}
           </p>
           <button
             type="button"
