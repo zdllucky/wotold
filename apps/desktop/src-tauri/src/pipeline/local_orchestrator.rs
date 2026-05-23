@@ -29,6 +29,7 @@ use crate::pipeline::action_item_post_pass;
 use crate::pipeline::chunker;
 use crate::pipeline::classifier;
 use crate::pipeline::expert_prompts;
+use crate::pipeline::gbnf;
 use crate::pipeline::map_reduce;
 use crate::pipeline::recap;
 use crate::pipeline::summary_v2::CallType;
@@ -110,9 +111,9 @@ pub(crate) async fn run_v2_pipeline(
             system,
             input: ctx.transcript_md.to_string(),
             max_tokens: Some(MAIN_MAX_TOKENS),
+            grammar: None,
         };
-        provider
-            .generate(request)
+        gbnf::generate_with_grammar_fallback(provider, request)
             .await
             .map_err(|e| AppError::Other(format!("local llm: {e}")))?
     };
@@ -236,8 +237,13 @@ mod tests {
 
     #[tokio::test]
     async fn orchestrator_classifier_failure_falls_back_to_no_hint() {
+        // [M14 T-09 Phase E] gbnf wrapper ретраит classifier — нужны 2 Err
+        // прежде чем classifier failure final.
         let mock = MockProvider::new(vec![
-            Err(LlmError::Provider("simulated classifier crash".into())),
+            Err(LlmError::Provider("classifier crash 1".into())),
+            Err(LlmError::Provider(
+                "classifier crash 2 (after grammar retry)".into(),
+            )),
             Ok(minimal_v2_json()),
         ]);
         let ctx = LocalOrchestratorCtx {
@@ -250,10 +256,11 @@ mod tests {
         assert_eq!(result["schema_version"], 2);
 
         let systems = mock.captured_systems();
-        assert_eq!(systems.len(), 2);
-        // Main call still happens, but без hint blоka.
+        // 2 classifier attempts (first + grammar retry) + 1 main = 3 calls.
+        assert_eq!(systems.len(), 3);
+        // Last call = main; должен NOT contain hint (classifier failed).
         assert!(
-            !systems[1].contains("Classification hint"),
+            !systems[2].contains("Classification hint"),
             "main prompt should NOT contain hint on classifier failure"
         );
     }
@@ -478,10 +485,15 @@ mod tests {
         // classifier OK + main OK + post-pass FAIL → original action_items preserved.
         let original_main = v2_json_with_action_items();
         let original_items = original_main["action_items"].clone();
+        // [M14 T-09 Phase E] gbnf wrapper retries post-pass on Provider err —
+        // need 2 Err для двух attempts.
         let mock = MockProvider::new(vec![
             Ok(serde_json::json!({ "call_type": "standup", "confidence": 0.9 })),
             Ok(original_main),
-            Err(LlmError::Provider("post-pass crash".into())),
+            Err(LlmError::Provider("post-pass crash 1".into())),
+            Err(LlmError::Provider(
+                "post-pass crash 2 (grammar retry)".into(),
+            )),
         ]);
         let ctx = LocalOrchestratorCtx {
             transcript_md: "**A** [0:00]:\nI'll ship it",
@@ -490,8 +502,9 @@ mod tests {
             preset: LocalEnginePreset::Light,
         };
         let result = run_v2_pipeline(&mock, ctx).await.unwrap();
-        // Post-pass crashed → original kept.
+        // Post-pass crashed (даже после grammar retry) → original kept.
         assert_eq!(result["action_items"], original_items);
-        assert_eq!(mock.call_count(), 3);
+        // classifier (1) + main (1) + post-pass attempts (2) = 4.
+        assert_eq!(mock.call_count(), 4);
     }
 }

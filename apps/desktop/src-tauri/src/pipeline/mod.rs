@@ -85,6 +85,12 @@ pub(crate) mod expert_prompts;
 // drop non-verbatim evidence. Local-only (cloud skip — Phase D-bis).
 pub(crate) mod action_item_post_pass;
 
+// [M14 T-09 Phase E] GBNF grammar fallback wrapper для local LLM JSON
+// parsing failures. Retry первой неудачной попытки с
+// `--grammar-file <universal_json.gbnf>` который констрейнит output до
+// valid JSON object.
+pub(crate) mod gbnf;
+
 // [M14 T-10] Local engine orchestrator — chain classifier + main v2 gen.
 // Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
 pub(crate) mod local_orchestrator;

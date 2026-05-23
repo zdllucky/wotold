@@ -24,6 +24,7 @@
 //! - T-09 GBNF constrained decoding.
 
 use crate::pipeline::expert_prompts;
+use crate::pipeline::gbnf;
 use crate::pipeline::summary_v2::CallType;
 use crate::providers::llm::{LlmProvider, LlmRequest};
 use crate::AppError;
@@ -164,8 +165,9 @@ pub(crate) async fn run_map_reduce(
             system: build_map_prompt(lang_detected, idx),
             input: chunk.clone(),
             max_tokens: Some(MAP_MAX_TOKENS),
+            grammar: None,
         };
-        match provider.generate(request).await {
+        match gbnf::generate_with_grammar_fallback(provider, request).await {
             Ok(json_value) => map_outputs.push(json_value),
             Err(e) => {
                 log::warn!("map step chunk {idx} failed (skipping): {e}");
@@ -199,9 +201,9 @@ pub(crate) async fn run_map_reduce(
         // input не нужен. Пустая строка сохраняет LlmRequest invariant.
         input: String::new(),
         max_tokens: Some(REDUCE_MAX_TOKENS),
+        grammar: None,
     };
-    provider
-        .generate(request)
+    gbnf::generate_with_grammar_fallback(provider, request)
         .await
         .map_err(|e| AppError::Other(format!("reduce llm: {e}")))
 }
@@ -382,9 +384,14 @@ mod tests {
 
     #[tokio::test]
     async fn run_map_reduce_skips_failed_map_continues_reduce() {
+        // [M14 T-09 Phase E] gbnf wrapper retries failing map call — need
+        // 2 Err для chunk 1 (initial + grammar retry).
         let mock = MockProvider::new(vec![
             Ok(minimal_map_json(0)),
-            Err(LlmError::Provider("simulated map crash".into())),
+            Err(LlmError::Provider("simulated map crash 1".into())),
+            Err(LlmError::Provider(
+                "simulated map crash 2 (grammar retry)".into(),
+            )),
             Ok(minimal_map_json(2)),
             Ok(minimal_v2_json()),
         ]);
@@ -395,18 +402,24 @@ mod tests {
         assert_eq!(result["schema_version"], 2);
 
         let systems = mock.captured_systems();
-        assert_eq!(systems.len(), 4, "3 map attempts + 1 reduce");
-        // Reduce должен видеть только 2 map outputs (idx 0 и 2).
-        assert!(systems[3].contains("fact from chunk 0"));
-        assert!(systems[3].contains("fact from chunk 2"));
-        assert!(!systems[3].contains("fact from chunk 1"));
+        // chunk0 (1) + chunk1 attempts (2) + chunk2 (1) + reduce (1) = 5.
+        assert_eq!(systems.len(), 5, "expected 5 calls");
+        // Reduce — последний, должен видеть только 2 map outputs (idx 0 и 2).
+        let reduce_prompt = systems.last().unwrap();
+        assert!(reduce_prompt.contains("fact from chunk 0"));
+        assert!(reduce_prompt.contains("fact from chunk 2"));
+        assert!(!reduce_prompt.contains("fact from chunk 1"));
     }
 
     #[tokio::test]
     async fn run_map_reduce_all_maps_fail_returns_error() {
+        // [M14 T-09 Phase E] gbnf wrapper retries each map — need 4 Err total
+        // для 2 chunks × 2 attempts.
         let mock = MockProvider::new(vec![
-            Err(LlmError::Provider("crash 0".into())),
-            Err(LlmError::Provider("crash 1".into())),
+            Err(LlmError::Provider("c0 attempt 1".into())),
+            Err(LlmError::Provider("c0 attempt 2 (grammar)".into())),
+            Err(LlmError::Provider("c1 attempt 1".into())),
+            Err(LlmError::Provider("c1 attempt 2 (grammar)".into())),
         ]);
         let chunks = vec!["c0".to_string(), "c1".to_string()];
         let err = run_map_reduce(&mock, &chunks, None, None, None)

@@ -134,6 +134,7 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
         system: system_prompt,
         input: ctx.transcript_md.to_string(),
         max_tokens: Some(4096),
+        grammar: None,
     };
 
     let started = Instant::now();

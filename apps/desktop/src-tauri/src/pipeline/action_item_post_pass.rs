@@ -24,6 +24,7 @@
 //! уже выдаёт хорошие action_items, добавление третьего call'а только
 //! увеличит латентность. Backport на cloud = Phase D-bis (backlog).
 
+use crate::pipeline::gbnf;
 use crate::providers::llm::{LlmProvider, LlmRequest};
 
 const POST_PASS_MAX_TOKENS: u32 = 2048;
@@ -103,8 +104,9 @@ pub(crate) async fn refine_action_items(
         system: build_post_pass_prompt(lang_detected),
         input: payload_str,
         max_tokens: Some(POST_PASS_MAX_TOKENS),
+        grammar: None,
     };
-    let llm_result = provider.generate(request).await;
+    let llm_result = gbnf::generate_with_grammar_fallback(provider, request).await;
     let refined_json = match llm_result {
         Ok(v) => v,
         Err(e) => {
@@ -246,12 +248,21 @@ mod tests {
 
     #[tokio::test]
     async fn refine_action_items_llm_failure_returns_original() {
-        let mock = MockProvider::new(vec![Err(LlmError::Provider("crash".into()))]);
+        // [M14 T-09 Phase E] generate_with_grammar_fallback ретраит на
+        // Provider error — нужны 2 Err для двух attempts.
+        let mock = MockProvider::new(vec![
+            Err(LlmError::Provider("crash".into())),
+            Err(LlmError::Provider("retry also fails".into())),
+        ]);
         let original = sample_action_items();
         let result =
             refine_action_items(&mock, original.clone(), "stub transcript", Some("en")).await;
         assert_eq!(result, original);
-        assert_eq!(mock.call_count(), 1);
+        assert_eq!(
+            mock.call_count(),
+            2,
+            "wrapper performs 1 retry на Provider error"
+        );
     }
 
     #[tokio::test]

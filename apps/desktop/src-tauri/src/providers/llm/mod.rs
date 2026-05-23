@@ -13,6 +13,11 @@ pub struct LlmRequest {
     pub system: String,
     pub input: String,
     pub max_tokens: Option<u32>,
+    /// [M14 T-09 Phase E] Optional GBNF grammar text. Provider may ignore.
+    /// `LocalLlamaProvider` пишет в temp файл + передаёт `--grammar-file`;
+    /// `AnthropicProvider` игнорирует (proxy validates JSON через API).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grammar: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
