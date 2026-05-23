@@ -64,6 +64,14 @@ pub mod summary_v2;
 // evidence quotes (≥ 0.9), schema range checks, dedup, strip-on-fail.
 pub mod summary_validator;
 
+// [M14 T-04] Lightweight LLM-call для определения call_type до основного
+// v2 generation. Используется local_orchestrator на Phase A.
+pub(crate) mod classifier;
+
+// [M14 T-10] Local engine orchestrator — chain classifier + main v2 gen.
+// Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
+pub(crate) mod local_orchestrator;
+
 pub use merge::{merge_tracks, render_transcript_md};
 pub use settings::PipelineSettings;
 pub use stage::Stage;
@@ -448,12 +456,11 @@ async fn run_local_inner(
 ) -> Result<(), AppError> {
     use crate::local_engine::{
         engine::EngineKind,
-        llm::{LocalLlamaProvider, LOCAL_LLM_SYSTEM_PROMPT},
+        llm::LocalLlamaProvider,
         models::{self, ModelStatus},
         preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
         stt::{LocalWhisperProvider, TrackKind},
     };
-    use crate::providers::llm::{LlmProvider, LlmRequest};
 
     debug_assert_eq!(s.engine, EngineKind::Local);
     let app = app.ok_or_else(|| {
@@ -656,17 +663,6 @@ async fn run_local_inner(
         .await
         .ok()
         .flatten();
-    // PRD §M12.3.3: для маленькой модели используем LOCAL_LLM_SYSTEM_PROMPT
-    // («only JSON» + few-shot), не Anthropic-промпт. Cloud-prompt
-    // ([`recap::build_v2_system_prompt`]) на 2-7B model'и часто ломается.
-    let system_prompt = format!(
-        "{LOCAL_LLM_SYSTEM_PROMPT}\n\nLang: {lang}\n{known}",
-        lang = lang_detected.as_deref().unwrap_or("ru"),
-        known = known_speakers
-            .as_deref()
-            .map(|s| format!("\n## Known participants\n{s}"))
-            .unwrap_or_default()
-    );
 
     // Transcript.md обязан существовать — `stage_merge_artifacts` его пишет.
     // Если файл недоступен (race / disk issue), recap должен fail с явным
@@ -676,18 +672,25 @@ async fn run_local_inner(
         .as_ref()
         .map(|s| s.clone())
         .unwrap_or_default();
+    // [M14 T-04 + T-10 Phase A] Local engine orchestrator: classifier (lightweight
+    // ~256 tokens) → main v2 generation с known_call_type hint. На classifier
+    // failure orchestrator делает fallback на single-pass без hint.
+    // LOCAL_LLM_SYSTEM_PROMPT (legacy v1 ad-hoc) больше не используется на
+    // этом path — local теперь идёт через тот же build_v2_system_prompt что
+    // и cloud (с CallType hint от классификатора).
     let llm_result = match transcript_md_read {
         Ok(transcript_md) if !transcript_md.trim().is_empty() => {
-            let llm = LocalLlamaProvider::for_preset(&ctx.app_data_dir, llm_id)
+            let provider = LocalLlamaProvider::for_preset(&ctx.app_data_dir, llm_id)
                 .with_app(app.clone())
                 .await;
-            llm.generate(LlmRequest {
-                model: None,
-                system: system_prompt,
-                input: transcript_md,
-                max_tokens: Some(4096),
-            })
-            .await
+            let orch_ctx = local_orchestrator::LocalOrchestratorCtx {
+                transcript_md: &transcript_md,
+                lang_detected: lang_detected.as_deref(),
+                known_speakers: known_speakers.as_deref(),
+            };
+            local_orchestrator::run_v2_pipeline(&provider, orch_ctx)
+                .await
+                .map_err(|e| crate::providers::llm::LlmError::Provider(e.to_string()))
         }
         Ok(_) => Err(crate::providers::llm::LlmError::Provider(
             "local_engine_transcript_empty".into(),
@@ -716,10 +719,9 @@ async fn run_local_inner(
                 local_engine_label,
                 &transcript_for_evidence,
                 None,
-                // [M14 T-14] Local path не emit'ит telemetry в T-14 — T-04..T-10
-                // local Qwen pipeline пока deferred. Когда local заработает,
-                // здесь пройдёт `Some(s.summary_v2_enabled)`.
-                None,
+                // [M14 T-04 Phase A] Local path теперь emit'ит telemetry —
+                // classifier + main v2 pipeline через local_orchestrator.
+                Some(s.summary_v2_enabled),
             )
             .await
             {

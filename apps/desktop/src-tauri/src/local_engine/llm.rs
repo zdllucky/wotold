@@ -436,6 +436,12 @@ fn validate_recap_shape(json: Value) -> Result<Value, LlmError> {
 /// Тесты в M12.3 будут проверять что real impl получает именно этот prompt
 /// (substring match). Также позволяет UI показывать «что именно мы шлём
 /// модели» для debug.
+///
+/// **[M14 T-04 Phase A]** Production callers больше не используют этот prompt
+/// напрямую — local pipeline теперь идёт через `pipeline::local_orchestrator`
+/// → `recap::build_v2_system_prompt`. Константа сохраняется как
+/// pre-v2 baseline для debugging UI + regression-тестов в M12.3.
+#[allow(dead_code)]
 pub const LOCAL_LLM_SYSTEM_PROMPT: &str = concat!(
     "Ты — помощник по составлению краткой сводки телефонного разговора.\n\n",
     "Отвечай ТОЛЬКО валидным JSON. Никакого текста до или после JSON.\n\n",

@@ -639,13 +639,13 @@
 
 ### Pipeline (T-02..T-10) — partial
 - [x] **T-02 cloud schema-v2 prompts + persist + extended recap.md** — recap.rs heavy rewrite: новый PRD §5.1 cloud_universal system prompt (8 call types, ABSOLUTE RULES, TYPE GUIDE с MoM sections, evidence quote rules); v2 parse с graceful v1 fallback через `promote_legacy_to_v2`; validator pass (substring fuzzy ≥ 0.9, dedup, schema warn); persist через новые DB модули (`db::decisions`, `db::open_questions`, `db::set_summary_metadata`); action_items extended с v2 fields (owner_confidence, due_confidence, category, evidence_*); recap.md теперь содержит ## Решения / ## Открытые вопросы / ## Задачи с category emoji prefix + evidence blockquotes (ru/en/kk localized via `summary.language`). Cloud LLM остаётся Groq Llama 3.3 70B / Anthropic Sonnet 4. UI остаётся legacy markdown render (T-11 deferred). 12 new unit-tests в recap.rs.
-- [ ] T-04 local classifier (Qwen 1.5B/3B/7B через llama-cli sidecar).
-- [ ] T-05 chunker (topic-tile + speaker-turn boundary).
-- [ ] T-06 map-reduce orchestrator для long calls.
-- [ ] T-07 8 expert prompts (sales_discovery / sales_demo / product_sync / standup / customer_interview / one_on_one / strategy_brainstorm / status_update).
-- [ ] T-08 action-item post-pass (always для local).
-- [ ] T-09 GBNF grammar fallback (P1).
-- [ ] T-10 orchestrator e2e + progress events.
+- [x] **T-04 local classifier (Phase A)** — `pipeline/classifier.rs`: lightweight LLM-pass (~256 tokens) перед main v2 generation. Output `{ call_type, confidence, language }`, parses через defensive `CallType::from_str` (unknown → `Other`). Берёт первые 6000 chars transcript (head). Best-effort: на любую ошибку orchestrator делает fallback на single-pass без hint. 8 unit-тестов (prompt structure, head extraction с UTF-8 boundary safety, response parsing).
+- [ ] T-05 chunker (topic-tile + speaker-turn boundary) — **Phase B deferred**.
+- [ ] T-06 map-reduce orchestrator для long calls — **Phase B deferred**.
+- [ ] T-07 8 expert prompts (sales_discovery / sales_demo / product_sync / standup / customer_interview / one_on_one / strategy_brainstorm / status_update) — **Phase C deferred**.
+- [ ] T-08 action-item post-pass (always для local) — **Phase D deferred**.
+- [ ] T-09 GBNF grammar fallback (P1) — **Phase E deferred**.
+- [x] **T-10 orchestrator skeleton (Phase A)** — `pipeline/local_orchestrator.rs`: chain classifier → main v2 generation с known_call_type hint. `build_v2_system_prompt` extended optional `known_call_type: Option<CallType>` parameter (cloud callers pass None). Replaces inline `LocalLlamaProvider::generate` call в `run_local_inner`. Telemetry (T-14) теперь captures local engine runs — `flag_state=Some(s.summary_v2_enabled)` (был None). Tests с trait-based `MockProvider` (3 cases — success/classifier-fail/main-fail). LOCAL_LLM_SYSTEM_PROMPT legacy v1 constant остаётся для debugging baseline. Phase B/C/D/E (T-05..T-09) deferred.
 
 ### UI + Quality (T-11..T-15) — deferred
 - [x] **T-11 UI v2** — 5 новых React компонентов в Atelier v2 design: `CallTypeBadge` (header chip с типом звонка), `DecisionsBlock` + `OpenQuestionsBlock` (структурированные takeaways над markdown в Рекап табе), `EvidenceTooltip` (hover/click sticky popover с quote из транскрипта + jump-to-moment), `PrivacyDisclaimer` (banner для 1:1 встреч). Extended `TasksPanel`: category emoji prefix (✅/💡/📝) + confidence badge при inferred owner + evidence tooltip. 2 новые Tauri commands (`list_call_decisions`, `list_call_open_questions`) + extended Call/ActionItem TS types + useCallDetail hook fetches. 24 vitest tests. Atelier v2 CSS additions (.v2-block / .decision-row / .evidence-popover / .privacy-disclaimer / .confidence-low). Legacy markdown render остаётся для schema_version=1 (контекстный narrative + backward compat).
