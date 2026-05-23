@@ -18,6 +18,8 @@ mod contacts;
 pub(crate) mod decisions;
 pub(crate) mod open_questions;
 mod settings;
+// [M14 T-14] Local-only summary generation log.
+pub(crate) mod telemetry;
 // [Phase 3 R9] pub(crate) чтобы pipeline::voice_backfill мог вызывать
 // evict_old_voice_samples. Раньше backfill жил внутри db::set_call_speaker_cluster,
 // поэтому хватало private. Теперь side-effect снаружи db/ — нужен crate-wide path.

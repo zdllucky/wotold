@@ -66,6 +66,10 @@ export const SETTINGS_KEYS = {
    *  владельца (fallback: primary-speaker heuristic). Default ON.
    *  '0'/'false' = выключено; остальное → ON. */
   MIC_DIARIZATION_ENABLED: 'mic_diarization_enabled',
+  /** [M14 T-14] Feature flag для v2 cloud_universal prompt. '1' = ON
+   *  (default — текущий v2 path с decisions/open_questions/evidence).
+   *  '0' = OFF emergency-disable → legacy v1 markdown-only prompt. */
+  SUMMARY_V2_ENABLED: 'summary_v2_enabled',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
@@ -89,6 +93,9 @@ export const SETTINGS_DEFAULTS = {
   /** [M13 follow-up] Mic diarization — default ON per user request.
    *  Полезно для multi-voice meeting через один микрофон. */
   MIC_DIARIZATION_ENABLED: true,
+  /** [M14 T-14] Summary v2 default ON. OFF — emergency disable, recap
+   *  падает на legacy v1 markdown-only prompt. */
+  SUMMARY_V2_ENABLED: true,
 } as const;
 
 /** [S1] Whitelist cooldown values 3/5/10/15 min. */
