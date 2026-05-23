@@ -122,7 +122,8 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
     // [M14 T-14] Branch prompt по feature flag. OFF → legacy v1 markdown-only
     // (минимальный JSON, парсится через existing promote_legacy_to_v2 fallback).
     let system_prompt = if ctx.summary_v2_enabled {
-        build_v2_system_prompt(ctx.lang_detected, known_speakers.as_deref())
+        // Cloud path: no pre-classification, LLM решает call_type сам.
+        build_v2_system_prompt(ctx.lang_detected, known_speakers.as_deref(), None)
     } else {
         build_legacy_system_prompt(ctx.lang_detected, known_speakers.as_deref())
     };
@@ -469,10 +470,22 @@ Output ONLY the JSON object. No prose. No markdown fences."
 pub(crate) fn build_v2_system_prompt(
     lang_detected: Option<&str>,
     known_speakers: Option<&str>,
+    known_call_type: Option<crate::pipeline::summary_v2::CallType>,
 ) -> String {
     let lang = lang_detected.unwrap_or("ru");
     let known_block = known_speakers
         .map(|s| format!("\n\n## Known participants\n{s}"))
+        .unwrap_or_default();
+    // [M14 T-04] Optional classification hint от лёгкого pre-pass.
+    // LLM не классифицирует заново, фокусируется на структуре + правильном
+    // type_specific_block. Cloud callers pass None (full reasoning).
+    let type_hint = known_call_type
+        .map(|t| {
+            format!(
+                "\n\n## Classification hint (pre-determined)\nCall type already classified as `{}`. Set `call_type` to this value, use the matching TYPE GUIDE section, и populate `type_specific_block` соответственно.",
+                t.as_str()
+            )
+        })
         .unwrap_or_default();
 
     // [M14 T-02] V2 cloud_universal prompt — type-driven evidence-grounded
@@ -564,7 +577,7 @@ pub(crate) fn build_v2_system_prompt(
 ## EDGE CASES\n\
 \n\
 - Короткий транскрипт (<5 реплик) или пустой → `summary` = 'Запись не содержит обсуждения по существу.' + empty arrays + call_type=other.\n\
-- Если transcript на kk: используй kazakh terms, keep technical English as-is.{known_block}",
+- Если transcript на kk: используй kazakh terms, keep technical English as-is.{known_block}{type_hint}",
     )
 }
 
@@ -884,7 +897,7 @@ mod tests {
     /// случайной деградации v2 prompt при future edits.
     #[test]
     fn v2_system_prompt_includes_full_schema() {
-        let prompt = build_v2_system_prompt(Some("ru"), None);
+        let prompt = build_v2_system_prompt(Some("ru"), None, None);
         assert!(prompt.contains("\"schema_version\": 2"));
         assert!(prompt.contains("call_type"));
         assert!(prompt.contains("decisions"));
