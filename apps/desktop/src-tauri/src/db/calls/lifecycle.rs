@@ -324,6 +324,62 @@ pub async fn set_call_title(pool: &SqlitePool, call_id: &str, title: &str) -> Re
     Ok(())
 }
 
+/// [M14 T-02] Bulk-update M14 summary metadata fields в `calls` row.
+/// Single UPDATE — атомарно. Все поля nullable; передавайте Some только
+/// для того, что меняете (None = не трогать).
+///
+/// Используется в `pipeline::recap::persist_summary_v2` после успешного
+/// cloud v2 generate'а.
+#[allow(dead_code)] // [M14 T-02] Wired в recap.rs в Step 4 этого slice'а.
+pub struct SummaryMetadata<'a> {
+    pub engine: &'a str,
+    pub schema_version: u8,
+    pub call_type: Option<&'a str>,
+    pub call_type_confidence: Option<f32>,
+    pub pipeline_mode: &'a str,
+    pub generation_ms: Option<i64>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub type_specific_block_json: Option<&'a str>,
+}
+
+#[allow(dead_code)] // [M14 T-02] Production caller в recap.rs Step 4.
+pub async fn set_summary_metadata(
+    pool: &SqlitePool,
+    call_id: &str,
+    meta: SummaryMetadata<'_>,
+) -> Result<(), AppError> {
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "UPDATE calls
+         SET summary_engine = ?1,
+             summary_schema_version = ?2,
+             call_type = ?3,
+             call_type_confidence = ?4,
+             summary_pipeline_mode = ?5,
+             summary_generation_ms = ?6,
+             summary_input_tokens = ?7,
+             summary_output_tokens = ?8,
+             summary_type_specific_block = ?9,
+             updated_at = ?10
+         WHERE id = ?11",
+    )
+    .bind(meta.engine)
+    .bind(meta.schema_version as i64)
+    .bind(meta.call_type)
+    .bind(meta.call_type_confidence)
+    .bind(meta.pipeline_mode)
+    .bind(meta.generation_ms)
+    .bind(meta.input_tokens)
+    .bind(meta.output_tokens)
+    .bind(meta.type_specific_block_json)
+    .bind(&now)
+    .bind(call_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Stale-sweep: при старте приложения все `recording` и `processing` row'ы
 /// помечаются `failed`. Это означает что в прошлой сессии запись или
 /// пайплайн были прерваны (краш, force-quit, потеря питания). Возвращает
