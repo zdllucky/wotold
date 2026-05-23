@@ -15,7 +15,7 @@
 // - tab state, kebab menu open state, busy flags (deleting/reprocessing/…)
 //   — это UI-only, остаётся в самом CallDetailPage.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -261,10 +261,28 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     return () => unlisten?.();
   }, [callId]);
 
-  // [V6.4] Live pipeline progress — слушаем `call:progress` события для этого
-  // звонка и патчим Call object. UI: PipelineStrip + reassurance banner.
+  // [V6.4 + Bug-fix #5] Live pipeline progress — слушаем `call:progress`
+  // события для этого звонка и патчим Call object. Дополнительно: на
+  // переход stage'а (e.payload.step != prevStep) триггерим debounced
+  // refetchAll'у, чтобы UI подтягивал свежие артефакты (transcript /
+  // raw_stt / recap) по мере их появления, без необходимости выходить
+  // и заходить в звонок заново. Debounce — 600ms на step transition,
+  // rate-limit — не чаще раз в 1.5s.
+  const prevStepRef = useRef<number | null>(null);
+  const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRefetchAtRef = useRef<number>(0);
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
+    const scheduleRefetch = () => {
+      const now = Date.now();
+      const sinceLast = now - lastRefetchAtRef.current;
+      const delay = Math.max(600, 1500 - sinceLast);
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      refetchTimerRef.current = setTimeout(() => {
+        lastRefetchAtRef.current = Date.now();
+        void refetchAll();
+      }, delay);
+    };
     listen<CallProgressEvent>('call:progress', (e) => {
       if (e.payload.call_id !== callId) return;
       setCallState((prev) =>
@@ -278,12 +296,23 @@ export function useCallDetail(callId: string): UseCallDetailResult {
             }
           : prev,
       );
+      if (e.payload.step !== prevStepRef.current) {
+        prevStepRef.current = e.payload.step;
+        scheduleRefetch();
+      }
     })
       .then((fn) => {
         unlisten = fn;
       })
       .catch((err) => console.warn('call:progress listener:', err));
-    return () => unlisten?.();
+    return () => {
+      unlisten?.();
+      if (refetchTimerRef.current) {
+        clearTimeout(refetchTimerRef.current);
+        refetchTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetchAll stable per callId
   }, [callId]);
 
   // [V4.1] Перечитать speakers + contacts после mutation в табе или

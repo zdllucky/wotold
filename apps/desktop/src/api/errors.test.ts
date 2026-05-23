@@ -11,8 +11,22 @@ describe('humanError', () => {
       /превышен дневной лимит/i,
     );
   });
-  test('proxy 502', () => {
-    expect(humanError('llm: provider: proxy 502 Bad Gateway')).toMatch(/временно недоступен/i);
+  test('proxy 502 → сервис временно занят', () => {
+    expect(humanError('llm: provider: proxy 502 Bad Gateway')).toMatch(/временно занят/i);
+  });
+  // [Bug-fix #1] Cloudflare proxy wrapping Anthropic 429 как provider_error.
+  // Не должно матчить "Превышен дневной лимит" — это transient, не quota cap.
+  test('upstream 429 → провайдер занят (не quota)', () => {
+    expect(
+      humanError(
+        'llm: provider: proxy 502 Bad Gateway: {"ok":false,"code":"provider_error","message":"LLM upstream error (429)"}',
+      ),
+    ).toMatch(/сервис временно занят/i);
+  });
+  test('upstream rate limit text', () => {
+    expect(humanError(new Error('rate limit reached upstream'))).toMatch(
+      /сервис временно занят/i,
+    );
   });
   test('mic permission', () => {
     expect(humanError(new Error('Failed: NSMicrophoneUsageDescription'))).toMatch(

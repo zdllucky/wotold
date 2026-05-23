@@ -32,6 +32,7 @@ import {
   ParticipantsRow,
   PrivacyDisclaimer,
   ProcessingPanel,
+  RecapRegenSuggestionStrip,
   ReprocessBanner,
   TasksPanel,
 } from '../components/call-detail';
@@ -90,6 +91,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [regeneratingTitle, setRegeneratingTitle] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // [Bug-fix #6] После bind speaker → contact подсказываем regenerate recap.
+  // Memory-only flag — пере-показывается на следующий bind action в звонке.
+  const [pendingRecapRegen, setPendingRecapRegen] = useState(false);
 
   // [B17 V3.2] Single audio source — shared между AudioScrubber и
   // InteractiveTranscript (для highlight current + click-to-seek).
@@ -178,6 +182,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       // LegacyRecapBanner исчез), и decisions/open_questions (новые v2-блоки
       // в Рекап табе), и call_type (CallTypeBadge в header).
       await refetchAll();
+      // [Bug-fix #6] Регенерация прошла — recap-regen suggestion больше не нужен.
+      setPendingRecapRegen(false);
     } catch (e) {
       setError(t('callDetail.regenerateFailed', { error: String(e) }));
     } finally {
@@ -401,6 +407,20 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           />
         )}
 
+      {/* [Bug-fix #6] Recap-regen suggestion — после bind speaker → contact.
+          Виден только когда summary уже в v2 (legacy banner перекрывает иначе),
+          recap существует, звонок не в processing, и нет одновременной регенерации. */}
+      {pendingRecapRegen &&
+        call.summary_schema_version === 2 &&
+        recap !== null &&
+        call.status !== 'processing' && (
+          <RecapRegenSuggestionStrip
+            busy={regenerating}
+            onRegenerate={() => void onRegenerateRecap()}
+            onDismiss={() => setPendingRecapRegen(false)}
+          />
+        )}
+
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
         <Tabs.List>
           {(['recap', 'transcript', 'tasks', 'speakers'] as Tab[]).map((tabId) => (
@@ -463,7 +483,11 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         <Tabs.Panel value="speakers">
           <SpeakersSection
             callId={callId}
-            onSpeakersChanged={() => void refetchSpeakersAndContacts()}
+            onSpeakersChanged={() => {
+              void refetchSpeakersAndContacts();
+              // [Bug-fix #6] Имена участников могли измениться — предложить regen.
+              setPendingRecapRegen(true);
+            }}
           />
         </Tabs.Panel>
       </Tabs>
@@ -490,7 +514,11 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           contacts={contacts}
           sample={samplesByTag.get(confirmingSpeaker.speaker_tag) ?? null}
           onClose={() => setConfirmingTag(null)}
-          onConfirmed={() => void refetchSpeakersAndContacts()}
+          onConfirmed={() => {
+            void refetchSpeakersAndContacts();
+            // [Bug-fix #6] Имя спикера изменилось — предложить regen recap.
+            setPendingRecapRegen(true);
+          }}
         />
       )}
     </section>

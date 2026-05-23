@@ -48,6 +48,37 @@ impl LlmProvider for AnthropicProvider {
     }
 }
 
+/// [Bug-fix] Backoff schedule для transient errors (5xx / 429 / network /
+/// proxy-wrapped upstream-error). 3 attempts → 1s → 3s → 9s + small jitter.
+const BACKOFF_BASE_MS: [u64; 3] = [1000, 3000, 9000];
+
+/// [Bug-fix] Транзиентность сообщения от proxy/upstream — на эти patterns
+/// retry'имся, иначе propagate как permanent error. Cloudflare Workers
+/// часто оборачивает 429 от Anthropic в `provider_error` body с текстом
+/// "LLM upstream error (429)" — это тот же transient throttle, ретраим.
+pub(super) fn is_retryable_message(msg: &str) -> bool {
+    let lower = msg.to_ascii_lowercase();
+    lower.contains("429")
+        || lower.contains("upstream error")
+        || lower.contains("bad gateway")
+        || lower.contains("rate limit")
+        || lower.contains("502")
+        || lower.contains("503")
+        || lower.contains("504")
+}
+
+/// [Bug-fix] Тонкий jitter (±~250ms) без `rand` crate — берём nanos
+/// текущего времени. Не криптографически случайно, но достаточно для
+/// разъезда параллельных retry-волн.
+fn jitter_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as i64)
+        .unwrap_or(0);
+    (nanos % 500) - 250
+}
+
 async fn generate_managed(
     http: &reqwest::Client,
     proxy_base_url: &str,
@@ -62,13 +93,18 @@ async fn generate_managed(
         "maxTokens": request.max_tokens,
     });
 
-    // [B12] клиент-side retry: на 5xx или Network один раз пробуем ещё с
-    // паузой 2 секунды. Покрывает кейс когда proxy внутренний retry тоже
-    // упал в transient Groq glitch.
+    // [Bug-fix] Client-side retry с exponential backoff для transient errors:
+    // - network err
+    // - 5xx HTTP status
+    // - 200 + `ok:false` + retryable message ("429"/"upstream"/"Bad Gateway")
+    //   — Cloudflare proxy wraps Anthropic 429 как provider_error внутри 200.
+    // 3 attempts: 1s → 3s → 9s + ±~250ms jitter. После исчерпания → last err.
     let mut last_provider_err: Option<String> = None;
-    for attempt in 0..2_u32 {
+    for attempt in 0..3_u32 {
         if attempt > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let base = BACKOFF_BASE_MS[(attempt - 1).min(2) as usize] as i64;
+            let wait_ms = (base + jitter_ms()).max(100) as u64;
+            tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
         }
         let resp = match http
             .post(&url)
@@ -86,7 +122,25 @@ async fn generate_managed(
 
         let status = resp.status();
         if status == StatusCode::TOO_MANY_REQUESTS {
-            return Err(LlmError::QuotaExceeded);
+            // 429 path: пробуем разобрать body — если `code:"quota_exceeded"`,
+            // это hard-cap (R7 паспорта) → QuotaExceeded (no retry, юзеру
+            // нужно ждать до завтра / переключаться на BYO). Если другой
+            // code или body не парсится — считаем transient throttle от
+            // upstream Anthropic и ретраимся с backoff.
+            let body_text = resp.text().await.unwrap_or_default();
+            let parsed: Option<Value> = serde_json::from_str(&body_text).ok();
+            let code = parsed
+                .as_ref()
+                .and_then(|v| v.get("code"))
+                .and_then(Value::as_str);
+            if matches!(code, Some("quota_exceeded")) {
+                return Err(LlmError::QuotaExceeded);
+            }
+            last_provider_err = Some(format!(
+                "proxy 429: {}",
+                body_text.chars().take(200).collect::<String>()
+            ));
+            continue;
         }
         if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
             return Err(LlmError::Auth(format!("proxy {status}")));
@@ -106,7 +160,15 @@ async fn generate_managed(
                 body.chars().take(200).collect::<String>()
             )));
         }
-        return parse_managed_body(resp).await;
+        match parse_managed_body(resp).await {
+            Ok(v) => return Ok(v),
+            // Retry для ok:false с transient message; quota/auth — propagate.
+            Err(LlmError::Provider(msg)) if is_retryable_message(&msg) => {
+                last_provider_err = Some(msg);
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
     }
     Err(LlmError::Provider(
         last_provider_err.unwrap_or_else(|| "proxy unknown".into()),
@@ -331,6 +393,65 @@ mod tests {
         let p = byo_provider(server.url("/v1/messages"), "sk-bad");
         let err = p.generate(req()).await.unwrap_err();
         assert!(matches!(err, LlmError::Auth(_)), "got {err:?}");
+    }
+
+    // [Bug-fix #1] 200 + ok:false + retryable message ("LLM upstream error (429)")
+    // → 3 attempts. Cloudflare Workers оборачивает Anthropic 429 в provider_error.
+    // Backoff prevents test зависание via overriding constants — но cargo test
+    // должен finish < 30s, поэтому используем mock который сразу отвечает.
+    #[tokio::test]
+    async fn managed_429_in_provider_error_retries_three_times() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(POST).path("/v1/llm");
+                then.status(200).json_body(json!({
+                    "ok": false,
+                    "code": "provider_error",
+                    "message": "LLM upstream error (429)"
+                }));
+            })
+            .await;
+
+        let p = managed_provider(server.base_url());
+        let err = p.generate(req()).await.unwrap_err();
+        // 3 attempts всего — все 3 раза один и тот же ok:false response.
+        mock.assert_hits_async(3).await;
+        match err {
+            LlmError::Provider(msg) => assert!(
+                msg.contains("upstream error (429)"),
+                "expected retryable msg in final err: {msg}"
+            ),
+            other => panic!("expected Provider after retries, got {other:?}"),
+        }
+    }
+
+    // [Bug-fix #1] HTTP 429 без code:"quota_exceeded" → транзиент, ретраим.
+    // Direct upstream 429 редок (обычно proxy wrap'ает) но возможен.
+    #[tokio::test]
+    async fn managed_http_429_transient_retries() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(POST).path("/v1/llm");
+                then.status(429).body("Too Many Requests");
+            })
+            .await;
+
+        let p = managed_provider(server.base_url());
+        let _ = p.generate(req()).await.unwrap_err();
+        mock.assert_hits_async(3).await;
+    }
+
+    #[test]
+    fn is_retryable_message_patterns() {
+        assert!(is_retryable_message("LLM upstream error (429)"));
+        assert!(is_retryable_message("Bad Gateway"));
+        assert!(is_retryable_message("rate limit exceeded"));
+        assert!(is_retryable_message("proxy 502: ..."));
+        assert!(is_retryable_message("503 service unavailable"));
+        assert!(!is_retryable_message("invalid api key"));
+        assert!(!is_retryable_message("quota exhausted"));
     }
 
     #[tokio::test]

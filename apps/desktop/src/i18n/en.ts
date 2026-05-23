@@ -78,7 +78,7 @@ export const en: TranslationStrings = {
     startingAria: 'Starting',
     starting: 'Starting…',
     hotkeyHint: 'Or just press the hotkey',
-    hotkeyTitle: 'Hotkey: ⌘⇧R',
+    hotkeyTitle: 'Hotkey: {chord}',
     stopAria: 'Stop recording',
     savedTitle: '✓ Call saved',
     savedHint:
@@ -218,6 +218,11 @@ export const en: TranslationStrings = {
       'Upgrade to get call type, decisions, open questions and evidence quotes from the transcript.',
     legacyRecapButton: 'Upgrade to v2',
     legacyRecapUpgrading: 'Upgrading…',
+    recapRegenSuggestionTitle: 'Participant names changed',
+    recapRegenSuggestionHint: 'Regenerate the summary so it uses the updated names?',
+    recapRegenSuggestionButton: 'Regenerate summary',
+    recapRegenSuggestionBusy: 'Regenerating…',
+    recapRegenSuggestionDismiss: 'Hide',
     errorTitle: 'Something went wrong',
     errorAudioSaved: 'Audio is saved locally — you can listen below.',
     errorRetry: 'Try again',
@@ -411,7 +416,11 @@ export const en: TranslationStrings = {
       'Only when confident — can be undone right in the call.',
     speakersMicDiarizationLabel: 'Detect multiple voices on microphone',
     speakersMicDiarizationHint:
-      'Useful for live meetings in one room when other participants also speak into your mic. Slows processing by ~10–20% (local engine runs an extra sortformer pass). The device owner is auto-identified via voice samples (or by primary speaker time if none yet).',
+      'Useful for live meetings in one room when other participants also speak into your mic. Slows processing by ~10–20%. The device owner is auto-identified via voice samples (or by primary speaker time if none yet).',
+    micDiarizationModelMissing:
+      'Voice splitting needs an extra module (~6 MB). Without it Wotold cannot split voices even when the toggle is on.',
+    micDiarizationInstall: '↓ Install voice splitting module',
+    micDiarizationInstalling: 'Installing module…',
     appearanceTitle: 'Appearance.',
     appearanceLede:
       'Theme and accent apply instantly — switch and compare. All screens respond simultaneously.',
@@ -669,7 +678,7 @@ export const en: TranslationStrings = {
   voiceModel: {
     featureOff:
       '⚠ The voice-onnx feature is not enabled in this build. You can download the model, but the pipeline will not use it — biometric matching stays off. In a production build (`--features voice-onnx`) downloading enables matching automatically.',
-    modelName: 'WeSpeaker ResNet34 LM · VoxCeleb',
+    modelName: 'Voice recognition module',
     modelEyebrow: 'Model',
     statusValid: 'installed',
     statusMissing: 'none',

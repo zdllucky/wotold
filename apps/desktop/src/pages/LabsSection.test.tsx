@@ -35,7 +35,8 @@ describe('LabsSection', () => {
     await flush();
     const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
     expect(boxes).toHaveLength(2);
-    const [summaryV2, speculative] = boxes;
+    const summaryV2 = boxes[0]!;
+    const speculative = boxes[1]!;
     await waitFor(() => expect(summaryV2.checked).toBe(true));
     expect(speculative.checked).toBe(false);
   });
@@ -51,7 +52,7 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const [summaryV2] = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    const summaryV2 = (screen.getAllByRole('checkbox') as HTMLInputElement[])[0]!;
     await waitFor(() => expect(summaryV2.checked).toBe(false));
   });
 
@@ -72,7 +73,7 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const [summaryV2] = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    const summaryV2 = (screen.getAllByRole('checkbox') as HTMLInputElement[])[0]!;
     await waitFor(() => expect(summaryV2.checked).toBe(true));
     await act(async () => {
       summaryV2.click();
@@ -97,7 +98,7 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const [, speculative] = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    const speculative = (screen.getAllByRole('checkbox') as HTMLInputElement[])[1]!;
     await waitFor(() => expect(speculative.checked).toBe(false));
     await act(async () => {
       speculative.click();

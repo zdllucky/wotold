@@ -78,7 +78,7 @@ export const kk: TranslationStrings = {
     startingAria: 'Іске қосудамыз',
     starting: 'Іске қосудамыз…',
     hotkeyHint: 'Немесе жай ыстық пернені басыңыз',
-    hotkeyTitle: 'Ыстық перне: ⌘⇧R',
+    hotkeyTitle: 'Ыстық перне: {chord}',
     stopAria: 'Жазуды тоқтату',
     savedTitle: '✓ Қоңырау сақталды',
     savedHint: 'Ұзақтығы: {sec} с. Тану фонда жалғасуда — әдетте 10–30 секунд.',
@@ -217,6 +217,12 @@ export const kk: TranslationStrings = {
       'Қоңырау түрі, шешімдер, ашық сұрақтар және транскрипттен үзінділер алу үшін жаңартыңыз.',
     legacyRecapButton: 'v2-ге жаңарту',
     legacyRecapUpgrading: 'Жаңартылуда…',
+    recapRegenSuggestionTitle: 'Қатысушы аттары өзгерді',
+    recapRegenSuggestionHint:
+      'Жаңартылған аттарды пайдалану үшін қорытындыны қайта жасайық па?',
+    recapRegenSuggestionButton: 'Қорытындыны қайта жасау',
+    recapRegenSuggestionBusy: 'Қайта жасалуда…',
+    recapRegenSuggestionDismiss: 'Жасыру',
     errorTitle: 'Бірдеңе дұрыс болмады',
     errorAudioSaved: 'Аудио жергілікті сақталған, оны төменде тыңдауға болады.',
     errorRetry: 'Қайтадан көру',
@@ -409,7 +415,11 @@ export const kk: TranslationStrings = {
       'Тек жоғары сенімділікте — қоңырауда болғанда болдырмауға болады.',
     speakersMicDiarizationLabel: 'Микрофондағы бірнеше дауысты тану',
     speakersMicDiarizationHint:
-      'Бір бөлмеде өткен жанды кездесулерге пайдалы — басқа қатысушылар да сіздің микрофонға сөйлегенде. Звонокты өңдеуді ~10–20% баяулатады (жергілікті қозғалтқыш қосымша sortformer өтуін орындайды). Иесінің даусы дауыс үлгілері арқылы немесе негізгі сөйлеуші бойынша автоматты түрде анықталады.',
+      'Бір бөлмеде өткен жанды кездесулерге пайдалы — басқа қатысушылар да сіздің микрофонға сөйлегенде. Өңдеуді ~10–20% баяулатады. Иесінің даусы дауыс үлгілері арқылы немесе негізгі сөйлеуші бойынша автоматты түрде анықталады.',
+    micDiarizationModelMissing:
+      'Дауыстарды бөлу үшін қосымша модуль қажет (~6 МБ). Онсыз ауыстырғыш қосулы болса да Wotold дауыстарды бөле алмайды.',
+    micDiarizationInstall: '↓ Дауыс бөлу модулін орнату',
+    micDiarizationInstalling: 'Модуль орнатылуда…',
     appearanceTitle: 'Сыртқы түрі.',
     appearanceLede:
       'Тақырып пен акцент бірден қолданылады — ауыстырып салыстырыңыз. Барлық экрандар бір уақытта жауап береді.',
@@ -663,7 +673,7 @@ export const kk: TranslationStrings = {
   voiceModel: {
     featureOff:
       '⚠ Бұл құрастырмада voice-onnx мүмкіндігі қосылмаған. Модельді жүктеуге болады, бірақ pipeline оны пайдаланбайды — биометриялық сәйкестендіру өшік қалады. Production құрастырмасында (`--features voice-onnx`) жүктеу автоматты түрде сәйкестендіруді қосады.',
-    modelName: 'WeSpeaker ResNet34 LM · VoxCeleb',
+    modelName: 'Дауысты тану модулі',
     modelEyebrow: 'Модель',
     statusValid: 'орнатылды',
     statusMissing: 'жоқ',
