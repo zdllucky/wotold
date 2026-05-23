@@ -1024,7 +1024,7 @@ async fn relabel_owner_on_mic_full_file(
     {
         Ok(Some(owner_local_tag)) if owner_local_tag != crate::pipeline::merge::OWNER_TAG => {
             log::info!(
-                "relabel_owner_on_mic: переменовываем {} → {}",
+                "relabel_owner_on_mic: переменовываем {} → {} (остальные tags сохраняются как анонимные спикеры)",
                 owner_local_tag,
                 crate::pipeline::merge::OWNER_TAG
             );
@@ -1034,8 +1034,25 @@ async fn relabel_owner_on_mic_full_file(
                 }
             }
         }
-        Ok(_) => {}
+        Ok(other) => log::info!(
+            "relabel_owner_on_mic: identify → {other:?} (no relabel; уже OWNER либо не нашли)"
+        ),
         Err(e) => log::warn!("relabel_owner_on_mic: identify err: {e}"),
+    }
+    // [Bug-fix] Diagnostic: финальный распределение tags после relabel — чтобы
+    // увидеть сколько уникальных спикеров останется в DB (call_speakers).
+    {
+        use std::collections::BTreeSet;
+        let final_tags: BTreeSet<&str> = mic_t
+            .segments
+            .iter()
+            .map(|s| s.speaker_tag.as_str())
+            .collect();
+        log::info!(
+            "relabel_owner_on_mic: финальный distinct tags ({}): {:?}",
+            final_tags.len(),
+            final_tags
+        );
     }
     mic_t
 }
@@ -1093,6 +1110,23 @@ async fn diarize_track(
             return transcript;
         }
     };
+
+    // [Bug-fix] Diagnostic: сколько уникальных спикеров sortformer выделил
+    // + суммарные durations. Без этого silent-collapse невозможно отличить
+    // от "правда был один голос".
+    {
+        use std::collections::BTreeMap;
+        let mut by_tag: BTreeMap<&str, f64> = BTreeMap::new();
+        for s in &speaker_segments {
+            *by_tag.entry(s.speaker_tag.as_str()).or_insert(0.0) += s.end - s.start;
+        }
+        let summary: Vec<String> = by_tag.iter().map(|(k, v)| format!("{k}={v:.1}s")).collect();
+        log::info!(
+            "diarize_track[{track_kind}]: sortformer вывел {} спикер(ов): [{}]",
+            by_tag.len(),
+            summary.join(", ")
+        );
+    }
 
     let merged_segments = merge::merge_word_with_speaker(&transcript.segments, &speaker_segments);
     log::info!(

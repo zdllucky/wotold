@@ -328,7 +328,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
         {/* Participants chips — same row после title */}
         {speakersLite.length > 0 && (
-          <ParticipantsRow speakers={speakersLite} />
+          <ParticipantsRow
+            speakers={speakersLite}
+            onConfirmAnonymous={(s) => setConfirmingTag(s.speaker_tag)}
+          />
         )}
       </header>
 

@@ -167,7 +167,16 @@ impl SortformerDiarizer {
                 model: Some(emb_str),
                 ..Default::default()
             };
-            config.clustering = FastClusteringConfig::default();
+            // [Bug-fix] Default threshold 0.5 (cosine distance) слишком высокий
+            // для коротких mic-записей с похожими голосами — sortformer
+            // сливает 2 спикеров в 1 кластер. 0.5 → 0.4 — более агрессивный
+            // split при сохранении устойчивости к шуму в одной паузе.
+            // num_clusters=-1 (auto) сохраняем — PRD §M12.2.5 cap=4 enforced
+            // через cap_speaker_tag.
+            config.clustering = FastClusteringConfig {
+                num_clusters: -1,
+                threshold: 0.4,
+            };
 
             let diar = OfflineSpeakerDiarization::create(&config).ok_or_else(|| {
                 DiarizerError::Provider(
