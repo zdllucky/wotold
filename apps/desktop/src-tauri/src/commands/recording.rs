@@ -425,7 +425,7 @@ async fn prepare_chunked_setup(
 /// Handle store'ится в `AppState.orchestrator`.
 async fn spawn_orchestrator(
     state: &State<'_, AppState>,
-    _app: &AppHandle,
+    app: &AppHandle,
     call_id: &str,
     setup: ChunkedSetup,
 ) {
@@ -455,6 +455,10 @@ async fn spawn_orchestrator(
         mic_provider,
         system_provider,
         stt_lang,
+        // [M13.2.1] app_data_dir для embedder resolve'а внутри chunk_runner;
+        // app_handle — для emit'а transcript:chunk_done event.
+        state.app_data_dir.clone(),
+        app.clone(),
     );
 
     let handle = tauri::async_runtime::spawn(async move {
@@ -517,6 +521,7 @@ fn make_rotate_fn(
 /// Closure factory для enqueue-callback. Pre-insert'ит chunk row, потом
 /// запускает `chunk_runner::run_chunk`. Возвращает transcript_tail для
 /// prev_prompt следующего chunk'а.
+#[allow(clippy::too_many_arguments)]
 fn make_enqueue_fn(
     call_id: String,
     pool: SqlitePool,
@@ -524,6 +529,8 @@ fn make_enqueue_fn(
     mic_provider: Arc<dyn TranscriptionProvider>,
     system_provider: Arc<dyn TranscriptionProvider>,
     lang: String,
+    app_data_dir: std::path::PathBuf,
+    app_handle: AppHandle,
 ) -> impl Fn(u32, u64, u64, Option<String>) -> chunk_orchestrator::EnqueueFut + Send + Sync + 'static
 {
     move |chunk_idx, start_ms, end_ms, prev_prompt| {
@@ -533,6 +540,8 @@ fn make_enqueue_fn(
         let mic_provider = mic_provider.clone();
         let system_provider = system_provider.clone();
         let lang = lang.clone();
+        let app_data_dir = app_data_dir.clone();
+        let app_handle = app_handle.clone();
         Box::pin(async move {
             let mic_path = store.chunk_mic_path(&call_id, chunk_idx);
             let system_path = store.chunk_system_path(&call_id, chunk_idx);
@@ -556,6 +565,8 @@ fn make_enqueue_fn(
                 system_path,
                 prev_prompt,
                 lang: lang.clone(),
+                app_data_dir: Some(app_data_dir.clone()),
+                app_handle: Some(app_handle.clone()),
             };
             let out = chunk_runner::run_chunk(
                 &pool,

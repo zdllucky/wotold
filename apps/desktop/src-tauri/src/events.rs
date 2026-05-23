@@ -26,6 +26,10 @@ pub const AUDIO_LEVEL: &str = "audio:level";
 /// `{ duration_sec, mic_bytes, system_bytes }` (raw sidecar event). Orchestrator
 /// слушает чтобы enqueue'ить pipeline job на закрытый chunk.
 pub const AUDIO_ROTATED: &str = "audio:rotated";
+/// [M13.2.3] Per-chunk pipeline finished (done или failed). Payload —
+/// `ChunkDoneEvent`. Frontend (Phase 3) подпишется и обновит ChunkProgressStrip;
+/// Phase 2 — backend-only emit (нет TS-typed listener'а).
+pub const TRANSCRIPT_CHUNK_DONE: &str = "transcript:chunk_done";
 /// [S8] Fires whenever the backend recording session changes — start, stop,
 /// pause, resume. Both webviews (main + recording-widget) listen so their
 /// `RecordingProvider` мирror гарантированно in sync. Payload пустой —
@@ -72,6 +76,17 @@ pub struct CallAutoBoundEvent {
     pub call_id: String,
     pub count: u64,
     pub threshold_pct: u8,
+}
+
+/// [M13.2.3] Один chunk pipeline завершился (mark_chunk_done или
+/// mark_chunk_failed). Phase 3 UI рендерит strip с per-chunk статусом.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChunkDoneEvent {
+    pub call_id: String,
+    pub chunk_idx: u32,
+    /// `done` | `failed`
+    pub status: &'static str,
+    pub segment_count: usize,
 }
 
 // `audio:level` payload живёт в audio::macos (типобезопасность копий нет).
@@ -126,6 +141,11 @@ impl<'a> EventBus<'a> {
 
     pub fn call_auto_bound(&self, e: &CallAutoBoundEvent) {
         self.emit(CALL_AUTO_BOUND, e);
+    }
+
+    /// [M13.2.3] Per-chunk pipeline done/failed.
+    pub fn transcript_chunk_done(&self, e: &ChunkDoneEvent) {
+        self.emit(TRANSCRIPT_CHUNK_DONE, e);
     }
 
     /// `audio:level` payload — `audio::macos::LevelPayload`. Объявлен generic'ом
@@ -187,6 +207,12 @@ mod tests {
             count: 1,
             threshold_pct: 95,
         });
+        bus.transcript_chunk_done(&ChunkDoneEvent {
+            call_id: "c1".into(),
+            chunk_idx: 0,
+            status: "done",
+            segment_count: 12,
+        });
     }
 
     #[test]
@@ -200,6 +226,8 @@ mod tests {
         assert_eq!(CALL_PROGRESS, "call:progress");
         assert_eq!(CALL_AUTO_BOUND, "call:auto_bound");
         assert_eq!(AUDIO_LEVEL, "audio:level");
+        assert_eq!(AUDIO_ROTATED, "audio:rotated");
+        assert_eq!(TRANSCRIPT_CHUNK_DONE, "transcript:chunk_done");
         assert_eq!(VOICE_MODEL_PROGRESS, "voice-model:progress");
         assert_eq!(VOICE_MODEL_DONE, "voice-model:done");
     }

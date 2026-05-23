@@ -7,16 +7,24 @@
 //!    зовёт `silence_detector.find_cut(window)`. Если cut найден — триггерит
 //!    `rotate_fn(chunk_idx)` (caller дёргает `audio::macos::rotate`).
 //! 4. Получает rotated events через `mpsc::Receiver<Value>` (raw sidecar JSON).
-//! 5. На rotated event — зовёт `enqueue_fn` для completed chunk'а с
-//!    `prev_transcript_tail` для context priming следующего chunk'а.
-//! 6. На stop signal — возвращает `(total_chunks, last_chunk_start_ms)` для
-//!    caller'а (он assemble'ит финальный pipeline или просто mark'ает done).
+//! 5. На rotated event — **спавнит** `enqueue_fn` task через `tokio::spawn`
+//!    для completed chunk'а. Phase 2 = parallel pipelining: chunk N STT идёт
+//!    параллельно с записью chunk N+1.
+//! 6. На stop signal / rms_rx closure — drain'ит все pending enqueue handles
+//!    с timeout'ом, обновляет `summary` поштучно по результатам, возвращает.
 //!
 //! Pure-ish — все side effects идут через closure callbacks. Testable через
 //! mock channels + mock fn (см. unit tests внизу).
 //!
 //! Wired в recording flow через `CHUNKED_PIPELINE` feature flag (M13.1.5c).
 //! Pause-aware (M13.2.1) — `pause_rx` arm замораживает rotation timer.
+//!
+//! **Phase 2 trade-off (M13.2.2)** — параллельный spawn ломает cross-chunk
+//! prompt chain: `prev_transcript_tail` всегда `None` в parallel mode, потому
+//! что chunk N+1 стартует до того, как chunk N закончит STT. Whisper всё равно
+//! сбрасывает context на каждом cut'е, так что потеря качества ~1% на стыках —
+//! приемлемая цена за обещанный 6-10× speed-up. True chain потребовал бы
+//! re-serialization Phase 1, что съело бы выигрыш pipelining.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -25,8 +33,14 @@ use std::time::Duration;
 use serde_json::Value;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 use crate::audio::silence_detector::SilenceDetector;
+
+/// [M13.2.2] Max wait для drain pending enqueue tasks на stop. Phase 2 STT
+/// для одного chunk'а на 10-мин ауд занимает 30s-3min (Balanced preset),
+/// 5 мин — generous safety net.
+const DRAIN_TIMEOUT_PER_TASK: Duration = Duration::from_secs(300);
 
 /// Тюнинг chunk-rotation параметров. Default 10-мин chunks с ±1 мин tolerance.
 #[derive(Debug, Clone, Copy)]
@@ -110,9 +124,10 @@ where
     let mut chunk_idx: u32 = 0;
     let mut chunk_start_ms: u64 = 0;
     let mut last_rms_ts_ms: u64 = 0;
-    let mut prev_transcript_tail: Option<String> = None;
     let mut summary = OrchestratorSummary::default();
     let mut rotate_pending = false;
+    // [M13.2.2] Pending enqueue tasks от tokio::spawn. Drain на stop / EOF.
+    let mut pending_handles: Vec<JoinHandle<Result<Option<String>, String>>> = Vec::new();
     // [M13.2.1] Pause state. Когда `paused=true`:
     //   - RMS samples всё ещё консумируются (sidecar v1 пишет фреймы во время
     //     pause), но НЕ push'атся в `detector` — иначе пауза > silence_min
@@ -200,22 +215,14 @@ where
                     .unwrap_or(0);
                 let chunk_end_ms = chunk_start_ms + duration_ms;
                 let closed_idx = chunk_idx;
-                let prev = prev_transcript_tail.clone();
 
-                // Запустить pipeline для completed chunk'а. Sequential для Phase
-                // 1 simplicity — Phase 2 переключит на parallel spawn.
-                match enqueue_fn(closed_idx, chunk_start_ms, chunk_end_ms, prev).await {
-                    Ok(tail) => {
-                        prev_transcript_tail = tail;
-                        summary.chunks_completed += 1;
-                    }
-                    Err(e) => {
-                        log::warn!("chunk_orchestrator enqueue chunk {closed_idx}: {e}");
-                        summary.enqueue_errors += 1;
-                        // prev_transcript_tail не обновляем — next chunk
-                        // получит prompt от последнего successful chunk'а.
-                    }
-                }
+                // [M13.2.2] Spawn enqueue_fn в отдельный task — chunk N STT идёт
+                // параллельно с записью chunk N+1. prev_prompt всегда None в
+                // parallel mode (cross-chunk prompt chain trade-off, см.
+                // module doc-comment).
+                let fut = enqueue_fn(closed_idx, chunk_start_ms, chunk_end_ms, None);
+                let handle = tokio::spawn(fut);
+                pending_handles.push(handle);
 
                 chunk_idx += 1;
                 chunk_start_ms = chunk_end_ms;
@@ -292,7 +299,46 @@ where
         }
     }
 
+    // [M13.2.2] Drain pending parallel enqueue tasks. Каждый — c timeout'ом
+    // на случай зависшего whisper-cli. Counters обновляются поштучно.
+    let drained = drain_pending(pending_handles, &mut summary).await;
+    if drained > 0 {
+        log::info!("chunk_orchestrator drained {drained} pending enqueue tasks");
+    }
+
     summary
+}
+
+/// [M13.2.2] Await каждого pending JoinHandle с per-task timeout'ом.
+/// Возвращает число drained handles (для логирования).
+async fn drain_pending(
+    handles: Vec<JoinHandle<Result<Option<String>, String>>>,
+    summary: &mut OrchestratorSummary,
+) -> usize {
+    let count = handles.len();
+    for handle in handles {
+        match tokio::time::timeout(DRAIN_TIMEOUT_PER_TASK, handle).await {
+            Ok(Ok(Ok(_tail))) => {
+                summary.chunks_completed += 1;
+            }
+            Ok(Ok(Err(e))) => {
+                log::warn!("chunk_orchestrator drain: enqueue task err: {e}");
+                summary.enqueue_errors += 1;
+            }
+            Ok(Err(join_err)) => {
+                log::warn!("chunk_orchestrator drain: task panicked / cancelled: {join_err}");
+                summary.enqueue_errors += 1;
+            }
+            Err(_) => {
+                log::warn!(
+                    "chunk_orchestrator drain: enqueue task timeout ({:?})",
+                    DRAIN_TIMEOUT_PER_TASK
+                );
+                summary.enqueue_errors += 1;
+            }
+        }
+    }
+    count
 }
 
 #[cfg(test)]
@@ -432,8 +478,11 @@ mod tests {
         assert!(prev.is_none());
     }
 
+    /// [M13.2.2] В parallel mode prev_prompt всегда `None` — cross-chunk
+    /// prompt chain trade-off (см. module doc-comment). Этот тест guards
+    /// что invariant соблюдается: оба chunk'а получают None.
     #[tokio::test]
-    async fn second_rotated_event_inherits_prev_prompt() {
+    async fn parallel_mode_never_passes_prev_prompt() {
         let (_rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(10);
         let (rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
         let (stop_tx, stop_rx) = oneshot::channel();
@@ -469,17 +518,71 @@ mod tests {
 
         let _ = stop_tx.send(());
         let summary = handle.await.unwrap();
+        // Оба chunk'а drained на stop → chunks_completed = 2.
         assert_eq!(summary.chunks_completed, 2);
 
         let calls_snap = calls.lock().unwrap().clone();
         assert_eq!(calls_snap.len(), 2);
-        // Chunk 0: prev=None, start=0, end=1000.
+        // Phase 2: оба получают prev=None (best-effort).
         assert_eq!(calls_snap[0].0, 0);
         assert!(calls_snap[0].3.is_none());
-        // Chunk 1: prev=Some("tail-0"), start=1000 (= end of chunk 0).
         assert_eq!(calls_snap[1].0, 1);
         assert_eq!(calls_snap[1].1, 1000);
-        assert_eq!(calls_snap[1].3.as_deref(), Some("tail-0"));
+        assert!(
+            calls_snap[1].3.is_none(),
+            "parallel mode не должен передавать prev_prompt"
+        );
+    }
+
+    /// [M13.2.2] 3 rotation events подряд → 3 enqueue tasks spawned →
+    /// drain'ятся на stop → все 3 counter'ятся.
+    #[tokio::test]
+    async fn parallel_spawn_drains_all_on_stop() {
+        let (_rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(10);
+        let (rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let rotate_count = Arc::new(AtomicU32::new(0));
+        let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
+
+        let handle = tokio::spawn(run(
+            test_config(),
+            rms_rx,
+            rotate_rx,
+            stop_rx,
+            pause_rx,
+            make_rotate_fn(rotate_count, rotated_back_tx, 0),
+            make_enqueue_fn(calls.clone(), "tail".into()),
+        ));
+
+        for dur in [1.0, 1.0, 1.0] {
+            rotate_tx
+                .send(serde_json::json!({
+                    "event": "rotated",
+                    "duration_sec": dur,
+                    "mic_bytes": 0,
+                    "system_bytes": 0,
+                }))
+                .await
+                .unwrap();
+        }
+        // Дать spawn'нутым task'ам шанс start'нуть до stop'а.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let _ = stop_tx.send(());
+        let summary = handle.await.unwrap();
+        assert_eq!(
+            summary.chunks_completed, 3,
+            "все 3 spawned task'а должны drain'нуться"
+        );
+        assert_eq!(summary.enqueue_errors, 0);
+        let calls_snap = calls.lock().unwrap().clone();
+        assert_eq!(calls_snap.len(), 3);
+        // chunk_idx 0, 1, 2 в порядке rotate events.
+        assert_eq!(calls_snap[0].0, 0);
+        assert_eq!(calls_snap[1].0, 1);
+        assert_eq!(calls_snap[2].0, 2);
     }
 
     #[tokio::test]

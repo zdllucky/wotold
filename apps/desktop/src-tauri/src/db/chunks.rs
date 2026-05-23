@@ -97,12 +97,19 @@ pub async fn mark_chunk_processing(
 }
 
 /// Транзишн `processing → done` + sets end_ms + transcript_json (+ optional
-/// system_transcript_json). После этого chunk_runner может извлечь
-/// tail-prompt для следующего чанка.
+/// system_transcript_json + optional embeddings_json). После этого
+/// chunk_runner может извлечь tail-prompt для следующего чанка.
 ///
 /// [M13.1.5d] `system_transcript_json` опционален: при degraded-ok сценарии
 /// (mic transcribed, system failed) сохраняем mic + NULL system. Assembly
 /// помечает такие chunks как «mic-only».
+///
+/// [M13.2.1] `embeddings_json` — сериализованный `HashMap<String, Vec<f32>>`
+/// per-speaker_tag cluster embeddings (mean-pooled WeSpeaker, L2-normalized).
+/// `None` для legacy pre-Phase 2 chunks; `Some("{}")` — Phase 2 chunk без
+/// real embeddings (voice-onnx feature off / model not downloaded). Phase 2
+/// assembly использует non-None embeddings для cross-chunk speaker
+/// re-clustering.
 pub async fn mark_chunk_done(
     pool: &SqlitePool,
     call_id: &str,
@@ -110,6 +117,7 @@ pub async fn mark_chunk_done(
     end_ms: u64,
     transcript_json: &str,
     system_transcript_json: Option<&str>,
+    embeddings_json: Option<&str>,
 ) -> Result<(), AppError> {
     let res = sqlx::query(
         "UPDATE call_chunks
@@ -117,6 +125,7 @@ pub async fn mark_chunk_done(
              end_ms = ?3,
              transcript_json = ?4,
              system_transcript_json = ?5,
+             embeddings_json = ?6,
              updated_at = CURRENT_TIMESTAMP
          WHERE call_id = ?1 AND chunk_idx = ?2 AND status = 'processing'",
     )
@@ -125,6 +134,7 @@ pub async fn mark_chunk_done(
     .bind(end_ms as i64)
     .bind(transcript_json)
     .bind(system_transcript_json)
+    .bind(embeddings_json)
     .execute(pool)
     .await
     .map_err(AppError::from)?;
@@ -266,9 +276,17 @@ mod tests {
         .await
         .unwrap();
         mark_chunk_processing(&test_db.pool, "c1", 0).await.unwrap();
-        mark_chunk_done(&test_db.pool, "c1", 0, 600_000, r#"{"segments":[]}"#, None)
-            .await
-            .unwrap();
+        mark_chunk_done(
+            &test_db.pool,
+            "c1",
+            0,
+            600_000,
+            r#"{"segments":[]}"#,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         let rows = list_chunks_by_call(&test_db.pool, "c1").await.unwrap();
         assert_eq!(rows[0].status, "done");
         assert_eq!(rows[0].end_ms, Some(600_000));
@@ -277,6 +295,7 @@ mod tests {
             Some(r#"{"segments":[]}"#)
         );
         assert!(rows[0].system_transcript_json.is_none());
+        assert!(rows[0].embeddings_json.is_none());
     }
 
     #[tokio::test]
@@ -301,6 +320,7 @@ mod tests {
             600_000,
             r#"{"mic":1}"#,
             Some(r#"{"sys":1}"#),
+            None,
         )
         .await
         .unwrap();
@@ -310,6 +330,37 @@ mod tests {
             rows[0].system_transcript_json.as_deref(),
             Some(r#"{"sys":1}"#)
         );
+    }
+
+    #[tokio::test]
+    async fn mark_done_persists_embeddings_json() {
+        let test_db = fresh_db().await;
+        insert_dummy_call(&test_db.pool, "c1").await;
+        insert_chunk(
+            &test_db.pool,
+            "c1",
+            0,
+            0,
+            &PathBuf::from("/m"),
+            &PathBuf::from("/s"),
+        )
+        .await
+        .unwrap();
+        mark_chunk_processing(&test_db.pool, "c1", 0).await.unwrap();
+        let emb = r#"{"speaker:0":[0.1,0.2,0.3]}"#;
+        mark_chunk_done(
+            &test_db.pool,
+            "c1",
+            0,
+            600_000,
+            r#"{"mic":1}"#,
+            None,
+            Some(emb),
+        )
+        .await
+        .unwrap();
+        let rows = list_chunks_by_call(&test_db.pool, "c1").await.unwrap();
+        assert_eq!(rows[0].embeddings_json.as_deref(), Some(emb));
     }
 
     #[tokio::test]
@@ -327,7 +378,7 @@ mod tests {
         .await
         .unwrap();
         // Skip processing — try done directly. Должно fail'нуться.
-        let res = mark_chunk_done(&test_db.pool, "c1", 0, 600_000, "{}", None).await;
+        let res = mark_chunk_done(&test_db.pool, "c1", 0, 600_000, "{}", None, None).await;
         assert!(res.is_err());
     }
 
