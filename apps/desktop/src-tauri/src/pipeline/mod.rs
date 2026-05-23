@@ -260,6 +260,10 @@ pub async fn regenerate_recap(
         device_id,
         provider_path: &s.provider_path,
         model_override: s.model_override(),
+        // [M14 T-02] cloud-managed = proxy auto-routes (Groq Llama 3.3 OR
+        // Anthropic Sonnet fallback). Не различаем поскольку proxy не
+        // возвращает per-call backend identifier.
+        engine_label: "cloud-managed",
     };
 
     match recap::run(pool, recap_ctx).await {
@@ -666,7 +670,12 @@ async fn run_local_inner(
     // Transcript.md обязан существовать — `stage_merge_artifacts` его пишет.
     // Если файл недоступен (race / disk issue), recap должен fail с явным
     // reason, а не silently дёрнуть LLM на пустом входе (получится пустой recap).
-    let llm_result = match tokio::fs::read_to_string(ctx.call_dir.join("transcript.md")).await {
+    let transcript_md_read = tokio::fs::read_to_string(ctx.call_dir.join("transcript.md")).await;
+    let transcript_for_evidence = transcript_md_read
+        .as_ref()
+        .map(|s| s.clone())
+        .unwrap_or_default();
+    let llm_result = match transcript_md_read {
         Ok(transcript_md) if !transcript_md.trim().is_empty() => {
             let llm = LocalLlamaProvider::for_preset(&ctx.app_data_dir, llm_id)
                 .with_app(app.clone())
@@ -689,8 +698,25 @@ async fn run_local_inner(
 
     match llm_result {
         Ok(json_value) => {
-            if let Err(e) =
-                recap::persist_recap_from_json(pool, &ctx.call_id, &ctx.call_dir, json_value).await
+            // [M14 T-02] persist_recap_from_json теперь требует engine_label +
+            // transcript_md (для evidence validator) + generation_ms (None
+            // на local path; в T-04+ доделаем).
+            let local_engine_label = match llm_id.as_str() {
+                id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
+                id if id.contains("3b") => "local-qwen-3b",
+                id if id.contains("7b") => "local-qwen-7b",
+                _ => "local-qwen",
+            };
+            if let Err(e) = recap::persist_recap_from_json(
+                pool,
+                &ctx.call_id,
+                &ctx.call_dir,
+                json_value,
+                local_engine_label,
+                &transcript_for_evidence,
+                None,
+            )
+            .await
             {
                 let _ = db::set_recap_failed_reason(
                     pool,
@@ -966,6 +992,8 @@ async fn stage_recap(
         device_id: &ctx.device_id,
         provider_path: &s.provider_path,
         model_override: s.model_override(),
+        // [M14 T-02] Proxy auto-picks Groq/Anthropic; не различаем здесь.
+        engine_label: "cloud-managed",
     };
     match recap::run(pool, recap_ctx).await {
         Ok(()) => {

@@ -637,8 +637,8 @@
 - [x] **TS contracts** ([packages/contracts/src/summary_v2.ts](../packages/contracts/src/summary_v2.ts)) — mirror Rust types + `CALL_TYPES`, `ACTION_ITEM_CATEGORIES` constants.
 - [x] **Validator** ([pipeline/summary_validator.rs](../apps/desktop/src-tauri/src/pipeline/summary_validator.rs)) — `substring_fuzzy_score` (sliding-window Levenshtein, normalize lowercase+collapse-ws), `verify_evidence_quotes` (≥ 0.9 threshold), `strip_unverified_evidence` (drop-on-fail), `validate_schema` (confidence ranges + key_points len 3..7), `dedup_items` (Jaccard token overlap ≥ 0.7). 15 unit-тестов.
 
-### Pipeline (T-02..T-10) — deferred
-- [ ] T-02 cloud schema-v2 prompts (Groq Llama 3.3 → возможен add xAI Grok later).
+### Pipeline (T-02..T-10) — partial
+- [x] **T-02 cloud schema-v2 prompts + persist + extended recap.md** — recap.rs heavy rewrite: новый PRD §5.1 cloud_universal system prompt (8 call types, ABSOLUTE RULES, TYPE GUIDE с MoM sections, evidence quote rules); v2 parse с graceful v1 fallback через `promote_legacy_to_v2`; validator pass (substring fuzzy ≥ 0.9, dedup, schema warn); persist через новые DB модули (`db::decisions`, `db::open_questions`, `db::set_summary_metadata`); action_items extended с v2 fields (owner_confidence, due_confidence, category, evidence_*); recap.md теперь содержит ## Решения / ## Открытые вопросы / ## Задачи с category emoji prefix + evidence blockquotes (ru/en/kk localized via `summary.language`). Cloud LLM остаётся Groq Llama 3.3 70B / Anthropic Sonnet 4. UI остаётся legacy markdown render (T-11 deferred). 12 new unit-tests в recap.rs.
 - [ ] T-04 local classifier (Qwen 1.5B/3B/7B через llama-cli sidecar).
 - [ ] T-05 chunker (topic-tile + speaker-turn boundary).
 - [ ] T-06 map-reduce orchestrator для long calls.

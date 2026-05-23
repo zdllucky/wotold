@@ -1,11 +1,23 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::{
-    db::{self, ActionItemInput},
+    db::{
+        self,
+        decisions::{replace_decisions, DecisionInput},
+        open_questions::{replace_open_questions, OpenQuestionInput},
+        ActionItemInput,
+    },
+    pipeline::{
+        summary_v2::{ActionItemCategory, CallSummaryV2, CallType},
+        summary_validator::{
+            self, strip_unverified_evidence, validate_schema, DEFAULT_FUZZY_THRESHOLD,
+        },
+    },
     providers::{
         llm::{AnthropicProvider, LlmProvider, LlmRequest},
         ProviderMode,
@@ -69,6 +81,10 @@ pub struct RecapCtx<'a> {
     pub device_id: &'a Arc<str>,
     pub provider_path: &'a str,
     pub model_override: Option<&'a str>,
+    /// [M14 T-02] Engine label сохраняется в `calls.summary_engine`.
+    /// `cloud-managed` для proxy path; локальный путь будет выставлять
+    /// `local-qwen-{1.5b|3b|7b}` в T-04..T-10.
+    pub engine_label: &'a str,
 }
 
 /// Генерирует recap.md и action_items по уже сохранённому transcript.md.
@@ -108,32 +124,159 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
         max_tokens: Some(4096),
     };
 
+    let started = Instant::now();
     let json_value = provider
         .generate(request)
         .await
         .map_err(|e| AppError::Other(format!("llm: {e}")))?;
+    let generation_ms = started.elapsed().as_millis() as i64;
 
-    persist_recap_from_json(pool, ctx.call_id, ctx.call_dir, json_value).await
+    persist_recap_from_json(
+        pool,
+        ctx.call_id,
+        ctx.call_dir,
+        json_value,
+        ctx.engine_label,
+        ctx.transcript_md,
+        Some(generation_ms),
+    )
+    .await
 }
 
-/// [M12.6 Phase 3] Извлечь action_items + title + recap.md из готового JSON.
-/// Используется обоими LLM-путями (Anthropic через proxy + LocalLlamaProvider)
-/// чтобы post-processing был идентичный. Cloud path вызывает после
-/// `provider.generate()`, local path — из `pipeline::run_local_inner`.
+/// [M12.6 Phase 3 / M14 T-02] Извлечь action_items, decisions, open_questions,
+/// metadata, recap.md из готового JSON. Используется обоими LLM-путями
+/// (cloud через proxy и LocalLlamaProvider).
+///
+/// Schema versioning (M14): пытаемся parse как `CallSummaryV2` (с
+/// `schema_version: 2`). При failure — fallback на legacy `RecapJson` v1
+/// плюс promote → CallSummaryV2 (без decisions/open_questions, call_type=other,
+/// без evidence). Единый persist path — DB rows для decisions/open_questions
+/// tables, summary metadata, расширенный recap.md.
+///
+/// **Validator** (M14 T-02): после parse'а вызывается
+/// `strip_unverified_evidence` — items с evidence quote не verbatim в
+/// transcript отбрасываются (не fail всей summary). Degraded ok с telemetry.
 pub async fn persist_recap_from_json(
     pool: &SqlitePool,
     call_id: &str,
     call_dir: &Path,
     json_value: serde_json::Value,
+    engine_label: &str,
+    transcript_md: &str,
+    generation_ms: Option<i64>,
 ) -> Result<(), AppError> {
-    let recap: RecapJson = serde_json::from_value(json_value)
-        .map_err(|e| AppError::Other(format!("recap JSON shape: {e}")))?;
+    let summary = parse_summary_v2_or_promote_legacy(json_value, call_id)?;
+    persist_summary_v2(
+        pool,
+        call_id,
+        call_dir,
+        summary,
+        engine_label,
+        transcript_md,
+        generation_ms,
+    )
+    .await
+}
 
-    // Маппим owner_hint → contact_id через простой case-insensitive substring
-    // match по display_name. Не нашли — оставляем текстом, M3 (matching)
-    // улучшит точность.
+/// [M14 T-02] Parse JSON value either as CallSummaryV2 (schema_version=2)
+/// или fall back to legacy RecapJson v1 + promote to v2 envelope.
+fn parse_summary_v2_or_promote_legacy(
+    json_value: serde_json::Value,
+    call_id: &str,
+) -> Result<CallSummaryV2, AppError> {
+    // [M14 T-02] Try v2 first.
+    match serde_json::from_value::<CallSummaryV2>(json_value.clone()) {
+        Ok(s) if s.schema_version == 2 => Ok(s),
+        Ok(_) | Err(_) => {
+            // Fallback: parse v1 + promote.
+            let legacy: RecapJson = serde_json::from_value(json_value).map_err(|e| {
+                AppError::Other(format!("recap {call_id} JSON shape (v1+v2 failed): {e}"))
+            })?;
+            log::info!(
+                "recap {call_id}: v1 legacy JSON detected, promoting to v2 envelope (no decisions/open_questions/evidence)"
+            );
+            Ok(promote_legacy_to_v2(legacy))
+        }
+    }
+}
+
+/// Конвертирует legacy RecapJson в CallSummaryV2 envelope. Опускаемые поля
+/// (decisions, open_questions, evidence) — пустые/None. call_type=Other.
+fn promote_legacy_to_v2(legacy: RecapJson) -> CallSummaryV2 {
+    use crate::pipeline::summary_v2::{ActionItemV2, ParticipantV2};
+    let action_items = legacy
+        .action_items
+        .into_iter()
+        .enumerate()
+        .map(|(i, a)| ActionItemV2 {
+            id: format!("legacy-{i}"),
+            text: a.text,
+            owner_hint: a.owner_hint,
+            owner_confidence: None,
+            due: a.due,
+            due_confidence: None,
+            category: ActionItemCategory::Commitment,
+            evidence: None,
+        })
+        .collect();
+    let participants = legacy
+        .participants
+        .into_iter()
+        .map(|p| ParticipantV2 {
+            speaker_tag: p.speaker_tag,
+            display_name: p.display_name,
+            role_hint: None,
+        })
+        .collect();
+    CallSummaryV2 {
+        schema_version: 2,
+        title: legacy.title,
+        summary: legacy.summary,
+        key_points: legacy.key_points,
+        mom: legacy.mom,
+        language: String::new(),
+        call_type: CallType::Other,
+        call_type_confidence: 0.0,
+        participants,
+        action_items,
+        decisions: Vec::new(),
+        open_questions: Vec::new(),
+        type_specific_block: None,
+    }
+}
+
+/// [M14 T-02] Единый persist путь для CallSummaryV2 — applies validator,
+/// пишет action_items + decisions + open_questions + summary metadata в DB +
+/// расширенный recap.md на диск.
+async fn persist_summary_v2(
+    pool: &SqlitePool,
+    call_id: &str,
+    call_dir: &Path,
+    summary: CallSummaryV2,
+    engine_label: &str,
+    transcript_md: &str,
+    generation_ms: Option<i64>,
+) -> Result<(), AppError> {
+    // 1. Strip unverified evidence — drops items с фабрикованными quotes.
+    let (mut summary, dropped) =
+        strip_unverified_evidence(summary, transcript_md, DEFAULT_FUZZY_THRESHOLD);
+    if dropped > 0 {
+        log::info!("recap {call_id}: validator dropped {dropped} items с unverified evidence");
+    }
+    // Dedup duplicates (same intent в разных chunk'ах).
+    summary_validator::dedup_items(&mut summary);
+    // Schema warnings — non-fatal, log only.
+    let schema_errors = validate_schema(&summary);
+    if !schema_errors.is_empty() {
+        log::warn!(
+            "recap {call_id}: {} schema validation warnings (degraded ok)",
+            schema_errors.len()
+        );
+    }
+
+    // 2. Action items с v2 enrichment.
     let contacts = db::list_contacts(pool).await?;
-    let action_inputs: Vec<ActionItemInput> = recap
+    let action_inputs: Vec<ActionItemInput> = summary
         .action_items
         .iter()
         .map(|ai| {
@@ -145,19 +288,75 @@ pub async fn persist_recap_from_json(
                 text: ai.text.clone(),
                 owner_contact_id,
                 due: ai.due.clone(),
+                owner_confidence: ai.owner_confidence.map(f64::from),
+                due_confidence: ai.due_confidence.map(f64::from),
+                category: Some(ai.category.as_str().to_string()),
+                evidence_quote: ai.evidence.as_ref().map(|e| e.quote.clone()),
+                evidence_speaker: ai.evidence.as_ref().and_then(|e| e.speaker.clone()),
+                evidence_start_ms: ai.evidence.as_ref().and_then(|e| e.start_ms),
             }
         })
         .collect();
-
     db::replace_action_items(pool, call_id, &action_inputs).await?;
 
-    // [B17 V4.0] Persist generated title в calls.title. Игнорируем пустой
-    // (LLM мог не вытянуть осмысленный headline) — fallback на дату в UI.
-    if !recap.title.trim().is_empty() {
-        db::set_call_title(pool, call_id, &recap.title).await?;
+    // 3. Decisions table.
+    let decision_inputs: Vec<DecisionInput> = summary
+        .decisions
+        .iter()
+        .map(|d| DecisionInput {
+            text: d.text.clone(),
+            evidence_quote: d.evidence.as_ref().map(|e| e.quote.clone()),
+            evidence_speaker: d.evidence.as_ref().and_then(|e| e.speaker.clone()),
+            evidence_start_ms: d.evidence.as_ref().and_then(|e| e.start_ms),
+            evidence_end_ms: d.evidence.as_ref().and_then(|e| e.end_ms),
+            confidence: d.confidence.map(f64::from),
+        })
+        .collect();
+    replace_decisions(pool, call_id, &decision_inputs).await?;
+
+    // 4. Open questions table.
+    let oq_inputs: Vec<OpenQuestionInput> = summary
+        .open_questions
+        .iter()
+        .map(|q| OpenQuestionInput {
+            text: q.text.clone(),
+            raised_by: q.raised_by.clone(),
+            evidence_quote: q.evidence.as_ref().map(|e| e.quote.clone()),
+            evidence_speaker: q.evidence.as_ref().and_then(|e| e.speaker.clone()),
+            evidence_start_ms: q.evidence.as_ref().and_then(|e| e.start_ms),
+        })
+        .collect();
+    replace_open_questions(pool, call_id, &oq_inputs).await?;
+
+    // 5. calls.title.
+    if !summary.title.trim().is_empty() {
+        db::set_call_title(pool, call_id, &summary.title).await?;
     }
 
-    let md = render_recap_md(&recap, &contacts, &action_inputs);
+    // 6. calls metadata (engine, schema_version, call_type, generation_ms, …).
+    let type_specific_block_json: Option<String> = summary
+        .type_specific_block
+        .as_ref()
+        .and_then(|v| serde_json::to_string(v).ok());
+    db::set_summary_metadata(
+        pool,
+        call_id,
+        db::SummaryMetadata {
+            engine: engine_label,
+            schema_version: 2,
+            call_type: Some(summary.call_type.as_str()),
+            call_type_confidence: Some(summary.call_type_confidence),
+            pipeline_mode: "one_shot",
+            generation_ms,
+            input_tokens: None,
+            output_tokens: None,
+            type_specific_block_json: type_specific_block_json.as_deref(),
+        },
+    )
+    .await?;
+
+    // 7. Extended recap.md (## Decisions + ## Open Questions если non-empty).
+    let md = render_recap_md_v2(&summary, &contacts, &action_inputs);
     tokio::fs::write(call_dir.join("recap.md"), md).await?;
 
     Ok(())
@@ -193,52 +392,96 @@ pub(crate) fn build_system_prompt(
         .map(|s| format!("\n\n## Known participants\n{s}"))
         .unwrap_or_default();
 
-    // Промпт ответственно конкретный: запрет на 'Speaker N' в выходном тексте,
-    // структурированный MoM, концентрация на фактах/решениях, без воды.
+    // [M14 T-02] V2 cloud_universal prompt — type-driven evidence-grounded
+    // structured output. PRD §5.1. Cloud путь (Groq Llama 3.3 70B + Anthropic
+    // backup) выдаёт CallSummaryV2 schema; backend парсит + validator drops
+    // unverified evidence + persist в DB.
     format!(
-        "You are a senior meeting recap assistant for business calls. Output language: {lang}.\n\
+        "You are a senior meeting analyst for Wotold, a corporate call recording tool. Your job: produce a faithful, evidence-grounded JSON summary of a meeting transcript. Output language: {lang}.\n\
 \n\
-Read the diarized transcript and produce ONE valid JSON object (NO markdown fences, NO commentary, NO trailing text). Schema (strict):\n\
+## ABSOLUTE RULES (violations are bugs)\n\
+\n\
+1. NEVER invent facts, names, dates, numbers, or commitments not present in the transcript.\n\
+2. Every `action_items[i]`, `decisions[i]`, `open_questions[i]` SHOULD include `evidence.quote` — a verbatim substring (10-200 chars) copied from the transcript. If you cannot find a verbatim anchor, OMIT the item rather than fabricate.\n\
+3. Owner attribution: only assign an owner if the transcript shows them explicitly accepting the task ('I'll do it', 'я возьму', 'I will take that'). Mere mention of a name is NOT enough. Set `owner_confidence`: 0.9+ only for explicit accept; 0.5 for inferred; 0.0 if no owner.\n\
+4. Categorize each action_item:\n\
+   - `commitment` — explicit accept ('я сделаю', 'I'll send it')\n\
+   - `proposal` — suggested но не accepted\n\
+   - `idea` — raised, no clear action\n\
+5. Output ONLY ONE JSON object matching the schema. No prose, no markdown fences, no explanation.\n\
+6. NEVER use raw 'Speaker 0', 'Speaker 1', 'owner' tags inside `summary`/`key_points`/`mom`/`action_items.text`. Resolve to names via:\n\
+   (a) Known participants block — exact name.\n\
+   (b) Self-introduction in transcript.\n\
+   (c) Generic role: 'клиент', 'представитель вендора', 'коллега'. NEVER 'Спикер 1'.\n\
+\n\
+## OUTPUT SCHEMA (strict)\n\
+\n\
 {{\n\
-  \"version\": 1,\n\
-  \"title\": string,                                                        // 3-7 СЛОВ. Headline-style заголовок звонка. Конкретика, без префиксов 'Звонок про'/'Встреча с'. Пример: 'Лонч в августе — Марина', 'Демо НовоСтор', 'Бэйкап Gladia для диаризации'. Используется как title в архиве + в шапке деталей.\n\
-  \"summary\": string,                                                      // 1-2 предложения. Бизнес-тон. Конкретика: что обсуждали, кто участвовал, главный итог.\n\
-  \"key_points\": string[],                                                 // 3-7 пунктов. Каждый — самодостаточный факт/решение/блокер. Без общих слов 'обсудили статус'.\n\
-  \"mom\": string (Markdown),                                               // Структурированные минуты. Заголовки см. ниже.\n\
-  \"action_items\": [{{ \"text\": string, \"owner_hint\": string|null, \"due\": string|null }}],\n\
-  \"participants\": [{{ \"speaker_tag\": string, \"display_name\": string|null }}]\n\
+  \"schema_version\": 2,\n\
+  \"title\": string,                              // 3-7 слов, headline-style. Конкретика, без 'Звонок про'. Пример: 'Лонч в августе — Марина'.\n\
+  \"summary\": string,                            // 1-2 предложения TL;DR.\n\
+  \"key_points\": string[],                       // 3-7 пунктов. Конкретные факты с цифрами/датами/решениями.\n\
+  \"language\": \"ru\" | \"en\" | \"kk\" | \"mixed\",\n\
+  \"call_type\": one of:\n\
+    'sales_discovery' | 'sales_demo' | 'product_sync' | 'standup' |\n\
+    'customer_interview' | 'one_on_one' | 'strategy_brainstorm' | 'status_update' | 'other'\n\
+  \"call_type_confidence\": number (0..1),\n\
+  \"participants\": [{{ \"speaker_tag\": string, \"display_name\": string|null, \"role_hint\": string|null }}],\n\
+  \"action_items\": [{{\n\
+    \"id\": string (короткий unique slug),\n\
+    \"text\": string (инфинитив, без префикса '<кто> —'),\n\
+    \"owner_hint\": string|null,\n\
+    \"owner_confidence\": number (0..1),\n\
+    \"due\": string|null (ISO date YYYY-MM-DD или человеческое 'к концу недели'),\n\
+    \"due_confidence\": number (0..1),\n\
+    \"category\": \"commitment\" | \"proposal\" | \"idea\",\n\
+    \"evidence\": {{ \"quote\": string|null, \"speaker\": string|null }}\n\
+  }}],\n\
+  \"decisions\": [{{\n\
+    \"id\": string,\n\
+    \"text\": string,                            // Чёткое решение принятое в звонке\n\
+    \"evidence\": {{ \"quote\": string|null, \"speaker\": string|null }},\n\
+    \"confidence\": number (0..1)\n\
+  }}],\n\
+  \"open_questions\": [{{\n\
+    \"id\": string,\n\
+    \"text\": string,                            // Нерешённый вопрос поднятый в звонке\n\
+    \"raised_by\": string|null,\n\
+    \"evidence\": {{ \"quote\": string|null, \"speaker\": string|null }}\n\
+  }}],\n\
+  \"mom\": string (Markdown — структура по call_type — см. TYPE GUIDE),\n\
+  \"type_specific_block\": object|null           // Per call_type — см. TYPE GUIDE\n\
 }}\n\
 \n\
-## Rules\n\
+## TYPE GUIDE\n\
 \n\
-1. **NEVER use raw 'Speaker 0', 'Speaker 1', 'owner' tags in `summary`, `key_points`, `mom`, or `action_items.text`.**\n\
-   Resolve each speaker to a name using this priority:\n\
-   (a) Known participants block below — use the exact name there.\n\
-   (b) If the speaker introduces themselves or is addressed by name in the transcript ('это Анель', 'Иван, что думаешь') — extract that name and use it consistently for that speaker_tag.\n\
-   (c) Otherwise use a generic role grounded in context: 'представитель вендора', 'клиент', 'коллега', 'участник со стороны заказчика'. NEVER 'Спикер 1' — bezлично, но человечно.\n\
-   `owner` tag = it's the user himself; refer as 'я' / 'пользователь' / by name if known.\n\
+- **sales_discovery**: rep + prospect. MoM headers: ## Customer pain / ## Stakeholders / ## Budget signals / ## Next steps. type_specific_block: {{ \"pain_points\": string[], \"current_solution\": string|null, \"budget_signal\": string|null, \"decision_makers\": [{{\"name\":string,\"role\":string|null,\"stance\":\"champion\"|\"neutral\"|\"blocker\"|\"unknown\"}}], \"timeline_hint\": string|null }}\n\
+- **sales_demo**: rep walks product. MoM: ## Demo flow / ## Objections / ## Buying signals / ## Follow-up commitments. type_specific_block: {{ \"objections\": [{{\"raised\":string,\"resolved\":bool}}], \"buying_signals\": string[] }}\n\
+- **product_sync**: internal team. MoM: ## Progress / ## Blockers / ## Decisions / ## Next milestones. type_specific_block: {{ \"blockers\": string[], \"milestones\": [{{\"name\":string,\"target\":string}}] }}\n\
+- **standup**: short rotating updates. MoM: ## Yesterday / ## Today / ## Blockers. type_specific_block: {{ \"per_person\": [{{\"speaker\":string,\"yesterday\":string,\"today\":string,\"blockers\":string|null}}] }}\n\
+- **customer_interview**: user research. MoM: ## Job to be done / ## Current workflow / ## Pain quotes / ## Feature requests. type_specific_block: {{ \"jtbd\": string|null, \"pain_quotes\": [{{\"quote\":string,\"speaker\":string}}] }}\n\
+- **one_on_one** (PRIVACY-SENSITIVE): manager 1:1. MoM: ## Wins / ## Challenges / ## Feedback / ## Career. **PRIVACY:** do NOT include verbatim personal feedback в `evidence.quote` — paraphrase + evidence=null. action_items ТОЛЬКО work commitments. type_specific_block: {{ \"topics_discussed\": string[] (≤5), \"follow_ups_committed\": string[] }}\n\
+- **strategy_brainstorm**: open ideation. MoM: ## Ideas / ## Top picks / ## Open questions / ## Owners. type_specific_block: {{ \"ideas\": [{{\"text\":string,\"votes\":number|null}}] }}\n\
+- **status_update**: workstream reporting. MoM: ## Status by workstream / ## Risks / ## Asks. type_specific_block: {{ \"workstreams\": [{{\"name\":string,\"status\":\"green\"|\"yellow\"|\"red\",\"note\":string}}] }}\n\
+- **other**: doesn't fit. MoM: ## Контекст / ## Обсудили / ## Решения / ## Дальнейшие шаги. type_specific_block: null.\n\
 \n\
-2. **`action_items` must be actionable and concrete.** Skip vague filler like 'подумать', 'обсудить ещё раз'. Format:\n\
-   - `text`: чёткая формулировка задачи в инфинитиве ('Прислать SOW', 'Подписать NDA до пятницы'). Без префикса '<кто> — '.\n\
-   - `owner_hint`: имя ответственного из транскрипта или Known participants. `null` если не упомянут или ambiguous. **Не пиши 'Speaker 0 или Анель' в hint** — выбирай одно, либо null.\n\
-   - `due`: ISO date YYYY-MM-DD если конкретная дата ('к 30 мая' → '2026-05-30' предполагая текущий год); строка 'к {{день недели}}' / 'к концу недели' если относительная; `null` если без дедлайна.\n\
+## LANGUAGE & FORMATTING\n\
 \n\
-3. **`mom` (Markdown)** — структура с H2-заголовками. Опускай секцию если в транскрипте нет данных по ней (не пиши 'не обсуждалось'):\n\
-   - `## Контекст` — что за встреча, цель (если упомянута).\n\
-   - `## Обсудили` — основные темы списком, по факту.\n\
-   - `## Решения` — что договорились / approved списком.\n\
-   - `## Блокеры` — проблемы/риски/неясности.\n\
-   - `## Дальнейшие шаги` — follow-ups (overlap с action_items это OK, тут короче).\n\
+- Detect dominant language of transcript. Output ALL string fields (title, summary, key_points, mom, action_items.text, decisions.text, open_questions.text) в этом языке.\n\
+- `call_type` и `category` enum values остаются английскими (snake_case).\n\
+- Mixed ru/en → respond в dominant + English tech terms as-is.\n\
 \n\
-4. **`participants`**:\n\
-   - `speaker_tag`: точное значение из транскрипта без модификаций ('owner', 'Speaker 0', и т.п.).\n\
-   - `display_name`: имя из Known participants → или из контекста транскрипта → или `null`. **НЕ ДУБЛИРУЙ speaker_tag в display_name.**\n\
+## EVIDENCE QUOTE RULES\n\
 \n\
-5. **`key_points`** — 3-7 пунктов. Каждый — конкретный факт с цифрой/датой/именем/решением. Не «обсудили вопрос», а «решили перенести релиз на 2 недели».\n\
+- Verbatim substring of transcript. Preserve original language + casing + punctuation.\n\
+- 10-200 characters length.\n\
+- `evidence.speaker` отдельно (raw speaker_tag from transcript).\n\
+- Если нет верifiable anchor → `evidence.quote = null` (backend drop'нет item).\n\
 \n\
-6. **`summary`** — TL;DR в 1-2 предложениях. Кто/что/итог. Без длинных списков.\n\
+## EDGE CASES\n\
 \n\
-7. **Короткий транскрипт (<5 реплик)** — рекап короткий, не выдумывай содержание. Если транскрипт не несёт смысла (пустой/мусор) — `summary` = 'Запись не содержит обсуждения по существу.' и пустые arrays.{known_block}",
+- Короткий транскрипт (<5 реплик) или пустой → `summary` = 'Запись не содержит обсуждения по существу.' + empty arrays + call_type=other.\n\
+- Если transcript на kk: используй kazakh terms, keep technical English as-is.{known_block}",
     )
 }
 
@@ -289,79 +532,141 @@ pub(crate) async fn build_known_speakers_block(
     Ok(Some(lines.join("\n")))
 }
 
-fn render_recap_md(
-    recap: &RecapJson,
+/// [M14 T-02] Расширенный render для CallSummaryV2 — добавляет
+/// ## Решения / Decisions + ## Открытые вопросы / Open questions секции
+/// + category badges + evidence quotes как blockquotes.
+///
+/// Localization: labels подбираются по `summary.language` (ru/en/kk → ru/en/kk
+/// localized; иначе ru fallback).
+fn render_recap_md_v2(
+    summary: &CallSummaryV2,
     contacts: &[db::Contact],
     action_inputs: &[ActionItemInput],
 ) -> String {
+    let labels = RecapLabels::for_lang(&summary.language);
     let mut out = String::new();
-    out.push_str("# Рекап\n\n");
+    out.push_str(&format!("# {}\n\n", labels.title));
 
-    if !recap.summary.is_empty() {
-        out.push_str(recap.summary.trim());
+    if !summary.summary.is_empty() {
+        out.push_str(summary.summary.trim());
         out.push_str("\n\n");
     }
 
-    if !recap.key_points.is_empty() {
-        out.push_str("## Ключевое\n\n");
-        for kp in &recap.key_points {
+    if !summary.key_points.is_empty() {
+        out.push_str(&format!("## {}\n\n", labels.key_points));
+        for kp in &summary.key_points {
             out.push_str(&format!("- {}\n", kp.trim()));
         }
         out.push('\n');
     }
 
-    if !recap.mom.is_empty() {
-        // mom уже содержит ## Контекст / ## Обсудили / ## Решения / ## Блокеры / ## Дальнейшие шаги
-        // от LLM — не оборачиваем в свою секцию, чтобы H2 LLM был верхним уровнем.
-        out.push_str(recap.mom.trim());
-        out.push_str("\n\n");
-    }
-
-    if !action_inputs.is_empty() {
-        out.push_str("## Задачи\n\n");
-        for (i, ai) in action_inputs.iter().enumerate() {
-            let owner_label = ai
-                .owner_contact_id
-                .as_deref()
-                .and_then(|id| contacts.iter().find(|c| c.id == id))
-                .map(|c| c.display_name.clone())
-                .or_else(|| recap.action_items.get(i).and_then(|r| r.owner_hint.clone()));
-            let due_suffix = ai
-                .due
-                .as_deref()
-                .map(|d| format!(" — до {d}"))
-                .unwrap_or_default();
-            match owner_label {
-                Some(label) if !label.trim().is_empty() => {
-                    out.push_str(&format!(
-                        "- [ ] **{}** — {}{}\n",
-                        label.trim(),
-                        ai.text.trim(),
-                        due_suffix
-                    ));
-                }
-                _ => {
-                    out.push_str(&format!("- [ ] {}{}\n", ai.text.trim(), due_suffix));
+    // [M14 T-02] Decisions section.
+    if !summary.decisions.is_empty() {
+        out.push_str(&format!("## {}\n\n", labels.decisions));
+        for d in &summary.decisions {
+            out.push_str(&format!("- {}\n", d.text.trim()));
+            if let Some(ev) = d.evidence.as_ref() {
+                if !ev.quote.trim().is_empty() {
+                    out.push_str(&format!("  > {}\n", ev.quote.trim()));
                 }
             }
         }
         out.push('\n');
     }
 
-    if !recap.participants.is_empty() {
-        out.push_str("## Участники\n\n");
-        for p in &recap.participants {
+    // [M14 T-02] Open questions section.
+    if !summary.open_questions.is_empty() {
+        out.push_str(&format!("## {}\n\n", labels.open_questions));
+        for q in &summary.open_questions {
+            let by_suffix = q
+                .raised_by
+                .as_deref()
+                .map(|b| format!(" ({})", b.trim()))
+                .unwrap_or_default();
+            out.push_str(&format!("- {}{}\n", q.text.trim(), by_suffix));
+            if let Some(ev) = q.evidence.as_ref() {
+                if !ev.quote.trim().is_empty() {
+                    out.push_str(&format!("  > {}\n", ev.quote.trim()));
+                }
+            }
+        }
+        out.push('\n');
+    }
+
+    if !summary.mom.is_empty() {
+        out.push_str(summary.mom.trim());
+        out.push_str("\n\n");
+    }
+
+    if !action_inputs.is_empty() {
+        out.push_str(&format!("## {}\n\n", labels.tasks));
+        for (i, ai) in action_inputs.iter().enumerate() {
+            let owner_label = ai
+                .owner_contact_id
+                .as_deref()
+                .and_then(|id| contacts.iter().find(|c| c.id == id))
+                .map(|c| c.display_name.clone())
+                .or_else(|| {
+                    summary
+                        .action_items
+                        .get(i)
+                        .and_then(|r| r.owner_hint.clone())
+                });
+            let due_suffix = ai
+                .due
+                .as_deref()
+                .map(|d| format!(" — {} {d}", labels.until))
+                .unwrap_or_default();
+            let category_prefix = ai
+                .category
+                .as_deref()
+                .map(|c| match c {
+                    "commitment" => "✅ ",
+                    "proposal" => "💡 ",
+                    "idea" => "📝 ",
+                    _ => "",
+                })
+                .unwrap_or("");
+            match owner_label {
+                Some(label) if !label.trim().is_empty() => {
+                    out.push_str(&format!(
+                        "- [ ] {}**{}** — {}{}\n",
+                        category_prefix,
+                        label.trim(),
+                        ai.text.trim(),
+                        due_suffix
+                    ));
+                }
+                _ => {
+                    out.push_str(&format!(
+                        "- [ ] {}{}{}\n",
+                        category_prefix,
+                        ai.text.trim(),
+                        due_suffix
+                    ));
+                }
+            }
+            if let Some(ev) = ai.evidence_quote.as_deref() {
+                if !ev.trim().is_empty() {
+                    out.push_str(&format!("  > {}\n", ev.trim()));
+                }
+            }
+        }
+        out.push('\n');
+    }
+
+    if !summary.participants.is_empty() {
+        out.push_str(&format!("## {}\n\n", labels.participants));
+        for p in &summary.participants {
             let name = p
                 .display_name
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty());
             match name {
-                // Если имя есть — основное имя + тех. тег в скобках для следа.
                 Some(n) if n != p.speaker_tag => {
                     out.push_str(&format!("- {} (`{}`)\n", n, p.speaker_tag));
                 }
-                // Если имя совпадает с тегом или пусто — только тег, без дубля.
                 _ => {
                     out.push_str(&format!("- `{}`\n", p.speaker_tag));
                 }
@@ -371,6 +676,51 @@ fn render_recap_md(
     }
 
     out
+}
+
+/// Локализованные labels для секций recap.md. Lang detection из summary.language.
+struct RecapLabels {
+    title: &'static str,
+    key_points: &'static str,
+    decisions: &'static str,
+    open_questions: &'static str,
+    tasks: &'static str,
+    participants: &'static str,
+    until: &'static str,
+}
+
+impl RecapLabels {
+    fn for_lang(lang: &str) -> Self {
+        match lang {
+            "en" => Self {
+                title: "Recap",
+                key_points: "Key points",
+                decisions: "Decisions",
+                open_questions: "Open questions",
+                tasks: "Tasks",
+                participants: "Participants",
+                until: "by",
+            },
+            "kk" => Self {
+                title: "Қорытынды",
+                key_points: "Негізгі тармақтар",
+                decisions: "Шешімдер",
+                open_questions: "Ашық сұрақтар",
+                tasks: "Тапсырмалар",
+                participants: "Қатысушылар",
+                until: "мерзім:",
+            },
+            _ => Self {
+                title: "Рекап",
+                key_points: "Ключевое",
+                decisions: "Решения",
+                open_questions: "Открытые вопросы",
+                tasks: "Задачи",
+                participants: "Участники",
+                until: "до",
+            },
+        }
+    }
 }
 
 #[cfg(test)]
@@ -395,6 +745,7 @@ mod tests {
             device_id: &device,
             provider_path: "ghost-path",
             model_override: None,
+            engine_label: "test-engine",
         };
         let err = super::run(&db.pool, ctx).await.unwrap_err();
         assert!(
@@ -420,6 +771,7 @@ mod tests {
             device_id: &device,
             provider_path: "managed",
             model_override: None,
+            engine_label: "test-engine",
         };
         let err = super::run(&db.pool, ctx).await.unwrap_err();
         assert!(err.to_string().contains("Proxy URL"), "got: {err}");
@@ -479,38 +831,126 @@ mod tests {
         assert_eq!(match_contact_id(&contacts, "Carol"), None);
     }
 
-    #[test]
-    fn render_recap_md_skips_empty_sections() {
-        let recap = RecapJson {
-            version: Some(1),
+    /// [M14 T-02] Helper для построения minimal CallSummaryV2 в tests.
+    fn empty_summary_v2(lang: &str) -> CallSummaryV2 {
+        CallSummaryV2 {
+            schema_version: 2,
             title: String::new(),
-            summary: "Brief".into(),
+            summary: String::new(),
             key_points: vec![],
             mom: String::new(),
-            action_items: vec![],
+            language: lang.into(),
+            call_type: CallType::Other,
+            call_type_confidence: 0.0,
             participants: vec![],
-        };
-        let md = render_recap_md(&recap, &[], &[]);
+            action_items: vec![],
+            decisions: vec![],
+            open_questions: vec![],
+            type_specific_block: None,
+        }
+    }
+
+    #[test]
+    fn render_recap_md_v2_skips_empty_sections() {
+        let mut s = empty_summary_v2("ru");
+        s.summary = "Brief".into();
+        let md = render_recap_md_v2(&s, &[], &[]);
         assert!(md.contains("# Рекап"));
         assert!(md.contains("Brief"));
         assert!(!md.contains("## Ключевое"));
-        assert!(!md.contains("## "));
+        assert!(!md.contains("## Решения"));
+        assert!(!md.contains("## Открытые вопросы"));
         assert!(!md.contains("## Задачи"));
     }
 
     #[test]
-    fn render_recap_md_renders_action_items_with_owner_label() {
+    fn render_recap_md_v2_renders_action_items_with_owner_label() {
         let contacts = vec![contact("a", "Alice")];
-        let recap = RecapJson {
+        let mut s = empty_summary_v2("ru");
+        s.title = "Q3 plan review".into();
+        s.summary = "Discussed Q3.".into();
+        s.key_points = vec!["plan reviewed".into()];
+        s.action_items = vec![crate::pipeline::summary_v2::ActionItemV2 {
+            id: "ai-1".into(),
+            text: "send draft".into(),
+            owner_hint: Some("Alice".into()),
+            owner_confidence: Some(0.95),
+            due: Some("2026-06-01".into()),
+            due_confidence: Some(0.8),
+            category: ActionItemCategory::Commitment,
+            evidence: None,
+        }];
+        s.participants = vec![crate::pipeline::summary_v2::ParticipantV2 {
+            speaker_tag: "Speaker 0".into(),
+            display_name: Some("Alice".into()),
+            role_hint: None,
+        }];
+        let action_inputs = vec![ActionItemInput {
+            text: "send draft".into(),
+            owner_contact_id: Some("a".into()),
+            due: Some("2026-06-01".into()),
+            category: Some("commitment".into()),
+            ..Default::default()
+        }];
+        let md = render_recap_md_v2(&s, &contacts, &action_inputs);
+        assert!(md.contains("## Задачи"));
+        // [M14 T-02] category prefix "✅" prefix'ит owner label.
+        assert!(md.contains("✅ **Alice** — send draft — до 2026-06-01"));
+        assert!(md.contains("## Участники"));
+        assert!(md.contains("Alice (`Speaker 0`)"));
+    }
+
+    #[test]
+    fn render_recap_md_v2_includes_decisions_and_open_questions_sections() {
+        let mut s = empty_summary_v2("ru");
+        s.summary = "Brief".into();
+        s.decisions = vec![crate::pipeline::summary_v2::Decision {
+            id: "d1".into(),
+            text: "Lock enterprise tier at $499".into(),
+            evidence: Some(crate::pipeline::summary_v2::EvidenceAnchor {
+                quote: "we agreed on 499 dollars".into(),
+                speaker: Some("Alice".into()),
+                start_ms: None,
+                end_ms: None,
+            }),
+            confidence: Some(0.9),
+        }];
+        s.open_questions = vec![crate::pipeline::summary_v2::OpenQuestion {
+            id: "q1".into(),
+            text: "Should we offer a trial?".into(),
+            raised_by: Some("Bob".into()),
+            evidence: None,
+        }];
+        let md = render_recap_md_v2(&s, &[], &[]);
+        assert!(md.contains("## Решения"));
+        assert!(md.contains("Lock enterprise tier at $499"));
+        assert!(md.contains("> we agreed on 499 dollars"));
+        assert!(md.contains("## Открытые вопросы"));
+        assert!(md.contains("Should we offer a trial? (Bob)"));
+    }
+
+    #[test]
+    fn render_recap_md_v2_language_en_uses_english_labels() {
+        let mut s = empty_summary_v2("en");
+        s.summary = "Brief".into();
+        s.key_points = vec!["a".into(), "b".into(), "c".into()];
+        let md = render_recap_md_v2(&s, &[], &[]);
+        assert!(md.contains("# Recap"));
+        assert!(md.contains("## Key points"));
+    }
+
+    #[test]
+    fn promote_legacy_to_v2_produces_other_call_type() {
+        let legacy = RecapJson {
             version: Some(1),
-            title: "Q3 plan review".into(),
-            summary: "Discussed Q3.".into(),
-            key_points: vec!["plan reviewed".into()],
-            mom: String::new(),
+            title: "Sync".into(),
+            summary: "x".into(),
+            key_points: vec!["a".into()],
+            mom: "## A".into(),
             action_items: vec![RecapActionItem {
-                text: "send draft".into(),
+                text: "do thing".into(),
                 owner_hint: Some("Alice".into()),
-                due: Some("2026-06-01".into()),
+                due: None,
             }],
             participants: vec![RecapParticipant {
                 speaker_tag: "Speaker 0".into(),
@@ -518,15 +958,54 @@ mod tests {
                 contact_id: None,
             }],
         };
-        let action_inputs = vec![ActionItemInput {
-            text: "send draft".into(),
-            owner_contact_id: Some("a".into()),
-            due: Some("2026-06-01".into()),
-        }];
-        let md = render_recap_md(&recap, &contacts, &action_inputs);
-        assert!(md.contains("## Задачи"));
-        assert!(md.contains("**Alice** — send draft — до 2026-06-01"));
-        assert!(md.contains("## Участники"));
-        assert!(md.contains("Alice (`Speaker 0`)"));
+        let v2 = promote_legacy_to_v2(legacy);
+        assert_eq!(v2.schema_version, 2);
+        assert_eq!(v2.call_type, CallType::Other);
+        assert_eq!(v2.action_items.len(), 1);
+        assert_eq!(v2.action_items[0].category, ActionItemCategory::Commitment);
+        assert!(v2.decisions.is_empty());
+        assert!(v2.open_questions.is_empty());
+        // Title/summary/key_points/mom преобразуются 1-в-1.
+        assert_eq!(v2.title, "Sync");
+    }
+
+    #[tokio::test]
+    async fn parse_summary_v2_succeeds_on_v2_json() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "title": "Q3 sync",
+            "summary": "x",
+            "key_points": ["a", "b", "c"],
+            "mom": "## A",
+            "language": "en",
+            "call_type": "product_sync",
+            "call_type_confidence": 0.9,
+            "participants": [],
+            "action_items": [],
+            "decisions": [],
+            "open_questions": []
+        });
+        let parsed = parse_summary_v2_or_promote_legacy(json, "c1").unwrap();
+        assert_eq!(parsed.schema_version, 2);
+        assert_eq!(parsed.call_type, CallType::ProductSync);
+    }
+
+    #[tokio::test]
+    async fn parse_summary_v2_falls_back_to_legacy_on_v1_json() {
+        // V1 не имеет schema_version=2 → fallback на legacy promote.
+        let json = serde_json::json!({
+            "version": 1,
+            "title": "Old call",
+            "summary": "Brief",
+            "key_points": ["x"],
+            "mom": "## A",
+            "action_items": [{"text": "do thing", "owner_hint": null, "due": null}],
+            "participants": []
+        });
+        let parsed = parse_summary_v2_or_promote_legacy(json, "c1").unwrap();
+        assert_eq!(parsed.schema_version, 2);
+        assert_eq!(parsed.call_type, CallType::Other);
+        assert_eq!(parsed.title, "Old call");
+        assert_eq!(parsed.action_items.len(), 1);
     }
 }

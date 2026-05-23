@@ -13,6 +13,10 @@ mod calls;
 // pub(crate) чтобы pipeline::chunk_runner мог вызывать insert/mark/list.
 pub(crate) mod chunks;
 mod contacts;
+// [M14 T-02] Decisions / open_questions tables (migration 0015).
+// pub(crate) чтобы pipeline::recap мог replace на persist.
+pub(crate) mod decisions;
+pub(crate) mod open_questions;
 mod settings;
 // [Phase 3 R9] pub(crate) чтобы pipeline::voice_backfill мог вызывать
 // evict_old_voice_samples. Раньше backfill жил внутри db::set_call_speaker_cluster,
@@ -26,8 +30,8 @@ pub use calls::{
     fail_recording_with_reason, finish_recording, get_call, insert_recording,
     insert_speaker_suggestions, list_call_speakers, list_calls, mark_call_ready, pause_call,
     resume_call, set_call_meta, set_call_progress, set_call_speaker_cluster,
-    set_call_speaker_suggestion, set_call_title, set_recap_failed_reason, sweep_stale_calls,
-    unbind_call_speaker, Call, CallSpeakerView,
+    set_call_speaker_suggestion, set_call_title, set_recap_failed_reason, set_summary_metadata,
+    sweep_stale_calls, unbind_call_speaker, Call, CallSpeakerView, SummaryMetadata,
 };
 pub use contacts::{
     create_contact, delete_contact, ensure_owner_contact, list_contacts, rename_owner_contact,
