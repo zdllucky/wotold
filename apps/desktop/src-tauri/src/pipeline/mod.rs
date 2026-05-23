@@ -293,10 +293,28 @@ pub async fn regenerate_recap(
         .await
         .map_err(|e| AppError::Other(format!("transcript.md отсутствует: {e}")))?;
 
+    // [Bug-fix] Pre-clear stale recap_failed_reason — чтобы баннер с прошлой
+    // ошибкой не сбивал юзера с толку пока новая попытка идёт. Если новая
+    // попытка упадёт, ниже перезапишется свежим текстом (с актуальным engine).
+    let _ = db::set_recap_failed_reason(pool, call_id, None).await;
+
     // [Phase 2 R3] Typed settings — один read, typed fields, edge cases
     // (malformed threshold, empty proxy URL, "auto" lang) изолированы.
     let s = PipelineSettings::load(pool).await?;
     let effective_lang = s.effective_recap_lang(call.lang_detected.as_deref());
+
+    // [Bug-fix] Diagnostic — без этого лога невозможно понять какой движок
+    // на самом деле обслуживает regenerate. Юзер может видеть UI "Local"
+    // в Settings, но если PipelineSettings::load вернул CloudManaged
+    // (race condition или stale cache), regenerate уйдёт в cloud → 429.
+    log::info!(
+        "regenerate_recap dispatch: call_id={} engine={:?} provider_path={} model_override={:?} summary_v2={}",
+        call_id,
+        s.engine,
+        s.provider_path,
+        s.model_override(),
+        s.summary_v2_enabled,
+    );
 
     // [Bug-fix] Раньше regenerate_recap всегда шёл через cloud Anthropic,
     // игнорируя активный движок. Юзеры на local engine получали 429 от
@@ -405,6 +423,14 @@ async fn regenerate_recap_local(
         })?;
     let llm_id = preset.llm_model_id();
     let whisper_id = preset.whisper_model_id();
+
+    log::info!(
+        "regenerate_recap_local: call_id={} preset={:?} llm_id={} whisper_id={}",
+        call_id,
+        preset,
+        llm_id.as_str(),
+        whisper_id.as_str(),
+    );
 
     // Проверяем что LLM модель на диске + SHA OK (whisper для recap не нужен
     // но touch_usage обновим — пользователь может всё-таки запустить reprocess).
