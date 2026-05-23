@@ -9,11 +9,14 @@ import { MenuItem } from './MenuItem';
 interface HeaderActionsProps {
   onReprocess: () => void;
   onRegenerateRecap: () => void;
+  onRegenerateTitle: () => void;
   onExport: () => void;
   onDelete: () => void;
   reprocessing: boolean;
   regenerating: boolean;
   regenerateDisabled: boolean;
+  regeneratingTitle: boolean;
+  regenerateTitleDisabled: boolean;
   exporting: boolean;
   deleting: boolean;
 }
@@ -21,11 +24,14 @@ interface HeaderActionsProps {
 export function HeaderActions({
   onReprocess,
   onRegenerateRecap,
+  onRegenerateTitle,
   onExport,
   onDelete,
   reprocessing,
   regenerating,
   regenerateDisabled,
+  regeneratingTitle,
+  regenerateTitleDisabled,
   exporting,
   deleting,
 }: HeaderActionsProps) {
@@ -57,7 +63,7 @@ export function HeaderActions({
         aria-label={t('callDetail.actionsAria')}
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={reprocessing || deleting || exporting || regenerating}
+        disabled={reprocessing || deleting || exporting || regenerating || regeneratingTitle}
         style={{
           width: 32,
           height: 32,
@@ -97,7 +103,7 @@ export function HeaderActions({
               setOpen(false);
               onReprocess();
             }}
-            disabled={reprocessing || deleting || exporting || regenerating}
+            disabled={reprocessing || deleting || exporting || regenerating || regeneratingTitle}
           >
             {reprocessing ? t('callDetail.reprocessing') : t('callDetail.reprocess')}
           </MenuItem>
@@ -106,7 +112,14 @@ export function HeaderActions({
               setOpen(false);
               onRegenerateRecap();
             }}
-            disabled={regenerating || regenerateDisabled || reprocessing || deleting || exporting}
+            disabled={
+              regenerating ||
+              regenerateDisabled ||
+              reprocessing ||
+              deleting ||
+              exporting ||
+              regeneratingTitle
+            }
             title={regenerateDisabled ? t('callDetail.regenerateNoTranscript') : undefined}
           >
             {regenerating ? t('callDetail.regenerating') : t('callDetail.regenerateRecap')}
@@ -114,9 +127,32 @@ export function HeaderActions({
           <MenuItem
             onClick={() => {
               setOpen(false);
+              onRegenerateTitle();
+            }}
+            disabled={
+              regeneratingTitle ||
+              regenerateTitleDisabled ||
+              regenerating ||
+              reprocessing ||
+              deleting ||
+              exporting
+            }
+            title={
+              regenerateTitleDisabled
+                ? t('callDetail.regenerateTitleNoTranscript')
+                : undefined
+            }
+          >
+            {regeneratingTitle
+              ? t('callDetail.regeneratingTitle')
+              : t('callDetail.regenerateTitle')}
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
               onExport();
             }}
-            disabled={exporting || reprocessing || deleting || regenerating}
+            disabled={exporting || reprocessing || deleting || regenerating || regeneratingTitle}
           >
             {exporting ? t('callDetail.exporting') : t('callDetail.exportMd')}
           </MenuItem>

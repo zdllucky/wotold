@@ -193,6 +193,11 @@ const ruInternal = {
     regenerateRecap: '↻ Пересоздать саммари',
     regenerating: 'Пересоздаём…',
     regenerateNoTranscript: 'Нет транскрипта для регенерации',
+    // [M14 T-17] Title-only regen — отдельный lightweight LLM-call.
+    regenerateTitle: '↻ Пересоздать название',
+    regeneratingTitle: 'Пересоздаём название…',
+    regenerateTitleFailed: 'Не удалось пересоздать название: {error}',
+    regenerateTitleNoTranscript: 'Нет транскрипта для регенерации названия',
     exportMd: '↓ Скачать .md',
     exporting: 'Сохраняем…',
     exportTitle: 'Сохранить расшифровку звонка',

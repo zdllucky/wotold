@@ -656,7 +656,7 @@
 
 ### Backlog (T-16..T-18) — P2
 - [ ] T-16 speculative decoding (0.5B draft для 7B).
-- [ ] T-17 title regen trigger.
+- [x] **T-17 title regen trigger** — новая кнопка «↻ Пересоздать название» в `HeaderActions` kebab menu CallDetailPage. Lightweight LLM-call (~150 max_tokens, focused prompt только на title) через cloud `AnthropicProvider::Managed` (mirror `regenerate_recap` pattern). `pipeline/title_regen.rs` модуль: `build_title_prompt`, `extract_transcript_head` (UTF-8 safe), `parse_title_response` (fallback "Без названия" на garbage/empty), `regenerate_title()` (loads PipelineSettings → managed mode → LLM → `db::set_call_title` → return new title). NEW Tauri command `regenerate_title` зарегистрирован в `invoke_handler!`. Frontend: `regenerateTitle(callId)` TS API → CallDetailPage `onRegenerateTitle` handler с `regeneratingTitle` busy flag + shared disabled state в kebab → `refetchAll` после success. i18n ru/en/kk (`callDetail.regenerateTitle{Title,ing,Failed,NoTranscript}`). Cloud-only path; local engine support — backlog M14.6. 7 backend tests.
 - [ ] T-18 hierarchical pipeline (3-level) для 2h+ calls.
 
 ---

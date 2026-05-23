@@ -79,6 +79,11 @@ export function regenerateRecap(callId: string): Promise<void> {
   return invoke<void>('regenerate_recap', { callId });
 }
 
+/** [M14 T-17] Lightweight title-only regen. Returns new title (already persisted in DB). */
+export function regenerateTitle(callId: string): Promise<string> {
+  return invoke<string>('regenerate_title', { callId });
+}
+
 /** [B16]: путь к WAV-файлу звонка для аудиоплеера. */
 export function getCallAudioPath(callId: string, kind: 'mic' | 'system'): Promise<string> {
   return invoke<string>('get_call_audio_path', { callId, kind });
