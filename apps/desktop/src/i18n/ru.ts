@@ -337,6 +337,9 @@ const ruInternal = {
     one: 'участник',
     few: 'участника',
     many: 'участников',
+    // [Bug-fix] Anonymous chip — sortformer выделил голос, контакт не привязан.
+    anonymousLabel: 'Спикер {n}',
+    anonymousHint: 'Нажмите чтобы привязать к контакту',
   },
 
   // ── Audio scrubber ─────────────────────────────────────────────────────

@@ -311,6 +311,8 @@ export const en: TranslationStrings = {
     one: 'participant',
     few: 'participants',
     many: 'participants',
+    anonymousLabel: 'Speaker {n}',
+    anonymousHint: 'Click to bind to a contact',
   },
 
   scrubber: {

@@ -310,6 +310,8 @@ export const kk: TranslationStrings = {
     one: 'қатысушы',
     few: 'қатысушы',
     many: 'қатысушы',
+    anonymousLabel: '{n}-спикер',
+    anonymousHint: 'Контактқа байлау үшін басыңыз',
   },
 
   scrubber: {
