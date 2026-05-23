@@ -18,6 +18,7 @@ import {
   reprocessCall,
 } from '../api/calls';
 import { humanError } from '../api/errors';
+import { engineLabelHuman } from '../utils/engineLabel';
 import { Tabs } from '../ui';
 import {
   AutoBoundBanner,
@@ -175,6 +176,11 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const onRegenerateRecap = async () => {
     setRegenerating(true);
     setError(null);
+    // [Bug-fix] Optimistic clear stale recap_failed_reason — баннер исчезает
+    // сразу при клике, чтобы юзер не видел старую ошибку пока идёт новая
+    // попытка. Если новая попытка упадёт, refetchAll вернёт актуальный
+    // failed_reason (с свежим engine label).
+    setCall((prev) => (prev ? { ...prev, recap_failed_reason: null } : prev));
     try {
       await regenerateRecap(callId);
       // [M14 T-15] refetchAll вместо узкого recap+tasks. После legacy v1 →
@@ -368,6 +374,23 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         >
           <div className="small-caps" style={{ color: 'var(--warning)', marginBottom: 6 }}>
             {t('callDetail.recapFailBadge')}
+            {/* [Bug-fix] Engine label — показывает какой движок обслуживал
+                последнюю (упавшую) попытку. Помогает понять stale-cloud-error
+                vs свежее local-падение. */}
+            {(() => {
+              const eng = engineLabelHuman(call.summary_engine, {
+                cloud: t('callDetail.engineCloud'),
+                localLight: t('callDetail.engineLocalLight'),
+                localBalanced: t('callDetail.engineLocalBalanced'),
+                localQuality: t('callDetail.engineLocalQuality'),
+                localGeneric: t('callDetail.engineLocalGeneric'),
+              });
+              return eng ? (
+                <span className="muted" style={{ marginLeft: 8, fontSize: 11 }}>
+                  · {eng}
+                </span>
+              ) : null;
+            })()}
           </div>
           <p
             style={{
