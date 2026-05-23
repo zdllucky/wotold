@@ -588,19 +588,19 @@
 
 ### Phase 1 — Silent cut + sequential pipeline (no UX surfacing)
 
-- [ ] **M13.1.1** `audio/silence_detector.rs` — RMS-buffer + поиск тишины в окне [T+9:00, T+11:00], fallback к local RMS min
-- [ ] **M13.1.2** Sidecar `rotate` команда — atomic flush + reopen WAV без drop'а сэмплов (AudioRecorder + ProcessTapRecorder)
-- [ ] **M13.1.3** `pipeline/chunk_runner.rs` — per-chunk STT + pyannote + per-segment embeddings, `LocalWhisperRequest::with_prompt` для context priming
-- [ ] **M13.1.4** DB schema — `call_chunks` table (или JSONB-поле в calls)
-- [ ] **M13.1.5** Feature flag `chunked_pipeline=false` по умолчанию
-- [ ] **M13.1.6** Smoke verify: dual-run на 30-мин фикстуре, diff transcripts ≥99%
+- [x] **M13.1.1** `audio/silence_detector.rs` — RMS-buffer + поиск тишины в окне [T+9:00, T+11:00], fallback к local RMS min
+- [x] **M13.1.2** Sidecar `rotate` команда — atomic flush + reopen WAV без drop'а сэмплов (AudioRecorder + ProcessTapRecorder)
+- [x] **M13.1.3** `pipeline/chunk_runner.rs` — per-chunk STT (mic+system dual-track в M13.1.5d), `LocalWhisperRequest::with_prompt` для context priming; per-chunk embeddings + diarization добавлены в Phase 2 (M13.2.1)
+- [x] **M13.1.4** DB schema — `call_chunks` table (migrations 0013 + 0014 для system_transcript_json + embeddings_json column)
+- [x] **M13.1.5** Feature flag `chunked_pipeline=false` по умолчанию + orchestrator wired в start_recording (M13.1.5c/d) + pause-aware (own M13.2.1 sub-milestone, не путать с PRD M13.2.1 ниже)
+- [ ] **M13.1.6** Smoke verify: dual-run на 30-мин фикстуре, diff transcripts ≥99% — **deferred to end** (требует real WAV)
 
 ### Phase 2 — Parallel pipelining + global speaker re-clustering
 
-- [ ] **M13.2.1** `pipeline/speaker_reclustering.rs` — agglomerative single-link на cosine, threshold 0.75 (tunable)
-- [ ] **M13.2.2** Chunk N обрабатывается параллельно с записью N+1 (tokio task spawn per chunk)
-- [ ] **M13.2.3** `transcript:chunk_done` Tauri event для frontend live updates
-- [ ] **M13.2.4** Verification на multi-speaker фикстуре — global speaker IDs совпадают между chunks для одного физ. спикера
+- [x] **M13.2.1** `pipeline/speaker_reclustering.rs` — agglomerative single-link cosine clustering, threshold 0.75 (tunable). Owner / unknown / empty-embedding passthrough. 11 unit-tests. Per-chunk embeddings extract'аются в `chunk_runner` через `extract_clusters` (reuse B3.3), persist в `call_chunks.embeddings_json`. Assembly применяет global remap к segments обеих дорожек.
+- [x] **M13.2.2** Chunk N обрабатывается параллельно с записью N+1 — `tokio::spawn` per rotation event; drain pending JoinHandles на stop с `tokio::time::timeout(300s)` per task. **Trade-off:** prev_prompt всегда None в parallel mode (best-effort, ~1% quality drop на стыках, whisper всё равно reset'ит context).
+- [x] **M13.2.3** `transcript:chunk_done` Tauri event — `events.rs` const + `ChunkDoneEvent { call_id, chunk_idx, status, segment_count }` + `EventBus::transcript_chunk_done`. Backend-only emit; frontend listener — Phase 3.
+- [ ] **M13.2.4** Verification на multi-speaker фикстуре — **deferred to end** (требует bundled multi-speaker WAV)
 
 ### Phase 3 — UX surfacing + flag-on default
 

@@ -21,9 +21,14 @@
 use std::path::PathBuf;
 
 use sqlx::SqlitePool;
+use tauri::AppHandle;
 
+use crate::embeddings::{self, StubEmbedder};
+use crate::events::{ChunkDoneEvent, EventBus};
+use crate::pipeline::clusters::extract_clusters;
 use crate::providers::transcription::{
-    DiarizedTranscript, TranscriptionError, TranscriptionOpts, TranscriptionProvider,
+    DiarizedTranscript, TranscriptSegment, TranscriptionError, TranscriptionOpts,
+    TranscriptionProvider,
 };
 use crate::{db, AppError};
 
@@ -49,6 +54,13 @@ pub struct ChunkRunInput {
     pub prev_prompt: Option<String>,
     /// 'auto' или BCP47. Передаётся в provider.
     pub lang: String,
+    /// [M13.2.1] App-data root — нужен resolve `models/embedder.onnx` для
+    /// WeSpeaker. `None` в unit-тестах → embedder = StubEmbedder
+    /// → empty embeddings_json в DB (degraded ok).
+    pub app_data_dir: Option<PathBuf>,
+    /// [M13.2.3] Tauri AppHandle для emit'а `transcript:chunk_done`. `None`
+    /// в unit-тестах / headless — event silently no-op.
+    pub app_handle: Option<AppHandle>,
 }
 
 /// Результат успешного `run_chunk`. `transcript_tail` идёт в `prev_prompt`
@@ -89,7 +101,10 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         system_path,
         prev_prompt,
         lang,
+        app_data_dir,
+        app_handle,
     } = input;
+    let bus = EventBus::new(app_handle.as_ref());
 
     // 1. FSM gate: pending → processing.
     db::chunks::mark_chunk_processing(pool, &call_id, chunk_idx).await?;
@@ -124,6 +139,14 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
             {
                 log::error!("chunk {call_id}/{chunk_idx} mark_failed after mic error: {db_err}");
             }
+            // [M13.2.3] Emit chunk_done(status=failed) перед propagate — Phase 3
+            // UI рендерит per-chunk статус strip.
+            bus.transcript_chunk_done(&ChunkDoneEvent {
+                call_id: call_id.clone(),
+                chunk_idx,
+                status: "failed",
+                segment_count: 0,
+            });
             return Err(translate_transcription_error(e));
         }
     };
@@ -155,6 +178,30 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
             .unwrap_or(0);
     let transcript_tail = extract_tail_words(&mic_transcript, 50);
 
+    // 4. [M13.2.1] Извлечь per-chunk WeSpeaker cluster embeddings (mean-pooled
+    // per-speaker_tag, L2-normalized). Non-fatal: ошибка лишь скипает embeddings
+    // → assembly не сможет cross-chunk remap для этого chunk'а (identity).
+    let embeddings_json = if let Some(dir) = app_data_dir.as_deref() {
+        match build_chunk_embeddings_json(
+            &mic_transcript,
+            sys_transcript.as_ref(),
+            &mic_path,
+            &system_path,
+            dir,
+        ) {
+            Ok(j) => Some(j),
+            Err(e) => {
+                log::warn!("chunk {call_id}/{chunk_idx} embeddings extract failed (degraded): {e}");
+                Some("{}".to_string())
+            }
+        }
+    } else {
+        // app_data_dir отсутствует — production-mode без resolve'а embedder'а
+        // не имеет смысла, но в unit-тестах это нормально → persist пустой JSON
+        // для consistency (None зарезервирован под legacy pre-Phase 2 rows).
+        None
+    };
+
     db::chunks::mark_chunk_done(
         pool,
         &call_id,
@@ -162,13 +209,54 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         end_ms,
         &mic_json,
         sys_json.as_deref(),
+        embeddings_json.as_deref(),
     )
     .await?;
+
+    // [M13.2.3] Emit chunk_done(status=done) после persist'а.
+    bus.transcript_chunk_done(&ChunkDoneEvent {
+        call_id: call_id.clone(),
+        chunk_idx,
+        status: "done",
+        segment_count: mic_transcript.segments.len(),
+    });
 
     Ok(ChunkRunOutput {
         transcript_tail,
         segment_count,
     })
+}
+
+/// [M13.2.1] Собрать `HashMap<speaker_tag, Vec<f32>>` (JSON-сериализованный)
+/// из mic+system transcript'ов одного chunk'а. Embedder резолвится через
+/// `try_load_onnx_embedder` (= StubEmbedder если voice-onnx feature off /
+/// модель не скачана → empty embeddings, identity remap в assembly).
+fn build_chunk_embeddings_json(
+    mic_transcript: &DiarizedTranscript,
+    sys_transcript: Option<&DiarizedTranscript>,
+    mic_path: &std::path::Path,
+    system_path: &std::path::Path,
+    app_data_dir: &std::path::Path,
+) -> Result<String, AppError> {
+    let model_path = app_data_dir.join("models").join("embedder.onnx");
+    let embedder: Box<dyn embeddings::Embedder> =
+        match embeddings::try_load_onnx_embedder(&model_path) {
+            Some(e) => e,
+            None => Box::new(StubEmbedder),
+        };
+
+    // Merged = все сегменты обоих дорожек. extract_clusters сам routes
+    // owner-tagged → mic.wav, прочие → system.wav.
+    let mut merged: Vec<TranscriptSegment> = Vec::with_capacity(
+        mic_transcript.segments.len() + sys_transcript.map(|s| s.segments.len()).unwrap_or(0),
+    );
+    merged.extend(mic_transcript.segments.iter().cloned());
+    if let Some(sys) = sys_transcript {
+        merged.extend(sys.segments.iter().cloned());
+    }
+    let clusters = extract_clusters(&merged, mic_path, system_path, embedder.as_ref())?;
+    serde_json::to_string(&clusters)
+        .map_err(|e| AppError::Other(format!("serialize chunk embeddings: {e}")))
 }
 
 /// Извлечь последние `max_words` слов из transcript'а. Для prompt priming
@@ -309,6 +397,11 @@ mod tests {
             system_path: PathBuf::from("/tmp/system.wav"),
             prev_prompt: prev_prompt.map(String::from),
             lang: "auto".into(),
+            // [M13.2.1] None в unit-тестах — embedder резолвится только в
+            // production через pipeline ctx; tests stub'ают через cluster
+            // pipeline отдельно.
+            app_data_dir: None,
+            app_handle: None,
         }
     }
 

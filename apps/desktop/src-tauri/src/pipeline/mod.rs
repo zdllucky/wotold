@@ -44,6 +44,11 @@ pub mod chunk_orchestrator;
 // full-file STT когда chunks_completed > 0.
 pub mod chunk_assembly;
 
+// [M13.2.1] Global agglomerative single-link cosine clustering на
+// per-chunk WeSpeaker embeddings — сводит local speaker:N tags к global
+// IDs между chunks (один физ.спикер = один global tag).
+pub mod speaker_reclustering;
+
 pub use merge::{merge_tracks, render_transcript_md};
 pub use settings::PipelineSettings;
 pub use stage::Stage;
