@@ -88,7 +88,9 @@ pub(crate) async fn run_v2_pipeline(
             chunker::estimate_tokens(ctx.transcript_md),
             ctx.preset
         );
-        map_reduce::run_map_reduce(
+        // [M14 T-18 P2] run_pipeline dispatches к flat (≤8 chunks) или
+        // hierarchical (>8 chunks → mid-reduce per group → final reduce).
+        map_reduce::run_pipeline(
             provider,
             &chunks,
             ctx.lang_detected,

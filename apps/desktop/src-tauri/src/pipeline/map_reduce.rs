@@ -33,6 +33,16 @@ use crate::AppError;
 const MAP_MAX_TOKENS: u32 = 1024;
 /// Final reduce: full CallSummaryV2 — 4096 tokens достаточно.
 const REDUCE_MAX_TOKENS: u32 = 4096;
+/// [M14 T-18 P2] Hierarchical pipeline trigger — когда `chunks.len()`
+/// больше этого порога, переключаемся на 3-level (map → mid-reduce per
+/// group → final reduce). Меньше — flat 2-level path (run_map_reduce).
+const HIERARCHICAL_THRESHOLD: usize = 8;
+/// [M14 T-18 P2] Group size для mid-reduce — каждая mid-reduce LLM call
+/// консолидирует до этого числа map outputs.
+const MID_REDUCE_GROUP_SIZE: usize = 4;
+/// [M14 T-18 P2] Mid-reduce output — aggregate same shape как map output,
+/// 2K tokens достаточно для 4 chunks worth of facts/candidates.
+const MID_REDUCE_MAX_TOKENS: u32 = 2048;
 
 /// Map step: classifier + extractor для одного chunk'а transcript'а.
 /// Output schema из PRD §5.3.
@@ -206,6 +216,159 @@ pub(crate) async fn run_map_reduce(
     gbnf::generate_with_grammar_fallback(provider, request)
         .await
         .map_err(|e| AppError::Other(format!("reduce llm: {e}")))
+}
+
+// ── [M14 T-18 P2] Hierarchical 3-level pipeline ──────────────────────────
+
+/// Mid-reduce prompt: aggregate K map outputs в single intermediate JSON
+/// matching map output schema. Используется когда `chunks.len()` превышает
+/// `HIERARCHICAL_THRESHOLD` — level 2 между per-chunk map и final reduce.
+pub(crate) fn build_mid_reduce_prompt(lang_detected: Option<&str>, group_idx: usize) -> String {
+    let lang = lang_detected.unwrap_or("ru");
+    format!(
+        "You are a meeting analyst consolidating GROUP {group_idx} of partial chunk-level extractions from a long corporate call. Output language: {lang}.\n\
+\n\
+## YOUR JOB\n\
+\n\
+You receive an ARRAY of per-chunk MAP outputs (facts, decisions_candidates, action_candidates, open_questions_candidates, topic_tags, participants_mentioned). Consolidate into ONE aggregate JSON of the SAME shape — dedup overlapping items, prefer items с stronger evidence_quote, keep all distinct findings.\n\
+\n\
+## RULES\n\
+\n\
+1. NEVER invent facts not present в input MAP_OUTPUTS — only merge / dedup / pick best.\n\
+2. evidence_quote remains verbatim from source chunks.\n\
+3. Output schema is INTERMEDIATE — final CallSummaryV2 will be produced by LEVEL 3 reduce. Do NOT generate title / summary / mom / call_type.\n\
+4. Output ONLY ONE JSON object matching schema below. No prose, no markdown fences.\n\
+\n\
+## OUTPUT SCHEMA\n\
+\n\
+{{\n\
+  \"group_idx\": {group_idx},\n\
+  \"facts\": [string],\n\
+  \"decisions_candidates\": [{{ \"text\": string, \"evidence_quote\": string, \"speaker\": string|null }}],\n\
+  \"action_candidates\": [{{\n\
+    \"text\": string,\n\
+    \"owner_hint\": string|null,\n\
+    \"due\": string|null,\n\
+    \"category\": \"commitment\"|\"proposal\"|\"idea\",\n\
+    \"evidence_quote\": string,\n\
+    \"speaker\": string|null\n\
+  }}],\n\
+  \"open_questions_candidates\": [{{ \"text\": string, \"raised_by\": string|null, \"evidence_quote\": string }}],\n\
+  \"topic_tags\": [string],\n\
+  \"participants_mentioned\": [string]\n\
+}}\n\
+\n\
+Output ONLY the JSON object."
+    )
+}
+
+/// Single mid-reduce LLM call для одной группы map outputs (level 2).
+async fn run_single_mid_reduce(
+    provider: &dyn LlmProvider,
+    group_outputs: &[serde_json::Value],
+    lang_detected: Option<&str>,
+    group_idx: usize,
+) -> Result<serde_json::Value, AppError> {
+    let group_json = serde_json::to_string(group_outputs)
+        .map_err(|e| AppError::Other(format!("mid-reduce serialize: {e}")))?;
+    let request = LlmRequest {
+        model: None,
+        system: build_mid_reduce_prompt(lang_detected, group_idx),
+        input: group_json,
+        max_tokens: Some(MID_REDUCE_MAX_TOKENS),
+        grammar: None,
+    };
+    gbnf::generate_with_grammar_fallback(provider, request)
+        .await
+        .map_err(|e| AppError::Other(format!("mid-reduce llm: {e}")))
+}
+
+/// [M14 T-18 P2] Hierarchical entry point. Dispatch'ит:
+/// - `chunks.len() <= HIERARCHICAL_THRESHOLD` → flat 2-level (`run_map_reduce`)
+/// - `> HIERARCHICAL_THRESHOLD` → 3-level (map → mid-reduce per group → final reduce)
+///
+/// Best-effort: failed map / mid-reduce calls пропускаются. Если ВСЕ map
+/// или ВСЕ mid-reduce calls fail → AppError.
+pub(crate) async fn run_pipeline(
+    provider: &dyn LlmProvider,
+    chunks: &[String],
+    lang_detected: Option<&str>,
+    known_call_type: Option<CallType>,
+    known_speakers: Option<&str>,
+) -> Result<serde_json::Value, AppError> {
+    if chunks.len() <= HIERARCHICAL_THRESHOLD {
+        return run_map_reduce(
+            provider,
+            chunks,
+            lang_detected,
+            known_call_type,
+            known_speakers,
+        )
+        .await;
+    }
+
+    log::info!(
+        "hierarchical pipeline: {} chunks → {} groups (group_size={})",
+        chunks.len(),
+        chunks.len().div_ceil(MID_REDUCE_GROUP_SIZE),
+        MID_REDUCE_GROUP_SIZE
+    );
+
+    // 1. Map step (level 1) — per-chunk extraction.
+    let mut map_outputs: Vec<serde_json::Value> = Vec::with_capacity(chunks.len());
+    for (idx, chunk) in chunks.iter().enumerate() {
+        let request = LlmRequest {
+            model: None,
+            system: build_map_prompt(lang_detected, idx),
+            input: chunk.clone(),
+            max_tokens: Some(MAP_MAX_TOKENS),
+            grammar: None,
+        };
+        match gbnf::generate_with_grammar_fallback(provider, request).await {
+            Ok(json_value) => map_outputs.push(json_value),
+            Err(e) => log::warn!("hierarchical map chunk {idx} failed (skipping): {e}"),
+        }
+    }
+    if map_outputs.is_empty() {
+        return Err(AppError::Other("hierarchical: all map calls failed".into()));
+    }
+
+    // 2. Mid-reduce step (level 2) — group map outputs.
+    let mut mid_aggregates: Vec<serde_json::Value> = Vec::new();
+    for (group_idx, group) in map_outputs.chunks(MID_REDUCE_GROUP_SIZE).enumerate() {
+        match run_single_mid_reduce(provider, group, lang_detected, group_idx).await {
+            Ok(agg) => mid_aggregates.push(agg),
+            Err(e) => log::warn!("mid-reduce group {group_idx} failed (skipping): {e}"),
+        }
+    }
+    if mid_aggregates.is_empty() {
+        return Err(AppError::Other(
+            "hierarchical: all mid-reduce calls failed".into(),
+        ));
+    }
+
+    // 3. Final reduce step (level 3) — consolidate mid-aggregates → CallSummaryV2.
+    let mid_aggregates_json = serde_json::to_string(&mid_aggregates)
+        .map_err(|e| AppError::Other(format!("hierarchical: serialize mid-aggregates: {e}")))?;
+    let reduce_system = match known_call_type {
+        Some(t) => expert_prompts::build_expert_reduce_prompt(
+            t,
+            lang_detected,
+            known_speakers,
+            &mid_aggregates_json,
+        ),
+        None => build_reduce_prompt(lang_detected, None, known_speakers, &mid_aggregates_json),
+    };
+    let request = LlmRequest {
+        model: None,
+        system: reduce_system,
+        input: String::new(),
+        max_tokens: Some(REDUCE_MAX_TOKENS),
+        grammar: None,
+    };
+    gbnf::generate_with_grammar_fallback(provider, request)
+        .await
+        .map_err(|e| AppError::Other(format!("hierarchical final reduce llm: {e}")))
 }
 
 #[cfg(test)]
@@ -428,6 +591,164 @@ mod tests {
         assert!(
             err.to_string().contains("all map calls failed"),
             "expected all-fail error, got: {err}"
+        );
+    }
+
+    // ── [M14 T-18 P2] Hierarchical pipeline tests ────────────────────────
+
+    #[test]
+    fn build_mid_reduce_prompt_includes_required_schema_fields() {
+        let p = build_mid_reduce_prompt(Some("en"), 2);
+        assert!(p.contains("group_idx"));
+        assert!(p.contains("facts"));
+        assert!(p.contains("decisions_candidates"));
+        assert!(p.contains("action_candidates"));
+        assert!(p.contains("open_questions_candidates"));
+        assert!(p.contains("topic_tags"));
+        assert!(p.contains("participants_mentioned"));
+        // Mid-reduce does NOT generate final v2 fields — make sure prompt says so.
+        assert!(p.contains("INTERMEDIATE"));
+        assert!(p.contains("LEVEL 3"));
+    }
+
+    #[tokio::test]
+    async fn run_pipeline_short_input_delegates_to_flat_map_reduce() {
+        // 3 chunks ≤ HIERARCHICAL_THRESHOLD (8) → flat path: 3 map + 1 reduce = 4 calls.
+        let mock = MockProvider::new(vec![
+            Ok(minimal_map_json(0)),
+            Ok(minimal_map_json(1)),
+            Ok(minimal_map_json(2)),
+            Ok(minimal_v2_json()),
+        ]);
+        let chunks = vec!["c0".into(), "c1".into(), "c2".into()];
+        let result = run_pipeline(&mock, &chunks, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(result["schema_version"], 2);
+        assert_eq!(mock.captured_systems().len(), 4);
+        // Last call — final reduce, MAP_OUTPUTS marker.
+        let systems = mock.captured_systems();
+        assert!(systems.last().unwrap().contains("MAP_OUTPUTS"));
+    }
+
+    #[tokio::test]
+    async fn run_pipeline_long_input_uses_hierarchical() {
+        // 9 chunks > HIERARCHICAL_THRESHOLD (8) → hierarchical:
+        // 9 maps + ceil(9/4)=3 mid-reduces + 1 final = 13 calls.
+        let mut responses: Vec<Result<serde_json::Value, LlmError>> = Vec::new();
+        for i in 0..9 {
+            responses.push(Ok(minimal_map_json(i)));
+        }
+        // 3 mid-reduce outputs (same shape as map output).
+        for i in 0..3 {
+            responses.push(Ok(serde_json::json!({
+                "group_idx": i,
+                "facts": [format!("agg fact group {i}")],
+                "decisions_candidates": [],
+                "action_candidates": [],
+                "open_questions_candidates": [],
+                "topic_tags": [],
+                "participants_mentioned": [],
+            })));
+        }
+        // Final reduce → v2.
+        responses.push(Ok(minimal_v2_json()));
+        let mock = MockProvider::new(responses);
+        let chunks: Vec<String> = (0..9).map(|i| format!("chunk-{i}")).collect();
+        let result = run_pipeline(&mock, &chunks, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(result["schema_version"], 2);
+
+        let systems = mock.captured_systems();
+        assert_eq!(
+            systems.len(),
+            13,
+            "expected 13 LLM calls, got {}",
+            systems.len()
+        );
+        // Sanity: middle calls (idx 9, 10, 11) — mid-reduce (SPECIALIZED GUIDE absent, intermediate marker).
+        assert!(systems[9].contains("INTERMEDIATE"));
+        // Last call — final reduce с MAP_OUTPUTS (universal reduce path since known_call_type=None).
+        assert!(systems[12].contains("MAP_OUTPUTS"));
+        // Final reduce sees mid-aggregate facts, не raw chunk facts.
+        assert!(systems[12].contains("agg fact group"));
+    }
+
+    #[tokio::test]
+    async fn run_pipeline_mid_reduce_failure_skips_group() {
+        // 9 chunks → 3 mid-reduce groups. Middle group fails → final reduce
+        // works with 2 mid-aggregates.
+        let mut responses: Vec<Result<serde_json::Value, LlmError>> = Vec::new();
+        for i in 0..9 {
+            responses.push(Ok(minimal_map_json(i)));
+        }
+        responses.push(Ok(serde_json::json!({
+            "group_idx": 0, "facts": ["g0"],
+            "decisions_candidates": [], "action_candidates": [],
+            "open_questions_candidates": [], "topic_tags": [], "participants_mentioned": []
+        })));
+        responses.push(Err(LlmError::Provider("mid-reduce crash".into())));
+        responses.push(Err(LlmError::Provider(
+            "mid-reduce crash grammar retry".into(),
+        )));
+        responses.push(Ok(serde_json::json!({
+            "group_idx": 2, "facts": ["g2"],
+            "decisions_candidates": [], "action_candidates": [],
+            "open_questions_candidates": [], "topic_tags": [], "participants_mentioned": []
+        })));
+        responses.push(Ok(minimal_v2_json()));
+        let mock = MockProvider::new(responses);
+        let chunks: Vec<String> = (0..9).map(|i| format!("chunk-{i}")).collect();
+        let result = run_pipeline(&mock, &chunks, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(result["schema_version"], 2);
+
+        let systems = mock.captured_systems();
+        // Final reduce должно содержать только g0 + g2 (g1 dropped).
+        let final_reduce = systems.last().unwrap();
+        assert!(final_reduce.contains("\"facts\":[\"g0\"]") || final_reduce.contains("g0"));
+        assert!(final_reduce.contains("g2"));
+    }
+
+    #[tokio::test]
+    async fn run_pipeline_all_maps_fail_returns_error() {
+        // 9 chunks, все map calls fail (с grammar retry — 2 attempts each = 18 errs).
+        let mut responses: Vec<Result<serde_json::Value, LlmError>> = Vec::new();
+        for i in 0..18 {
+            responses.push(Err(LlmError::Provider(format!("crash {i}"))));
+        }
+        let mock = MockProvider::new(responses);
+        let chunks: Vec<String> = (0..9).map(|i| format!("c{i}")).collect();
+        let err = run_pipeline(&mock, &chunks, None, None, None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("all map calls failed"),
+            "expected all-maps-fail error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_pipeline_all_mid_reduces_fail_returns_error() {
+        // 9 maps succeed, все mid-reduce fail → AppError.
+        let mut responses: Vec<Result<serde_json::Value, LlmError>> = Vec::new();
+        for i in 0..9 {
+            responses.push(Ok(minimal_map_json(i)));
+        }
+        // 3 groups × 2 attempts (retry) = 6 errors.
+        for i in 0..6 {
+            responses.push(Err(LlmError::Provider(format!("mid-reduce crash {i}"))));
+        }
+        let mock = MockProvider::new(responses);
+        let chunks: Vec<String> = (0..9).map(|i| format!("c{i}")).collect();
+        let err = run_pipeline(&mock, &chunks, None, None, None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("all mid-reduce calls failed"),
+            "expected all-mid-fail error, got: {err}"
         );
     }
 }
