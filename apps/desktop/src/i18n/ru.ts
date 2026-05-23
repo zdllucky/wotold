@@ -621,6 +621,56 @@ const ruInternal = {
     cloud_byoAria: 'Обработано через собственные ключи',
   },
 
+  // [M14 T-11] CallTypeBadge — 9 типов звонков из CallSummaryV2.
+  callType: {
+    sales_discovery: 'Discovery-звонок',
+    sales_demo: 'Демо продукта',
+    product_sync: 'Команда',
+    standup: 'Стендап',
+    customer_interview: 'Интервью клиента',
+    one_on_one: '1:1',
+    strategy_brainstorm: 'Брейншторм',
+    status_update: 'Статус',
+    other: 'Звонок',
+  },
+
+  // [M14 T-11] Decisions block — список решений из cloud v2 recap.
+  decisionsBlock: {
+    title: 'Решения',
+  },
+
+  // [M14 T-11] Open questions block — нерешённые вопросы из звонка.
+  openQuestionsBlock: {
+    title: 'Открытые вопросы',
+    raisedBy: 'поднял(а)',
+  },
+
+  // [M14 T-11] Evidence quote tooltips и confidence indicators.
+  evidence: {
+    fromTranscript: 'Цитата из расшифровки',
+    jumpToMoment: 'К моменту в записи',
+    lowConfidence: 'Невысокая уверенность — проверь цитату',
+    speakerLabel: 'Говорит',
+  },
+
+  // [M14 T-11] Privacy disclaimer для 1:1 встреч (содержит личную обратную связь).
+  privacyDisclaimer: {
+    oneOnOneTitle: '🔒 Это была встреча 1:1',
+    oneOnOneBody:
+      'Содержит личную обратную связь. Саммари показывает только темы. Не делись без необходимости.',
+  },
+
+  // [M14 T-11] Action item v2 — confidence badges + категории + evidence.
+  actionItem: {
+    ownerInferred: 'Исполнитель определён по контексту — проверь',
+    unassigned: 'Без владельца',
+    category: {
+      commitment: 'обязательство',
+      proposal: 'предложение',
+      idea: 'идея',
+    },
+  },
+
   // ── [M12-v1.1] Failure screen kinds ────────────────────────────────────
   failure: {
     brokenRecording: {

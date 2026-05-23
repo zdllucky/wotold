@@ -1575,6 +1575,175 @@ html.recording-widget .rec-float {
   padding: 0;
   font-size: 11px;
 }
+
+/* ─── [M14 T-11] V2 UI: CallTypeBadge, blocks, EvidenceTooltip, PrivacyDisclaimer ─── */
+
+/* CallTypeBadge — heir of .engine-chip; tints dot via .dot--{variant}.
+   .engine-chip-dot базовый цвет overridден when `.dot--accent/--success/--warning/--muted` рядом. */
+.call-type-chip .engine-chip-dot.dot--accent { background: var(--accent); }
+.call-type-chip .engine-chip-dot.dot--success { background: var(--success); }
+.call-type-chip .engine-chip-dot.dot--warning { background: var(--warning); }
+.call-type-chip .engine-chip-dot.dot--muted { background: var(--ink-2); }
+
+/* V2 blocks (DecisionsBlock + OpenQuestionsBlock) — sit above markdown
+   в табе Рекап. Сдержанная typography, разделитель снизу. */
+.v2-block {
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--surface);
+}
+.v2-block-title {
+  font-family: var(--font-serif, var(--font-sans));
+  font-size: 16px;
+  margin: 0 0 12px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.v2-block-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.decision-row,
+.open-question-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+}
+.decision-row:last-child,
+.open-question-row:last-child {
+  border-bottom: none;
+}
+.decision-row .dot,
+.open-question-row .dot {
+  margin-top: 5px;
+}
+.open-question-row .dot--warning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--bg);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+.decision-text,
+.open-question-text {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.open-question-raised-by {
+  white-space: nowrap;
+}
+.decision-meta,
+.open-question-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* EvidenceTooltip — trigger button + popover */
+.evidence-tooltip {
+  display: inline-block;
+  position: relative;
+}
+.evidence-trigger {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  opacity: 0.55;
+  transition: opacity 120ms;
+  color: var(--ink-2);
+}
+.evidence-trigger:hover,
+.evidence-trigger:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent-soft, var(--accent));
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+.evidence-popover {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 8px);
+  padding: 12px 14px;
+  box-shadow: var(--shadow-1, 0 4px 14px rgba(0, 0, 0, 0.08));
+  min-width: 260px;
+  max-width: 360px;
+}
+.evidence-popover .evidence-quote {
+  border-left: 3px solid var(--accent);
+  padding: 2px 0 2px 10px;
+  margin: 0 0 8px;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink);
+  font-family: var(--font-serif, var(--font-sans));
+}
+.evidence-popover .evidence-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.evidence-jump-btn {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* Confidence badge — небольшой кружок с "?" для items с confidence < 0.7. */
+.confidence-low {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+}
+
+/* PrivacyDisclaimer — banner перед табами для 1:1 встреч. */
+.privacy-disclaimer {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--warning-soft);
+  border-left: 3px solid var(--warning);
+  color: var(--ink);
+}
+.privacy-disclaimer-title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.privacy-disclaimer-body {
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
 @media (prefers-reduced-motion: reduce) {
   .engine-chip { transition: none; }
 }

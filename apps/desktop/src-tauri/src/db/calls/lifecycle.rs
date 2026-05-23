@@ -35,6 +35,18 @@ pub struct Call {
     /// вычитают это значение из (ended_at - started_at), чтобы получить
     /// фактическое время записи аудио.
     pub paused_total_ms: i64,
+    /// [M14 T-02] Тип звонка из 9 enum'ов CallSummaryV2 (sales_discovery,
+    /// sales_demo, etc). NULL для legacy schema_version=1 + при call_type=other
+    /// LLM. UI рендерит CallTypeBadge только когда non-null + confidence ≥ 0.5.
+    pub call_type: Option<String>,
+    pub call_type_confidence: Option<f64>,
+    /// [M14 T-02] 1 = legacy markdown-only recap; 2 = full CallSummaryV2 с
+    /// decisions/open_questions/evidence. Default 1 (migration).
+    pub summary_schema_version: Option<i64>,
+    /// [M14 T-02] cloud-managed | local-qwen-{1.5b|3b|7b}. NULL для legacy.
+    pub summary_engine: Option<String>,
+    /// [M14 T-02] one_shot | map_reduce | hierarchical.
+    pub summary_pipeline_mode: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -73,6 +85,13 @@ pub async fn insert_recording(pool: &SqlitePool, path_label: &str) -> Result<Cal
         upload_bytes: None,
         paused_at: None,
         paused_total_ms: 0,
+        call_type: None,
+        call_type_confidence: None,
+        // [M14 T-02] Default 1 (legacy markdown) пока persist_summary_v2 не
+        // переведёт row в schema_version=2.
+        summary_schema_version: Some(1),
+        summary_engine: None,
+        summary_pipeline_mode: None,
         created_at: now.clone(),
         updated_at: now,
     })
@@ -455,7 +474,7 @@ pub async fn fail_recording_with_reason(
 
 pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, AppError> {
     let row: Option<Call> = sqlx::query_as(
-        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, paused_at, paused_total_ms, created_at, updated_at
+        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, paused_at, paused_total_ms, call_type, call_type_confidence, summary_schema_version, summary_engine, summary_pipeline_mode, created_at, updated_at
          FROM calls WHERE id = ?1",
     )
     .bind(call_id)
@@ -468,7 +487,7 @@ pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, 
 /// подключится в #30 follow-up когда они начнут писаться (#22, #28).
 pub async fn list_calls(pool: &SqlitePool) -> Result<Vec<Call>, AppError> {
     let rows: Vec<Call> = sqlx::query_as(
-        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, paused_at, paused_total_ms, created_at, updated_at
+        "SELECT id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, recap_failed_reason, pipeline_step, pipeline_pct, pipeline_eta_sec, upload_bytes, paused_at, paused_total_ms, call_type, call_type_confidence, summary_schema_version, summary_engine, summary_pipeline_mode, created_at, updated_at
          FROM calls
          ORDER BY started_at DESC",
     )

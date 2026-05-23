@@ -23,10 +23,14 @@ import { Tabs } from '../ui';
 import {
   AutoBoundBanner,
   CallDetailSkeleton,
+  CallTypeBadge,
+  DecisionsBlock,
   ErrorScreen,
   HeaderActions,
   MdPanel,
+  OpenQuestionsBlock,
   ParticipantsRow,
+  PrivacyDisclaimer,
   ProcessingPanel,
   ReprocessBanner,
   TasksPanel,
@@ -67,6 +71,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     contacts,
     speakers: speakersLite,
     chunks,
+    decisions,
+    openQuestions,
     micSrc,
     systemSrc,
     loading,
@@ -270,6 +276,11 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           {call.processing_via && (
             <EngineChip kind={call.processing_via} variant="header" />
           )}
+          {/* [M14 T-11] Тип звонка (sales/standup/1:1/...) — chip справа от engine. */}
+          <CallTypeBadge
+            callType={call.call_type}
+            confidence={call.call_type_confidence}
+          />
         </div>
 
         {/* Title — LLM-generated если есть, иначе простой fallback "Звонок · 20 мая" */}
@@ -374,6 +385,26 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
               menu (HeaderActions) — было два «обращения» к одной операции,
               UI clutter. Failed-banner внизу всё ещё имеет inline CTA
               для retry, потому что там это критичный fix-state. */}
+          {/* [M14 T-11] PrivacyDisclaimer для one_on_one — undismissable
+              напоминание о приватности перед content. */}
+          {call.call_type === 'one_on_one' && <PrivacyDisclaimer />}
+          {/* [M14 T-11] V2 structured blocks выше markdown — surfaces
+              key takeaways первыми (Granola/Fireflies pattern). При пустых
+              decisions/openQuestions блоки рендерят null. */}
+          <DecisionsBlock
+            decisions={decisions}
+            onJumpToTranscript={(ms) => {
+              setTab('transcript');
+              audio.seek(ms / 1000);
+            }}
+          />
+          <OpenQuestionsBlock
+            openQuestions={openQuestions}
+            onJumpToTranscript={(ms) => {
+              setTab('transcript');
+              audio.seek(ms / 1000);
+            }}
+          />
           <MdPanel md={recap} emptyHint={t('callDetail.emptyRecap')} />
         </Tabs.Panel>
         <Tabs.Panel value="transcript">
@@ -390,7 +421,14 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           />
         </Tabs.Panel>
         <Tabs.Panel value="tasks">
-          <TasksPanel tasks={tasks ?? []} contacts={contacts} />
+          <TasksPanel
+            tasks={tasks ?? []}
+            contacts={contacts}
+            onJumpToTranscript={(ms) => {
+              setTab('transcript');
+              audio.seek(ms / 1000);
+            }}
+          />
         </Tabs.Panel>
         <Tabs.Panel value="speakers">
           <SpeakersSection

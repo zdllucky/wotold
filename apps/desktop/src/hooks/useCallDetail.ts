@@ -23,8 +23,12 @@ import {
   getCall,
   getCallAudioPath,
   listCallActionItems,
+  listCallDecisions,
+  listCallOpenQuestions,
   readCallArtifact,
   type ActionItem,
+  type Decision,
+  type OpenQuestion,
   type PipelineCancelledEvent,
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
@@ -57,6 +61,10 @@ export interface UseCallDetailResult {
    *  cloud-managed / legacy local — ProcessingPanel fallback'нет на 5-step
    *  PipelineStrip. */
   chunks: CallChunk[];
+  /** [M14 T-11] V2 structured summary blocks. Пустой массив для legacy
+   *  schema_version=1 либо если LLM не вернул decisions. */
+  decisions: Decision[];
+  openQuestions: OpenQuestion[];
   micSrc: string | null;
   systemSrc: string | null;
   loading: boolean;
@@ -75,6 +83,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [speakers, setSpeakers] = useState<CallSpeakerView[]>([]);
   const [chunks, setChunks] = useState<CallChunk[]>([]);
+  const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [openQuestions, setOpenQuestions] = useState<OpenQuestion[]>([]);
   const [micSrc, setMicSrc] = useState<string | null>(null);
   const [systemSrc, setSystemSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,9 +118,24 @@ export function useCallDetail(callId: string): UseCallDetailResult {
       getCallAudioPath(callId, 'mic'),
       getCallAudioPath(callId, 'system'),
       listCallChunks(callId),
+      listCallDecisions(callId),
+      listCallOpenQuestions(callId),
     ])
       .then(
-        ([rCall, rRecap, rTrans, rRaw, rTasks, rContacts, rSpeakers, rMic, rSys, rChunks]) => {
+        ([
+          rCall,
+          rRecap,
+          rTrans,
+          rRaw,
+          rTasks,
+          rContacts,
+          rSpeakers,
+          rMic,
+          rSys,
+          rChunks,
+          rDecisions,
+          rOpenQ,
+        ]) => {
           // Call meta — критично. Без неё страница не имеет смысла.
           if (rCall.status === 'fulfilled') {
             setCallState(rCall.value);
@@ -124,6 +149,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
           if (rContacts.status === 'fulfilled') setContacts(rContacts.value);
           if (rSpeakers.status === 'fulfilled') setSpeakers(rSpeakers.value);
           if (rChunks.status === 'fulfilled') setChunks(rChunks.value);
+          if (rDecisions.status === 'fulfilled') setDecisions(rDecisions.value);
+          if (rOpenQ.status === 'fulfilled') setOpenQuestions(rOpenQ.value);
           setMicSrc(rMic.status === 'fulfilled' ? convertFileSrc(rMic.value) : null);
           setSystemSrc(rSys.status === 'fulfilled' ? convertFileSrc(rSys.value) : null);
           // Log невидимые failures чтобы они не исчезли silent.
@@ -135,6 +162,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
             ['contacts', rContacts],
             ['speakers', rSpeakers],
             ['chunks', rChunks],
+            ['decisions', rDecisions],
+            ['open_questions', rOpenQ],
           ] as const) {
             if (r.status === 'rejected')
               console.warn(`CallDetail ${name} load failed`, r.reason);
@@ -285,6 +314,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
       freshCall,
       freshSpeakers,
       freshChunks,
+      freshDecisions,
+      freshOpenQ,
     ] = await Promise.allSettled([
       readCallArtifact(callId, 'recap'),
       readCallArtifact(callId, 'transcript'),
@@ -293,6 +324,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
       getCall(callId),
       listCallSpeakers(callId),
       listCallChunks(callId),
+      listCallDecisions(callId),
+      listCallOpenQuestions(callId),
     ]);
     if (fresh.status === 'fulfilled') setRecap(fresh.value);
     if (freshTranscript.status === 'fulfilled') setTranscript(freshTranscript.value);
@@ -301,6 +334,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     if (freshCall.status === 'fulfilled') setCallState(freshCall.value);
     if (freshSpeakers.status === 'fulfilled') setSpeakers(freshSpeakers.value);
     if (freshChunks.status === 'fulfilled') setChunks(freshChunks.value);
+    if (freshDecisions.status === 'fulfilled') setDecisions(freshDecisions.value);
+    if (freshOpenQ.status === 'fulfilled') setOpenQuestions(freshOpenQ.value);
   };
 
   return {
@@ -315,6 +350,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     contacts,
     speakers,
     chunks,
+    decisions,
+    openQuestions,
     micSrc,
     systemSrc,
     loading,

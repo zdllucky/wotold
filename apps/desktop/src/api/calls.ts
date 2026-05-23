@@ -9,6 +9,47 @@ export interface ActionItem {
   owner_contact_id: string | null;
   due: string | null;
   done: boolean;
+  // [M14 T-02 / T-11] V2 enrichment. NULL для legacy v1 rows.
+  owner_confidence: number | null;
+  due_confidence: number | null;
+  /** 'commitment' | 'proposal' | 'idea'. Default 'commitment' для legacy. */
+  category: string | null;
+  evidence_quote: string | null;
+  evidence_speaker: string | null;
+  evidence_start_ms: number | null;
+}
+
+/** [M14 T-11] Decision row для DecisionsBlock UI. */
+export interface Decision {
+  id: string;
+  call_id: string;
+  text: string;
+  evidence_quote: string | null;
+  evidence_speaker: string | null;
+  evidence_start_ms: number | null;
+  evidence_end_ms: number | null;
+  confidence: number | null;
+  order_idx: number;
+}
+
+/** [M14 T-11] Open question row для OpenQuestionsBlock UI. */
+export interface OpenQuestion {
+  id: string;
+  call_id: string;
+  text: string;
+  raised_by: string | null;
+  evidence_quote: string | null;
+  evidence_speaker: string | null;
+  evidence_start_ms: number | null;
+  order_idx: number;
+}
+
+export function listCallDecisions(callId: string): Promise<Decision[]> {
+  return invoke<Decision[]>('list_call_decisions', { callId });
+}
+
+export function listCallOpenQuestions(callId: string): Promise<OpenQuestion[]> {
+  return invoke<OpenQuestion[]>('list_call_open_questions', { callId });
 }
 
 export type CallArtifactKind = 'recap' | 'transcript' | 'raw_stt';
