@@ -28,6 +28,15 @@ describe('humanError', () => {
       /сервис временно занят/i,
     );
   });
+  // [Bug-fix follow-up] failed_reason из DB — plain string, not wrapped.
+  // Это путь recap_failed_reason → humanError на CallDetailPage.
+  test('plain string failed_reason maps к friendly message', () => {
+    expect(
+      humanError(
+        'llm: provider: proxy 502 Bad Gateway: {"ok":false,"code":"provider_error","message":"LLM upstream error (429)"}',
+      ),
+    ).not.toContain('Bad Gateway');
+  });
   test('mic permission', () => {
     expect(humanError(new Error('Failed: NSMicrophoneUsageDescription'))).toMatch(
       /микрофон/i,
