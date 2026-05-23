@@ -14,6 +14,7 @@ import {
   deleteCall,
   exportCallMarkdown,
   regenerateRecap,
+  regenerateTitle,
   reprocessCall,
 } from '../api/calls';
 import { humanError } from '../api/errors';
@@ -86,6 +87,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
   const [deleting, setDeleting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [regeneratingTitle, setRegeneratingTitle] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -180,6 +182,21 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       setError(t('callDetail.regenerateFailed', { error: String(e) }));
     } finally {
       setRegenerating(false);
+    }
+  };
+
+  // [M14 T-17] Lightweight title-only regen. После success — refetchAll чтобы
+  // header показал новый title (Call object подтянет updated row).
+  const onRegenerateTitle = async () => {
+    setRegeneratingTitle(true);
+    setError(null);
+    try {
+      await regenerateTitle(callId);
+      await refetchAll();
+    } catch (e) {
+      setError(t('callDetail.regenerateTitleFailed', { error: String(e) }));
+    } finally {
+      setRegeneratingTitle(false);
     }
   };
 
@@ -286,15 +303,19 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           {call.title?.trim() || simpleDateTitle(call)}
         </h1>
 
-        {/* Action overflow — kebab menu top-right с reprocess/export/delete */}
+        {/* Action overflow — kebab menu top-right с reprocess/regenerate-recap/
+            regenerate-title (M14 T-17)/export/delete */}
         <HeaderActions
           onReprocess={() => void onReprocess()}
           onRegenerateRecap={() => void onRegenerateRecap()}
+          onRegenerateTitle={() => void onRegenerateTitle()}
           onExport={() => void onExportMarkdown()}
           onDelete={onDelete}
           reprocessing={reprocessing}
           regenerating={regenerating}
           regenerateDisabled={!transcript}
+          regeneratingTitle={regeneratingTitle}
+          regenerateTitleDisabled={!transcript}
           exporting={exporting}
           deleting={deleting}
         />

@@ -58,6 +58,25 @@ pub async fn regenerate_recap(state: State<'_, AppState>, call_id: String) -> Re
         .await
 }
 
+/// [M14 T-17] Lightweight title-only regen. Separate path от regenerate_recap —
+/// один LLM-call (~150 max_tokens) → `db::set_call_title` → return new title.
+/// Не трогает recap.md / decisions / action_items.
+///
+/// Cloud-only path (matches regenerate_recap). Local engine support — backlog M14.6.
+#[tauri::command]
+pub async fn regenerate_title(
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<String, AppError> {
+    crate::pipeline::title_regen::regenerate_title(
+        &state.db,
+        &state.app_data_dir,
+        &state.device_id,
+        &call_id,
+    )
+    .await
+}
+
 /// Перезапустить полный pipeline (STT + recap) для существующего звонка.
 /// Применяется к failed | ready | processing звонкам — берёт mic.wav/system.wav
 /// с диска и прогоняет заново.

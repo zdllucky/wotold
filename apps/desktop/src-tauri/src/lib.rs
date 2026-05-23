@@ -615,6 +615,7 @@ pub fn run() {
             commands::list_voice_samples,
             commands::delete_voice_sample,
             commands::regenerate_recap,
+            commands::regenerate_title,
             commands::reprocess_call,
             commands::cancel_reprocess,
             commands::get_active_pipeline_count,

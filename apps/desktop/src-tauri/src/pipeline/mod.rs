@@ -91,6 +91,11 @@ pub(crate) mod action_item_post_pass;
 // valid JSON object.
 pub(crate) mod gbnf;
 
+// [M14 T-17] Lightweight title-only LLM regeneration (kebab menu action).
+// Separate path от regenerate_recap — отдельный LLM-call ~150 max_tokens.
+// pub(crate) для commands/pipeline::regenerate_title.
+pub(crate) mod title_regen;
+
 // [M14 T-10] Local engine orchestrator — chain classifier + main v2 gen.
 // Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
 pub(crate) mod local_orchestrator;
