@@ -21,6 +21,32 @@ const PATTERNS: ErrorPattern[] = [
     human: 'Нет соединения с сервером Wotold.',
     hint: 'Проверь интернет и попробуй ещё раз.',
   },
+  // [Bug-fix] Local LLM specifics — должны идти ДО generic /timeout/ паттерна
+  // (иначе "local_llm_timeout" попадёт в "Запрос занял слишком долго").
+  {
+    match: /local_llm_timeout/i,
+    human: 'Локальная модель не успела ответить за 10 минут.',
+    hint: 'Попробуй preset «Light» (быстрее) или переключись на облако в Настройках → Локальный движок.',
+  },
+  {
+    match: /local_engine_model_missing/i,
+    human: 'Локальная модель не установлена.',
+    hint: 'Скачай её в Настройках → Локальный движок.',
+  },
+  {
+    match: /local_engine_preset_not_set/i,
+    human: 'Не выбран preset локального движка.',
+    hint: 'Выбери Light / Balanced / Quality в Настройках → Локальный движок.',
+  },
+  {
+    match: /local_engine_transcript_empty/i,
+    human: 'Транскрипт пустой — нечего саммаризировать.',
+  },
+  {
+    match: /local_engine_llm_failed/i,
+    human: 'Локальная модель не справилась с задачей.',
+    hint: 'Попробуй preset «Light» или переключись на облако в Настройках.',
+  },
   {
     match: /(timeout|timed out)/i,
     human: 'Запрос занял слишком долго.',

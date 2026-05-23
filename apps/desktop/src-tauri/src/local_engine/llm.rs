@@ -53,8 +53,12 @@ const DEFAULT_MAX_TOKENS: u32 = 4096;
 const DEFAULT_TEMP: f32 = 0.2;
 const DEFAULT_THREADS: u32 = 6;
 
-/// Default timeout per M12.3.6. 5 минут на 1-часовое аудио.
-pub const LOCAL_LLM_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// Default timeout. Раньше 5 мин (M12.3.6 первоначально), но юзеры
+/// репортили `local_llm_timeout` на full recap regen — 4096 max_tokens
+/// + GBNF constraint + 7B/3B inference на M-series CPU могут занимать
+/// 5-8 мин в worst case. 10 мин даёт margin без бесконечного зависания.
+/// На таймауте `drop(child)` шлёт kill сигнал и юзер видит явный error.
+pub const LOCAL_LLM_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// Локальный LLM на llama.cpp. Owns путь к GGUF модели + sidecar config.
 pub struct LocalLlamaProvider {
