@@ -264,6 +264,7 @@ pub async fn regenerate_recap(
         // Anthropic Sonnet fallback). Не различаем поскольку proxy не
         // возвращает per-call backend identifier.
         engine_label: "cloud-managed",
+        summary_v2_enabled: s.summary_v2_enabled,
     };
 
     match recap::run(pool, recap_ctx).await {
@@ -657,7 +658,7 @@ async fn run_local_inner(
         .flatten();
     // PRD §M12.3.3: для маленькой модели используем LOCAL_LLM_SYSTEM_PROMPT
     // («only JSON» + few-shot), не Anthropic-промпт. Cloud-prompt
-    // ([`recap::build_system_prompt`]) на 2-7B model'и часто ломается.
+    // ([`recap::build_v2_system_prompt`]) на 2-7B model'и часто ломается.
     let system_prompt = format!(
         "{LOCAL_LLM_SYSTEM_PROMPT}\n\nLang: {lang}\n{known}",
         lang = lang_detected.as_deref().unwrap_or("ru"),
@@ -714,6 +715,10 @@ async fn run_local_inner(
                 json_value,
                 local_engine_label,
                 &transcript_for_evidence,
+                None,
+                // [M14 T-14] Local path не emit'ит telemetry в T-14 — T-04..T-10
+                // local Qwen pipeline пока deferred. Когда local заработает,
+                // здесь пройдёт `Some(s.summary_v2_enabled)`.
                 None,
             )
             .await
@@ -994,6 +999,7 @@ async fn stage_recap(
         model_override: s.model_override(),
         // [M14 T-02] Proxy auto-picks Groq/Anthropic; не различаем здесь.
         engine_label: "cloud-managed",
+        summary_v2_enabled: s.summary_v2_enabled,
     };
     match recap::run(pool, recap_ctx).await {
         Ok(()) => {
@@ -1388,6 +1394,7 @@ mod tests {
             proxy_base_url: DEFAULT_PROXY_BASE_URL.into(),
             preferred_language: "auto".into(),
             auto_bind,
+            summary_v2_enabled: true,
             // [M12.6] Тесты этого модуля проверяют auto_bind, не engine
             // routing — фиксируем CloudManaged чтобы избежать fail-fast
             // ветки в run_inner.

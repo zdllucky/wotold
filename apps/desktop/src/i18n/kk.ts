@@ -392,6 +392,7 @@ export const kk: TranslationStrings = {
     sectionProcessing: 'Қоңырауларды өңдеу',
     sectionRecording: 'Жазу',
     sectionSpeakers: 'Сөйлеушілер',
+    sectionLabs: 'Зертхана',
     sectionPrivacy: 'Құпиялылық',
     sectionProcessingSubtitle:
       'Қоңырауларыңыз қайда өңделеді. Жергілікті — тегін, желісіз. Бұлт — жылдамырақ, дәлірек.',
@@ -506,6 +507,12 @@ export const kk: TranslationStrings = {
     privacyTitle: 'Құпиялылық.',
     privacyLede:
       'Жергілікті деректерді толық тазалау. Құрылғыны басқа адамға бергенде немесе келісімді қайтарып алғанда пайдалы.',
+    labsTitle: 'Зертхана.',
+    labsLede:
+      'Эксперименттік мүмкіндіктер. Әдепкі қосулы — бірдеңе бұзылса өшіріңіз.',
+    summaryV2Label: 'Қорытындының жаңа форматы',
+    summaryV2Hint:
+      'Әдепкі қосулы. Қоңырау түрі, үзінділер немесе шешімдер бойынша мәселе туындаса өшіріңіз — қорытынды қарапайым форматқа қайтады.',
     wipeBtn: 'Барлық деректерді жою',
     wipeBusy: 'Жоюдамыз…',
     wipeConfirmTitle: 'Wotold — Толық тазалау',

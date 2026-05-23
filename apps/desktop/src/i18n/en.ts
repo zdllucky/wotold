@@ -394,6 +394,7 @@ export const en: TranslationStrings = {
     sectionProcessing: 'Call processing',
     sectionRecording: 'Recording',
     sectionSpeakers: 'Speakers',
+    sectionLabs: 'Labs',
     sectionPrivacy: 'Privacy',
     sectionProcessingSubtitle:
       'Where your calls are processed. Local — free, offline. Cloud — faster, more accurate.',
@@ -510,6 +511,12 @@ export const en: TranslationStrings = {
     privacyTitle: 'Privacy.',
     privacyLede:
       'Complete local data wipe. Useful before handing the device to someone else or revoking consent.',
+    labsTitle: 'Labs.',
+    labsLede:
+      'Experimental features. On by default — turn off if something breaks.',
+    summaryV2Label: 'New summary format',
+    summaryV2Hint:
+      'On by default. Turn off if you hit issues with call type, evidence quotes or decisions — recaps fall back to simple format.',
     wipeBtn: 'Delete all data',
     wipeBusy: 'Deleting…',
     wipeConfirmTitle: 'Wotold — Full wipe',

@@ -85,6 +85,9 @@ pub struct RecapCtx<'a> {
     /// `cloud-managed` для proxy path; локальный путь будет выставлять
     /// `local-qwen-{1.5b|3b|7b}` в T-04..T-10.
     pub engine_label: &'a str,
+    /// [M14 T-14] Summary v2 feature flag. true → cloud_universal v2 prompt.
+    /// false → legacy v1 markdown-only prompt (emergency disable).
+    pub summary_v2_enabled: bool,
 }
 
 /// Генерирует recap.md и action_items по уже сохранённому transcript.md.
@@ -116,10 +119,18 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
     // Это даст LLM контекст «owner = Damir», «Speaker 0 = Ivan Petrov (Acme)».
     let known_speakers = build_known_speakers_block(pool, ctx.call_id).await?;
 
+    // [M14 T-14] Branch prompt по feature flag. OFF → legacy v1 markdown-only
+    // (минимальный JSON, парсится через existing promote_legacy_to_v2 fallback).
+    let system_prompt = if ctx.summary_v2_enabled {
+        build_v2_system_prompt(ctx.lang_detected, known_speakers.as_deref())
+    } else {
+        build_legacy_system_prompt(ctx.lang_detected, known_speakers.as_deref())
+    };
+
     let provider = AnthropicProvider::new(mode);
     let request = LlmRequest {
         model: ctx.model_override.map(str::to_string),
-        system: build_system_prompt(ctx.lang_detected, known_speakers.as_deref()),
+        system: system_prompt,
         input: ctx.transcript_md.to_string(),
         max_tokens: Some(4096),
     };
@@ -139,6 +150,7 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
         ctx.engine_label,
         ctx.transcript_md,
         Some(generation_ms),
+        Some(ctx.summary_v2_enabled),
     )
     .await
 }
@@ -156,6 +168,7 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
 /// **Validator** (M14 T-02): после parse'а вызывается
 /// `strip_unverified_evidence` — items с evidence quote не verbatim в
 /// transcript отбрасываются (не fail всей summary). Degraded ok с telemetry.
+#[allow(clippy::too_many_arguments)] // [M14 T-14] flag_state opt-in для telemetry; refactor в structured args = backlog
 pub async fn persist_recap_from_json(
     pool: &SqlitePool,
     call_id: &str,
@@ -164,7 +177,16 @@ pub async fn persist_recap_from_json(
     engine_label: &str,
     transcript_md: &str,
     generation_ms: Option<i64>,
+    flag_state: Option<bool>,
 ) -> Result<(), AppError> {
+    // [M14 T-14] Capture original schema_version из LLM-JSON ДО promote'а —
+    // telemetry хочет знать «v1 или v2 produced by LLM», не финальную DB-форму
+    // (всегда v2 после promote_legacy_to_v2).
+    let llm_schema_version = json_value
+        .get("schema_version")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(1);
+
     let summary = parse_summary_v2_or_promote_legacy(json_value, call_id)?;
     persist_summary_v2(
         pool,
@@ -175,7 +197,27 @@ pub async fn persist_recap_from_json(
         transcript_md,
         generation_ms,
     )
-    .await
+    .await?;
+
+    // [M14 T-14] Local-only telemetry. Cloud path передаёт Some(flag); local
+    // path (chunk_assembly / run_local_inner) → None пока T-04..T-10 не готов.
+    if let Some(flag) = flag_state {
+        if let Err(e) = crate::db::telemetry::record_summary_generation(
+            pool,
+            crate::db::telemetry::SummaryLogEntry {
+                call_id: call_id.to_string(),
+                engine: engine_label.to_string(),
+                schema_version: llm_schema_version,
+                flag_state: flag,
+                generation_ms: generation_ms.unwrap_or(0),
+            },
+        )
+        .await
+        {
+            log::warn!("recap {call_id}: telemetry log failed (non-fatal): {e}");
+        }
+    }
+    Ok(())
 }
 
 /// [M14 T-02] Parse JSON value either as CallSummaryV2 (schema_version=2)
@@ -383,7 +425,48 @@ fn match_contact_id(contacts: &[db::Contact], hint: &str) -> Option<String> {
         .map(|c| c.id.clone())
 }
 
-pub(crate) fn build_system_prompt(
+/// [M14 T-14] Legacy v1 markdown-only prompt — fallback когда
+/// `summary_v2_enabled=false`. Минимальный JSON: title/summary/key_points/
+/// tasks/participants/lang. Без decisions/open_questions/evidence/call_type.
+/// Парсится через existing `promote_legacy_to_v2` envelope.
+pub(crate) fn build_legacy_system_prompt(
+    lang_detected: Option<&str>,
+    known_speakers: Option<&str>,
+) -> String {
+    let lang = lang_detected.unwrap_or("ru");
+    let known_block = known_speakers
+        .map(|s| format!("\n\n## Known participants\n{s}"))
+        .unwrap_or_default();
+    format!(
+        "You are a senior meeting analyst for Wotold. Produce a faithful JSON summary of a meeting transcript. Output language: {lang}.\n\
+\n\
+## RULES\n\
+1. NEVER invent facts, names, dates, numbers, or commitments not in transcript.\n\
+2. Action items: assign owner only on explicit acceptance ('я возьму', 'I'll take it'). Mere mention NOT enough.\n\
+3. Output ONLY ONE JSON object matching schema below. No prose, no markdown fences.\n\
+4. NEVER use 'Speaker 0' / 'Спикер 1' in summary/key_points — resolve via known participants OR self-introduction OR generic role ('клиент', 'collega').\n\
+\n\
+## SCHEMA\n\
+\n\
+{{\n\
+  \"schema_version\": 1,\n\
+  \"title\": string,                              // 3-7 слов, headline-style\n\
+  \"summary\": string,                            // 1-2 предложения TL;DR\n\
+  \"key_points\": string[],                       // 3-7 пунктов конкретики\n\
+  \"language\": \"ru\" | \"en\" | \"kk\" | \"mixed\",\n\
+  \"participants\": [{{ \"speaker_tag\": string, \"display_name\": string|null }}],\n\
+  \"action_items\": [{{\n\
+    \"text\": string,\n\
+    \"owner_hint\": string|null,\n\
+    \"due\": string|null\n\
+  }}]\n\
+}}{known_block}\n\
+\n\
+Output ONLY the JSON object. No prose. No markdown fences."
+    )
+}
+
+pub(crate) fn build_v2_system_prompt(
     lang_detected: Option<&str>,
     known_speakers: Option<&str>,
 ) -> String {
@@ -746,6 +829,7 @@ mod tests {
             provider_path: "ghost-path",
             model_override: None,
             engine_label: "test-engine",
+            summary_v2_enabled: true,
         };
         let err = super::run(&db.pool, ctx).await.unwrap_err();
         assert!(
@@ -772,9 +856,126 @@ mod tests {
             provider_path: "managed",
             model_override: None,
             engine_label: "test-engine",
+            summary_v2_enabled: true,
         };
         let err = super::run(&db.pool, ctx).await.unwrap_err();
         assert!(err.to_string().contains("Proxy URL"), "got: {err}");
+    }
+
+    /// [M14 T-14] Legacy prompt должен ссылаться на schema_version 1 и
+    /// НЕ упоминать decisions/open_questions/evidence/call_type — иначе LLM
+    /// продолжит выдавать v2 при выключенном флаге.
+    #[test]
+    fn legacy_system_prompt_targets_schema_v1_only() {
+        let prompt = build_legacy_system_prompt(Some("ru"), None);
+        assert!(prompt.contains("\"schema_version\": 1"));
+        assert!(!prompt.contains("decisions"));
+        assert!(!prompt.contains("open_questions"));
+        assert!(!prompt.contains("evidence"));
+        assert!(!prompt.contains("call_type"));
+        assert!(prompt.contains("action_items"));
+        assert!(prompt.contains("title"));
+        assert!(prompt.contains("summary"));
+        assert!(prompt.contains("key_points"));
+    }
+
+    /// [M14 T-14] V2 prompt — sanity: содержит ключи которых нет в legacy
+    /// (call_type, decisions, open_questions, evidence). Защищает от
+    /// случайной деградации v2 prompt при future edits.
+    #[test]
+    fn v2_system_prompt_includes_full_schema() {
+        let prompt = build_v2_system_prompt(Some("ru"), None);
+        assert!(prompt.contains("\"schema_version\": 2"));
+        assert!(prompt.contains("call_type"));
+        assert!(prompt.contains("decisions"));
+        assert!(prompt.contains("open_questions"));
+        assert!(prompt.contains("evidence"));
+    }
+
+    /// [M14 T-14] persist_recap_from_json с flag_state=Some(true) +
+    /// LLM выдал v2 JSON → telemetry row appears с schema_version=2,
+    /// flag_state=1.
+    #[tokio::test]
+    async fn persist_emits_telemetry_when_flag_present() {
+        let db = crate::db::test_support::fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let call = crate::db::insert_recording(&db.pool, "managed")
+            .await
+            .unwrap();
+        // Минимальный v2 JSON — schema_version=2, без decisions/open_questions.
+        let json_value = serde_json::json!({
+            "schema_version": 2,
+            "title": "test call",
+            "summary": "stub",
+            "key_points": ["a"],
+            "language": "en",
+            "call_type": "other",
+            "call_type_confidence": 0.5,
+            "participants": [],
+            "action_items": [],
+            "decisions": [],
+            "open_questions": [],
+            "mom": "## stub",
+        });
+        persist_recap_from_json(
+            &db.pool,
+            &call.id,
+            tmpdir.path(),
+            json_value,
+            "cloud-managed",
+            "transcript stub",
+            Some(1234),
+            Some(true),
+        )
+        .await
+        .unwrap();
+        let (v1, v2) = crate::db::telemetry::count_by_schema_version(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(v1, 0);
+        assert_eq!(v2, 1);
+    }
+
+    /// [M14 T-14] flag_state=None (local path до T-04..T-10) → telemetry
+    /// НЕ emit'ится, persist всё равно успешен.
+    #[tokio::test]
+    async fn persist_skips_telemetry_when_flag_none() {
+        let db = crate::db::test_support::fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let call = crate::db::insert_recording(&db.pool, "managed")
+            .await
+            .unwrap();
+        let json_value = serde_json::json!({
+            "schema_version": 2,
+            "title": "no telemetry",
+            "summary": "stub",
+            "key_points": [],
+            "language": "en",
+            "call_type": "other",
+            "call_type_confidence": 0.0,
+            "participants": [],
+            "action_items": [],
+            "decisions": [],
+            "open_questions": [],
+            "mom": "",
+        });
+        persist_recap_from_json(
+            &db.pool,
+            &call.id,
+            tmpdir.path(),
+            json_value,
+            "local-qwen-1.5b",
+            "stub",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let (v1, v2) = crate::db::telemetry::count_by_schema_version(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(v1, 0);
+        assert_eq!(v2, 0);
     }
 
     /// [Phase 3] regenerate_recap при отсутствии transcript.md → AppError.

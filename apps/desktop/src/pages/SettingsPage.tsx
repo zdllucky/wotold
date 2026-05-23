@@ -30,6 +30,7 @@ import { HotkeyCapture } from '../components/HotkeyCapture';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
+import { LabsSection } from './LabsSection';
 import { LocalEngineSection } from './LocalEngineSection';
 import { PermissionsSection } from './PermissionsSection';
 import { VoiceModelSection } from './VoiceModelSection';
@@ -41,6 +42,7 @@ type SectionId =
   | 'processing'
   | 'recording'
   | 'speakers'
+  | 'labs'
   | 'privacy';
 
 interface SectionMeta {
@@ -150,6 +152,8 @@ export function SettingsPage() {
     { id: 'recording', label: t('settings.sectionRecording') },
     // «Спикеры» — voice biometric model + auto-bind toggle.
     { id: 'speakers', label: t('settings.sectionSpeakers') },
+    // [M14 T-14] «Лаборатория» — experimental feature flags.
+    { id: 'labs', label: t('settings.sectionLabs') },
     { id: 'privacy', label: t('settings.sectionPrivacy') },
   ];
 
@@ -450,6 +454,12 @@ export function SettingsPage() {
             lede={t('settings.sectionSpeakersSubtitle')}
           >
             <VoiceModelSection />
+          </SectionShell>
+        )}
+
+        {section === 'labs' && (
+          <SectionShell title={t('settings.labsTitle')} lede={t('settings.labsLede')}>
+            <LabsSection />
           </SectionShell>
         )}
 

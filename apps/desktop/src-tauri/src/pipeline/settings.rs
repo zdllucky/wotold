@@ -32,6 +32,10 @@ const SETTING_PREFERRED_LANGUAGE: &str = "preferred_language";
 /// [V7] Opt-in auto-bind speakers. '1' = enabled.
 const SETTING_AUTO_BIND_ENABLED: &str = "auto_bind_enabled";
 const SETTING_AUTO_BIND_THRESHOLD: &str = "auto_bind_threshold";
+/// [M14 T-14] Summary v2 feature flag. Default ON. OFF переключает recap
+/// generation на legacy v1 markdown-only prompt (минимальный JSON, без
+/// decisions/open_questions/evidence). Emergency-disable.
+const SETTING_SUMMARY_V2_ENABLED: &str = "summary_v2_enabled";
 
 // === Default proxy URL ===
 
@@ -63,6 +67,10 @@ pub struct PipelineSettings {
     pub proxy_base_url: String,
     pub preferred_language: String,
     pub auto_bind: Option<AutoBindConfig>,
+    /// [M14 T-14] Summary v2 feature flag. true = use cloud_universal v2
+    /// prompt (T-02 path). false = legacy v1 markdown-only prompt (emergency
+    /// disable). Default true.
+    pub summary_v2_enabled: bool,
     /// [M12.6] Активный engine — резюмирует выбор пользователя в Settings →
     /// «Движок распознавания». На macOS читается из `local_engine.active`
     /// (наследие из миграции 0011 + Settings UI M12.5). На не-macOS — всегда
@@ -108,6 +116,9 @@ impl PipelineSettings {
             None
         };
 
+        // [M14 T-14] Default '1' = ON. OFF только при явном '0'.
+        let summary_v2_enabled = read_setting(pool, SETTING_SUMMARY_V2_ENABLED, "1").await? != "0";
+
         #[cfg(target_os = "macos")]
         let engine = engine::load_or_default(pool).await?;
 
@@ -119,6 +130,7 @@ impl PipelineSettings {
             proxy_base_url,
             preferred_language,
             auto_bind,
+            summary_v2_enabled,
             #[cfg(target_os = "macos")]
             engine,
         })
@@ -172,6 +184,27 @@ mod tests {
         assert_eq!(s.preferred_language, "auto");
         assert_eq!(s.proxy_base_url, DEFAULT_PROXY_BASE_URL);
         assert!(s.auto_bind.is_none(), "auto_bind off by default (R2)");
+        assert!(s.summary_v2_enabled, "summary_v2_enabled default ON (T-14)");
+    }
+
+    #[tokio::test]
+    async fn summary_v2_explicit_off_disables() {
+        let db = fresh_db().await;
+        db::set_setting(&db.pool, SETTING_SUMMARY_V2_ENABLED, "0")
+            .await
+            .unwrap();
+        let s = PipelineSettings::load(&db.pool).await.unwrap();
+        assert!(!s.summary_v2_enabled, "explicit '0' turns flag OFF");
+    }
+
+    #[tokio::test]
+    async fn summary_v2_explicit_on_stays_enabled() {
+        let db = fresh_db().await;
+        db::set_setting(&db.pool, SETTING_SUMMARY_V2_ENABLED, "1")
+            .await
+            .unwrap();
+        let s = PipelineSettings::load(&db.pool).await.unwrap();
+        assert!(s.summary_v2_enabled, "explicit '1' keeps flag ON");
     }
 
     #[tokio::test]
@@ -314,6 +347,7 @@ mod tests {
             proxy_base_url: DEFAULT_PROXY_BASE_URL.into(),
             preferred_language: lang.into(),
             auto_bind: None,
+            summary_v2_enabled: true,
             #[cfg(target_os = "macos")]
             engine: EngineKind::CloudManaged,
         }
