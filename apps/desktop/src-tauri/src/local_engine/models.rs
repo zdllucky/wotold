@@ -61,6 +61,10 @@ impl ModelId {
     pub const WHISPER_SMALL: ModelId = ModelId("whisper-small");
     pub const WHISPER_MEDIUM: ModelId = ModelId("whisper-medium");
     pub const WHISPER_LARGE_V3: ModelId = ModelId("whisper-large-v3");
+    /// [M14 T-16 P2] Draft модель для speculative decoding (Quality preset).
+    /// При SUMMARY_SPECULATIVE_DECODING=1 и preset=Quality, llama-cli
+    /// получает `--model-draft <path>` указывающий на этот файл.
+    pub const QWEN25_0_5B: ModelId = ModelId("qwen25-0_5b");
     pub const QWEN25_1_5B: ModelId = ModelId("qwen25-1_5b");
     pub const QWEN25_3B: ModelId = ModelId("qwen25-3b");
     pub const QWEN25_7B: ModelId = ModelId("qwen25-7b");
@@ -89,7 +93,7 @@ pub struct ModelEntry {
 /// Каталог — 3 Whisper + 3 LLM модели. SHA256 + size_bytes получены через
 /// `scripts/refresh-model-catalog.sh` (PRD §14 pre-flight) на 2026-05-22.
 /// При замене файла на HF — bump version в скрипте + регенерировать.
-pub const MODEL_CATALOG: [ModelEntry; 7] = [
+pub const MODEL_CATALOG: [ModelEntry; 8] = [
     ModelEntry {
         id: ModelId::WHISPER_SMALL,
         kind: ModelKind::Stt,
@@ -116,6 +120,21 @@ pub const MODEL_CATALOG: [ModelEntry; 7] = [
         sha256: "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
         size_bytes: 1_081_140_203,
         license_url: "https://huggingface.co/ggerganov/whisper.cpp",
+    },
+    ModelEntry {
+        // [M14 T-16 P2] Speculative-decoding draft модель. Standalone не
+        // используется (slug в preset.rs не указывает на 0.5B). При активации
+        // SUMMARY_SPECULATIVE_DECODING flag + preset=Quality, llama-cli
+        // получает `--model-draft <path>` указывающий на этот файл.
+        // **TODO:** SHA256 + size_bytes — placeholder. Перед production:
+        // запустить `scripts/refresh-model-catalog.sh` для verification.
+        id: ModelId::QWEN25_0_5B,
+        kind: ModelKind::Llm,
+        display_name: "Qwen 2.5 (0.5B) — draft model",
+        url: "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+        sha256: "PLACEHOLDER_REFRESH_VIA_SCRIPT_BEFORE_PRODUCTION",
+        size_bytes: 380_000_000,
+        license_url: "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF",
     },
     ModelEntry {
         id: ModelId::QWEN25_1_5B,
@@ -514,7 +533,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn catalog_has_three_stt_three_llm_one_diarization() {
+    fn catalog_has_three_stt_four_llm_one_diarization() {
         let stt = MODEL_CATALOG
             .iter()
             .filter(|m| m.kind == ModelKind::Stt)
@@ -531,7 +550,11 @@ mod tests {
             stt, 3,
             "expected 3 STT models (whisper small/medium/large-v3)"
         );
-        assert_eq!(llm, 3, "expected 3 LLM models (qwen25-1_5b/3b/7b)");
+        // [M14 T-16 P2] +qwen25-0_5b (draft model для speculative decoding).
+        assert_eq!(
+            llm, 4,
+            "expected 4 LLM models (qwen25-0_5b draft + 1_5b/3b/7b targets)"
+        );
         assert_eq!(diar, 1, "expected 1 diarization model (pyannote)");
     }
 

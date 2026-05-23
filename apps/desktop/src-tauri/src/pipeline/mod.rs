@@ -718,9 +718,23 @@ async fn run_local_inner(
     // и cloud (с CallType hint от классификатора).
     let llm_result = match transcript_md_read {
         Ok(transcript_md) if !transcript_md.trim().is_empty() => {
+            // [M14 T-16 P2] Speculative decoding — pass draft model path
+            // когда (а) flag enabled (Labs opt-in), (b) preset=Quality
+            // (только 7B заметно выигрывает от 0.5B draft), (c) file existence
+            // checked внутри provider (graceful fallback на non-speculative).
+            let draft_path: Option<std::path::PathBuf> =
+                if s.summary_speculative_decoding && preset == LocalEnginePreset::Quality {
+                    Some(crate::local_engine::models::model_path(
+                        &ctx.app_data_dir,
+                        crate::local_engine::models::ModelId::QWEN25_0_5B.as_str(),
+                    ))
+                } else {
+                    None
+                };
             let provider = LocalLlamaProvider::for_preset(&ctx.app_data_dir, llm_id)
                 .with_app(app.clone())
-                .await;
+                .await
+                .with_draft_model(draft_path);
             let orch_ctx = local_orchestrator::LocalOrchestratorCtx {
                 transcript_md: &transcript_md,
                 lang_detected: lang_detected.as_deref(),
@@ -1438,6 +1452,7 @@ mod tests {
             preferred_language: "auto".into(),
             auto_bind,
             summary_v2_enabled: true,
+            summary_speculative_decoding: false,
             // [M12.6] Тесты этого модуля проверяют auto_bind, не engine
             // routing — фиксируем CloudManaged чтобы избежать fail-fast
             // ветки в run_inner.

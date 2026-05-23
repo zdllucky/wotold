@@ -517,6 +517,9 @@ export const kk: TranslationStrings = {
     summaryV2Label: 'Қорытындының жаңа форматы',
     summaryV2Hint:
       'Әдепкі қосулы. Қоңырау түрі, үзінділер немесе шешімдер бойынша мәселе туындаса өшіріңіз — қорытынды қарапайым форматқа қайтады.',
+    speculativeDecodingLabel: 'Жасанданды генерация (драфт-модель)',
+    speculativeDecodingHint:
+      '0.5B шағын модельді 7B Quality-мен қатар қолданады. 2-3× жылдамдау. «Quality» пресеті мен ~380МБ қосымша модельді жүктеу қажет.',
     wipeBtn: 'Барлық деректерді жою',
     wipeBusy: 'Жоюдамыз…',
     wipeConfirmTitle: 'Wotold — Толық тазалау',

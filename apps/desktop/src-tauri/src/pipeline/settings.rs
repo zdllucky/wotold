@@ -36,6 +36,9 @@ const SETTING_AUTO_BIND_THRESHOLD: &str = "auto_bind_threshold";
 /// generation на legacy v1 markdown-only prompt (минимальный JSON, без
 /// decisions/open_questions/evidence). Emergency-disable.
 const SETTING_SUMMARY_V2_ENABLED: &str = "summary_v2_enabled";
+/// [M14 T-16 P2] Speculative decoding opt-in. Default OFF. Активируется
+/// только когда preset=Quality + draft model (0.5B) на диске.
+const SETTING_SUMMARY_SPECULATIVE_DECODING: &str = "summary_speculative_decoding";
 
 // === Default proxy URL ===
 
@@ -71,6 +74,10 @@ pub struct PipelineSettings {
     /// prompt (T-02 path). false = legacy v1 markdown-only prompt (emergency
     /// disable). Default true.
     pub summary_v2_enabled: bool,
+    /// [M14 T-16 P2] Opt-in speculative decoding с 0.5B draft model для
+    /// 7B Quality preset. Default false. Активация:
+    /// `summary_speculative_decoding=true && preset=Quality && 0.5B файл exists`.
+    pub summary_speculative_decoding: bool,
     /// [M12.6] Активный engine — резюмирует выбор пользователя в Settings →
     /// «Движок распознавания». На macOS читается из `local_engine.active`
     /// (наследие из миграции 0011 + Settings UI M12.5). На не-macOS — всегда
@@ -119,6 +126,10 @@ impl PipelineSettings {
         // [M14 T-14] Default '1' = ON. OFF только при явном '0'.
         let summary_v2_enabled = read_setting(pool, SETTING_SUMMARY_V2_ENABLED, "1").await? != "0";
 
+        // [M14 T-16 P2] Default '0' = OFF (opt-in Labs flag).
+        let summary_speculative_decoding =
+            read_setting(pool, SETTING_SUMMARY_SPECULATIVE_DECODING, "0").await? == "1";
+
         #[cfg(target_os = "macos")]
         let engine = engine::load_or_default(pool).await?;
 
@@ -131,6 +142,7 @@ impl PipelineSettings {
             preferred_language,
             auto_bind,
             summary_v2_enabled,
+            summary_speculative_decoding,
             #[cfg(target_os = "macos")]
             engine,
         })
@@ -205,6 +217,26 @@ mod tests {
             .unwrap();
         let s = PipelineSettings::load(&db.pool).await.unwrap();
         assert!(s.summary_v2_enabled, "explicit '1' keeps flag ON");
+    }
+
+    #[tokio::test]
+    async fn summary_speculative_decoding_default_off() {
+        let db = fresh_db().await;
+        let s = PipelineSettings::load(&db.pool).await.unwrap();
+        assert!(
+            !s.summary_speculative_decoding,
+            "speculative decoding OFF by default (T-16 opt-in Labs)"
+        );
+    }
+
+    #[tokio::test]
+    async fn summary_speculative_decoding_explicit_on() {
+        let db = fresh_db().await;
+        db::set_setting(&db.pool, SETTING_SUMMARY_SPECULATIVE_DECODING, "1")
+            .await
+            .unwrap();
+        let s = PipelineSettings::load(&db.pool).await.unwrap();
+        assert!(s.summary_speculative_decoding, "explicit '1' enables flag");
     }
 
     #[tokio::test]
@@ -348,6 +380,7 @@ mod tests {
             preferred_language: lang.into(),
             auto_bind: None,
             summary_v2_enabled: true,
+            summary_speculative_decoding: false,
             #[cfg(target_os = "macos")]
             engine: EngineKind::CloudManaged,
         }

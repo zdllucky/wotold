@@ -67,6 +67,11 @@ pub struct LocalLlamaProvider {
     app: Mutex<Option<AppHandle>>,
     /// Временная директория для prompt-файла. По умолчанию `std::env::temp_dir()`.
     tmp_dir: PathBuf,
+    /// [M14 T-16 P2] Optional draft model для speculative decoding. Когда
+    /// `Some` и файл существует — provider добавляет `--model-draft <path>`
+    /// arg. Когда file отсутствует — graceful skip (log warn) и fall back
+    /// на non-speculative path.
+    draft_model_path: Option<PathBuf>,
 }
 
 impl LocalLlamaProvider {
@@ -77,7 +82,17 @@ impl LocalLlamaProvider {
             timeout: LOCAL_LLM_TIMEOUT,
             app: Mutex::new(None),
             tmp_dir: std::env::temp_dir(),
+            draft_model_path: None,
         }
+    }
+
+    /// [M14 T-16 P2] Set optional draft model для speculative decoding.
+    /// Когда path is Some + file exists — provider добавит `--model-draft <path>`
+    /// в sidecar args. Caller must pass `None` если speculative decoding off
+    /// OR preset != Quality (см. `run_local_inner`).
+    pub fn with_draft_model(mut self, path: Option<PathBuf>) -> Self {
+        self.draft_model_path = path;
+        self
     }
 
     /// Прикрепить AppHandle — pipeline-runner вызывает после resolve preset'а.
@@ -230,6 +245,24 @@ impl LlmProvider for LocalLlamaProvider {
             ]);
         if let Some(g) = grammar_path_str.as_deref() {
             sidecar = sidecar.args(["--grammar-file", g]);
+        }
+
+        // [M14 T-16 P2] Speculative decoding — добавить `--model-draft <path>`
+        // когда draft model configured AND file exists. Если file отсутствует
+        // (например пользователь enabled flag preempt'ивно до download) —
+        // graceful skip с log warn (не fail весь generation).
+        let draft_arg: Option<String> = self.draft_model_path.as_ref().and_then(|p| {
+            if !p.exists() {
+                log::warn!(
+                    "T-16 speculative: draft model not found at {} — fallback to non-speculative",
+                    p.display()
+                );
+                return None;
+            }
+            p.to_str().map(|s| s.to_string())
+        });
+        if let Some(d) = draft_arg.as_deref() {
+            sidecar = sidecar.args(["--model-draft", d]);
         }
 
         let result = run_sidecar_with_timeout(sidecar, self.timeout).await;
@@ -707,5 +740,32 @@ mod tests {
         )
         .expect_err("relative → Err");
         assert!(err.contains("not under prefix"));
+    }
+
+    // ── [M14 T-16 P2] Speculative decoding draft model plumbing ─────────
+
+    #[test]
+    fn provider_default_has_no_draft_model() {
+        let p = LocalLlamaProvider::for_preset(Path::new("/data"), ModelId::QWEN25_7B);
+        assert!(p.draft_model_path.is_none());
+    }
+
+    #[test]
+    fn with_draft_model_sets_path() {
+        let p = LocalLlamaProvider::for_preset(Path::new("/data"), ModelId::QWEN25_7B)
+            .with_draft_model(Some(PathBuf::from(
+                "/data/local_engine/models/qwen25-0_5b.bin",
+            )));
+        assert_eq!(
+            p.draft_model_path.as_deref(),
+            Some(Path::new("/data/local_engine/models/qwen25-0_5b.bin"))
+        );
+    }
+
+    #[test]
+    fn with_draft_model_none_keeps_none() {
+        let p = LocalLlamaProvider::for_preset(Path::new("/data"), ModelId::QWEN25_7B)
+            .with_draft_model(None);
+        assert!(p.draft_model_path.is_none());
     }
 }

@@ -70,6 +70,10 @@ export const SETTINGS_KEYS = {
    *  (default — текущий v2 path с decisions/open_questions/evidence).
    *  '0' = OFF emergency-disable → legacy v1 markdown-only prompt. */
   SUMMARY_V2_ENABLED: 'summary_v2_enabled',
+  /** [M14 T-16 P2] Opt-in speculative decoding с 0.5B draft model для
+   *  Quality (7B) preset. '1' = ON. Default OFF. Активация требует
+   *  preset=Quality + downloaded 0.5B draft model. */
+  SUMMARY_SPECULATIVE_DECODING: 'summary_speculative_decoding',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
@@ -96,6 +100,8 @@ export const SETTINGS_DEFAULTS = {
   /** [M14 T-14] Summary v2 default ON. OFF — emergency disable, recap
    *  падает на legacy v1 markdown-only prompt. */
   SUMMARY_V2_ENABLED: true,
+  /** [M14 T-16 P2] Speculative decoding default OFF (Labs opt-in). */
+  SUMMARY_SPECULATIVE_DECODING: false,
 } as const;
 
 /** [S1] Whitelist cooldown values 3/5/10/15 min. */
