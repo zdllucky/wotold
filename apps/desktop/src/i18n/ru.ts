@@ -228,6 +228,12 @@ const ruInternal = {
     autoBoundOne: 'Авто-привязали собеседника: {name} — по совпадению голоса.',
     autoBoundMany: 'Авто-привязали {n} собеседник(ов): {names} — по совпадению голоса.',
     autoBoundUndo: '↩ Отменить',
+    // [M14 T-15] Legacy v1 → v2 upgrade banner.
+    legacyRecapTitle: 'Старый формат саммари',
+    legacyRecapHint:
+      'Обновите чтобы получить тип звонка, решения, открытые вопросы и цитаты из расшифровки.',
+    legacyRecapButton: 'Обновить до v2',
+    legacyRecapUpgrading: 'Обновляем…',
     // [V6.5] Error variant — заголовок и подзаголовок ErrorScreen.
     errorTitle: 'Что-то пошло не так',
     errorAudioSaved: 'Аудио сохранено локально, его можно прослушать ниже.',

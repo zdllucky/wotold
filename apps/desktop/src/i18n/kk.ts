@@ -208,6 +208,11 @@ export const kk: TranslationStrings = {
     autoBoundOne: 'Сөйлесушіні автоматты түрде байладық: {name} — дауыс сәйкестігі бойынша.',
     autoBoundMany: '{n} сөйлесушіні автоматты түрде байладық: {names} — дауыс сәйкестігі бойынша.',
     autoBoundUndo: '↩ Болдырмау',
+    legacyRecapTitle: 'Қорытындының ескі форматы',
+    legacyRecapHint:
+      'Қоңырау түрі, шешімдер, ашық сұрақтар және транскрипттен үзінділер алу үшін жаңартыңыз.',
+    legacyRecapButton: 'v2-ге жаңарту',
+    legacyRecapUpgrading: 'Жаңартылуда…',
     errorTitle: 'Бірдеңе дұрыс болмады',
     errorAudioSaved: 'Аудио жергілікті сақталған, оны төменде тыңдауға болады.',
     errorRetry: 'Қайтадан көру',
