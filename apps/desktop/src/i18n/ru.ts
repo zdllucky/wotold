@@ -904,11 +904,17 @@ const ruInternal = {
     details: 'подробнее',
     pending: 'ожидает',
   },
+  // Step labels синхронизированы с backend `Stage::step()`
+  // ([apps/desktop/src-tauri/src/pipeline/stage.rs]):
+  //   1 = Upload · 2 = Transcribe · 3 = RecognizeSpeakers
+  //   4 = MergeArtifacts · 5 = Recap
+  // Все в present continuous — соответствует active-state UX (step рендерится
+  // во время выполнения; done-state видно через ✓ checkmark + muted color).
   pipeline: {
-    step1: 'Сохранили аудио',
-    step2: 'Разделили дорожки микрофона и системы',
-    step3: 'Распознаём речь',
-    step4: 'Соотносим голоса с контактами',
+    step1: 'Сохраняем аудио',
+    step2: 'Распознаём речь',
+    step3: 'Соотносим голоса с контактами',
+    step4: 'Сводим транскрипт',
     step5: 'Готовим саммари и задачи',
   },
   // [M13.3.3] Chunked pipeline (длинные звонки нарезаются на 10-мин сегменты).

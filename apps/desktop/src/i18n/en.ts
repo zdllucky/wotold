@@ -851,11 +851,16 @@ export const en: TranslationStrings = {
     details: 'details',
     pending: 'waiting',
   },
+  // Step labels matched to backend `Stage::step()`:
+  //   1 = Upload · 2 = Transcribe · 3 = RecognizeSpeakers
+  //   4 = MergeArtifacts · 5 = Recap
+  // Present continuous: rendered while step is active; done-state
+  // shown via ✓ checkmark + muted color.
   pipeline: {
-    step1: 'Saved audio',
-    step2: 'Split mic + system tracks',
-    step3: 'Transcribing speech',
-    step4: 'Matching voices to contacts',
+    step1: 'Saving audio',
+    step2: 'Transcribing speech',
+    step3: 'Matching voices to contacts',
+    step4: 'Assembling transcript',
     step5: 'Drafting summary and tasks',
   },
   chunkProgress: {
