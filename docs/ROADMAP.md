@@ -625,6 +625,42 @@
 
 ---
 
+## M14 · Summary v2 (type-driven, evidence-grounded)
+
+> Источник истины: [`docs/M14_SUMMARY_V2_PRD.md`](M14_SUMMARY_V2_PRD.md) (out-of-tree копия — см. `Downloads/бфт.md`).
+> 18 задач T-01..T-18 (12 P0, 4 P1, 2 P2). Foundation slice landed.
+> Cloud LLM: оставляем Groq (Llama 3.3 70B); миграция на xAI Grok-4.1-Fast отложена.
+
+### Foundation (T-01 + T-03) ✓ done
+- [x] **Migration 0015** — ALTER calls (call_type, summary_schema_version, summary_engine, summary_pipeline_mode, summary_*_tokens, summary_type_specific_block) + ALTER action_items (owner_confidence, due_confidence, category, evidence_*) + NEW tables decisions / open_questions с FK на calls + 5 indices. Non-destructive.
+- [x] **Rust types** ([pipeline/summary_v2.rs](../apps/desktop/src-tauri/src/pipeline/summary_v2.rs)) — `CallType` (9 variants), `ActionItemCategory`, `EvidenceAnchor`, `ActionItemV2`, `Decision`, `OpenQuestion`, `ParticipantV2`, `CallSummaryV2` + serde camelCase aliases для cloud responses. 7 unit-тестов (roundtrip + aliases + defaults).
+- [x] **TS contracts** ([packages/contracts/src/summary_v2.ts](../packages/contracts/src/summary_v2.ts)) — mirror Rust types + `CALL_TYPES`, `ACTION_ITEM_CATEGORIES` constants.
+- [x] **Validator** ([pipeline/summary_validator.rs](../apps/desktop/src-tauri/src/pipeline/summary_validator.rs)) — `substring_fuzzy_score` (sliding-window Levenshtein, normalize lowercase+collapse-ws), `verify_evidence_quotes` (≥ 0.9 threshold), `strip_unverified_evidence` (drop-on-fail), `validate_schema` (confidence ranges + key_points len 3..7), `dedup_items` (Jaccard token overlap ≥ 0.7). 15 unit-тестов.
+
+### Pipeline (T-02..T-10) — deferred
+- [ ] T-02 cloud schema-v2 prompts (Groq Llama 3.3 → возможен add xAI Grok later).
+- [ ] T-04 local classifier (Qwen 1.5B/3B/7B через llama-cli sidecar).
+- [ ] T-05 chunker (topic-tile + speaker-turn boundary).
+- [ ] T-06 map-reduce orchestrator для long calls.
+- [ ] T-07 8 expert prompts (sales_discovery / sales_demo / product_sync / standup / customer_interview / one_on_one / strategy_brainstorm / status_update).
+- [ ] T-08 action-item post-pass (always для local).
+- [ ] T-09 GBNF grammar fallback (P1).
+- [ ] T-10 orchestrator e2e + progress events.
+
+### UI + Quality (T-11..T-15) — deferred
+- [ ] T-11 UI v2 (CallTypeBadge, DecisionsBlock, OpenQuestionsBlock, EvidenceTooltip, PrivacyDisclaimer for 1:1).
+- [ ] T-12 golden set + CI eval harness (10+ reference calls на ru/en/kk).
+- [ ] T-13 LLM-as-judge G-Eval (P1).
+- [ ] T-14 feature flag rollout (Labs → all).
+- [ ] T-15 re-process button для schema_version=1 → 2 migration.
+
+### Backlog (T-16..T-18) — P2
+- [ ] T-16 speculative decoding (0.5B draft для 7B).
+- [ ] T-17 title regen trigger.
+- [ ] T-18 hierarchical pipeline (3-level) для 2h+ calls.
+
+---
+
 ## Принятые ограничения (НЕ «чинить» в MVP)
 
 См. раздел 12 паспорта. Здесь только маркеры — детали и причины там.
