@@ -52,10 +52,23 @@ pub async fn get_active_pipeline_count(state: State<'_, AppState>) -> Result<usi
 /// M4.5 паспорта: пересоздать рекап + action_items без повторной транскрипции.
 /// Ошибки LLM пробрасываются (UI показывает toast / error), в отличие от
 /// pipeline::run где рекап silent-skip при ошибке (транскрипт важнее).
+///
+/// [Bug-fix] AppHandle plumbed для local-engine path — LocalLlamaProvider
+/// требует его для sidecar invoke. Cloud-managed path AppHandle игнорирует.
 #[tauri::command]
-pub async fn regenerate_recap(state: State<'_, AppState>, call_id: String) -> Result<(), AppError> {
-    crate::pipeline::regenerate_recap(&state.db, &state.app_data_dir, &state.device_id, &call_id)
-        .await
+pub async fn regenerate_recap(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<(), AppError> {
+    crate::pipeline::regenerate_recap(
+        &state.db,
+        &state.app_data_dir,
+        &state.device_id,
+        &call_id,
+        Some(&app),
+    )
+    .await
 }
 
 /// [M14 T-17] Lightweight title-only regen. Separate path от regenerate_recap —

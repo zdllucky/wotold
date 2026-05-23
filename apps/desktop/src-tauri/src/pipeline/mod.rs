@@ -281,6 +281,7 @@ pub async fn regenerate_recap(
     app_data_dir: &std::path::Path,
     device_id: &Arc<str>,
     call_id: &str,
+    app: Option<&AppHandle>,
 ) -> Result<(), AppError> {
     let call = db::get_call(pool, call_id)
         .await?
@@ -296,6 +297,41 @@ pub async fn regenerate_recap(
     // (malformed threshold, empty proxy URL, "auto" lang) изолированы.
     let s = PipelineSettings::load(pool).await?;
     let effective_lang = s.effective_recap_lang(call.lang_detected.as_deref());
+
+    // [Bug-fix] Раньше regenerate_recap всегда шёл через cloud Anthropic,
+    // игнорируя активный движок. Юзеры на local engine получали 429 от
+    // Cloudflare proxy на свой Cloud-managed quota. Теперь dispatch'имся
+    // на engine == Local → local Qwen через LocalLlamaProvider (no network,
+    // no quota). Cloud path остаётся unchanged для Cloud-managed users.
+    #[cfg(target_os = "macos")]
+    if s.engine == crate::local_engine::engine::EngineKind::Local {
+        let app = app.ok_or_else(|| {
+            AppError::Other(
+                "regenerate_recap для local-engine требует AppHandle (внутренняя ошибка)".into(),
+            )
+        })?;
+        let result = regenerate_recap_local(
+            pool,
+            app_data_dir,
+            &call_dir,
+            call_id,
+            &transcript_md,
+            effective_lang.as_deref(),
+            app,
+            &s,
+        )
+        .await;
+        return match result {
+            Ok(()) => {
+                let _ = db::set_recap_failed_reason(pool, call_id, None).await;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = db::set_recap_failed_reason(pool, call_id, Some(&e.to_string())).await;
+                Err(e)
+            }
+        };
+    }
 
     let recap_ctx = recap::RecapCtx {
         call_id,
@@ -326,6 +362,114 @@ pub async fn regenerate_recap(
             Err(e)
         }
     }
+}
+
+/// [Bug-fix] Local engine path для `regenerate_recap`. Mirror блока в
+/// `run_local_inner` (preset resolve → model presence check → LocalLlamaProvider
+/// build → local_orchestrator → persist_recap_from_json), но БЕЗ STT/merge
+/// stages (transcript.md уже есть). Errors propagate как AppError —
+/// regenerate_recap setter caller персистит failed_reason + возвращает Err
+/// в UI.
+#[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)] // регенерация — internal helper; structured args = backlog
+async fn regenerate_recap_local(
+    pool: &SqlitePool,
+    app_data_dir: &std::path::Path,
+    call_dir: &std::path::Path,
+    call_id: &str,
+    transcript_md: &str,
+    lang_detected: Option<&str>,
+    app: &AppHandle,
+    s: &PipelineSettings,
+) -> Result<(), AppError> {
+    use crate::local_engine::{
+        llm::LocalLlamaProvider,
+        models::{self, ModelId, ModelStatus},
+        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
+    };
+
+    if transcript_md.trim().is_empty() {
+        return Err(AppError::Other("local_engine_transcript_empty".into()));
+    }
+
+    // Preset resolve.
+    let preset_str = db::get_setting(pool, SETTING_ACTIVE_PRESET).await?;
+    let preset = preset_str
+        .as_deref()
+        .and_then(LocalEnginePreset::from_str)
+        .ok_or_else(|| {
+            AppError::Other(
+                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings → Движок"
+                    .into(),
+            )
+        })?;
+    let llm_id = preset.llm_model_id();
+    let whisper_id = preset.whisper_model_id();
+
+    // Проверяем что LLM модель на диске + SHA OK (whisper для recap не нужен
+    // но touch_usage обновим — пользователь может всё-таки запустить reprocess).
+    let status = models::check_status(app_data_dir, llm_id.as_str()).await?;
+    if !matches!(status, ModelStatus::Present { .. }) {
+        return Err(AppError::Other(format!(
+            "local_engine_model_missing: модель {} не установлена, скачайте в Settings → Движок",
+            llm_id.as_str()
+        )));
+    }
+
+    // Known speakers context для prompt'а (подтверждённые bindings).
+    let known_speakers = recap::build_known_speakers_block(pool, call_id)
+        .await
+        .ok()
+        .flatten();
+
+    // Speculative decoding gate (mirror run_local_inner).
+    let draft_path: Option<std::path::PathBuf> =
+        if s.summary_speculative_decoding && preset == LocalEnginePreset::Quality {
+            Some(models::model_path(
+                app_data_dir,
+                ModelId::QWEN25_0_5B.as_str(),
+            ))
+        } else {
+            None
+        };
+
+    let provider = LocalLlamaProvider::for_preset(app_data_dir, llm_id)
+        .with_app(app.clone())
+        .await
+        .with_draft_model(draft_path);
+
+    let orch_ctx = local_orchestrator::LocalOrchestratorCtx {
+        transcript_md,
+        lang_detected,
+        known_speakers: known_speakers.as_deref(),
+        preset,
+    };
+    let json_value = local_orchestrator::run_v2_pipeline(&provider, orch_ctx)
+        .await
+        .map_err(|e| AppError::Other(format!("local_engine_llm_failed: {e}")))?;
+
+    let local_engine_label = match llm_id.as_str() {
+        id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
+        id if id.contains("3b") => "local-qwen-3b",
+        id if id.contains("7b") => "local-qwen-7b",
+        _ => "local-qwen",
+    };
+    recap::persist_recap_from_json(
+        pool,
+        call_id,
+        call_dir,
+        json_value,
+        local_engine_label,
+        transcript_md,
+        None,
+        Some(s.summary_v2_enabled),
+    )
+    .await?;
+
+    // Storage UI «активно X дней назад».
+    let _ = models::touch_usage(pool, whisper_id.as_str()).await;
+    let _ = models::touch_usage(pool, llm_id.as_str()).await;
+    Ok(())
 }
 
 /// [Phase 3 R2] Helper: эмитит `(step, 0)` перед `f.await`, и `(step, 100)`

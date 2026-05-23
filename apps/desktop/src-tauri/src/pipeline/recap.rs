@@ -1010,9 +1010,10 @@ mod tests {
         let call = crate::db::insert_recording(&db.pool, "managed")
             .await
             .unwrap();
-        let err = crate::pipeline::regenerate_recap(&db.pool, tmpdir.path(), &device, &call.id)
-            .await
-            .unwrap_err();
+        let err =
+            crate::pipeline::regenerate_recap(&db.pool, tmpdir.path(), &device, &call.id, None)
+                .await
+                .unwrap_err();
         assert!(
             err.to_string().contains("transcript.md"),
             "expected transcript.md error, got: {err}"
