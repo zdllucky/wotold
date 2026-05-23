@@ -207,6 +207,7 @@ mod tests {
             system: "you are a recap bot, return JSON".into(),
             input: "Alice: hi\nBob: hello".into(),
             max_tokens: None,
+            grammar: None,
         }
     }
 

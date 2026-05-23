@@ -17,6 +17,7 @@
 
 use serde::Deserialize;
 
+use crate::pipeline::gbnf;
 use crate::pipeline::summary_v2::CallType;
 use crate::providers::llm::{LlmProvider, LlmRequest};
 use crate::AppError;
@@ -111,9 +112,9 @@ pub(crate) async fn classify_call(
         system: build_classifier_prompt(lang_detected),
         input: transcript_head.to_string(),
         max_tokens: Some(256), // Compact output — экономим латентность
+        grammar: None,
     };
-    let json_value = provider
-        .generate(request)
+    let json_value = gbnf::generate_with_grammar_fallback(provider, request)
         .await
         .map_err(|e| AppError::Other(format!("classifier llm: {e}")))?;
     parse_classifier_response(json_value)

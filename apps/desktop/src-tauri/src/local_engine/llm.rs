@@ -160,6 +160,22 @@ impl LlmProvider for LocalLlamaProvider {
         }
         ensure_path_under(&prompt_path, &self.tmp_dir).map_err(LlmError::Provider)?;
 
+        // [M14 T-09 Phase E] Optional GBNF grammar file. Когда request.grammar
+        // set — пишем во временный файл (mirror prompt-file pattern) + передаём
+        // через `--grammar-file <path>` в llama-cli. Cleanup в конце.
+        let grammar_path: Option<PathBuf> = if let Some(grammar_text) = &request.grammar {
+            let path = self
+                .tmp_dir
+                .join(format!("wotold-grammar-{}.gbnf", uuid::Uuid::new_v4()));
+            write_user_only(&path, grammar_text.as_bytes())
+                .await
+                .map_err(|e| LlmError::Provider(format!("grammar write: {e}")))?;
+            ensure_path_under(&path, &self.tmp_dir).map_err(LlmError::Provider)?;
+            Some(path)
+        } else {
+            None
+        };
+
         let max_tokens = request
             .max_tokens
             .map(|n| n.clamp(256, 8192))
@@ -173,10 +189,18 @@ impl LlmProvider for LocalLlamaProvider {
             .to_str()
             .ok_or_else(|| LlmError::Provider("non-utf8 prompt path".into()))?
             .to_string();
+        let grammar_path_str: Option<String> = grammar_path
+            .as_ref()
+            .map(|p| {
+                p.to_str()
+                    .ok_or_else(|| LlmError::Provider("non-utf8 grammar path".into()))
+                    .map(|s| s.to_string())
+            })
+            .transpose()?;
 
         // [Dev] Brew-built llama-cli использует `@rpath/libllama.dylib` +
         // `libggml*.dylib`. См. stt.rs для подробностей.
-        let sidecar = app
+        let mut sidecar = app
             .shell()
             .sidecar(SIDECAR_NAME)
             .map_err(|e| LlmError::Provider(format!("sidecar lookup: {e}")))?
@@ -204,11 +228,17 @@ impl LlmProvider for LocalLlamaProvider {
                 "-f",
                 &prompt_path_str,
             ]);
+        if let Some(g) = grammar_path_str.as_deref() {
+            sidecar = sidecar.args(["--grammar-file", g]);
+        }
 
         let result = run_sidecar_with_timeout(sidecar, self.timeout).await;
 
-        // 3. Чистим prompt-файл вне зависимости от исхода.
+        // 3. Чистим prompt-файл + grammar-файл (если был) вне зависимости от исхода.
         let _ = tokio::fs::remove_file(&prompt_path).await;
+        if let Some(g) = grammar_path.as_ref() {
+            let _ = tokio::fs::remove_file(g).await;
+        }
 
         let stdout = result?;
         // 4. Извлекаем JSON из stdout (модель может выдать echo / whitespace
@@ -494,6 +524,7 @@ mod tests {
                 system: LOCAL_LLM_SYSTEM_PROMPT.to_string(),
                 input: "transcript".to_string(),
                 max_tokens: Some(1024),
+                grammar: None,
             })
             .await
             .expect_err("stub must error");
@@ -527,6 +558,7 @@ mod tests {
             system: "SYS".into(),
             input: "BODY".into(),
             max_tokens: None,
+            grammar: None,
         };
         let p = build_prompt(&req);
         assert!(p.starts_with("SYS"));
@@ -545,6 +577,7 @@ mod tests {
             system: "SYS\n".into(),
             input: "BODY".into(),
             max_tokens: None,
+            grammar: None,
         };
         let p = build_prompt(&req);
         assert!(p.contains("SYS\n\nBODY"));
