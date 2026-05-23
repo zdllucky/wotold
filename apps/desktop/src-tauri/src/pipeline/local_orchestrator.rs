@@ -25,6 +25,7 @@
 //! `LocalLlamaProvider`.
 
 use crate::local_engine::preset::LocalEnginePreset;
+use crate::pipeline::action_item_post_pass;
 use crate::pipeline::chunker;
 use crate::pipeline::classifier;
 use crate::pipeline::expert_prompts;
@@ -78,7 +79,7 @@ pub(crate) async fn run_v2_pipeline(
 
     // 2. Dispatch: Phase B map-reduce для длинных transcripts.
     let chunk_cfg = chunker::ChunkConfig::for_preset(ctx.preset);
-    if chunker::needs_chunking(ctx.transcript_md, &chunk_cfg) {
+    let mut summary_json = if chunker::needs_chunking(ctx.transcript_md, &chunk_cfg) {
         let chunks = chunker::chunk_transcript(ctx.transcript_md, &chunk_cfg);
         log::info!(
             "local map-reduce: {} chunks (transcript ~{} tokens, preset={:?})",
@@ -86,35 +87,53 @@ pub(crate) async fn run_v2_pipeline(
             chunker::estimate_tokens(ctx.transcript_md),
             ctx.preset
         );
-        return map_reduce::run_map_reduce(
+        map_reduce::run_map_reduce(
             provider,
             &chunks,
             ctx.lang_detected,
             known_type,
             ctx.known_speakers,
         )
-        .await;
-    }
+        .await?
+    } else {
+        // 3. Phase A: single-pass main v2 generation.
+        // [M14 T-07 Phase C] Expert prompt когда classifier дал call_type;
+        // universal fallback на classifier failure (no regression).
+        let system = match known_type {
+            Some(t) => {
+                expert_prompts::build_expert_system_prompt(t, ctx.lang_detected, ctx.known_speakers)
+            }
+            None => recap::build_v2_system_prompt(ctx.lang_detected, ctx.known_speakers, None),
+        };
+        let request = LlmRequest {
+            model: None,
+            system,
+            input: ctx.transcript_md.to_string(),
+            max_tokens: Some(MAIN_MAX_TOKENS),
+        };
+        provider
+            .generate(request)
+            .await
+            .map_err(|e| AppError::Other(format!("local llm: {e}")))?
+    };
 
-    // 3. Phase A: single-pass main v2 generation.
-    // [M14 T-07 Phase C] Expert prompt когда classifier дал call_type;
-    // universal fallback на classifier failure (no regression).
-    let system = match known_type {
-        Some(t) => {
-            expert_prompts::build_expert_system_prompt(t, ctx.lang_detected, ctx.known_speakers)
-        }
-        None => recap::build_v2_system_prompt(ctx.lang_detected, ctx.known_speakers, None),
-    };
-    let request = LlmRequest {
-        model: None,
-        system,
-        input: ctx.transcript_md.to_string(),
-        max_tokens: Some(MAIN_MAX_TOKENS),
-    };
-    provider
-        .generate(request)
-        .await
-        .map_err(|e| AppError::Other(format!("local llm: {e}")))
+    // 4. [M14 T-08 Phase D] Action-item post-pass — best-effort refinement
+    // действующих action_items (categories, owner_confidence, dedup, evidence
+    // re-check). На LLM failure / garbage output → keep original без regression.
+    // Skip когда action_items пустой массив.
+    let action_items = summary_json
+        .get("action_items")
+        .cloned()
+        .unwrap_or(serde_json::Value::Array(Vec::new()));
+    let refined = action_item_post_pass::refine_action_items(
+        provider,
+        action_items,
+        ctx.transcript_md,
+        ctx.lang_detected,
+    )
+    .await;
+    summary_json = action_item_post_pass::merge_refined_action_items(summary_json, refined);
+    Ok(summary_json)
 }
 
 #[cfg(test)]
@@ -140,6 +159,9 @@ mod tests {
             }
         }
 
+        fn call_count(&self) -> usize {
+            self.captured.lock().unwrap().len()
+        }
         fn captured_systems(&self) -> Vec<String> {
             self.captured
                 .lock()
@@ -382,5 +404,94 @@ mod tests {
             "last call should be reduce, got: {}",
             &last[..200.min(last.len())]
         );
+    }
+
+    fn v2_json_with_action_items() -> serde_json::Value {
+        serde_json::json!({
+            "schema_version": 2,
+            "title": "stub",
+            "summary": "stub",
+            "key_points": [],
+            "language": "ru",
+            "call_type": "standup",
+            "call_type_confidence": 0.8,
+            "participants": [],
+            "action_items": [
+                {
+                    "id": "a1",
+                    "text": "Ship by Friday",
+                    "owner_hint": "Alice",
+                    "owner_confidence": 0.95,
+                    "due": null,
+                    "due_confidence": 0.0,
+                    "category": "commitment",
+                    "evidence": { "quote": "I'll ship it", "speaker": "Alice" }
+                }
+            ],
+            "decisions": [],
+            "open_questions": [],
+            "mom": "",
+        })
+    }
+
+    #[tokio::test]
+    async fn orchestrator_runs_post_pass_after_main_when_action_items_non_empty() {
+        // classifier OK + main OK (с non-empty action_items) → post-pass triggered.
+        // 3 LLM calls total. Refined action_items replace original.
+        let refined = serde_json::json!([
+            {
+                "id": "a1",
+                "text": "Ship by Friday — refined",
+                "owner_hint": "Alice",
+                "owner_confidence": 0.9,
+                "due": null,
+                "due_confidence": 0.0,
+                "category": "commitment",
+                "evidence": { "quote": "I'll ship it", "speaker": "Alice" }
+            }
+        ]);
+        let mock = MockProvider::new(vec![
+            Ok(serde_json::json!({ "call_type": "standup", "confidence": 0.9 })),
+            Ok(v2_json_with_action_items()),
+            Ok(serde_json::json!({ "action_items": refined.clone() })),
+        ]);
+        let ctx = LocalOrchestratorCtx {
+            transcript_md: "**A** [0:00]:\nI'll ship it",
+            lang_detected: Some("en"),
+            known_speakers: None,
+            preset: LocalEnginePreset::Light,
+        };
+        let result = run_v2_pipeline(&mock, ctx).await.unwrap();
+        assert_eq!(
+            mock.call_count(),
+            3,
+            "expected 3 calls (classifier + main + post-pass)"
+        );
+        assert_eq!(result["action_items"], refined);
+        // Other fields preserved from main response.
+        assert_eq!(result["title"], "stub");
+        assert_eq!(result["call_type"], "standup");
+    }
+
+    #[tokio::test]
+    async fn orchestrator_post_pass_failure_keeps_original_action_items() {
+        // classifier OK + main OK + post-pass FAIL → original action_items preserved.
+        let original_main = v2_json_with_action_items();
+        let original_items = original_main["action_items"].clone();
+        let mock = MockProvider::new(vec![
+            Ok(serde_json::json!({ "call_type": "standup", "confidence": 0.9 })),
+            Ok(original_main),
+            Err(LlmError::Provider("post-pass crash".into())),
+        ]);
+        let ctx = LocalOrchestratorCtx {
+            transcript_md: "**A** [0:00]:\nI'll ship it",
+            lang_detected: Some("en"),
+            known_speakers: None,
+            preset: LocalEnginePreset::Light,
+        };
+        let result = run_v2_pipeline(&mock, ctx).await.unwrap();
+        // Post-pass crashed → original kept.
+        assert_eq!(result["action_items"], original_items);
+        assert_eq!(mock.call_count(), 3);
     }
 }

@@ -80,6 +80,11 @@ pub(crate) mod map_reduce;
 // даёт known_call_type.
 pub(crate) mod expert_prompts;
 
+// [M14 T-08 Phase D] Action-item post-pass — refinement отдельным LLM-call'ом
+// после main/reduce. Re-validate categories, owner_confidence, dedup,
+// drop non-verbatim evidence. Local-only (cloud skip — Phase D-bis).
+pub(crate) mod action_item_post_pass;
+
 // [M14 T-10] Local engine orchestrator — chain classifier + main v2 gen.
 // Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
 pub(crate) mod local_orchestrator;
