@@ -47,11 +47,20 @@ export function VoiceModelSection() {
   const [autoBindEnabled, setAutoBindEnabled] = useState<boolean>(
     SETTINGS_DEFAULTS.AUTO_BIND_ENABLED,
   );
+  const [micDiarizationEnabled, setMicDiarizationEnabled] = useState<boolean>(
+    SETTINGS_DEFAULTS.MIC_DIARIZATION_ENABLED,
+  );
 
   useEffect(() => {
     void (async () => {
       const raw = await getSetting(SETTINGS_KEYS.AUTO_BIND_ENABLED).catch(() => null);
       setAutoBindEnabled(raw === '1');
+      // [M13 follow-up] Mic diarization — default ON. Explicit '0'/'false' = OFF;
+      // null/missing/anything else = treat as ON (matches backend interpretation).
+      const micRaw = await getSetting(SETTINGS_KEYS.MIC_DIARIZATION_ENABLED).catch(
+        () => null,
+      );
+      setMicDiarizationEnabled(micRaw !== '0' && micRaw !== 'false');
     })();
   }, []);
 
@@ -59,6 +68,15 @@ export function VoiceModelSection() {
     setAutoBindEnabled(next);
     try {
       await setSetting(SETTINGS_KEYS.AUTO_BIND_ENABLED, next ? '1' : '0');
+    } catch (e) {
+      setError(humanError(e));
+    }
+  };
+
+  const persistMicDiarization = async (next: boolean) => {
+    setMicDiarizationEnabled(next);
+    try {
+      await setSetting(SETTINGS_KEYS.MIC_DIARIZATION_ENABLED, next ? '1' : '0');
     } catch (e) {
       setError(humanError(e));
     }
@@ -364,6 +382,60 @@ export function VoiceModelSection() {
               }}
             >
               {t('settings.speakersAutoBindHint')}
+            </div>
+          </div>
+        </label>
+      </div>
+
+      {/* [M13 follow-up] Mic diarization toggle — для записей где на mic
+          попадает несколько голосов (live meetings в одной комнате).
+          Default ON. Hint предупреждает о ~10-20% slowdown.
+          Не gating'уется по status.status — даже без WeSpeaker модели
+          sortformer работает; owner identification только без biometric
+          (fallback на primary-speaker heuristic). */}
+      <div
+        style={{
+          marginTop: 12,
+          padding: 18,
+          border: '1px solid var(--line-soft)',
+          borderRadius: 'var(--radius-card, 8px)',
+          background: 'var(--bg)',
+        }}
+      >
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 12,
+            cursor: 'pointer',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={micDiarizationEnabled}
+            onChange={(e) => void persistMicDiarization(e.target.checked)}
+            style={{ marginTop: 4 }}
+          />
+          <div style={{ flex: 1 }}>
+            <div
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: 14,
+                color: 'var(--ink)',
+                fontWeight: 500,
+                marginBottom: 4,
+              }}
+            >
+              {t('settings.speakersMicDiarizationLabel')}
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--subtle)',
+                lineHeight: 1.5,
+              }}
+            >
+              {t('settings.speakersMicDiarizationHint')}
             </div>
           </div>
         </label>

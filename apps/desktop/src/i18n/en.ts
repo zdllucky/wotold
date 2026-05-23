@@ -399,6 +399,9 @@ export const en: TranslationStrings = {
     speakersAutoBindLabel: 'Auto-bind speakers to contacts',
     speakersAutoBindHint:
       'Only when confident — can be undone right in the call.',
+    speakersMicDiarizationLabel: 'Detect multiple voices on microphone',
+    speakersMicDiarizationHint:
+      'Useful for live meetings in one room when other participants also speak into your mic. Slows processing by ~10–20% (local engine runs an extra sortformer pass). The device owner is auto-identified via voice samples (or by primary speaker time if none yet).',
     appearanceTitle: 'Appearance.',
     appearanceLede:
       'Theme and accent apply instantly — switch and compare. All screens respond simultaneously.',

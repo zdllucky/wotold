@@ -95,6 +95,32 @@ where
     Ok(())
 }
 
+/// [M13 follow-up] Загрузить все embeddings owner-контакта (is_owner=1).
+/// Возвращает пустой Vec если owner ещё не накопил samples (новый юзер,
+/// никто не подтвердил голос с consent_voice='auto'). Caller использует
+/// для biometric matching → если empty, fallback на primary-speaker
+/// heuristic. Если owner-контакта вообще нет — тоже пустой Vec.
+pub async fn list_owner_embeddings(pool: &SqlitePool) -> Result<Vec<Vec<f32>>, AppError> {
+    let rows = sqlx::query(
+        "SELECT vs.embedding
+         FROM voice_samples vs
+         JOIN contacts c ON c.id = vs.contact_id
+         WHERE c.is_owner = 1",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let blob: Vec<u8> = row.get("embedding");
+        if let Ok(emb) = crate::embeddings::bytes_to_embedding(&blob) {
+            if !emb.is_empty() {
+                out.push(emb);
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Ручное удаление одного семпла (C3 паспорта). Возвращает Err если id не найден.
 pub async fn delete_voice_sample(pool: &SqlitePool, id: &str) -> Result<(), AppError> {
     let result = sqlx::query("DELETE FROM voice_samples WHERE id = ?1")

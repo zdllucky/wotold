@@ -61,6 +61,11 @@ pub struct ChunkRunInput {
     /// [M13.2.3] Tauri AppHandle для emit'а `transcript:chunk_done`. `None`
     /// в unit-тестах / headless — event silently no-op.
     pub app_handle: Option<AppHandle>,
+    /// [M13 follow-up] Прогнать sortformer и по mic-дорожке для multi-voice
+    /// записей. Default true. Owner-tagging НЕ применяется здесь — local
+    /// `speaker:N` tags остаются, finalize'ится в chunk_assembly через
+    /// `owner_identify::identify_owner_speaker`.
+    pub mic_diarization: bool,
 }
 
 /// Результат успешного `run_chunk`. `transcript_tail` идёт в `prev_prompt`
@@ -103,6 +108,7 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         lang,
         app_data_dir,
         app_handle,
+        mic_diarization,
     } = input;
     let bus = EventBus::new(app_handle.as_ref());
 
@@ -158,6 +164,30 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
             log::warn!("chunk {call_id}/{chunk_idx} system STT failed (degraded ok): {e}");
             None
         }
+    };
+
+    // [M13 follow-up] Если включена mic_diarization + есть app_data_dir →
+    // прогоняем mic через sortformer. Получаем speaker:N tags вместо
+    // STT-default'ного «owner»-эквивалента. Owner identification (M3.7
+    // invariant) идёт после Phase 2 reclustering в chunk_assembly.
+    // Degraded path: на macOS не-сборках или без моделей возвращается
+    // mic_transcript без изменений → caller force_owner_track.
+    let mic_transcript = if mic_diarization {
+        #[cfg(target_os = "macos")]
+        {
+            match app_data_dir.as_deref() {
+                Some(dir) => {
+                    crate::pipeline::diarize_mic_track(dir, &mic_path, mic_transcript).await
+                }
+                None => mic_transcript,
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            mic_transcript
+        }
+    } else {
+        mic_transcript
     };
 
     // 3. Serialize → DB persist.
@@ -402,6 +432,9 @@ mod tests {
             // pipeline отдельно.
             app_data_dir: None,
             app_handle: None,
+            // [M13 follow-up] Off в unit-тестах — sortformer требует
+            // app_data_dir + macOS sidecar.
+            mic_diarization: false,
         }
     }
 
