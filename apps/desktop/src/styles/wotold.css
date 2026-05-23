@@ -1001,6 +1001,15 @@ textarea:focus-visible {
 }
 .step--pending .step-label,
 .step--pending .step-meta { color: var(--muted); }
+/* [M13.3.1] Failed chunk — signal-tinted bullet. Семантически отдельный от
+   pending (waiting) и done (success). Только для ChunkProgressStrip — main
+   PipelineStrip имеет atomic-step-fail модель (страница уходит в ErrorScreen). */
+.step--failed .step-bullet {
+  background: var(--signal-soft);
+  color: var(--signal);
+  border: 1.5px solid var(--signal);
+}
+.step--failed .step-label { color: var(--signal); }
 
 /* ─── Collapsible processing strip ─── */
 .proc-strip {

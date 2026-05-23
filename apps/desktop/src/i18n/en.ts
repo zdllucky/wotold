@@ -858,6 +858,14 @@ export const en: TranslationStrings = {
     step4: 'Matching voices to contacts',
     step5: 'Drafting summary and tasks',
   },
+  chunkProgress: {
+    label: 'Segments',
+    ofN: '{done} of {total}',
+    statusDone: 'done',
+    statusFailed: 'failed',
+    statusProcessing: 'processing',
+    statusPending: 'waiting',
+  },
 };
 
 export default en;

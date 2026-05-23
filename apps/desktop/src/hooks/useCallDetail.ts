@@ -33,7 +33,13 @@ import {
   type CallAutoBoundEvent,
   type CallSpeakerView,
 } from '../api/speakers';
-import type { Call, CallProgressEvent } from '../api/recording';
+import {
+  listCallChunks,
+  type Call,
+  type CallChunk,
+  type CallProgressEvent,
+  type ChunkDoneEvent,
+} from '../api/recording';
 import { humanError } from '../api/errors';
 
 export interface UseCallDetailResult {
@@ -47,6 +53,10 @@ export interface UseCallDetailResult {
   setTasks: (v: ActionItem[] | null) => void;
   contacts: Contact[];
   speakers: CallSpeakerView[];
+  /** [M13.3.1] Chunks для chunked-pipeline записей. Пустой массив для
+   *  cloud-managed / legacy local — ProcessingPanel fallback'нет на 5-step
+   *  PipelineStrip. */
+  chunks: CallChunk[];
   micSrc: string | null;
   systemSrc: string | null;
   loading: boolean;
@@ -64,6 +74,7 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   const [tasks, setTasks] = useState<ActionItem[] | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [speakers, setSpeakers] = useState<CallSpeakerView[]>([]);
+  const [chunks, setChunks] = useState<CallChunk[]>([]);
   const [micSrc, setMicSrc] = useState<string | null>(null);
   const [systemSrc, setSystemSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,34 +107,40 @@ export function useCallDetail(callId: string): UseCallDetailResult {
       listCallSpeakers(callId),
       getCallAudioPath(callId, 'mic'),
       getCallAudioPath(callId, 'system'),
+      listCallChunks(callId),
     ])
-      .then(([rCall, rRecap, rTrans, rRaw, rTasks, rContacts, rSpeakers, rMic, rSys]) => {
-        // Call meta — критично. Без неё страница не имеет смысла.
-        if (rCall.status === 'fulfilled') {
-          setCallState(rCall.value);
-        } else {
-          setError(humanError(rCall.reason));
-        }
-        if (rRecap.status === 'fulfilled') setRecap(rRecap.value);
-        if (rTrans.status === 'fulfilled') setTranscript(rTrans.value);
-        if (rRaw.status === 'fulfilled') setRawStt(rRaw.value);
-        if (rTasks.status === 'fulfilled') setTasks(rTasks.value);
-        if (rContacts.status === 'fulfilled') setContacts(rContacts.value);
-        if (rSpeakers.status === 'fulfilled') setSpeakers(rSpeakers.value);
-        setMicSrc(rMic.status === 'fulfilled' ? convertFileSrc(rMic.value) : null);
-        setSystemSrc(rSys.status === 'fulfilled' ? convertFileSrc(rSys.value) : null);
-        // Log невидимые failures чтобы они не исчезли silent.
-        for (const [name, r] of [
-          ['recap', rRecap],
-          ['transcript', rTrans],
-          ['raw_stt', rRaw],
-          ['tasks', rTasks],
-          ['contacts', rContacts],
-          ['speakers', rSpeakers],
-        ] as const) {
-          if (r.status === 'rejected') console.warn(`CallDetail ${name} load failed`, r.reason);
-        }
-      })
+      .then(
+        ([rCall, rRecap, rTrans, rRaw, rTasks, rContacts, rSpeakers, rMic, rSys, rChunks]) => {
+          // Call meta — критично. Без неё страница не имеет смысла.
+          if (rCall.status === 'fulfilled') {
+            setCallState(rCall.value);
+          } else {
+            setError(humanError(rCall.reason));
+          }
+          if (rRecap.status === 'fulfilled') setRecap(rRecap.value);
+          if (rTrans.status === 'fulfilled') setTranscript(rTrans.value);
+          if (rRaw.status === 'fulfilled') setRawStt(rRaw.value);
+          if (rTasks.status === 'fulfilled') setTasks(rTasks.value);
+          if (rContacts.status === 'fulfilled') setContacts(rContacts.value);
+          if (rSpeakers.status === 'fulfilled') setSpeakers(rSpeakers.value);
+          if (rChunks.status === 'fulfilled') setChunks(rChunks.value);
+          setMicSrc(rMic.status === 'fulfilled' ? convertFileSrc(rMic.value) : null);
+          setSystemSrc(rSys.status === 'fulfilled' ? convertFileSrc(rSys.value) : null);
+          // Log невидимые failures чтобы они не исчезли silent.
+          for (const [name, r] of [
+            ['recap', rRecap],
+            ['transcript', rTrans],
+            ['raw_stt', rRaw],
+            ['tasks', rTasks],
+            ['contacts', rContacts],
+            ['speakers', rSpeakers],
+            ['chunks', rChunks],
+          ] as const) {
+            if (r.status === 'rejected')
+              console.warn(`CallDetail ${name} load failed`, r.reason);
+          }
+        },
+      )
       .finally(() => setLoading(false));
   }, [callId]);
 
@@ -184,6 +201,37 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refetchAll stable per callId
   }, [callId]);
 
+  // [M13.3.1] Live chunk progress — слушаем `transcript:chunk_done` события
+  // для этого звонка. Status текущей row патчится; для new chunk_idx (или если
+  // массив пустой при первом emit) — refetch listCallChunks (lightweight,
+  // ≤24 chunks типичный max).
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<ChunkDoneEvent>('transcript:chunk_done', (e) => {
+      if (e.payload.call_id !== callId) return;
+      const { chunk_idx, status } = e.payload;
+      setChunks((prev) => {
+        const idx = prev.findIndex((c) => c.chunk_idx === chunk_idx);
+        const target = idx === -1 ? undefined : prev[idx];
+        if (!target) {
+          // New chunk_idx (или начальный массив пуст) — refetch.
+          void listCallChunks(callId)
+            .then(setChunks)
+            .catch((err) => console.warn('refetch chunks failed', err));
+          return prev;
+        }
+        const next = prev.slice();
+        next[idx] = { ...target, status };
+        return next;
+      });
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((err) => console.warn('transcript:chunk_done listener:', err));
+    return () => unlisten?.();
+  }, [callId]);
+
   // [V6.4] Live pipeline progress — слушаем `call:progress` события для этого
   // звонка и патчим Call object. UI: PipelineStrip + reassurance banner.
   useEffect(() => {
@@ -227,22 +275,32 @@ export function useCallDetail(callId: string): UseCallDetailResult {
 
   // [V8] Refetch full state — артефакты + call meta + speakers. Используется
   // и в reprocess, и в pipeline:finished/cancelled listeners.
+  // [M13.3.1] + chunks (для chunked-pipeline записей; пустой для cloud/legacy).
   const refetchAll = async () => {
-    const [fresh, freshTranscript, freshRaw, freshTasks, freshCall, freshSpeakers] =
-      await Promise.allSettled([
-        readCallArtifact(callId, 'recap'),
-        readCallArtifact(callId, 'transcript'),
-        readCallArtifact(callId, 'raw_stt'),
-        listCallActionItems(callId),
-        getCall(callId),
-        listCallSpeakers(callId),
-      ]);
+    const [
+      fresh,
+      freshTranscript,
+      freshRaw,
+      freshTasks,
+      freshCall,
+      freshSpeakers,
+      freshChunks,
+    ] = await Promise.allSettled([
+      readCallArtifact(callId, 'recap'),
+      readCallArtifact(callId, 'transcript'),
+      readCallArtifact(callId, 'raw_stt'),
+      listCallActionItems(callId),
+      getCall(callId),
+      listCallSpeakers(callId),
+      listCallChunks(callId),
+    ]);
     if (fresh.status === 'fulfilled') setRecap(fresh.value);
     if (freshTranscript.status === 'fulfilled') setTranscript(freshTranscript.value);
     if (freshRaw.status === 'fulfilled') setRawStt(freshRaw.value);
     if (freshTasks.status === 'fulfilled') setTasks(freshTasks.value);
     if (freshCall.status === 'fulfilled') setCallState(freshCall.value);
     if (freshSpeakers.status === 'fulfilled') setSpeakers(freshSpeakers.value);
+    if (freshChunks.status === 'fulfilled') setChunks(freshChunks.value);
   };
 
   return {
@@ -256,6 +314,7 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     setTasks,
     contacts,
     speakers,
+    chunks,
     micSrc,
     systemSrc,
     loading,

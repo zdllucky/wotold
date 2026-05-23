@@ -604,10 +604,10 @@
 
 ### Phase 3 — UX surfacing + flag-on default
 
-- [ ] **M13.3.1** `components/ChunkProgressStrip.tsx` — список сегментов с статусом per chunk
-- [ ] **M13.3.2** Intermediate states после stop: «Готовим транскрипт… N/M готовы → Составляем саммари…»
-- [ ] **M13.3.3** i18n ключи для chunk progress (ru/en/kk)
-- [ ] **M13.3.4** Feature flag `chunked_pipeline=true` по умолчанию
+- [x] **M13.3.1** `components/call-state/ChunkProgressStrip.tsx` — N-chunk progress strip (mirror PipelineStrip `.proc-strip` pattern). Tauri `list_call_chunks` command + `transcript:chunk_done` event listener в `useCallDetail` для delta-патчей без полного refetch'а. 5 vitest cases.
+- [x] **M13.3.2** Intermediate states — `ChunkProgressStrip` показывает «N / M» в summary + per-segment bullets (done/processing/failed/pending) в expand body. Reassurance строка «Можно закрыть окно — мы сохраним прогресс» остаётся из V6.4 ProcessingPanel. Macro % rounded `done/total*100`.
+- [x] **M13.3.3** i18n ключи `chunkProgress.{label,ofN,statusDone,statusFailed,statusProcessing,statusPending}` на ru/en/kk.
+- [x] **M13.3.4** Feature flag `chunked_pipeline=true` по умолчанию — `prepare_chunked_setup` теперь reads `Some("0") | Some("false")` → OFF, иначе ON (no migration, escape hatch через explicit DB write).
 
 ### M13 acceptance gates
 

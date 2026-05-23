@@ -351,12 +351,15 @@ async fn prepare_chunked_setup(
 ) -> Result<Option<ChunkedSetup>, AppError> {
     let _ = call_id;
 
-    let chunked_on = matches!(
+    // [M13.3.4] Default ON. Explicit "0" / "false" — escape hatch (debug / поддержка).
+    // Missing setting (`None`) — новый юзер либо existing-без-explicit-toggle — ON.
+    let chunked_off = matches!(
         db::get_setting(&state.db, SETTING_CHUNKED_PIPELINE)
             .await?
             .as_deref(),
-        Some("1") | Some("true")
+        Some("0") | Some("false")
     );
+    let chunked_on = !chunked_off;
     if !chunked_on {
         return Ok(None);
     }

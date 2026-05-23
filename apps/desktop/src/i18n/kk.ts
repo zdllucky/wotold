@@ -852,6 +852,14 @@ export const kk: TranslationStrings = {
     step4: 'Дауыстарды контактілермен сәйкестендіреміз',
     step5: 'Қорытынды мен тапсырмаларды дайындаймыз',
   },
+  chunkProgress: {
+    label: 'Сегменттер',
+    ofN: '{done} / {total}',
+    statusDone: 'дайын',
+    statusFailed: 'сәтсіз',
+    statusProcessing: 'өңделуде',
+    statusPending: 'күтуде',
+  },
 };
 
 export default kk;

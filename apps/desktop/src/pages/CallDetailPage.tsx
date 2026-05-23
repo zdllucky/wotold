@@ -66,6 +66,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     setTasks,
     contacts,
     speakers: speakersLite,
+    chunks,
     micSrc,
     systemSrc,
     loading,
@@ -310,7 +311,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             onCancel={() => void onCancelReprocess()}
           />
         ) : (
-          <ProcessingPanel call={call} />
+          <ProcessingPanel call={call} chunks={chunks} />
         ))}
 
       {call.status === 'failed' && (

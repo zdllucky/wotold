@@ -618,6 +618,7 @@ pub fn run() {
             commands::reprocess_call,
             commands::cancel_reprocess,
             commands::get_active_pipeline_count,
+            commands::list_call_chunks,
             commands::get_call_audio_path,
             commands::export_call_markdown,
             commands::voice_model_status,
