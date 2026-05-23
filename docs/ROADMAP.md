@@ -652,7 +652,7 @@
 - [ ] T-12 golden set + CI eval harness (10+ reference calls на ru/en/kk).
 - [ ] T-13 LLM-as-judge G-Eval (P1).
 - [ ] T-14 feature flag rollout (Labs → all).
-- [ ] T-15 re-process button для schema_version=1 → 2 migration.
+- [x] **T-15 legacy v1 → v2 upgrade button** — `LegacyRecapBanner` (.activity-strip pattern) на CallDetailPage перед табами. Виден когда `summary_schema_version ∈ {1, NULL}` AND recap.md существует AND status ≠ processing. Click → переиспользует `regenerateRecap(call_id)` Tauri-команд (LLM-only, без re-STT). Backend через T-02 path (recap::run) пишет CallSummaryV2 → DB. После завершения `onRegenerateRecap` вызывает `refetchAll()` (вместо узкого setRecap+setTasks) — Call/decisions/open_questions/action_items одним батчем обновляются → banner condition false → банер исчезает, CallTypeBadge / DecisionsBlock / OpenQuestionsBlock появляются. 4 vitest tests + i18n ru/en/kk (`callDetail.legacyRecap{Title,Hint,Button,Upgrading}`).
 
 ### Backlog (T-16..T-18) — P2
 - [ ] T-16 speculative decoding (0.5B draft для 7B).

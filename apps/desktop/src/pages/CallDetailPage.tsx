@@ -15,8 +15,6 @@ import {
   exportCallMarkdown,
   regenerateRecap,
   reprocessCall,
-  readCallArtifact,
-  listCallActionItems,
 } from '../api/calls';
 import { humanError } from '../api/errors';
 import { Tabs } from '../ui';
@@ -27,6 +25,7 @@ import {
   DecisionsBlock,
   ErrorScreen,
   HeaderActions,
+  LegacyRecapBanner,
   MdPanel,
   OpenQuestionsBlock,
   ParticipantsRow,
@@ -63,11 +62,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     call,
     setCall,
     recap,
-    setRecap,
     transcript,
     rawStt,
     tasks,
-    setTasks,
     contacts,
     speakers: speakersLite,
     chunks,
@@ -174,13 +171,11 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     setError(null);
     try {
       await regenerateRecap(callId);
-      // Перечитываем артефакты + action items.
-      const [fresh, freshTasks] = await Promise.all([
-        readCallArtifact(callId, 'recap'),
-        listCallActionItems(callId),
-      ]);
-      setRecap(fresh);
-      setTasks(freshTasks);
+      // [M14 T-15] refetchAll вместо узкого recap+tasks. После legacy v1 →
+      // v2 миграции меняются и Call.summary_schema_version (нужно чтобы
+      // LegacyRecapBanner исчез), и decisions/open_questions (новые v2-блоки
+      // в Рекап табе), и call_type (CallTypeBadge в header).
+      await refetchAll();
     } catch (e) {
       setError(t('callDetail.regenerateFailed', { error: String(e) }));
     } finally {
@@ -370,6 +365,20 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         speakers={speakersLite}
         onUndone={() => void refetchSpeakersAndContacts()}
       />
+
+      {/* [M14 T-15] Legacy v1 → v2 upgrade banner. Виден когда summary в DB
+          ещё в старом формате (schema_version IN 1/NULL) и есть recap.md,
+          и звонок не в processing (одновременных regenerate нет). После
+          клика → regenerateRecap → cloud LLM → T-02 persist_summary_v2 →
+          pipeline:finished → refetchAll → banner исчезает автоматически. */}
+      {(call.summary_schema_version === 1 || call.summary_schema_version === null) &&
+        recap !== null &&
+        call.status !== 'processing' && (
+          <LegacyRecapBanner
+            busy={regenerating}
+            onUpgrade={() => void onRegenerateRecap()}
+          />
+        )}
 
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
         <Tabs.List>

@@ -209,6 +209,11 @@ export const en: TranslationStrings = {
     autoBoundOne: 'Auto-bound speaker: {name} — by voice match.',
     autoBoundMany: 'Auto-bound {n} speakers: {names} — by voice match.',
     autoBoundUndo: '↩ Undo',
+    legacyRecapTitle: 'Legacy summary format',
+    legacyRecapHint:
+      'Upgrade to get call type, decisions, open questions and evidence quotes from the transcript.',
+    legacyRecapButton: 'Upgrade to v2',
+    legacyRecapUpgrading: 'Upgrading…',
     errorTitle: 'Something went wrong',
     errorAudioSaved: 'Audio is saved locally — you can listen below.',
     errorRetry: 'Try again',
