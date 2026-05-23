@@ -55,6 +55,15 @@ pub mod speaker_reclustering;
 // выбранного local tag → OWNER_TAG.
 pub mod owner_identify;
 
+// [M14 foundation] Summary v2 schema types (CallType, ActionItemCategory,
+// EvidenceAnchor, ActionItemV2, Decision, OpenQuestion, ParticipantV2,
+// CallSummaryV2). Backbone для будущих фаз M14 (T-02..T-10).
+pub mod summary_v2;
+
+// [M14 foundation] Validator для summary v2: substring fuzzy match
+// evidence quotes (≥ 0.9), schema range checks, dedup, strip-on-fail.
+pub mod summary_validator;
+
 pub use merge::{merge_tracks, render_transcript_md};
 pub use settings::PipelineSettings;
 pub use stage::Stage;
