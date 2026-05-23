@@ -23,6 +23,7 @@
 //! - T-08 action-item post-pass: после reduce — отдельный validate-call.
 //! - T-09 GBNF constrained decoding.
 
+use crate::pipeline::expert_prompts;
 use crate::pipeline::summary_v2::CallType;
 use crate::providers::llm::{LlmProvider, LlmRequest};
 use crate::AppError;
@@ -180,14 +181,20 @@ pub(crate) async fn run_map_reduce(
     // 2. Reduce step: consolidate map outputs.
     let map_outputs_json = serde_json::to_string(&map_outputs)
         .map_err(|e| AppError::Other(format!("map-reduce: serialize map outputs: {e}")))?;
-    let request = LlmRequest {
-        model: None,
-        system: build_reduce_prompt(
+    // [M14 T-07 Phase C] Expert reduce prompt когда classifier дал call_type;
+    // universal fallback на classifier failure.
+    let reduce_system = match known_call_type {
+        Some(t) => expert_prompts::build_expert_reduce_prompt(
+            t,
             lang_detected,
-            known_call_type,
             known_speakers,
             &map_outputs_json,
         ),
+        None => build_reduce_prompt(lang_detected, None, known_speakers, &map_outputs_json),
+    };
+    let request = LlmRequest {
+        model: None,
+        system: reduce_system,
         // Reduce использует консолидированные MAP_OUTPUTS из system prompt'а —
         // input не нужен. Пустая строка сохраняет LlmRequest invariant.
         input: String::new(),
@@ -304,6 +311,49 @@ mod tests {
 
         let p_without = build_reduce_prompt(Some("ru"), None, None, "[]");
         assert!(!p_without.contains("Classification hint"));
+    }
+
+    #[tokio::test]
+    async fn run_map_reduce_uses_expert_reduce_when_known_type() {
+        // known_call_type=Some(Standup) → reduce prompt = expert (SPECIALIZED GUIDE).
+        let mock = MockProvider::new(vec![Ok(minimal_map_json(0)), Ok(minimal_v2_json())]);
+        let chunks = vec!["**A** [0:00]:\nhi".to_string()];
+        run_map_reduce(&mock, &chunks, Some("en"), Some(CallType::Standup), None)
+            .await
+            .unwrap();
+        let systems = mock.captured_systems();
+        // [0]=map, [1]=reduce.
+        assert_eq!(systems.len(), 2);
+        let reduce = &systems[1];
+        assert!(
+            reduce.contains("SPECIALIZED GUIDE"),
+            "expert reduce missing focused guide marker"
+        );
+        assert!(reduce.contains("`standup`"));
+        // Other types' specialized headers absent.
+        assert!(!reduce.contains("## Customer pain"));
+        assert!(!reduce.contains("## Demo flow"));
+    }
+
+    #[tokio::test]
+    async fn run_map_reduce_uses_universal_reduce_when_no_type() {
+        // known_call_type=None → universal reduce (Classification hint absent
+        // because hint только при Some, тоже).
+        let mock = MockProvider::new(vec![Ok(minimal_map_json(0)), Ok(minimal_v2_json())]);
+        let chunks = vec!["**A** [0:00]:\nhi".to_string()];
+        run_map_reduce(&mock, &chunks, None, None, None)
+            .await
+            .unwrap();
+        let systems = mock.captured_systems();
+        assert_eq!(systems.len(), 2);
+        let reduce = &systems[1];
+        // Universal reduce НЕ имеет SPECIALIZED GUIDE marker.
+        assert!(
+            !reduce.contains("SPECIALIZED GUIDE"),
+            "universal reduce should NOT contain expert marker"
+        );
+        // Должно быть упоминание CallSummaryV2 (universal mom-агрегация).
+        assert!(reduce.contains("CallSummaryV2"));
     }
 
     #[tokio::test]

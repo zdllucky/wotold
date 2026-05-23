@@ -75,6 +75,11 @@ pub(crate) mod chunker;
 // [M14 T-06 Phase B] Map-reduce orchestration: per-chunk map → final reduce.
 pub(crate) mod map_reduce;
 
+// [M14 T-07 Phase C] Per-call-type focused prompts (8+1 specialized vs
+// universal v2). Используется orchestrator + map_reduce когда classifier
+// даёт known_call_type.
+pub(crate) mod expert_prompts;
+
 // [M14 T-10] Local engine orchestrator — chain classifier + main v2 gen.
 // Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
 pub(crate) mod local_orchestrator;
