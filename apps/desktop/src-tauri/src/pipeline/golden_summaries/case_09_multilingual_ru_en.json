@@ -1,0 +1,96 @@
+{
+  "description": "Mixed ru/en transcript — language='mixed', cyrillic evidence quotes preserved",
+  "transcript_md": "# Transcript\n\n**Алексей** [0:00]:\nПривет, давай обсудим Q3 roadmap.\n\n**Sarah** [0:05]:\nSure, I'll start with the metrics overview.\n",
+  "llm_input": {
+    "schema_version": 2,
+    "title": "Q3 roadmap — Sarah & Алексей",
+    "summary": "Mixed ru/en discussion of Q3 priorities.",
+    "key_points": ["roadmap aligned", "metrics review done"],
+    "mom": "## Контекст\nMixed-language call.\n## Решения\nQ3 priorities locked.",
+    "language": "mixed",
+    "call_type": "product_sync",
+    "call_type_confidence": 0.75,
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Алексей", "role_hint": null },
+      { "speaker_tag": "Speaker 1", "display_name": "Sarah", "role_hint": null }
+    ],
+    "action_items": [
+      {
+        "id": "ai-1",
+        "text": "Share metrics dashboard",
+        "owner_hint": "Sarah",
+        "owner_confidence": 0.875,
+        "due": null,
+        "due_confidence": 0.0,
+        "category": "commitment",
+        "evidence": {
+          "quote": "I'll start with the metrics overview",
+          "speaker": "Sarah",
+          "start_ms": null,
+          "end_ms": null
+        }
+      }
+    ],
+    "decisions": [],
+    "open_questions": [
+      {
+        "id": "oq-1",
+        "text": "Какие OKR взять в Q3",
+        "raised_by": "Алексей",
+        "evidence": {
+          "quote": "давай обсудим Q3 roadmap",
+          "speaker": "Алексей",
+          "start_ms": null,
+          "end_ms": null
+        }
+      }
+    ],
+    "type_specific_block": null
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "Q3 roadmap — Sarah & Алексей",
+    "summary": "Mixed ru/en discussion of Q3 priorities.",
+    "key_points": ["roadmap aligned", "metrics review done"],
+    "mom": "## Контекст\nMixed-language call.\n## Решения\nQ3 priorities locked.",
+    "language": "mixed",
+    "call_type": "product_sync",
+    "call_type_confidence": 0.75,
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Алексей", "role_hint": null },
+      { "speaker_tag": "Speaker 1", "display_name": "Sarah", "role_hint": null }
+    ],
+    "action_items": [
+      {
+        "id": "ai-1",
+        "text": "Share metrics dashboard",
+        "owner_hint": "Sarah",
+        "owner_confidence": 0.875,
+        "due": null,
+        "due_confidence": 0.0,
+        "category": "commitment",
+        "evidence": {
+          "quote": "I'll start with the metrics overview",
+          "speaker": "Sarah",
+          "start_ms": null,
+          "end_ms": null
+        }
+      }
+    ],
+    "decisions": [],
+    "open_questions": [
+      {
+        "id": "oq-1",
+        "text": "Какие OKR взять в Q3",
+        "raised_by": "Алексей",
+        "evidence": {
+          "quote": "давай обсудим Q3 roadmap",
+          "speaker": "Алексей",
+          "start_ms": null,
+          "end_ms": null
+        }
+      }
+    ],
+    "type_specific_block": null
+  }
+}

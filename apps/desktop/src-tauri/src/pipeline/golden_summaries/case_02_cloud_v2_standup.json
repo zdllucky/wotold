@@ -1,0 +1,99 @@
+{
+  "description": "Cloud v2 standup — per_person type_specific_block preserved",
+  "llm_input": {
+    "schema_version": 2,
+    "title": "Daily standup — auth team",
+    "summary": "Quick rotating updates; one blocker raised.",
+    "key_points": [
+      "Alice unblocked OAuth migration",
+      "Bob waiting on PR review",
+      "Charlie on PTO"
+    ],
+    "mom": "## Yesterday\nAlice: shipped OAuth fix. Bob: paired on RBAC.\n\n## Today\nAlice: PR cleanup. Bob: review.\n\n## Blockers\nBob blocked on Alice review.",
+    "language": "en",
+    "call_type": "standup",
+    "call_type_confidence": 0.875,
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Alice", "role_hint": null },
+      { "speaker_tag": "Speaker 1", "display_name": "Bob", "role_hint": null }
+    ],
+    "action_items": [
+      {
+        "id": "ai-1",
+        "text": "Review Bob's RBAC PR",
+        "owner_hint": "Alice",
+        "owner_confidence": 0.875,
+        "due": "today",
+        "due_confidence": 0.75,
+        "category": "commitment",
+        "evidence": null
+      }
+    ],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": {
+      "per_person": [
+        {
+          "speaker": "Alice",
+          "yesterday": "shipped OAuth fix",
+          "today": "PR cleanup",
+          "blockers": null
+        },
+        {
+          "speaker": "Bob",
+          "yesterday": "paired on RBAC",
+          "today": "review",
+          "blockers": "blocked on Alice review"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "Daily standup — auth team",
+    "summary": "Quick rotating updates; one blocker raised.",
+    "key_points": [
+      "Alice unblocked OAuth migration",
+      "Bob waiting on PR review",
+      "Charlie on PTO"
+    ],
+    "mom": "## Yesterday\nAlice: shipped OAuth fix. Bob: paired on RBAC.\n\n## Today\nAlice: PR cleanup. Bob: review.\n\n## Blockers\nBob blocked on Alice review.",
+    "language": "en",
+    "call_type": "standup",
+    "call_type_confidence": 0.875,
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Alice", "role_hint": null },
+      { "speaker_tag": "Speaker 1", "display_name": "Bob", "role_hint": null }
+    ],
+    "action_items": [
+      {
+        "id": "ai-1",
+        "text": "Review Bob's RBAC PR",
+        "owner_hint": "Alice",
+        "owner_confidence": 0.875,
+        "due": "today",
+        "due_confidence": 0.75,
+        "category": "commitment",
+        "evidence": null
+      }
+    ],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": {
+      "per_person": [
+        {
+          "speaker": "Alice",
+          "yesterday": "shipped OAuth fix",
+          "today": "PR cleanup",
+          "blockers": null
+        },
+        {
+          "speaker": "Bob",
+          "yesterday": "paired on RBAC",
+          "today": "review",
+          "blockers": "blocked on Alice review"
+        }
+      ]
+    }
+  }
+}

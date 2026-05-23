@@ -1,0 +1,33 @@
+{
+  "description": "Empty arrays preserved через full pipeline (no panic, fields stable)",
+  "llm_input": {
+    "schema_version": 2,
+    "title": "Quick sync",
+    "summary": "Brief catch-up.",
+    "key_points": ["aligned on next steps"],
+    "language": "en",
+    "call_type": "other",
+    "call_type_confidence": 0.5,
+    "participants": [],
+    "action_items": [],
+    "decisions": [],
+    "open_questions": [],
+    "mom": "## Контекст\nshort call\n## Обсудили\n## Решения\n## Дальнейшие шаги",
+    "type_specific_block": null
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "Quick sync",
+    "summary": "Brief catch-up.",
+    "key_points": ["aligned on next steps"],
+    "mom": "## Контекст\nshort call\n## Обсудили\n## Решения\n## Дальнейшие шаги",
+    "language": "en",
+    "call_type": "other",
+    "call_type_confidence": 0.5,
+    "participants": [],
+    "action_items": [],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": null
+  }
+}

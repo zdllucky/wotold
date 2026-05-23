@@ -1,0 +1,57 @@
+{
+  "description": "Legacy v1 с action_items + participants → promoted: id='legacy-N', category='commitment', owner_confidence=null, due_confidence=null, evidence=null",
+  "llm_input": {
+    "version": 1,
+    "title": "Planning meeting",
+    "summary": "Q3 planning discussion.",
+    "key_points": ["scope locked", "deadline Aug 30"],
+    "mom": "## Контекст\nQ3 planning.\n## Решения\nLock scope.",
+    "action_items": [
+      { "text": "Send PRD draft", "owner_hint": "Alice", "due": "Friday" },
+      { "text": "Set up kick-off meeting", "owner_hint": null, "due": null }
+    ],
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Alice" },
+      { "speaker_tag": "Speaker 1", "display_name": "Bob" }
+    ]
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "Planning meeting",
+    "summary": "Q3 planning discussion.",
+    "key_points": ["scope locked", "deadline Aug 30"],
+    "mom": "## Контекст\nQ3 planning.\n## Решения\nLock scope.",
+    "language": "",
+    "call_type": "other",
+    "call_type_confidence": 0.0,
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Alice", "role_hint": null },
+      { "speaker_tag": "Speaker 1", "display_name": "Bob", "role_hint": null }
+    ],
+    "action_items": [
+      {
+        "id": "legacy-0",
+        "text": "Send PRD draft",
+        "owner_hint": "Alice",
+        "owner_confidence": null,
+        "due": "Friday",
+        "due_confidence": null,
+        "category": "commitment",
+        "evidence": null
+      },
+      {
+        "id": "legacy-1",
+        "text": "Set up kick-off meeting",
+        "owner_hint": null,
+        "owner_confidence": null,
+        "due": null,
+        "due_confidence": null,
+        "category": "commitment",
+        "evidence": null
+      }
+    ],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": null
+  }
+}

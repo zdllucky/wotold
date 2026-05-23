@@ -1,0 +1,89 @@
+{
+  "description": "Cloud v2 one_on_one PRIVACY — evidence.quote=null preserved (paraphrase), action_items только work commitments",
+  "llm_input": {
+    "schema_version": 2,
+    "title": "1:1 — Alice quarterly check-in",
+    "summary": "Quarterly 1:1 with quarterly goals and career discussion.",
+    "key_points": [
+      "Q3 goals aligned",
+      "Career path conversation",
+      "Schedule next 1:1 in 2 weeks"
+    ],
+    "mom": "## Wins\nShipped major feature on time.\n\n## Challenges\nWorkload across two teams.\n\n## Feedback\nManager provided constructive feedback (paraphrased).\n\n## Career\nDiscussed senior IC track.",
+    "language": "en",
+    "call_type": "one_on_one",
+    "call_type_confidence": 0.9375,
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Manager", "role_hint": "manager" },
+      { "speaker_tag": "Speaker 1", "display_name": "Alice", "role_hint": "report" }
+    ],
+    "action_items": [
+      {
+        "id": "ai-1",
+        "text": "Draft career growth plan",
+        "owner_hint": "Alice",
+        "owner_confidence": 0.875,
+        "due": "next 1:1",
+        "due_confidence": 0.5,
+        "category": "commitment",
+        "evidence": null
+      }
+    ],
+    "decisions": [],
+    "open_questions": [
+      {
+        "id": "oq-1",
+        "text": "Whether to add team management responsibilities",
+        "raised_by": "Alice",
+        "evidence": null
+      }
+    ],
+    "type_specific_block": {
+      "topics_discussed": ["Q3 goals", "career path", "workload"],
+      "follow_ups_committed": ["draft growth plan"]
+    }
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "1:1 — Alice quarterly check-in",
+    "summary": "Quarterly 1:1 with quarterly goals and career discussion.",
+    "key_points": [
+      "Q3 goals aligned",
+      "Career path conversation",
+      "Schedule next 1:1 in 2 weeks"
+    ],
+    "mom": "## Wins\nShipped major feature on time.\n\n## Challenges\nWorkload across two teams.\n\n## Feedback\nManager provided constructive feedback (paraphrased).\n\n## Career\nDiscussed senior IC track.",
+    "language": "en",
+    "call_type": "one_on_one",
+    "call_type_confidence": 0.9375,
+    "participants": [
+      { "speaker_tag": "Speaker 0", "display_name": "Manager", "role_hint": "manager" },
+      { "speaker_tag": "Speaker 1", "display_name": "Alice", "role_hint": "report" }
+    ],
+    "action_items": [
+      {
+        "id": "ai-1",
+        "text": "Draft career growth plan",
+        "owner_hint": "Alice",
+        "owner_confidence": 0.875,
+        "due": "next 1:1",
+        "due_confidence": 0.5,
+        "category": "commitment",
+        "evidence": null
+      }
+    ],
+    "decisions": [],
+    "open_questions": [
+      {
+        "id": "oq-1",
+        "text": "Whether to add team management responsibilities",
+        "raised_by": "Alice",
+        "evidence": null
+      }
+    ],
+    "type_specific_block": {
+      "topics_discussed": ["Q3 goals", "career path", "workload"],
+      "follow_ups_committed": ["draft growth plan"]
+    }
+  }
+}

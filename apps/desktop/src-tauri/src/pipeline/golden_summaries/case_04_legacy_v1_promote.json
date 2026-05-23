@@ -1,0 +1,27 @@
+{
+  "description": "Legacy v1 minimal (нет schema_version, нет action_items) → promote_legacy_to_v2 envelope: call_type=other, empty decisions/open_questions, language=''",
+  "llm_input": {
+    "version": 1,
+    "title": "Standup",
+    "summary": "Quick sync.",
+    "key_points": ["all green"],
+    "mom": "## Yesterday\nshipped\n## Today\nreview",
+    "action_items": [],
+    "participants": []
+  },
+  "expected": {
+    "schema_version": 2,
+    "title": "Standup",
+    "summary": "Quick sync.",
+    "key_points": ["all green"],
+    "mom": "## Yesterday\nshipped\n## Today\nreview",
+    "language": "",
+    "call_type": "other",
+    "call_type_confidence": 0.0,
+    "participants": [],
+    "action_items": [],
+    "decisions": [],
+    "open_questions": [],
+    "type_specific_block": null
+  }
+}

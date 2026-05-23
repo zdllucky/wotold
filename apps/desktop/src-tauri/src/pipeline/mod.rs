@@ -96,6 +96,11 @@ pub(crate) mod gbnf;
 // pub(crate) для commands/pipeline::regenerate_title.
 pub(crate) mod title_regen;
 
+// [M14 T-12] Golden set + CI regression harness — 10 reference cases прогоняются
+// через full parse/validate/strip/dedup pipeline и diff'ются against expected.
+#[cfg(test)]
+mod golden_eval;
+
 // [M14 T-10] Local engine orchestrator — chain classifier + main v2 gen.
 // Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
 pub(crate) mod local_orchestrator;
