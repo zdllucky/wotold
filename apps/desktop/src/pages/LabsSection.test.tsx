@@ -1,4 +1,5 @@
-// [M14 T-14] LabsSection vitest — load default ON, toggle persist, label render.
+// [M14 T-14 + T-16 P2] LabsSection vitest — load defaults, toggle persist for
+// summary_v2 (default ON) и speculative decoding (default OFF).
 
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -25,35 +26,45 @@ describe('LabsSection', () => {
   });
   afterEach(() => cleanup());
 
-  test('renders toggle with default ON when setting missing', async () => {
+  test('renders summary v2 ON by default + speculative OFF by default', async () => {
     mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'get_setting') return null; // missing → default ON
+      if (cmd === 'get_setting') return null; // missing → defaults apply
       return null;
     });
     render(<LabsSection />);
     await flush();
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
-    await waitFor(() => expect(checkbox.checked).toBe(true));
+    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    expect(boxes).toHaveLength(2);
+    const [summaryV2, speculative] = boxes;
+    await waitFor(() => expect(summaryV2.checked).toBe(true));
+    expect(speculative.checked).toBe(false);
   });
 
-  test('renders OFF when setting is "0"', async () => {
-    mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'get_setting') return '0';
-      return null;
-    });
-    render(<LabsSection />);
-    await flush();
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
-    await waitFor(() => expect(checkbox.checked).toBe(false));
-  });
-
-  test('toggle click persists via set_setting', async () => {
+  test('renders summary v2 OFF when setting is "0"', async () => {
     mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
-      if (cmd === 'get_setting') return '1';
+      if (cmd === 'get_setting') {
+        const a = args as { key: string };
+        if (a.key === 'summary_v2_enabled') return '0';
+        return null;
+      }
+      return null;
+    });
+    render(<LabsSection />);
+    await flush();
+    const [summaryV2] = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    await waitFor(() => expect(summaryV2.checked).toBe(false));
+  });
+
+  test('summary v2 toggle click persists via set_setting', async () => {
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === 'get_setting') {
+        const a = args as { key: string };
+        if (a.key === 'summary_v2_enabled') return '1';
+        return null;
+      }
       if (cmd === 'set_setting') {
         const a = args as { key: string; value: string };
         expect(a.key).toBe('summary_v2_enabled');
-        // Toggle from ON → OFF persists "0".
         expect(a.value).toBe('0');
         return null;
       }
@@ -61,14 +72,39 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
-    await waitFor(() => expect(checkbox.checked).toBe(true));
+    const [summaryV2] = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    await waitFor(() => expect(summaryV2.checked).toBe(true));
     await act(async () => {
-      checkbox.click();
+      summaryV2.click();
     });
     expect(mockInvoke).toHaveBeenCalledWith('set_setting', {
       key: 'summary_v2_enabled',
       value: '0',
+    });
+  });
+
+  test('speculative decoding toggle persists "1" when enabled', async () => {
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === 'get_setting') return null;
+      if (cmd === 'set_setting') {
+        const a = args as { key: string; value: string };
+        if (a.key === 'summary_speculative_decoding') {
+          expect(a.value).toBe('1');
+        }
+        return null;
+      }
+      return null;
+    });
+    render(<LabsSection />);
+    await flush();
+    const [, speculative] = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    await waitFor(() => expect(speculative.checked).toBe(false));
+    await act(async () => {
+      speculative.click();
+    });
+    expect(mockInvoke).toHaveBeenCalledWith('set_setting', {
+      key: 'summary_speculative_decoding',
+      value: '1',
     });
   });
 });

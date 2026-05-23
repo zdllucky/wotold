@@ -521,6 +521,9 @@ export const en: TranslationStrings = {
     summaryV2Label: 'New summary format',
     summaryV2Hint:
       'On by default. Turn off if you hit issues with call type, evidence quotes or decisions — recaps fall back to simple format.',
+    speculativeDecodingLabel: 'Speed up generation (draft model)',
+    speculativeDecodingHint:
+      'Uses a small 0.5B draft model in parallel with 7B Quality. 2-3× speedup. Requires Quality preset and ~380MB extra model download.',
     wipeBtn: 'Delete all data',
     wipeBusy: 'Deleting…',
     wipeConfirmTitle: 'Wotold — Full wipe',

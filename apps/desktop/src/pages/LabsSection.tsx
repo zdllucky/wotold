@@ -1,7 +1,9 @@
 // [M14 T-14] Labs section — experimental feature flags.
 //
-// Сейчас один toggle — Summary v2 (default ON). Future home для T-04..T-10
-// local engine opt-ins и других experimental rollouts.
+// Toggles:
+// - Summary v2 (T-14, default ON) — cloud v2 prompt path
+// - Speculative decoding (T-16 P2, default OFF) — 0.5B draft model для
+//   Quality preset speedup
 //
 // Mirror VoiceModelSection.tsx mic-diarization toggle pattern (.card-like
 // wrapper + native checkbox + label/hint stack).
@@ -15,23 +17,65 @@ import { useI18n } from '../i18n';
 export function LabsSection() {
   const { t } = useI18n();
   const [v2Enabled, setV2Enabled] = useState<boolean>(SETTINGS_DEFAULTS.SUMMARY_V2_ENABLED);
+  const [speculativeEnabled, setSpeculativeEnabled] = useState<boolean>(
+    SETTINGS_DEFAULTS.SUMMARY_SPECULATIVE_DECODING,
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
-      // Default ON: explicit '0'/'false' = OFF; иначе ON (включая null/missing).
-      const raw = await getSetting(SETTINGS_KEYS.SUMMARY_V2_ENABLED).catch(() => null);
-      setV2Enabled(raw !== '0' && raw !== 'false');
+      // V2 — default ON: explicit '0'/'false' = OFF; иначе ON.
+      const rawV2 = await getSetting(SETTINGS_KEYS.SUMMARY_V2_ENABLED).catch(() => null);
+      setV2Enabled(rawV2 !== '0' && rawV2 !== 'false');
+      // Speculative — default OFF: explicit '1' enables.
+      const rawSpec = await getSetting(SETTINGS_KEYS.SUMMARY_SPECULATIVE_DECODING).catch(
+        () => null,
+      );
+      setSpeculativeEnabled(rawSpec === '1');
     })();
   }, []);
 
-  const persist = async (next: boolean) => {
+  const persistV2 = async (next: boolean) => {
     setV2Enabled(next);
     try {
       await setSetting(SETTINGS_KEYS.SUMMARY_V2_ENABLED, next ? '1' : '0');
     } catch (e) {
       setError(humanError(e));
     }
+  };
+
+  const persistSpeculative = async (next: boolean) => {
+    setSpeculativeEnabled(next);
+    try {
+      await setSetting(SETTINGS_KEYS.SUMMARY_SPECULATIVE_DECODING, next ? '1' : '0');
+    } catch (e) {
+      setError(humanError(e));
+    }
+  };
+
+  const cardStyle: React.CSSProperties = {
+    padding: 18,
+    border: '1px solid var(--line-soft)',
+    borderRadius: 'var(--radius-card, 8px)',
+    background: 'var(--bg)',
+  };
+  const labelStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 12,
+    cursor: 'pointer',
+  };
+  const titleStyle: React.CSSProperties = {
+    fontFamily: 'var(--font-sans)',
+    fontSize: 14,
+    color: 'var(--ink)',
+    fontWeight: 500,
+    marginBottom: 4,
+  };
+  const hintStyle: React.CSSProperties = {
+    fontSize: 12,
+    color: 'var(--subtle)',
+    lineHeight: 1.5,
   };
 
   return (
@@ -42,49 +86,33 @@ export function LabsSection() {
         </p>
       )}
 
-      <div
-        style={{
-          padding: 18,
-          border: '1px solid var(--line-soft)',
-          borderRadius: 'var(--radius-card, 8px)',
-          background: 'var(--bg)',
-        }}
-      >
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 12,
-            cursor: 'pointer',
-          }}
-        >
+      <div style={cardStyle}>
+        <label style={labelStyle}>
           <input
             type="checkbox"
             checked={v2Enabled}
-            onChange={(e) => void persist(e.target.checked)}
+            onChange={(e) => void persistV2(e.target.checked)}
             style={{ marginTop: 4 }}
           />
           <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: 14,
-                color: 'var(--ink)',
-                fontWeight: 500,
-                marginBottom: 4,
-              }}
-            >
-              {t('settings.summaryV2Label')}
-            </div>
-            <div
-              style={{
-                fontSize: 12,
-                color: 'var(--subtle)',
-                lineHeight: 1.5,
-              }}
-            >
-              {t('settings.summaryV2Hint')}
-            </div>
+            <div style={titleStyle}>{t('settings.summaryV2Label')}</div>
+            <div style={hintStyle}>{t('settings.summaryV2Hint')}</div>
+          </div>
+        </label>
+      </div>
+
+      {/* [M14 T-16 P2] Speculative decoding toggle. */}
+      <div style={cardStyle}>
+        <label style={labelStyle}>
+          <input
+            type="checkbox"
+            checked={speculativeEnabled}
+            onChange={(e) => void persistSpeculative(e.target.checked)}
+            style={{ marginTop: 4 }}
+          />
+          <div style={{ flex: 1 }}>
+            <div style={titleStyle}>{t('settings.speculativeDecodingLabel')}</div>
+            <div style={hintStyle}>{t('settings.speculativeDecodingHint')}</div>
           </div>
         </label>
       </div>

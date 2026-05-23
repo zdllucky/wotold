@@ -36,6 +36,8 @@
             "-f",
             { "validator": "^[A-Za-z0-9._/ \\-]+$" },
             "--grammar-file",
+            { "validator": "^[A-Za-z0-9._/ \\-]+$" },
+            "--model-draft",
             { "validator": "^[A-Za-z0-9._/ \\-]+$" }
           ]
         },

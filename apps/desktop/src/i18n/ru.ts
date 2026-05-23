@@ -552,6 +552,9 @@ const ruInternal = {
     summaryV2Label: 'Новый формат саммари',
     summaryV2Hint:
       'Включено по умолчанию. Выключите если возникли проблемы с типом звонка, цитатами или решениями — рекапы вернутся к простому формату.',
+    speculativeDecodingLabel: 'Ускорение генерации (черновая модель)',
+    speculativeDecodingHint:
+      'Использует малую модель 0.5B для draft-токенов параллельно с 7B Quality. 2-3× speedup. Требует preset «Quality» и скачивание дополнительной модели ~380MB.',
     wipeBtn: 'Удалить все данные',
     wipeBusy: 'Удаляем…',
     wipeConfirmTitle: 'Wotold — Полная очистка',
