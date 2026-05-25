@@ -8,10 +8,14 @@ each entry resolves to `<name>-<target-triple>` (e.g. `wotold-audio-aarch64-appl
 - `wotold-audio` — Swift Core Audio process tap sidecar. Built by
   `apps/desktop/sidecars/macos-audio/scripts/build.sh`. Required.
 
-- `wotold-llama` — llama.cpp `llama-cli` binary (M12.3). **Required for Local
-  engine recap.** Placeholder stub is committed so `cargo build` succeeds in
-  CI without the heavyweight binary; replace with a real llama.cpp build
-  before release.
+- `wotold-llama` — llama.cpp `llama-completion` binary (M12.3). **Required for
+  Local engine recap.** Build b9270+ removed `--no-conversation` from `llama-cli`;
+  use `llama-completion` for batch-mode (`-f` prompt file, non-interactive).
+  Both binaries share libllama.dylib runtime; the flag set
+  (`--no-conversation`, `--simple-io`, `--no-display-prompt`, `--log-disable`,
+  `--grammar-file`) is identical. Placeholder stub is committed so `cargo build`
+  succeeds in CI without the heavyweight binary; replace with a real llama.cpp
+  build before release.
 
 - `wotold-whisper` — whisper.cpp `whisper-cli` binary (M12.1). **Required for
   Local engine STT.** sherpa-onnx Whisper requires encoder/decoder ONNX pair,
@@ -31,14 +35,21 @@ each entry resolves to `<name>-<target-triple>` (e.g. `wotold-audio-aarch64-appl
 2. Build for Apple Silicon (Metal-accelerated):
    ```bash
    cmake -B build -DLLAMA_METAL=ON -DCMAKE_BUILD_TYPE=Release
-   cmake --build build --config Release -j --target llama-cli
+   cmake --build build --config Release -j --target llama-completion
    ```
 
 3. Copy + rename binary into this directory:
    ```bash
-   cp build/bin/llama-cli \
+   cp build/bin/llama-completion \
       /path/to/wotold/apps/desktop/src-tauri/binaries/wotold-llama-aarch64-apple-darwin
    ```
+
+   **Note (build b9270+):** Use `llama-completion`, not `llama-cli`. Upstream
+   removed `--no-conversation` from `llama-cli` and moved batch-mode (`-f`
+   prompt file, non-interactive) into a dedicated `llama-completion` binary.
+   Same dylibs (`libllama`, `libmtmd`), same flag set. Existing `llama-cli`
+   binary will bail with «`--no-conversation` is not supported by llama-cli»
+   on every recap → no JSON object in output.
 
 4. For x86_64 builds (Intel Mac CI) — repeat with `-DCMAKE_OSX_ARCHITECTURES=x86_64`
    and rename to `wotold-llama-x86_64-apple-darwin`.
