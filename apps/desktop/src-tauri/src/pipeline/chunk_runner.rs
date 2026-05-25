@@ -66,6 +66,10 @@ pub struct ChunkRunInput {
     /// `speaker:N` tags остаются, finalize'ится в chunk_assembly через
     /// `owner_identify::identify_owner_speaker`.
     pub mic_diarization: bool,
+    /// [P1.2] Labs «Force N speakers» override для sortformer's `num_clusters`.
+    /// `None` = auto-detect. `Some(N)` clamp'ится к 1..=MAX_LOCAL_SPEAKERS в
+    /// `SortformerDiarizer::with_num_speakers`.
+    pub mic_diarization_num_speakers: Option<i32>,
 }
 
 /// Результат успешного `run_chunk`. `transcript_tail` идёт в `prev_prompt`
@@ -109,6 +113,7 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         app_data_dir,
         app_handle,
         mic_diarization,
+        mic_diarization_num_speakers,
     } = input;
     let bus = EventBus::new(app_handle.as_ref());
 
@@ -177,7 +182,13 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         {
             match app_data_dir.as_deref() {
                 Some(dir) => {
-                    crate::pipeline::diarize_mic_track(dir, &mic_path, mic_transcript).await
+                    crate::pipeline::diarize_mic_track(
+                        dir,
+                        &mic_path,
+                        mic_transcript,
+                        mic_diarization_num_speakers,
+                    )
+                    .await
                 }
                 None => mic_transcript,
             }
@@ -435,6 +446,7 @@ mod tests {
             // [M13 follow-up] Off в unit-тестах — sortformer требует
             // app_data_dir + macOS sidecar.
             mic_diarization: false,
+            mic_diarization_num_speakers: None,
         }
     }
 

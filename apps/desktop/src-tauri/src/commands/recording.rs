@@ -33,6 +33,20 @@ const SETTING_CHUNKED_PIPELINE: &str = "recording.chunked_pipeline";
 /// [M13 follow-up] Mic diarization toggle. Default ON. См. api/settings.ts
 /// `MIC_DIARIZATION_ENABLED`.
 const SETTING_MIC_DIARIZATION: &str = "mic_diarization_enabled";
+/// [P1.2] Labs: «Force N speakers» override для sortformer's `num_clusters`.
+/// `None` (или невалидное значение) = auto-detect. Допустимые: "2" | "3" | "4"
+/// (clamp к 1..=MAX_LOCAL_SPEAKERS в `SortformerDiarizer::with_num_speakers`).
+const SETTING_MIC_DIARIZATION_NUM_SPEAKERS: &str = "mic_diarization_num_speakers";
+
+/// [P1.2] Helper: прочитать `SETTING_MIC_DIARIZATION_NUM_SPEAKERS` из DB и
+/// вернуть `Option<i32>` с clamping. Out-of-range / non-numeric → `None`.
+async fn read_num_speakers_override(pool: &sqlx::SqlitePool) -> Result<Option<i32>, AppError> {
+    Ok(db::get_setting(pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS)
+        .await?
+        .as_deref()
+        .and_then(|s| s.parse::<i32>().ok())
+        .filter(|n| (1..=4).contains(n)))
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RecordingState {
@@ -344,6 +358,8 @@ struct ChunkedSetup {
     stt_lang: String,
     /// [M13 follow-up] Sortformer на mic для multi-voice. Default ON.
     mic_diarization: bool,
+    /// [P1.2] Labs «Force N speakers» override. None = auto-detect.
+    mic_diarization_num_speakers: Option<i32>,
 }
 
 /// Прочитать settings + (если оба условия true) построить provider + channels.
@@ -418,6 +434,7 @@ async fn prepare_chunked_setup(
         Some("0") | Some("false")
     );
     let mic_diarization = !mic_off;
+    let mic_diarization_num_speakers = read_num_speakers_override(&state.db).await?;
 
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(256);
     let (rotate_tx, rotate_rx) = mpsc::channel::<serde_json::Value>(8);
@@ -438,6 +455,7 @@ async fn prepare_chunked_setup(
         system_provider,
         stt_lang,
         mic_diarization,
+        mic_diarization_num_speakers,
     }))
 }
 
@@ -461,6 +479,7 @@ async fn spawn_orchestrator(
         system_provider,
         stt_lang,
         mic_diarization,
+        mic_diarization_num_speakers,
     } = setup;
 
     let session_ref = state.recording.clone();
@@ -482,6 +501,8 @@ async fn spawn_orchestrator(
         app.clone(),
         // [M13 follow-up] Sortformer на mic-дорожке per-chunk.
         mic_diarization,
+        // [P1.2] Labs «Force N speakers» override; None = auto.
+        mic_diarization_num_speakers,
     );
 
     let handle = tauri::async_runtime::spawn(async move {
@@ -555,6 +576,7 @@ fn make_enqueue_fn(
     app_data_dir: std::path::PathBuf,
     app_handle: AppHandle,
     mic_diarization: bool,
+    mic_diarization_num_speakers: Option<i32>,
 ) -> impl Fn(u32, u64, u64, Option<String>) -> chunk_orchestrator::EnqueueFut + Send + Sync + 'static
 {
     move |chunk_idx, start_ms, end_ms, prev_prompt| {
@@ -567,6 +589,7 @@ fn make_enqueue_fn(
         let app_data_dir = app_data_dir.clone();
         let app_handle = app_handle.clone();
         let mic_diarization = mic_diarization;
+        let mic_diarization_num_speakers = mic_diarization_num_speakers;
         Box::pin(async move {
             let mic_path = store.chunk_mic_path(&call_id, chunk_idx);
             let system_path = store.chunk_system_path(&call_id, chunk_idx);
@@ -593,6 +616,7 @@ fn make_enqueue_fn(
                 app_data_dir: Some(app_data_dir.clone()),
                 app_handle: Some(app_handle.clone()),
                 mic_diarization,
+                mic_diarization_num_speakers,
             };
             let out = chunk_runner::run_chunk(
                 &pool,
@@ -683,6 +707,7 @@ pub async fn retry_chunk(
         Some("0") | Some("false")
     );
     let mic_diarization = !mic_off;
+    let mic_diarization_num_speakers = read_num_speakers_override(&state.db).await?;
 
     // 4. FSM gate failed → pending. После этого chunk_runner внутри сделает
     //    pending → processing → done|failed.
@@ -716,6 +741,7 @@ pub async fn retry_chunk(
             app_data_dir: Some(app_data_dir),
             app_handle: Some(app_for_task),
             mic_diarization,
+            mic_diarization_num_speakers,
         };
         match chunk_runner::run_chunk(
             &pool,

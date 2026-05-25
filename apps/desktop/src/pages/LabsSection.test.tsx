@@ -84,6 +84,63 @@ describe('LabsSection', () => {
     });
   });
 
+  test('force-N-speakers defaults to auto when no setting', async () => {
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_setting') return null;
+      return null;
+    });
+    render(<LabsSection />);
+    await flush();
+    const select = await waitFor(() =>
+      screen.getByRole('combobox') as HTMLSelectElement,
+    );
+    expect(select.value).toBe('auto');
+  });
+
+  test('force-N-speakers reads "3" из DB и render"ит', async () => {
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === 'get_setting') {
+        const a = args as { key: string };
+        if (a.key === 'mic_diarization_num_speakers') return '3';
+        return null;
+      }
+      return null;
+    });
+    render(<LabsSection />);
+    await flush();
+    const select = await waitFor(() => {
+      const s = screen.getByRole('combobox') as HTMLSelectElement;
+      if (s.value !== '3') throw new Error('not yet');
+      return s;
+    });
+    expect(select.value).toBe('3');
+  });
+
+  test('force-N-speakers change persists via set_setting', async () => {
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === 'get_setting') return null;
+      if (cmd === 'set_setting') {
+        const a = args as { key: string; value: string };
+        if (a.key === 'mic_diarization_num_speakers') {
+          expect(a.value).toBe('2');
+        }
+        return null;
+      }
+      return null;
+    });
+    render(<LabsSection />);
+    await flush();
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    await act(async () => {
+      select.value = '2';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(mockInvoke).toHaveBeenCalledWith('set_setting', {
+      key: 'mic_diarization_num_speakers',
+      value: '2',
+    });
+  });
+
   test('speculative decoding toggle persists "1" when enabled', async () => {
     mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
       if (cmd === 'get_setting') return null;

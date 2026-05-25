@@ -540,6 +540,15 @@ export const en: TranslationStrings = {
     speculativeDecodingLabel: 'Speed up generation (draft model)',
     speculativeDecodingHint:
       'Uses a small 0.5B draft model in parallel with 7B Quality. 2-3× speedup. Requires Quality preset and ~380MB extra model download.',
+    forceNumSpeakersLabel: 'Force speaker count',
+    forceNumSpeakersHint:
+      'Applied on next reprocess. Use this when you know the exact speaker count and auto-detect gets it wrong. Capped at 4 speakers.',
+    forceNumSpeakersOptions: {
+      auto: 'Auto (recommended)',
+      '2': '2 speakers',
+      '3': '3 speakers',
+      '4': '4 speakers',
+    },
     wipeBtn: 'Delete all data',
     wipeBusy: 'Deleting…',
     wipeConfirmTitle: 'Wotold — Full wipe',

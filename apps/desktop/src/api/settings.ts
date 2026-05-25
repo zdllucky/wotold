@@ -74,6 +74,10 @@ export const SETTINGS_KEYS = {
    *  Quality (7B) preset. '1' = ON. Default OFF. Активация требует
    *  preset=Quality + downloaded 0.5B draft model. */
   SUMMARY_SPECULATIVE_DECODING: 'summary_speculative_decoding',
+  /** [P1.2] Labs «Force N speakers» override для sortformer's
+   *  `num_clusters`. Values: 'auto' (default) | '2' | '3' | '4'.
+   *  Backend clamp'ит к 1..=MAX_LOCAL_SPEAKERS; non-numeric → auto. */
+  MIC_DIARIZATION_NUM_SPEAKERS: 'mic_diarization_num_speakers',
 } as const;
 
 export const SETTINGS_DEFAULTS = {
@@ -102,7 +106,20 @@ export const SETTINGS_DEFAULTS = {
   SUMMARY_V2_ENABLED: true,
   /** [M14 T-16 P2] Speculative decoding default OFF (Labs opt-in). */
   SUMMARY_SPECULATIVE_DECODING: false,
+  /** [P1.2] Force-N-speakers Labs override — default 'auto' (sortformer
+   *  auto-detect). Stored как string в DB; UI reads obvious values. */
+  MIC_DIARIZATION_NUM_SPEAKERS: 'auto' as MicDiarizationNumSpeakers,
 } as const;
+
+/** [P1.2] Labs override values для force-N-speakers. Whitelist enforced
+ *  в LabsSection (`<select>` options). Backend clamp'ит к 1..=4. */
+export type MicDiarizationNumSpeakers = 'auto' | '2' | '3' | '4';
+export const MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS: MicDiarizationNumSpeakers[] = [
+  'auto',
+  '2',
+  '3',
+  '4',
+];
 
 /** [S1] Whitelist cooldown values 3/5/10/15 min. */
 export type CallDetectCooldown = '3' | '5' | '10' | '15';

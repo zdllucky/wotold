@@ -829,7 +829,20 @@ async fn run_local_inner(
     //    `speaker:0..4` (cap=4). Diarization non-fatal: при отсутствии моделей
     //    или voice-onnx feature off → fall back на оригинальный sys_t,
     //    система-трек остаётся single-bucket (degraded но рабочий).
-    let sys_t = diarize_system_track(&ctx.app_data_dir, &ctx.system_path, sys_t).await;
+    // [P1.2] Force-N-speakers Labs override (read once, applied к mic + system).
+    // None = auto. clamp 1..=MAX_LOCAL_SPEAKERS внутри `with_num_speakers`.
+    let num_speakers_override: Option<i32> = db::get_setting(pool, "mic_diarization_num_speakers")
+        .await?
+        .as_deref()
+        .and_then(|s| s.parse::<i32>().ok())
+        .filter(|n| (1..=4).contains(n));
+    let sys_t = diarize_system_track(
+        &ctx.app_data_dir,
+        &ctx.system_path,
+        sys_t,
+        num_speakers_override,
+    )
+    .await;
 
     // 4.6. [M13 follow-up] Опциональный multi-voice на mic-дорожке. Default ON
     //    через `MIC_DIARIZATION_ENABLED`. Без этого вся mic уходила в OWNER_TAG
@@ -848,7 +861,13 @@ async fn run_local_inner(
     );
     let mic_diarization = !mic_off;
     let mic_t = if mic_diarization {
-        let mic_diarized = diarize_mic_track(&ctx.app_data_dir, &ctx.mic_path, mic_t).await;
+        let mic_diarized = diarize_mic_track(
+            &ctx.app_data_dir,
+            &ctx.mic_path,
+            mic_t,
+            num_speakers_override,
+        )
+        .await;
         relabel_owner_on_mic_full_file(
             pool,
             &ctx.app_data_dir,
@@ -1037,21 +1056,26 @@ async fn diarize_system_track(
     app_data_dir: &Path,
     system_path: &Path,
     sys_t: DiarizedTranscript,
+    num_speakers: Option<i32>,
 ) -> DiarizedTranscript {
-    diarize_track(app_data_dir, system_path, sys_t, "system").await
+    diarize_track(app_data_dir, system_path, sys_t, "system", num_speakers).await
 }
 
 /// [M13 follow-up] Mirror `diarize_system_track` для mic-дорожки. Применяется
 /// когда `MIC_DIARIZATION_ENABLED` ON и engine == local. Owner-tag НЕ
 /// присваивается здесь — local `speaker:N` tags сохраняются, owner
 /// identification идёт отдельным шагом ([`owner_identify`]).
+///
+/// [P1.2] `num_speakers` — Labs «Force N speakers» override. `None` =
+/// auto-detect (sortformer default). Применяется идентично к mic и system.
 #[cfg(target_os = "macos")]
 pub(crate) async fn diarize_mic_track(
     app_data_dir: &Path,
     mic_path: &Path,
     mic_t: DiarizedTranscript,
+    num_speakers: Option<i32>,
 ) -> DiarizedTranscript {
-    diarize_track(app_data_dir, mic_path, mic_t, "mic").await
+    diarize_track(app_data_dir, mic_path, mic_t, "mic", num_speakers).await
 }
 
 /// [M13 follow-up] Non-chunked path post-processing: после `diarize_mic_track`
@@ -1136,6 +1160,7 @@ async fn diarize_track(
     audio_path: &Path,
     transcript: DiarizedTranscript,
     track_kind: &'static str,
+    num_speakers: Option<i32>,
 ) -> DiarizedTranscript {
     use crate::local_engine::{
         diarization::{Diarizer, SortformerDiarizer},
@@ -1172,7 +1197,12 @@ async fn diarize_track(
     }
 
     // 3-5. Diarize + merge. Любая ошибка → fall back (degraded).
-    let diarizer = SortformerDiarizer::new(seg_path, emb_path);
+    // [P1.2] `with_num_speakers` clamp'ит override к 1..=MAX_LOCAL_SPEAKERS;
+    // None = sherpa-onnx auto (default `-1`).
+    let diarizer = SortformerDiarizer::with_num_speakers(seg_path, emb_path, num_speakers);
+    if let Some(n) = num_speakers {
+        log::info!("diarize_track[{track_kind}]: forcing num_clusters={n} (Labs override)");
+    }
     let speaker_segments = match diarizer.diarize(audio_path).await {
         Ok(segs) => segs,
         Err(e) => {

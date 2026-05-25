@@ -10,7 +10,14 @@
 
 import { useEffect, useState } from 'react';
 
-import { getSetting, setSetting, SETTINGS_KEYS, SETTINGS_DEFAULTS } from '../api/settings';
+import {
+  getSetting,
+  setSetting,
+  SETTINGS_KEYS,
+  SETTINGS_DEFAULTS,
+  MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS,
+  type MicDiarizationNumSpeakers,
+} from '../api/settings';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
 
@@ -19,6 +26,10 @@ export function LabsSection() {
   const [v2Enabled, setV2Enabled] = useState<boolean>(SETTINGS_DEFAULTS.SUMMARY_V2_ENABLED);
   const [speculativeEnabled, setSpeculativeEnabled] = useState<boolean>(
     SETTINGS_DEFAULTS.SUMMARY_SPECULATIVE_DECODING,
+  );
+  // [P1.2] Labs «Force N speakers» override.
+  const [numSpeakers, setNumSpeakers] = useState<MicDiarizationNumSpeakers>(
+    SETTINGS_DEFAULTS.MIC_DIARIZATION_NUM_SPEAKERS,
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +43,16 @@ export function LabsSection() {
         () => null,
       );
       setSpeculativeEnabled(rawSpec === '1');
+      // [P1.2] Force N speakers — whitelist enforce: '2'|'3'|'4' → keep;
+      // всё прочее → 'auto'.
+      const rawNum = await getSetting(SETTINGS_KEYS.MIC_DIARIZATION_NUM_SPEAKERS).catch(
+        () => null,
+      );
+      if (rawNum === '2' || rawNum === '3' || rawNum === '4') {
+        setNumSpeakers(rawNum);
+      } else {
+        setNumSpeakers('auto');
+      }
     })();
   }, []);
 
@@ -48,6 +69,17 @@ export function LabsSection() {
     setSpeculativeEnabled(next);
     try {
       await setSetting(SETTINGS_KEYS.SUMMARY_SPECULATIVE_DECODING, next ? '1' : '0');
+    } catch (e) {
+      setError(humanError(e));
+    }
+  };
+
+  // [P1.2] Force-N-speakers persist. 'auto' тоже пишется явно (а не удаляется),
+  // чтобы UI consistently показывал актуальное значение после reset.
+  const persistNumSpeakers = async (next: MicDiarizationNumSpeakers) => {
+    setNumSpeakers(next);
+    try {
+      await setSetting(SETTINGS_KEYS.MIC_DIARIZATION_NUM_SPEAKERS, next);
     } catch (e) {
       setError(humanError(e));
     }
@@ -115,6 +147,39 @@ export function LabsSection() {
             <div style={hintStyle}>{t('settings.speculativeDecodingHint')}</div>
           </div>
         </label>
+      </div>
+
+      {/* [P1.2] Force-N-speakers Labs override. Native <select> — minimal
+          chrome, нет нужды в кастомных radio когда whitelist 4 options. */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={titleStyle}>{t('settings.forceNumSpeakersLabel')}</div>
+          <div style={hintStyle}>{t('settings.forceNumSpeakersHint')}</div>
+          <select
+            value={numSpeakers}
+            onChange={(e) =>
+              void persistNumSpeakers(e.target.value as MicDiarizationNumSpeakers)
+            }
+            aria-label={t('settings.forceNumSpeakersLabel')}
+            style={{
+              marginTop: 4,
+              padding: '6px 10px',
+              fontFamily: 'var(--font-sans)',
+              fontSize: 13,
+              color: 'var(--ink)',
+              background: 'var(--bg-2, var(--bg))',
+              border: '1px solid var(--line-soft)',
+              borderRadius: 6,
+              maxWidth: 240,
+            }}
+          >
+            {MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {t(`settings.forceNumSpeakersOptions.${opt}`)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );
