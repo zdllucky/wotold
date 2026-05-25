@@ -42,6 +42,34 @@ const PATTERNS: ErrorPattern[] = [
     match: /local_engine_transcript_empty/i,
     human: 'Транскрипт пустой — нечего саммаризировать.',
   },
+  // [P2.2] Internal — должен быть rare, но если попал в UI значит pipeline
+  // запустился без AppHandle (headless / race). Перезапуск приложения чинит.
+  {
+    match: /local_engine_no_app_handle/i,
+    human: 'Внутренняя ошибка приложения.',
+    hint: 'Перезапусти Wotold и попробуй снова.',
+  },
+  // [P2.2] Чтение merged transcript.md с диска упало — disk / permissions /
+  // race с уборкой файлов. Reprocess пересоздаёт.
+  {
+    match: /local_engine_transcript_read/i,
+    human: 'Не удалось прочитать транскрипт с диска.',
+    hint: 'Попробуй переобработать звонок целиком (Действия → Переобработать).',
+  },
+  // [P2.2] Local STT crash — sherpa-onnx Whisper sidecar упал на одной из
+  // дорожек (mic | system). Обычно отсутствуют модели либо повреждены.
+  {
+    match: /local_engine_stt_failed/i,
+    human: 'Локальная транскрипция не справилась с дорожкой.',
+    hint: 'Проверь что модели установлены в Настройках → Локальный движок.',
+  },
+  // [P2.2] Recap JSON persisted в DB упало — disk full либо integrity
+  // violation. Содержимое recap сгенерировано, но не сохранено.
+  {
+    match: /local_engine_recap_persist/i,
+    human: 'Саммари сгенерировано, но не сохранилось.',
+    hint: 'Попробуй пересоздать саммари ещё раз.',
+  },
   {
     match: /local_engine_llm_failed/i,
     human: 'Локальная модель не справилась с задачей.',
