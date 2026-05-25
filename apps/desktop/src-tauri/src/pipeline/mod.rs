@@ -51,6 +51,10 @@ pub mod audio_merger;
 /// local LLM future чтобы каждые 15s emit'ить elapsed_sec — UI рендерит
 /// «Пересоздаём… {sec}s».
 pub mod recap_progress;
+/// [P4] Best-segment selector для voice sample slice metadata —
+/// pure-fn lookup в merged raw_stt.json, возвращает (start, end, track)
+/// для voice_backfill INSERT.
+pub mod voice_sample_picker;
 
 // [M13.2.1] Global agglomerative single-link cosine clustering на
 // per-chunk WeSpeaker embeddings — сводит local speaker:N tags к global
@@ -1581,6 +1585,18 @@ async fn run_cluster_pipeline(
     // ОДИН раз перед циклом — matching::list_consenting_samples делает join.
     let consenting = matching::list_consenting_samples(pool).await?;
 
+    // [P4] Read merged raw_stt.json one time перед циклом — voice_backfill
+    // использует для best-segment slice metadata. None если файла нет
+    // (race / disk issue) → graceful fallback на legacy INSERT.
+    let raw_stt_json: Option<String> = tokio::fs::read_to_string(
+        app_data_dir
+            .join("calls")
+            .join(call_id)
+            .join("raw_stt.json"),
+    )
+    .await
+    .ok();
+
     for (tag, vector) in &clusters {
         let blob = embeddings::embedding_to_bytes(vector);
         if blob.is_empty() {
@@ -1595,7 +1611,14 @@ async fn run_cluster_pipeline(
         // дал consent_voice — upsert'им voice_sample (idempotent). До Phase 3
         // эта логика жила внутри `set_call_speaker_cluster`. Non-fatal:
         // warning + continue.
-        if let Err(e) = voice_backfill::maybe_backfill_voice_sample(pool, call_id, tag, &blob).await
+        if let Err(e) = voice_backfill::maybe_backfill_voice_sample(
+            pool,
+            call_id,
+            tag,
+            &blob,
+            raw_stt_json.as_deref(),
+        )
+        .await
         {
             log::warn!("voice_backfill {tag}: {e}");
         }

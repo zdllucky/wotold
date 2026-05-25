@@ -614,6 +614,7 @@ pub fn run() {
             commands::unbind_call_speaker,
             commands::list_voice_samples,
             commands::delete_voice_sample,
+            commands::get_voice_sample_audio,
             commands::regenerate_recap,
             commands::regenerate_title,
             commands::reprocess_call,

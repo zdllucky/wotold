@@ -432,11 +432,10 @@ const ruInternal = {
     deleteAria: 'Удалить семпл',
     deleteConfirmBody:
       'Удалить voice sample от {created}?\n\nЭто навсегда удалит embedding из профиля контакта. Биометрия не восстанавливается.',
-    // [P3] Inline play — проигрывание исходного звонка (mic.wav), т.к. в схеме
-    // voice_samples нет аудио bytes (только embedding vector).
-    playAria: 'Прослушать звонок',
+    // [P4] Inline play — slice WAV bytes из правильной track (start..end).
+    playAria: 'Прослушать семпл',
     pauseAria: 'Пауза',
-    playDisabledHint: 'Исходный звонок удалён — прослушать нельзя',
+    playDisabledHint: 'Старый семпл — прослушать недоступно (нет slice metadata)',
   },
 
   // ── Settings — sections + interior content ─────────────────────────────

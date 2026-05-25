@@ -37,6 +37,12 @@ pub struct VoiceSampleView {
     /// Длина embedding-блоба в байтах (для дебага; реальные значения не
     /// раскрываются клиенту — это биометрия, не нужна в UI).
     pub embedding_bytes: i64,
+    /// [P4] Sample slice metadata — start/end seconds в source_call WAV.
+    /// `None` для legacy rows до migration 0017; UI выключает play кнопку.
+    pub start_sec: Option<f64>,
+    pub end_sec: Option<f64>,
+    /// [P4] Track origin — `mic` | `system`. `None` для legacy rows.
+    pub track_kind: Option<String>,
 }
 
 pub async fn list_voice_samples(
@@ -44,7 +50,9 @@ pub async fn list_voice_samples(
     contact_id: &str,
 ) -> Result<Vec<VoiceSampleView>, AppError> {
     let rows = sqlx::query(
-        "SELECT id, contact_id, source_call, quality, created_at, length(embedding) AS embedding_bytes
+        "SELECT id, contact_id, source_call, quality, created_at,
+                length(embedding) AS embedding_bytes,
+                start_sec, end_sec, track_kind
          FROM voice_samples
          WHERE contact_id = ?1
          ORDER BY created_at DESC",
@@ -62,6 +70,9 @@ pub async fn list_voice_samples(
             quality: r.get("quality"),
             created_at: r.get("created_at"),
             embedding_bytes: r.get("embedding_bytes"),
+            start_sec: r.get("start_sec"),
+            end_sec: r.get("end_sec"),
+            track_kind: r.get("track_kind"),
         })
         .collect())
 }

@@ -6,13 +6,12 @@
 // каскадом — но это удаление контакта; здесь — точечное.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { Badge, Button, Empty, Skeleton } from '../ui';
-import { getCallAudioPath } from '../api/calls';
 import {
   deleteVoiceSample,
+  getVoiceSampleAudio,
   listVoiceSamples,
   type VoiceSampleView,
 } from '../api/voiceSamples';
@@ -48,13 +47,17 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   const [samples, setSamples] = useState<VoiceSampleView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // [P3] Inline playback из source_call. Schema voice_samples хранит только
-  // embedding vector (256-dim f32), без raw audio bytes — поэтому проигрываем
-  // полную mic.wav из source_call. Slice по start/end_ms невозможен пока schema
-  // не расширена. См. CHUNKED_PIPELINE_BACKLOG для упомянутого migration.
+  // [P4] Inline playback короткого slice (1.5–10 sec) из правильной track.
+  // Backend `get_voice_sample_audio` возвращает WAV bytes (start_sec..end_sec
+  // из mic.wav либо system.wav по track_kind). Frontend оборачивает в Blob
+  // URL для HTMLAudioElement.src. Legacy samples (NULL slice metadata) —
+  // play button disabled.
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  // `loadingId` — пока fetch'им path; `playingId` — после <audio>.play() resolve.
-  // Один <audio> на секцию: переключение sample останавливает предыдущий.
+  // Blob URL текущего playing sample — нужен для cleanup через
+  // URL.revokeObjectURL (предотвращает memory leak).
+  const currentBlobUrlRef = useRef<string | null>(null);
+  // `loadingId` — пока fetch'им bytes + создаём Blob URL.
+  // `playingId` — после audio.play() resolve.
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
 
@@ -71,7 +74,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
     refresh();
   }, [refresh]);
 
-  // [P3] Cleanup audio element on unmount / contact switch.
+  // [P4] Cleanup audio element + blob URL on unmount / contact switch.
   useEffect(() => {
     return () => {
       const el = audioRef.current;
@@ -79,6 +82,10 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
         el.pause();
         el.removeAttribute('src');
         el.load();
+      }
+      if (currentBlobUrlRef.current) {
+        URL.revokeObjectURL(currentBlobUrlRef.current);
+        currentBlobUrlRef.current = null;
       }
     };
   }, [contactId]);
@@ -89,31 +96,43 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
       el.pause();
       el.currentTime = 0;
     }
+    // Revoke blob URL — не оставляем GC-leak.
+    if (currentBlobUrlRef.current) {
+      URL.revokeObjectURL(currentBlobUrlRef.current);
+      currentBlobUrlRef.current = null;
+    }
     setPlayingId(null);
     setLoadingId(null);
   }, []);
 
   const handlePlay = useCallback(
     async (s: VoiceSampleView) => {
-      if (!s.source_call) return; // disabled state выше
+      // Legacy sample (NULL slice metadata) — disabled в UI, защитный возврат.
+      if (!s.track_kind || s.start_sec === null || s.end_sec === null) return;
       // Toggle off если этот sample уже играет.
       if (playingId === s.id) {
         stopPlayback();
         return;
       }
-      // Switching на другой sample — останавливаем предыдущий перед load'ом.
+      // Switching на другой sample — останавливаем предыдущий.
       stopPlayback();
       setLoadingId(s.id);
       try {
-        const path = await getCallAudioPath(s.source_call, 'mic');
+        const bytes = await getVoiceSampleAudio(s.id);
+        // Race-prevention: если за время fetch'а юзер кликнул другой sample,
+        // bail. loadingId на этот момент может уже не быть s.id.
         const el = audioRef.current;
         if (!el) {
           setLoadingId(null);
           return;
         }
-        el.src = convertFileSrc(path);
-        // Race-prevention: пользователь мог уже кликнуть другой sample.
-        // Перепроверяем что мы всё ещё loading'им именно этот id.
+        // ArrayBuffer от Tauri invoke — wrap в Blob audio/wav → ObjectURL.
+        // Cast Uint8Array → BlobPart: ArrayBufferLike covers SharedArrayBuffer
+        // case ts compiler defensive'ит — у нас всегда regular ArrayBuffer.
+        const blob = new Blob([bytes as BlobPart], { type: 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+        currentBlobUrlRef.current = url;
+        el.src = url;
         await el.play();
         setLoadingId((prev) => (prev === s.id ? null : prev));
         setPlayingId(s.id);
@@ -209,7 +228,10 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {samples!.map((s) => {
-            const canPlay = Boolean(s.source_call);
+            // [P4] Play разрешён только когда slice metadata complete.
+            // Legacy rows (NULL по migration 0017) — disabled.
+            const canPlay =
+              s.track_kind != null && s.start_sec != null && s.end_sec != null;
             const isLoading = loadingId === s.id;
             const isPlaying = playingId === s.id;
             const playLabel = !canPlay
@@ -287,10 +309,19 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
         ref={audioRef}
         preload="none"
         onEnded={() => {
+          // [P4] Revoke blob URL по completion playback — memory hygiene.
+          if (currentBlobUrlRef.current) {
+            URL.revokeObjectURL(currentBlobUrlRef.current);
+            currentBlobUrlRef.current = null;
+          }
           setPlayingId(null);
           setLoadingId(null);
         }}
         onError={() => {
+          if (currentBlobUrlRef.current) {
+            URL.revokeObjectURL(currentBlobUrlRef.current);
+            currentBlobUrlRef.current = null;
+          }
           setPlayingId(null);
           setLoadingId(null);
         }}
