@@ -126,6 +126,95 @@ seamless.
 **Связано с P2.1** (audio player UI badge). Эти 2 backlog item'а вместе
 закрывают «audio во время recording» UX gap.
 
+## Deferred — SpeakerConfirmModal sample playback broken (reported 2026-05-25)
+
+User зарепортил: на Speakers tab → «Кто этот голос?» card → «▶ Прослушать»
+кнопка визуально переходит в playing state (waveform animates, кнопка
+становится «■ стоп»), **но звук не воспроизводится**. Confirmed на 2
+голосах из 2.
+
+**Возможные источники (требует диагностики):**
+
+- `SpeakerConfirmModal` либо аналогичный inline-bubble component на
+  Participants tab — какой source для audio? Если использует ту же
+  `getCallAudioPath(callId, 'mic')` что P3 для voice samples, должно
+  работать. Если кастомный slice по start/end через что-то типа
+  `get_sample_bytes` — это не существует (нет схемы поддерживающей
+  audio slice).
+- Возможно UI animates waveform progress независимо от actual audio
+  element state — нет sync с `audio.played` events.
+- Audio element src может быть устаревший / wrong call ID — проверить
+  что `call_speaker.source_call_id` правильно резолвится в путь.
+- `convertFileSrc` permission / capability issue на этом surface
+  (CallDetailPage Participants tab) — возможно требуется отдельный
+  asset scope.
+
+**Связь с P3** (voice sample play button в Contact detail). P3 работает
+через `getCallAudioPath` — должно быть копируемый паттерн. Если ломается
+на ParticipantsTab/SpeakerConfirmModal, разница в:
+- инициализация audio element (different ref / lifecycle);
+- play context (single shared audio vs per-card audio);
+- src resolution (call-level vs sample-level).
+
+**Acceptance.** Click ▶ на «Кто этот голос?» card воспроизводит реальный
+audio (mic.wav из source call). Waveform progress sync'ится с
+`audio.currentTime`. Кнопка ■ стоп ставит pause.
+
+**Files to investigate:**
+- `apps/desktop/src/components/SpeakerConfirmModal.tsx`
+- `apps/desktop/src/components/call-detail/ParticipantsRow.tsx` (если
+  inline-bubble на этом tab)
+- Любой компонент с «Кто этот голос?» текстом — `t('callDetail.whoIsThis')`
+  или similar i18n key.
+
+## Deferred — Recap failed_reason engine label mismatch (reported 2026-05-25)
+
+User зарепортил: «НЕ УДАЛОСЬ СОЗДАТЬ САММАРИ · **ОБЛАКО (WOTOLD PROXY)**»
+badge показывает cloud engine, но в **message body**: «Локальная модель
+не успела ответить за 10 минут. Попробуй preset «Light»...» — текст
+явно про local engine.
+
+**Гипотеза.**
+
+`Call.summary_engine` (badge label) и `Call.recap_failed_reason` (message
+body) выставляются в разных code-path'ах + могут разъезжаться:
+
+- `summary_engine` пишется через `recap::persist_recap_from_json` (только
+  на success / partial-success). На failure path remains stale — старое
+  значение из предыдущего успешного recap.
+- `recap_failed_reason` пишется на каждый failure attempt (`local_engine_*`
+  tokens) включая после flip с Local → Cloud (или vice versa).
+
+**Сценарий воспроизведения (likely):**
+
+1. User запустил recap на Local engine → upal с `local_llm_timeout`.
+   → `summary_engine='local-qwen-Xb'`, `recap_failed_reason='local_llm_timeout...'`.
+2. User переключился на Cloud engine в Settings.
+3. User нажал «Пересоздать саммари» → cloud path запустился но тоже упал
+   (например 502).
+4. `recap_failed_reason` обновился на cloud error, НО он переписался
+   локальным error token-ом из previous attempt? Либо: cloud handler
+   вообще не запустился по race condition и UI ещё видит stale local
+   reason, но `summary_engine` уже обновился до cloud preset.
+
+**Files to investigate:**
+- `apps/desktop/src-tauri/src/pipeline/mod.rs::regenerate_recap` — dispatch
+  по engine; что пишется в `recap_failed_reason` + `summary_engine` per branch.
+- `apps/desktop/src-tauri/src/pipeline/recap.rs::persist_recap_from_json` —
+  обновляет ли `summary_engine` на failure path?
+- `apps/desktop/src/components/call-detail/LegacyRecapBanner.tsx` либо
+  banner-component — какие fields он рендерит (engine label vs reason)
+  и не путает ли источники.
+
+**Acceptance.** Badge engine label = engine, который реально упал. Message
+body human-error matches engine. Если оба source-of-truth fields разъехались
+по race — single transactional UPDATE с двумя полями вместе.
+
+**Связано с** «Archive» секции «Step 3 — engine indicator» (commit
+`db2afc7` либо similar) который добавил engine eyebrow в banner. Этот
+фикс работает корректно для свежих attempts; mismatch появляется при
+engine-switching между attempts.
+
 ## Deferred — Архитектурный
 
 - **`db/calls.rs` split** — файл 791 строк (см. ROADMAP активный backlog).
