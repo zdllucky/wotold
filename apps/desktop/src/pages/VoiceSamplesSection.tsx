@@ -5,10 +5,12 @@
 // подтверждение спикера). При удалении контакта (#41) семплы зачищаются
 // каскадом — но это удаление контакта; здесь — точечное.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { Badge, Button, Empty, Skeleton } from '../ui';
+import { getCallAudioPath } from '../api/calls';
 import {
   deleteVoiceSample,
   listVoiceSamples,
@@ -46,6 +48,16 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   const [samples, setSamples] = useState<VoiceSampleView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // [P3] Inline playback из source_call. Schema voice_samples хранит только
+  // embedding vector (256-dim f32), без raw audio bytes — поэтому проигрываем
+  // полную mic.wav из source_call. Slice по start/end_ms невозможен пока schema
+  // не расширена. См. CHUNKED_PIPELINE_BACKLOG для упомянутого migration.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // `loadingId` — пока fetch'им path; `playingId` — после <audio>.play() resolve.
+  // Один <audio> на секцию: переключение sample останавливает предыдущий.
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+
   const refresh = useCallback(() => {
     listVoiceSamples(contactId)
       .then((v) => {
@@ -58,6 +70,60 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // [P3] Cleanup audio element on unmount / contact switch.
+  useEffect(() => {
+    return () => {
+      const el = audioRef.current;
+      if (el) {
+        el.pause();
+        el.removeAttribute('src');
+        el.load();
+      }
+    };
+  }, [contactId]);
+
+  const stopPlayback = useCallback(() => {
+    const el = audioRef.current;
+    if (el) {
+      el.pause();
+      el.currentTime = 0;
+    }
+    setPlayingId(null);
+    setLoadingId(null);
+  }, []);
+
+  const handlePlay = useCallback(
+    async (s: VoiceSampleView) => {
+      if (!s.source_call) return; // disabled state выше
+      // Toggle off если этот sample уже играет.
+      if (playingId === s.id) {
+        stopPlayback();
+        return;
+      }
+      // Switching на другой sample — останавливаем предыдущий перед load'ом.
+      stopPlayback();
+      setLoadingId(s.id);
+      try {
+        const path = await getCallAudioPath(s.source_call, 'mic');
+        const el = audioRef.current;
+        if (!el) {
+          setLoadingId(null);
+          return;
+        }
+        el.src = convertFileSrc(path);
+        // Race-prevention: пользователь мог уже кликнуть другой sample.
+        // Перепроверяем что мы всё ещё loading'им именно этот id.
+        await el.play();
+        setLoadingId((prev) => (prev === s.id ? null : prev));
+        setPlayingId(s.id);
+      } catch (e) {
+        setLoadingId(null);
+        setError(humanError(e));
+      }
+    },
+    [playingId, stopPlayback],
+  );
 
   const handleDelete = async (s: VoiceSampleView) => {
     const ok = await ask(
@@ -89,7 +155,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
             key={i}
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr auto auto',
+              gridTemplateColumns: '1fr auto auto auto',
               gap: 12,
               padding: '8px 0',
               alignItems: 'center',
@@ -97,7 +163,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
             }}
           >
             <Skeleton width="60%" height="0.85em" />
-            <Skeleton width="3rem" height="0.7em" />
+            <Skeleton width="1.5rem" height="1rem" />
             <Skeleton width="1.5rem" height="1rem" />
           </div>
         ))}
@@ -142,57 +208,94 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
         />
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-          {samples!.map((s) => (
-            <li
-              key={s.id}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr auto',
-                gap: 12,
-                padding: '10px 0',
-                borderTop: '1px solid var(--line-soft)',
-                alignItems: 'center',
-              }}
-            >
-              <div
+          {samples!.map((s) => {
+            const canPlay = Boolean(s.source_call);
+            const isLoading = loadingId === s.id;
+            const isPlaying = playingId === s.id;
+            const playLabel = !canPlay
+              ? t('voiceSamples.playDisabledHint')
+              : isPlaying
+                ? t('voiceSamples.pauseAria')
+                : t('voiceSamples.playAria');
+            return (
+              <li
+                key={s.id}
                 style={{
-                  display: 'flex',
-                  gap: 14,
-                  flexWrap: 'wrap',
-                  alignItems: 'baseline',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr auto auto',
+                  gap: 12,
+                  padding: '10px 0',
+                  borderTop: '1px solid var(--line-soft)',
+                  alignItems: 'center',
                 }}
               >
-                <span
-                  className="mono"
-                  style={{ fontSize: 12, color: 'var(--ink)' }}
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 14,
+                    flexWrap: 'wrap',
+                    alignItems: 'baseline',
+                  }}
                 >
-                  {formatCreatedAt(s.created_at, locale)}
-                </span>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  {t('voiceSamples.quality', { pct: formatQuality(s.quality) })}
-                </span>
-                <span className="subtle" style={{ fontSize: 11 }}>
-                  {t('voiceSamples.embedBytes', { n: s.embedding_bytes })}
-                </span>
-                {s.source_call && (
-                  <span className="subtle mono" style={{ fontSize: 10 }}>
-                    {t('voiceSamples.callTag', { short: s.source_call.slice(0, 8) })}
+                  <span
+                    className="mono"
+                    style={{ fontSize: 12, color: 'var(--ink)' }}
+                  >
+                    {formatCreatedAt(s.created_at, locale)}
                   </span>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="danger"
-                size="sm"
-                onClick={() => void handleDelete(s)}
-                aria-label={t('voiceSamples.deleteAria')}
-              >
-                ×
-              </Button>
-            </li>
-          ))}
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {t('voiceSamples.quality', { pct: formatQuality(s.quality) })}
+                  </span>
+                  <span className="subtle" style={{ fontSize: 11 }}>
+                    {t('voiceSamples.embedBytes', { n: s.embedding_bytes })}
+                  </span>
+                  {s.source_call && (
+                    <span className="subtle mono" style={{ fontSize: 10 }}>
+                      {t('voiceSamples.callTag', { short: s.source_call.slice(0, 8) })}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handlePlay(s)}
+                  disabled={!canPlay || isLoading}
+                  aria-label={playLabel}
+                  title={playLabel}
+                >
+                  {/* Glyph: ▶ idle, ❚❚ playing, … loading. Disabled — outline ▷. */}
+                  {isLoading ? '…' : isPlaying ? '❚❚' : canPlay ? '▶' : '▷'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={() => void handleDelete(s)}
+                  aria-label={t('voiceSamples.deleteAria')}
+                >
+                  ×
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       )}
+      {/* [P3] Single shared <audio> для всех samples — single-concurrent
+          playback. Hidden control (manage via refs). onEnded чистит state. */}
+      <audio
+        ref={audioRef}
+        preload="none"
+        onEnded={() => {
+          setPlayingId(null);
+          setLoadingId(null);
+        }}
+        onError={() => {
+          setPlayingId(null);
+          setLoadingId(null);
+        }}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }

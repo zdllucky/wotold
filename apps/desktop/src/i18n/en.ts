@@ -400,6 +400,11 @@ export const en: TranslationStrings = {
     deleteAria: 'Delete sample',
     deleteConfirmBody:
       'Delete voice sample from {created}?\n\nThis permanently removes the embedding from the contact profile. Biometrics are not recoverable.',
+    // [P3] Inline play — plays the source call's mic.wav; voice_samples
+    // schema only stores embedding vector, not raw audio bytes.
+    playAria: 'Play source call',
+    pauseAria: 'Pause',
+    playDisabledHint: 'Source call deleted — cannot play',
   },
 
   settings: {

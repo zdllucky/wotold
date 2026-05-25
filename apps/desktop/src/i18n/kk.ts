@@ -399,6 +399,10 @@ export const kk: TranslationStrings = {
     deleteAria: 'Үлгіні жою',
     deleteConfirmBody:
       '{created} дауыс үлгісін жоясыз ба?\n\nБұл контакт профилінен embedding-ті біржола жояды. Биометрия қалпына келмейді.',
+    // [P3] Inline play — қайнар қоңыраудың mic.wav-ын ойнатады.
+    playAria: 'Қоңырауды тыңдау',
+    pauseAria: 'Кідірту',
+    playDisabledHint: 'Қайнар қоңырау жойылған — ойнату мүмкін емес',
   },
 
   settings: {
