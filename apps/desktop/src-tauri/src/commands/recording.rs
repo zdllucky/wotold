@@ -177,6 +177,10 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     let call_id = session.call_id.clone();
     let mic_path = session.mic_path.clone();
     let system_path = session.system_path.clone();
+    // [P6] Capture wall-clock start ДО move session — sidecar's stopped
+    // event возвращает duration ТОЛЬКО текущего chunk'а (с last rotate),
+    // не total. Используем Rust-side started_at для real total duration.
+    let started_at = session.started_at;
 
     // [M13 review fix] Signal stop через oneshot — это каноничный path для
     // orchestrator exit. До fix'а `stop_tx` дропался в `spawn_orchestrator`
@@ -200,7 +204,21 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     let result = audio_macos::stop(session).await;
 
     let call = match result {
-        Ok(r) => crate::db::finish_recording(&state.db, &call_id, r.duration_sec).await?,
+        Ok(_r) => {
+            // [P6] Real total wall-clock duration. `_r.duration_sec` от sidecar
+            // = только current chunk (per-rotate reset в Swift AudioRecorder
+            // → не accumulated). Используем session.started_at, минус
+            // paused_total_ms из DB (finish_recording не делает это сам).
+            let elapsed_ms = (chrono::Utc::now() - started_at).num_milliseconds().max(0);
+            let paused_ms: i64 =
+                sqlx::query_scalar("SELECT paused_total_ms FROM calls WHERE id = ?1")
+                    .bind(&call_id)
+                    .fetch_optional(&state.db)
+                    .await?
+                    .unwrap_or(0);
+            let total_sec = (elapsed_ms - paused_ms).max(0) as f64 / 1000.0;
+            crate::db::finish_recording(&state.db, &call_id, total_sec).await?
+        }
         Err(e) => {
             let _ = crate::db::fail_recording(&state.db, &call_id).await;
             EventBus::new(Some(&app)).recording_state_changed();

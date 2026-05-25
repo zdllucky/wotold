@@ -59,6 +59,10 @@ pub struct RecordingSession {
 
 #[derive(Debug, Clone, Copy)]
 pub struct StopResult {
+    /// [P6] Per-chunk duration от sidecar (per-rotate reset в Swift) — caller
+    /// должен игнорировать это и computить total из Rust-side started_at.
+    /// Поле остаётся в struct для observability / future debugging.
+    #[allow(dead_code)]
     pub duration_sec: f64,
     // [B16] Сохраняем размеры файлов для будущей quota-аналитики и диагностики
     // неполной записи. Сейчас not read — но это legitimate metadata.
@@ -295,15 +299,16 @@ async fn run_dispatcher(
                         }
                         // [P5.2] Live duration update: persist в DB + emit
                         // `recording:duration` event для UI. Без этого
-                        // HomePage показывал stale «1:56» для 30+ мин активных
+                        // HomePage показывал stale значение для 30+ мин активных
                         // записей (duration_sec writeable только в finish_recording).
-                        if let Some(duration_sec) = json.get("duration_sec").and_then(Value::as_f64)
-                        {
-                            let app_clone = app.clone();
-                            tokio::spawn(async move {
-                                update_duration_from_rotate(&app_clone, duration_sec).await;
-                            });
-                        }
+                        //
+                        // [P6] Sidecar's `duration_sec` в rotated payload = только
+                        // current chunk (per-rotate reset в Swift). Игнорируем,
+                        // computим accumulated wall-clock из session.started_at.
+                        let app_clone = app.clone();
+                        tokio::spawn(async move {
+                            update_duration_from_rotate(&app_clone).await;
+                        });
                     }
                     "stopped" | "error" => {
                         if let Some(tx) = terminal_tx.take() {
@@ -395,23 +400,35 @@ impl AudioCapture for MacOsCoreAudioCapture {
 /// emit `recording:duration` event.
 ///
 /// Spawned background task — все errors логируются, не блокируют dispatcher.
-/// Resolve'ит current call_id через AppState (один writer recording session
-/// active).
-async fn update_duration_from_rotate(app: &AppHandle, duration_sec: f64) {
+/// Resolve'ит current call_id + started_at через AppState (один writer
+/// recording session active).
+///
+/// [P6] Вычисляет accumulated wall-clock из `session.started_at` минус
+/// `paused_total_ms` из DB. Sidecar's rotate payload `duration_sec` отражает
+/// только current chunk (per-rotate reset в Swift) — игнорируем.
+async fn update_duration_from_rotate(app: &AppHandle) {
     use tauri::Manager;
 
     let Some(state) = app.try_state::<crate::state::AppState>() else {
         log::warn!("recording:duration: AppState not yet initialized");
         return;
     };
-    let call_id = {
+    let (call_id, started_at) = {
         let guard = state.recording.lock().await;
-        guard.as_ref().map(|s| s.call_id.clone())
+        match guard.as_ref() {
+            Some(s) => (s.call_id.clone(), s.started_at),
+            None => return,
+        }
     };
-    let Some(call_id) = call_id else {
-        // Нет active recording — duration_sec от sidecar бесполезен.
-        return;
-    };
+    let elapsed_ms = (chrono::Utc::now() - started_at).num_milliseconds().max(0);
+    let paused_ms: i64 = sqlx::query_scalar("SELECT paused_total_ms FROM calls WHERE id = ?1")
+        .bind(&call_id)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0);
+    let duration_sec = (elapsed_ms - paused_ms).max(0) as f64 / 1000.0;
     if let Err(e) = crate::db::update_call_duration(&state.db, &call_id, duration_sec).await {
         log::warn!("recording:duration: DB update failed for {call_id}: {e}");
         return;

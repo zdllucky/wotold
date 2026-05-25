@@ -118,6 +118,34 @@ pub fn merge_track(
     output_path: &Path,
     kind: TrackKind,
 ) -> Result<MergeReport, MergeError> {
+    // [P6] Promote root WAV → chunks/0/ on first merge. Sidecar пишет
+    // first chunk (0-10 мин до first rotate) в root `mic.wav`, не в
+    // `chunks/0/mic.wav` — иначе AudioScrubber играл бы пустой root до
+    // окончания pipeline. На rotate sidecar переключается на chunks/N/.
+    // audio_merger же сканирует chunks/{idx}/ → missing chunk 0 → output
+    // = chunks 1+2+3 only (player «21:55» вместо real 31:56).
+    //
+    // Fix: если chunks/0/{filename} отсутствует но root WAV существует
+    // и chunks/1/ есть — move root → chunks/0/. Idempotent: на reprocess
+    // chunks/0/ уже на месте, skip move.
+    let chunks_idx0 = chunks_dir.join("0").join(kind.filename());
+    let chunks_idx1 = chunks_dir.join("1").join(kind.filename());
+    if !chunks_idx0.exists() && output_path.exists() && chunks_idx1.exists() {
+        if let Err(e) = fs::create_dir_all(chunks_dir.join("0")) {
+            log::warn!("audio_merger: failed to create chunks/0/: {e}");
+        } else if let Err(e) = fs::rename(output_path, &chunks_idx0) {
+            log::warn!(
+                "audio_merger: failed to promote root {} → chunks/0/: {e}",
+                output_path.display()
+            );
+        } else {
+            log::info!(
+                "audio_merger: promoted root WAV → {} (first-merge fix)",
+                chunks_idx0.display()
+            );
+        }
+    }
+
     let chunks = list_chunk_wavs(chunks_dir, kind);
     if chunks.is_empty() {
         return Err(MergeError::NoChunks(kind, chunks_dir.to_path_buf()));
