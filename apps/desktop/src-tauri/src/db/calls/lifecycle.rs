@@ -433,6 +433,32 @@ pub async fn sweep_stale_calls(pool: &SqlitePool) -> Result<u64, AppError> {
     if chunks_swept > 0 {
         log::warn!("sweep_stale_chunks: {chunks_swept} processing chunks → failed");
     }
+    // [Tech-debt P0.3] Pending chunks для уже-неактивных calls — тоже
+    // orphaned (chunk_runner не успел mark_processing до crash, или sidecar
+    // создал row но не вызвал runner). Помечаем failed, чтобы UI показал
+    // retry button (`retry_chunk` FSM gate failed→pending).
+    //
+    // Active recordings (status='recording') исключаем: live sidecar может
+    // legitимно держать pending row до первой ротации. На практике sweep
+    // запускается ДО старта новых recordings (state::init line 72), плюс
+    // выше уже recording→failed UPDATE — значит pending row'ы остаются
+    // только у уже-stale calls.
+    let pending_swept = sqlx::query(
+        "UPDATE call_chunks
+         SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+         WHERE status = 'pending'
+           AND call_id IN (
+             SELECT id FROM calls WHERE status NOT IN ('recording')
+           )",
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if pending_swept > 0 {
+        log::warn!(
+            "sweep_stale_chunks: {pending_swept} pending chunks of non-active calls → failed"
+        );
+    }
     Ok(res.rows_affected())
 }
 
@@ -584,6 +610,57 @@ mod tests {
         let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
         assert_eq!(after.provider.as_deref(), Some("soniox"));
         assert_eq!(after.lang_detected.as_deref(), Some("ru"));
+    }
+
+    // [Tech-debt P0.3] sweep_stale_chunks дополнительно покрывает pending
+    // chunks для неактивных calls (orphaned после crash до mark_processing).
+    #[tokio::test]
+    async fn sweep_marks_pending_chunks_of_non_active_calls_failed() {
+        use crate::db::chunks::{insert_chunk, list_chunks_by_call};
+        use std::path::PathBuf;
+        let db = fresh_db().await;
+        // Call A — был processing, имеет pending chunk → после sweep:
+        // call → failed, chunk → failed.
+        let a = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &a.id, 5.0).await.unwrap();
+        // a сейчас status='processing' (finish_recording). Создаём pending chunk.
+        insert_chunk(
+            &db.pool,
+            &a.id,
+            0,
+            0,
+            &PathBuf::from("/m"),
+            &PathBuf::from("/s"),
+        )
+        .await
+        .unwrap();
+        // Call B — уже ready, тоже с pending chunk (legacy / partial state).
+        let b = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &b.id, 5.0).await.unwrap();
+        mark_call_ready(&db.pool, &b.id).await.unwrap();
+        insert_chunk(
+            &db.pool,
+            &b.id,
+            0,
+            0,
+            &PathBuf::from("/m"),
+            &PathBuf::from("/s"),
+        )
+        .await
+        .unwrap();
+
+        sweep_stale_calls(&db.pool).await.unwrap();
+
+        let a_chunks = list_chunks_by_call(&db.pool, &a.id).await.unwrap();
+        let b_chunks = list_chunks_by_call(&db.pool, &b.id).await.unwrap();
+        assert_eq!(
+            a_chunks[0].status, "failed",
+            "processing call's pending chunk → failed"
+        );
+        assert_eq!(
+            b_chunks[0].status, "failed",
+            "ready call's pending chunk → failed"
+        );
     }
 
     #[tokio::test]
