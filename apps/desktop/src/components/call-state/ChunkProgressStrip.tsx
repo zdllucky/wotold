@@ -10,6 +10,12 @@
 // Empty state (нет chunks rows в DB — cloud-managed или legacy local) —
 // silent null render. Caller (ProcessingPanel) fallback'ит на классический
 // PipelineStrip.
+//
+// [Tech-debt P0.2] Failed chunks получают retry-кнопку. На click invoke
+// retry_chunk Tauri command + локальный optimistic state Set<chunk_idx>
+// чтобы button показывал "Повторяем…" disabled пока ждём transcript:chunk_done.
+
+import { useEffect, useState } from 'react';
 
 import { useI18n } from '../../i18n';
 import type { CallChunk } from '../../api/recording';
@@ -20,6 +26,9 @@ export interface ChunkProgressStripProps {
   chunks: CallChunk[];
   /** Раскрыто ли по умолчанию (тесты / debug). */
   defaultOpen?: boolean;
+  /** [Tech-debt P0.2] Callback на retry failed chunk. Если undefined —
+   *  кнопка не рендерится (read-only mode для legacy mounts). */
+  onRetryChunk?: (chunkIdx: number) => void;
 }
 
 /** mm:ss из ms. Сохраняет negative-safe → 0:00. */
@@ -55,8 +64,31 @@ function chunkBullet(status: CallChunk['status']): BulletState {
   }
 }
 
-export function ChunkProgressStrip({ chunks, defaultOpen = false }: ChunkProgressStripProps) {
+export function ChunkProgressStrip({
+  chunks,
+  defaultOpen = false,
+  onRetryChunk,
+}: ChunkProgressStripProps) {
   const { t } = useI18n();
+  // [Tech-debt P0.2] Optimistic retry state — chunk idx → "ждём что event
+  // отметит status не-failed". Очищаем когда chunk выходит из failed (т.е.
+  // pending/processing/done пришли через chunks prop).
+  const [retrying, setRetrying] = useState<Set<number>>(() => new Set());
+  useEffect(() => {
+    setRetrying((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const idx of prev) {
+        const chunk = chunks.find((c) => c.chunk_idx === idx);
+        if (!chunk || chunk.status !== 'failed') {
+          next.delete(idx);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [chunks]);
+
   if (chunks.length === 0) {
     // Caller (ProcessingPanel) разруливает fallback на классический PipelineStrip.
     return null;
@@ -94,11 +126,27 @@ export function ChunkProgressStrip({ chunks, defaultOpen = false }: ChunkProgres
       </summary>
 
       <div className="proc-strip-body">
+        {/* [Tech-debt P0.2] Failure summary banner — выше списка сегментов. */}
+        {failed > 0 && (
+          <p
+            className="muted"
+            style={{
+              fontSize: 12,
+              fontFamily: 'var(--font-sans)',
+              margin: '0 0 10px',
+            }}
+          >
+            {t('chunkProgress.failedSummary')
+              .replace('{n}', String(failed))
+              .replace('{total}', String(total))}
+          </p>
+        )}
         <div className="steps">
           {chunks.map((chunk) => {
             const bullet = chunkBullet(chunk.status);
             const range = formatRange(chunk.start_ms, chunk.end_ms);
             const ariaStatus = t(`chunkProgress.${bullet.ariaLabelKey}`);
+            const isRetrying = retrying.has(chunk.chunk_idx);
             return (
               <div key={chunk.chunk_idx} className={`step step--${bullet.klass}`}>
                 <div className="step-bullet" aria-label={ariaStatus}>
@@ -113,7 +161,35 @@ export function ChunkProgressStrip({ chunks, defaultOpen = false }: ChunkProgres
                   {bullet.klass === 'active' && (
                     <span className="step-shimmer" aria-label={ariaStatus} />
                   )}
-                  {bullet.klass === 'failed' && ariaStatus}
+                  {bullet.klass === 'failed' && (
+                    <>
+                      <span style={{ marginRight: 8 }}>{ariaStatus}</span>
+                      {onRetryChunk && (
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          style={{
+                            fontSize: 11,
+                            padding: '2px 8px',
+                            fontFamily: 'var(--font-sans)',
+                          }}
+                          disabled={isRetrying}
+                          onClick={() => {
+                            setRetrying((s) => {
+                              const next = new Set(s);
+                              next.add(chunk.chunk_idx);
+                              return next;
+                            });
+                            onRetryChunk(chunk.chunk_idx);
+                          }}
+                        >
+                          {isRetrying
+                            ? t('chunkProgress.retrying')
+                            : t('chunkProgress.retry')}
+                        </button>
+                      )}
+                    </>
+                  )}
                   {bullet.klass === 'pending' && ariaStatus}
                 </div>
               </div>

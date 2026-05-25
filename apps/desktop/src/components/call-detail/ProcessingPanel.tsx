@@ -23,9 +23,11 @@ interface ProcessingPanelProps {
   /** [M13.3.1] Список chunks для chunked-pipeline записей. Non-empty —
    *  показываем ChunkProgressStrip; пусто — fallback на PipelineStrip. */
   chunks?: CallChunk[];
+  /** [Tech-debt P0.2] Forward callback retry failed chunk. */
+  onRetryChunk?: (chunkIdx: number) => void;
 }
 
-export function ProcessingPanel({ call, chunks }: ProcessingPanelProps) {
+export function ProcessingPanel({ call, chunks, onRetryChunk }: ProcessingPanelProps) {
   const { t } = useI18n();
   const useChunkStrip = chunks !== undefined && chunks.length > 0;
 
@@ -47,7 +49,7 @@ export function ProcessingPanel({ call, chunks }: ProcessingPanelProps) {
   return (
     <div style={{ marginBottom: 18 }}>
       {useChunkStrip ? (
-        <ChunkProgressStrip chunks={chunks} />
+        <ChunkProgressStrip chunks={chunks} onRetryChunk={onRetryChunk} />
       ) : (
         <PipelineStrip progress={progress} />
       )}

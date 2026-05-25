@@ -17,6 +17,7 @@ import {
   regenerateTitle,
   reprocessCall,
 } from '../api/calls';
+import { retryChunk } from '../api/recording';
 import { humanError } from '../api/errors';
 import { engineLabelHuman } from '../utils/engineLabel';
 import { Tabs } from '../ui';
@@ -353,7 +354,16 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             onCancel={() => void onCancelReprocess()}
           />
         ) : (
-          <ProcessingPanel call={call} chunks={chunks} />
+          <ProcessingPanel
+            call={call}
+            chunks={chunks}
+            onRetryChunk={(idx) => {
+              // [Tech-debt P0.2] retry_chunk fire-and-forget — status update
+              // придёт через transcript:chunk_done event, ChunkProgressStrip
+              // отжмёт "Повторяем…" автоматически.
+              void retryChunk(call.id, idx).catch((e) => setError(humanError(e)));
+            }}
+          />
         ))}
 
       {call.status === 'failed' && (

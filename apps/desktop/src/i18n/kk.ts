@@ -946,6 +946,9 @@ export const kk: TranslationStrings = {
     statusFailed: 'сәтсіз',
     statusProcessing: 'өңделуде',
     statusPending: 'күтуде',
+    retry: '↻ Қайталау',
+    retrying: 'Қайталаймыз…',
+    failedSummary: '{total} ішінен {n} сегмент сәтсіз — қайталау үшін ↻ басыңыз.',
   },
 };
 
