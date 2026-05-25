@@ -192,6 +192,8 @@ const ruInternal = {
     reprocessing: 'Переобработка…',
     regenerateRecap: '↻ Пересоздать саммари',
     regenerating: 'Пересоздаём…',
+    // [P1.3] Elapsed timer для local LLM regen — backend шлёт каждые 15s.
+    regeneratingWithElapsed: 'Пересоздаём… {sec}s',
     regenerateNoTranscript: 'Нет транскрипта для регенерации',
     // [M14 T-17] Title-only regen — отдельный lightweight LLM-call.
     regenerateTitle: '↻ Пересоздать название',

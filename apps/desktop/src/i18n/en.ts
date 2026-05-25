@@ -179,6 +179,8 @@ export const en: TranslationStrings = {
     reprocessing: 'Reprocessing…',
     regenerateRecap: '↻ Regenerate recap',
     regenerating: 'Regenerating…',
+    // [P1.3] Elapsed timer для local LLM regen — backend шлёт каждые 15s.
+    regeneratingWithElapsed: 'Regenerating… {sec}s',
     regenerateNoTranscript: 'No transcript to regenerate from',
     regenerateTitle: '↻ Regenerate title',
     regeneratingTitle: 'Regenerating title…',

@@ -39,6 +39,7 @@ use tokio::sync::Mutex;
 use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 
 use super::models::{model_path, ModelId};
+use super::preset::LocalEnginePreset;
 use super::sidecar::SidecarGuard;
 
 /// Имя sidecar бинаря — совпадает с `tauri.conf.json::externalBin` и
@@ -58,7 +59,23 @@ const DEFAULT_THREADS: u32 = 6;
 /// constraint плюс 7B/3B inference на M-series CPU могут занимать около 5-8
 /// минут в worst case. 10 минут — margin без зависания; на таймауте
 /// `drop(child)` шлёт kill сигнал, юзер видит явный error.
+///
+/// [P1.3] Backward-compat дефолт; для production callers использовать
+/// [`timeout_for_preset`] — Light быстрее, Quality медленнее.
 pub const LOCAL_LLM_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// [P1.3] Timeout per preset — отражает реальный compute cost. Без этой
+/// дифференциации Light (1.5B) имел overkill cap (10 мин при реальных 1-3
+/// мин), а Quality (7B) на длинных map-reduce transcripts получал SIGKILL
+/// при еле-уложившемся в cap результате. Применяется через `.with_timeout(...)`
+/// в callsite (`pipeline::run_local_inner` + `regenerate_recap_local`).
+pub const fn timeout_for_preset(preset: LocalEnginePreset) -> Duration {
+    match preset {
+        LocalEnginePreset::Light => Duration::from_secs(5 * 60),
+        LocalEnginePreset::Balanced => Duration::from_secs(10 * 60),
+        LocalEnginePreset::Quality => Duration::from_secs(15 * 60),
+    }
+}
 
 /// Локальный LLM на llama.cpp. Owns путь к GGUF модели + sidecar config.
 pub struct LocalLlamaProvider {
@@ -109,10 +126,8 @@ impl LocalLlamaProvider {
         self
     }
 
-    /// Кастомный timeout — для тестов и потенциальных tier'ов.
-    /// Helper used by tests + диагностическим UI; production pipeline
-    /// полагается на `LOCAL_LLM_TIMEOUT` default.
-    #[allow(dead_code)]
+    /// Кастомный timeout — для тестов, диагностики, и [P1.3] per-preset
+    /// дифференциации (`timeout_for_preset(preset)`).
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -550,6 +565,37 @@ mod tests {
         let p = LocalLlamaProvider::for_preset(Path::new("/d"), ModelId::QWEN25_1_5B)
             .with_timeout(Duration::from_secs(10));
         assert_eq!(p.timeout(), Duration::from_secs(10));
+    }
+
+    // [P1.3] Per-preset timeout dispatch — Light быстрее (1.5B), Quality
+    // медленнее (7B + map-reduce). Жёстко прописанные values защищают от
+    // случайной перестановки.
+    #[test]
+    fn timeout_for_preset_light_is_5_min() {
+        assert_eq!(
+            timeout_for_preset(LocalEnginePreset::Light),
+            Duration::from_secs(5 * 60)
+        );
+    }
+
+    #[test]
+    fn timeout_for_preset_balanced_matches_legacy_default() {
+        assert_eq!(
+            timeout_for_preset(LocalEnginePreset::Balanced),
+            Duration::from_secs(10 * 60)
+        );
+        assert_eq!(
+            timeout_for_preset(LocalEnginePreset::Balanced),
+            LOCAL_LLM_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn timeout_for_preset_quality_is_15_min() {
+        assert_eq!(
+            timeout_for_preset(LocalEnginePreset::Quality),
+            Duration::from_secs(15 * 60)
+        );
     }
 
     #[tokio::test]

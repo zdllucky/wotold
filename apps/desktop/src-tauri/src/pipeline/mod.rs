@@ -47,6 +47,10 @@ pub mod chunk_assembly;
 // [Tech-debt P0.1] Конкатенация per-chunk WAV файлов в root mic.wav/system.wav.
 // Без этого AudioScrubber играет только первый chunk вместо полной записи.
 pub mod audio_merger;
+/// [P1.3] Periodic `recap:progress` event emitter wrapper. Оборачивает
+/// local LLM future чтобы каждые 15s emit'ить elapsed_sec — UI рендерит
+/// «Пересоздаём… {sec}s».
+pub mod recap_progress;
 
 // [M13.2.1] Global agglomerative single-link cosine clustering на
 // per-chunk WeSpeaker embeddings — сводит local speaker:N tags к global
@@ -482,7 +486,9 @@ async fn regenerate_recap_local(
             None
         };
 
+    // [P1.3] Per-preset timeout: Light 5min / Balanced 10min / Quality 15min.
     let provider = LocalLlamaProvider::for_preset(app_data_dir, llm_id)
+        .with_timeout(crate::local_engine::llm::timeout_for_preset(preset))
         .with_app(app.clone())
         .await
         .with_draft_model(draft_path);
@@ -493,9 +499,16 @@ async fn regenerate_recap_local(
         known_speakers: known_speakers.as_deref(),
         preset,
     };
-    let json_value = local_orchestrator::run_v2_pipeline(&provider, orch_ctx)
-        .await
-        .map_err(|e| AppError::Other(format!("local_engine_llm_failed: {e}")))?;
+    // [P1.3] Wrap LLM future в periodic recap:progress emitter. UI рендерит
+    // «Пересоздаём… {sec}s»; на completion (success / fail / timeout) ticker
+    // аборт'ится через JoinHandle::abort внутри helper'а.
+    let json_value = recap_progress::with_recap_progress_emitter(
+        Some(app.clone()),
+        call_id.to_string(),
+        local_orchestrator::run_v2_pipeline(&provider, orch_ctx),
+    )
+    .await
+    .map_err(|e| AppError::Other(format!("local_engine_llm_failed: {e}")))?;
 
     let local_engine_label = match llm_id.as_str() {
         id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
@@ -964,7 +977,9 @@ async fn run_local_inner(
                 } else {
                     None
                 };
+            // [P1.3] Per-preset timeout (Light 5min / Balanced 10min / Quality 15min).
             let provider = LocalLlamaProvider::for_preset(&ctx.app_data_dir, llm_id)
+                .with_timeout(crate::local_engine::llm::timeout_for_preset(preset))
                 .with_app(app.clone())
                 .await
                 .with_draft_model(draft_path);
@@ -976,9 +991,15 @@ async fn run_local_inner(
                 // длинные transcripts автоматически идут map-reduce.
                 preset,
             };
-            local_orchestrator::run_v2_pipeline(&provider, orch_ctx)
-                .await
-                .map_err(|e| crate::providers::llm::LlmError::Provider(e.to_string()))
+            // [P1.3] Wrap LLM future в periodic recap:progress emitter
+            // (mirror regenerate_recap_local). UI рендерит «Пересоздаём… {sec}s».
+            recap_progress::with_recap_progress_emitter(
+                Some(app.clone()),
+                ctx.call_id.clone(),
+                local_orchestrator::run_v2_pipeline(&provider, orch_ctx),
+            )
+            .await
+            .map_err(|e| crate::providers::llm::LlmError::Provider(e.to_string()))
         }
         Ok(_) => Err(crate::providers::llm::LlmError::Provider(
             "local_engine_transcript_empty".into(),

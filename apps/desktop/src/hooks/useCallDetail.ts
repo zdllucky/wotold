@@ -39,10 +39,12 @@ import {
 } from '../api/speakers';
 import {
   listCallChunks,
+  RECAP_PROGRESS_EVENT,
   type Call,
   type CallChunk,
   type CallProgressEvent,
   type ChunkDoneEvent,
+  type RecapProgressEvent,
 } from '../api/recording';
 import { humanError } from '../api/errors';
 
@@ -67,6 +69,11 @@ export interface UseCallDetailResult {
   openQuestions: OpenQuestion[];
   micSrc: string | null;
   systemSrc: string | null;
+  /** [P1.3] Elapsed seconds во время local LLM recap regen. `null` если нет
+   *  активной generation либо cloud engine (cloud не emit'ит этот event).
+   *  Resets на `null` когда `regenerating` flips false в CallDetailPage. */
+  recapElapsedSec: number | null;
+  setRecapElapsedSec: (v: number | null) => void;
   loading: boolean;
   error: string | null;
   setError: (v: string | null) => void;
@@ -87,6 +94,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   const [openQuestions, setOpenQuestions] = useState<OpenQuestion[]>([]);
   const [micSrc, setMicSrc] = useState<string | null>(null);
   const [systemSrc, setSystemSrc] = useState<string | null>(null);
+  // [P1.3] Elapsed timer для recap regen UI. См. JSDoc на интерфейсе.
+  const [recapElapsedSec, setRecapElapsedSec] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -261,6 +270,24 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     return () => unlisten?.();
   }, [callId]);
 
+  // [P1.3] Live elapsed timer для local LLM recap generation. Backend
+  // `pipeline::recap_progress::with_recap_progress_emitter` шлёт каждые 15s
+  // пока future не resolve'нется. UI рендерит «Пересоздаём… {sec}s» в
+  // HeaderActions. Reset делает CallDetailPage когда `regenerating` flips
+  // false (в onRegenerateRecap finally).
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<RecapProgressEvent>(RECAP_PROGRESS_EVENT, (e) => {
+      if (e.payload.call_id !== callId) return;
+      setRecapElapsedSec(e.payload.elapsed_sec);
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((err) => console.warn('recap:progress listener:', err));
+    return () => unlisten?.();
+  }, [callId]);
+
   // [V6.4 + Bug-fix #5] Live pipeline progress — слушаем `call:progress`
   // события для этого звонка и патчим Call object. Дополнительно: на
   // переход stage'а (e.payload.step != prevStep) триггерим debounced
@@ -383,6 +410,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     openQuestions,
     micSrc,
     systemSrc,
+    recapElapsedSec,
+    setRecapElapsedSec,
     loading,
     error,
     setError,
