@@ -9,9 +9,12 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { humanError } from '../api/errors';
 import { localEngineGetActiveEngine } from '../api/local-engine';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   listCalls,
+  RECORDING_DURATION_EVENT,
   type Call,
+  type RecordingDurationEvent,
 } from '../api/recording';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import { listCallSpeakers } from '../api/speakers';
@@ -66,6 +69,25 @@ export function HomePage({ onOpenCall, onOpenSettings }: HomePageProps = {}) {
   type BannerVariant = 'default' | 'failures' | 'quota';
   const [bannerVariant, setBannerVariant] = useState<BannerVariant>('default');
   const [bannerFailureCount, setBannerFailureCount] = useState(0);
+
+  // [P5.2] Live duration update во время active recording — patch'ит
+  // call.duration_sec в recentCalls list на каждый sidecar `rotated`
+  // event. Без этого HomePage показывал stale «1:56» для 30+ мин записей.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<RecordingDurationEvent>(RECORDING_DURATION_EVENT, (e) => {
+      setRecentCalls((prev) =>
+        prev.map((c) =>
+          c.id === e.payload.call_id ? { ...c, duration_sec: e.payload.duration_sec } : c,
+        ),
+      );
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((err) => console.warn('recording:duration listener:', err));
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     invoke<AvailableUpdate | null>('check_for_update')

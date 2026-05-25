@@ -40,11 +40,13 @@ import {
 import {
   listCallChunks,
   RECAP_PROGRESS_EVENT,
+  RECORDING_DURATION_EVENT,
   type Call,
   type CallChunk,
   type CallProgressEvent,
   type ChunkDoneEvent,
   type RecapProgressEvent,
+  type RecordingDurationEvent,
 } from '../api/recording';
 import { humanError } from '../api/errors';
 
@@ -267,6 +269,23 @@ export function useCallDetail(callId: string): UseCallDetailResult {
         unlisten = fn;
       })
       .catch((err) => console.warn('transcript:chunk_done listener:', err));
+    return () => unlisten?.();
+  }, [callId]);
+
+  // [P5.2] Live duration update во время active recording. Patches
+  // `call.duration_sec` на каждый sidecar `rotated` event (~раз в 10 мин).
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<RecordingDurationEvent>(RECORDING_DURATION_EVENT, (e) => {
+      if (e.payload.call_id !== callId) return;
+      setCallState((prev) =>
+        prev ? { ...prev, duration_sec: e.payload.duration_sec } : prev,
+      );
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((err) => console.warn('recording:duration listener:', err));
     return () => unlisten?.();
   }, [callId]);
 
