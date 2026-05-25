@@ -228,6 +228,55 @@ engine-switching между attempts.
 - **R12-bis storage UI** — explicit storage management при смене preset.
   Сейчас старые модели остаются на диске пока user не удалит вручную.
 
+## Deferred — Dev hot-reload auto-restart (reported 2026-05-26)
+
+**Symptom.** При edit Rust-кода `cargo` пересобирает `target/debug/wotold-desktop`,
+но running app продолжает крутить **stale бинарь в памяти**. Fix'ы не видны
+в UI / pipeline до manual `Cmd+Q` + повторного `pnpm tauri dev`.
+
+**Воспроизводимая последовательность:**
+1. `pnpm tauri dev` спавнит wotold-desktop (PID A).
+2. Я редактирую `local_engine/llm.rs` → cargo watch / file watcher пересобирает.
+3. На диске лежит свежий бинарь, в памяти живёт PID A со старым.
+4. User кликает «Пересоздать саммари» → бежит **старая** логика.
+
+Подтверждено в текущей сессии: после commit'а `5a1f3c1` (drop `--log-disable`)
+running wotold-desktop всё ещё передавал флаг → llama выдавала пустой stdout
+→ `no JSON object` retry loop → OOM. Решено только полным `pkill wotold-desktop`
++ ручным рестартом dev-сервера.
+
+**Что хотим.** Tauri dev (или внешний watcher) должен:
+- Обнаруживать что `target/debug/wotold-desktop` mtime > running process start time.
+- Graceful kill running app (через cleanup hooks — orchestrator drain, DB flush).
+- Релонч из свежего бинаря.
+- Сохранение window state / position (опционально) чтобы UX не страдал.
+
+**Возможные подходы:**
+1. **`cargo watch` интеграция в `pnpm tauri dev`** — встроенный hot-reload Rust.
+   Tauri 2 official docs упоминают `beforeDevCommand` + file watcher; нужна
+   research совместимости с sidecar architecture.
+2. **External watcher (`watchexec`, `entr`)** в `scripts/dev.sh` — наблюдает
+   `apps/desktop/src-tauri/src/**/*.rs` → `pkill wotold-desktop` → tauri dev
+   автоматически re-spawn'ит. Минимально-инвазивный (один shell script).
+3. **Кастомный Rust subscriber** — `notify` crate в самом приложении
+   мониторит mtime своего бинаря → если изменился → graceful shutdown +
+   `std::process::Command::new(current_exe).spawn()` + exit. Тоньше но
+   рискованно (race conditions, child orphaning).
+
+**Acceptance.** Edit `.rs` → wait ~30s (compile) → app перезапустился сам,
+новая логика в действии. Без manual kill.
+
+**Минимально-инвазивный path.** Approach (2): новый `scripts/dev.sh` использует
+`watchexec` или `entr` для watching `src-tauri/src/`, on change `pkill -SIGTERM
+wotold-desktop`. Tauri dev сам re-launch'ит дочерний процесс. ~10 строк bash.
+
+**Связано с:**
+- Текущая сессия — три fix-коммита `0b6e6d5` / `5a1f3c1` / `7bc0824` требовали
+  manual restart каждый раз. Без этого user видел старую багу + думал что
+  не починили.
+
+---
+
 ## Уверенно НЕ делаем
 
 Эти items rejected by design (см. `archive` секции в plan + ПАСПОРТ §12).
