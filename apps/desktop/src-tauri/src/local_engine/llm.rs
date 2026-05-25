@@ -258,7 +258,11 @@ impl LlmProvider for LocalLlamaProvider {
                 "--no-conversation",
                 "--no-display-prompt",
                 "--simple-io",
-                "--log-disable",
+                // NOTE: НЕ передаём `--log-disable` — в `llama-completion` (b9270+)
+                // этот флаг подавляет не только internal logs но и сам ответ модели
+                // (stdout становится пустым). Pipeline парсит stdout → "no JSON
+                // object in llama output". perf-логи всё равно идут в stderr, мы
+                // их не читаем.
                 "-f",
                 &prompt_path_str,
             ]);

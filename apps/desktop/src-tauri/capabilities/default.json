@@ -32,7 +32,6 @@
             "--no-conversation",
             "--no-display-prompt",
             "--simple-io",
-            "--log-disable",
             "-f",
             { "validator": "^[A-Za-z0-9._/ \\-]+$" },
             "--grammar-file",
