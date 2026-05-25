@@ -64,6 +64,21 @@ pub fn agglomerative_cluster(
 ) -> HashMap<(u32, String), String> {
     let mut out: HashMap<(u32, String), String> = HashMap::new();
 
+    // [P1.2] Diagnostic — input distribution. Без этого silent global remap
+    // невозможно отделить от «sortformer изначально выделил один кластер».
+    if !points.is_empty() {
+        use std::collections::BTreeSet;
+        let distinct_chunks: BTreeSet<u32> = points.iter().map(|p| p.chunk_idx).collect();
+        let distinct_local_tags: BTreeSet<&str> =
+            points.iter().map(|p| p.local_tag.as_str()).collect();
+        log::info!(
+            "agglomerative_cluster: input={} points across {} chunks, distinct local tags={}, threshold={cosine_threshold:.3}",
+            points.len(),
+            distinct_chunks.len(),
+            distinct_local_tags.len(),
+        );
+    }
+
     // Identity для passthrough точек: owner / unknown / empty embedding.
     let mut clusterable_indices: Vec<usize> = Vec::with_capacity(points.len());
     for (i, p) in points.iter().enumerate() {
@@ -129,6 +144,22 @@ pub fn agglomerative_cluster(
         });
         let p = &points[orig_idx];
         out.insert((p.chunk_idx, p.local_tag.clone()), tag.clone());
+    }
+
+    // [P1.2] Diagnostic — output cluster count (excludes OWNER/UNKNOWN identity
+    // passthrough). Если ниже distinct local tags из input — global remap
+    // склеил их вместе.
+    if !points.is_empty() {
+        use std::collections::BTreeSet;
+        let distinct_global: BTreeSet<&str> = out
+            .values()
+            .filter(|v| v.as_str() != OWNER_TAG && v.as_str() != SPEAKER_UNKNOWN)
+            .map(|v| v.as_str())
+            .collect();
+        log::info!(
+            "agglomerative_cluster: output={} non-identity clusters",
+            distinct_global.len()
+        );
     }
 
     out

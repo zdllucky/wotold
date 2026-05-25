@@ -537,6 +537,15 @@ export const kk: TranslationStrings = {
     speculativeDecodingLabel: 'Жасанданды генерация (драфт-модель)',
     speculativeDecodingHint:
       '0.5B шағын модельді 7B Quality-мен қатар қолданады. 2-3× жылдамдау. «Quality» пресеті мен ~380МБ қосымша модельді жүктеу қажет.',
+    forceNumSpeakersLabel: 'Сөйлеуші саны мәжбүрлі',
+    forceNumSpeakersHint:
+      'Келесі қайта өңдеуде қолданылады. Сұхбаттасушылардың нақты санын білсеңіз және автоматика қателессе қолданыңыз. Шектеу — 4 спикер.',
+    forceNumSpeakersOptions: {
+      auto: 'Авто (ұсынылады)',
+      '2': '2 сөйлеуші',
+      '3': '3 сөйлеуші',
+      '4': '4 сөйлеуші',
+    },
     wipeBtn: 'Барлық деректерді жою',
     wipeBusy: 'Жоюдамыз…',
     wipeConfirmTitle: 'Wotold — Толық тазалау',

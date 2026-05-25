@@ -576,6 +576,15 @@ const ruInternal = {
     speculativeDecodingLabel: 'Ускорение генерации (черновая модель)',
     speculativeDecodingHint:
       'Использует малую модель 0.5B для draft-токенов параллельно с 7B Quality. 2-3× speedup. Требует preset «Quality» и скачивание дополнительной модели ~380MB.',
+    forceNumSpeakersLabel: 'Принудительное количество спикеров',
+    forceNumSpeakersHint:
+      'Применяется к следующей переобработке. Используй если знаешь точное количество собеседников и автоматика ошибается. Лимит — 4 спикера.',
+    forceNumSpeakersOptions: {
+      auto: 'Авто (рекомендовано)',
+      '2': '2 спикера',
+      '3': '3 спикера',
+      '4': '4 спикера',
+    },
     wipeBtn: 'Удалить все данные',
     wipeBusy: 'Удаляем…',
     wipeConfirmTitle: 'Wotold — Полная очистка',
