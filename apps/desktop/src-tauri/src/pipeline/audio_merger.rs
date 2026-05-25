@@ -126,11 +126,21 @@ pub fn merge_track(
     // = chunks 1+2+3 only (player «21:55» вместо real 31:56).
     //
     // Fix: если chunks/0/{filename} отсутствует но root WAV существует
-    // и chunks/1/ есть — move root → chunks/0/. Idempotent: на reprocess
-    // chunks/0/ уже на месте, skip move.
+    // и chunks/1/ есть — move root → chunks/0/.
+    //
+    // [Sentinel] `chunks/.merged` marker предотвращает data corruption на
+    // reprocess: после успешного merge root WAV содержит merged result
+    // (не original chunk 0). Без marker'а pre-promote повторно переименует
+    // root → chunks/0/ → double audio в следующем merge. Marker write'ится
+    // в самом конце успешного merge_track.
+    let merged_sentinel = chunks_dir.join(".merged");
     let chunks_idx0 = chunks_dir.join("0").join(kind.filename());
     let chunks_idx1 = chunks_dir.join("1").join(kind.filename());
-    if !chunks_idx0.exists() && output_path.exists() && chunks_idx1.exists() {
+    if !merged_sentinel.exists()
+        && !chunks_idx0.exists()
+        && output_path.exists()
+        && chunks_idx1.exists()
+    {
         if let Err(e) = fs::create_dir_all(chunks_dir.join("0")) {
             log::warn!("audio_merger: failed to create chunks/0/: {e}");
         } else if let Err(e) = fs::rename(output_path, &chunks_idx0) {
@@ -144,6 +154,11 @@ pub fn merge_track(
                 chunks_idx0.display()
             );
         }
+    } else if merged_sentinel.exists() {
+        log::debug!(
+            "audio_merger: skip pre-promote (.merged sentinel exists at {})",
+            merged_sentinel.display()
+        );
     }
 
     let chunks = list_chunk_wavs(chunks_dir, kind);
@@ -261,6 +276,16 @@ pub fn merge_track(
     if merged == 0 {
         let _ = fs::remove_file(&tmp_path);
         return Err(MergeError::NoChunks(kind, chunks_dir.to_path_buf()));
+    }
+
+    // [P6 sentinel] Write `.merged` marker — pre-promote logic skip'ает
+    // root WAV move на следующем reprocess. Без marker'а двойной merge
+    // удвоил бы audio (chunks 0(=prev_merge)+1+2+3 = 2× chunks 1+2+3).
+    if let Err(e) = fs::write(chunks_dir.join(".merged"), b"v1") {
+        log::warn!(
+            "audio_merger: failed to write .merged sentinel в {}: {e}",
+            chunks_dir.display()
+        );
     }
 
     // Атомарный swap tmp → output_path. На Unix rename перезаписывает.
