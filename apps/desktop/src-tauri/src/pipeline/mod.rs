@@ -238,6 +238,25 @@ pub async fn reprocess_call(
         ));
     }
 
+    // [Tech-debt P1.1] Pre-flight surface failed chunks. `chunk_assembly::load_chunked_transcripts`
+    // тихо фильтрует `status='done'` и пропускает failed chunks — final transcript неполный
+    // без явного сигнала. Не блокируем (user мог намеренно хотеть partial recap), но видимо
+    // в логах. UI уже surface'ит failed badge + retry в ChunkProgressStrip (P0.2).
+    let chunks = db::chunks::list_chunks_by_call(pool, call_id).await?;
+    let failed_chunks: Vec<u32> = chunks
+        .iter()
+        .filter(|c| c.status == "failed")
+        .map(|c| c.chunk_idx)
+        .collect();
+    if !failed_chunks.is_empty() {
+        log::warn!(
+            "reprocess_call {call_id}: skipping {} failed chunk(s): {:?}. \
+             Retry chunks individually before reprocess for complete content.",
+            failed_chunks.len(),
+            failed_chunks
+        );
+    }
+
     // Reset status: was failed → processing, clear failed_reason.
     // Если был ready — тоже перетянем в processing, чтобы UI показывал прогресс
     // и не закешировал старый recap.
