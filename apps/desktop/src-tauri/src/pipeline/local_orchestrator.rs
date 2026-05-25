@@ -36,7 +36,13 @@ use crate::pipeline::summary_v2::CallType;
 use crate::providers::llm::{LlmProvider, LlmRequest};
 use crate::AppError;
 
-const MAIN_MAX_TOKENS: u32 = 4096;
+/// [P8.2] Понижен с 4096 → 1536. На 3B Qwen ~16 tok/s, 4096 budget = ~5 мин
+/// generation на main recap, причём grammar root=object разрешает arbitrary
+/// nested filler. Для типичного 5-30 min звонка JSON recap ≤1500 tokens
+/// (title + summary 200-500 слов + 3-7 key_points + 0-3 action_items).
+/// Очень длинные звонки (>~80 мин / 8+ chunks) идут через map-reduce
+/// hierarchical path с собственными budget'ами (`REDUCE_MAX_TOKENS`).
+const MAIN_MAX_TOKENS: u32 = 1536;
 
 /// Контекст для одного оркестратор-runs'а.
 pub(crate) struct LocalOrchestratorCtx<'a> {
@@ -239,13 +245,10 @@ mod tests {
 
     #[tokio::test]
     async fn orchestrator_classifier_failure_falls_back_to_no_hint() {
-        // [M14 T-09 Phase E] gbnf wrapper ретраит classifier — нужны 2 Err
-        // прежде чем classifier failure final.
+        // [P8.3] gbnf wrapper больше не ретраит — single attempt с grammar.
+        // Classifier failure = 1 Err, дальше main call продолжает без hint.
         let mock = MockProvider::new(vec![
-            Err(LlmError::Provider("classifier crash 1".into())),
-            Err(LlmError::Provider(
-                "classifier crash 2 (after grammar retry)".into(),
-            )),
+            Err(LlmError::Provider("classifier crash".into())),
             Ok(minimal_v2_json()),
         ]);
         let ctx = LocalOrchestratorCtx {
@@ -258,11 +261,10 @@ mod tests {
         assert_eq!(result["schema_version"], 2);
 
         let systems = mock.captured_systems();
-        // 2 classifier attempts (first + grammar retry) + 1 main = 3 calls.
-        assert_eq!(systems.len(), 3);
-        // Last call = main; должен NOT contain hint (classifier failed).
+        // 1 classifier attempt + 1 main = 2 calls (vs 3 ранее с retry).
+        assert_eq!(systems.len(), 2);
         assert!(
-            !systems[2].contains("Classification hint"),
+            !systems[1].contains("Classification hint"),
             "main prompt should NOT contain hint on classifier failure"
         );
     }
@@ -487,15 +489,11 @@ mod tests {
         // classifier OK + main OK + post-pass FAIL → original action_items preserved.
         let original_main = v2_json_with_action_items();
         let original_items = original_main["action_items"].clone();
-        // [M14 T-09 Phase E] gbnf wrapper retries post-pass on Provider err —
-        // need 2 Err для двух attempts.
+        // [P8.3] gbnf wrapper больше не ретраит — single attempt per call.
         let mock = MockProvider::new(vec![
             Ok(serde_json::json!({ "call_type": "standup", "confidence": 0.9 })),
             Ok(original_main),
-            Err(LlmError::Provider("post-pass crash 1".into())),
-            Err(LlmError::Provider(
-                "post-pass crash 2 (grammar retry)".into(),
-            )),
+            Err(LlmError::Provider("post-pass crash".into())),
         ]);
         let ctx = LocalOrchestratorCtx {
             transcript_md: "**A** [0:00]:\nI'll ship it",
@@ -504,9 +502,9 @@ mod tests {
             preset: LocalEnginePreset::Light,
         };
         let result = run_v2_pipeline(&mock, ctx).await.unwrap();
-        // Post-pass crashed (даже после grammar retry) → original kept.
+        // Post-pass crashed → original kept.
         assert_eq!(result["action_items"], original_items);
-        // classifier (1) + main (1) + post-pass attempts (2) = 4.
-        assert_eq!(mock.call_count(), 4);
+        // classifier (1) + main (1) + post-pass (1) = 3 calls (vs 4 ранее с retry).
+        assert_eq!(mock.call_count(), 3);
     }
 }
