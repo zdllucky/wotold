@@ -318,13 +318,19 @@ impl LlmProvider for LocalLlamaProvider {
         let stdout = result?;
         // 4. Извлекаем JSON из stdout (модель может выдать echo / whitespace
         //    даже с no-display-prompt).
+        //
+        // [P8.1] Shape validation НЕ делается на этом уровне — provider
+        // возвращает любой parseable JSON. Per-stage caller'ы (classifier
+        // парсит `ClassifierJson`, recap парсит `RecapV2Json`, action_items
+        // post-pass свой shape) валидируют через serde. Хардкоднутый
+        // recap-shape валидатор тут раньше ломал classifier callers
+        // (missing title) → wasted retry-cycle через gbnf grammar fallback.
         extract_json_object(&stdout)
             .ok_or_else(|| LlmError::Provider("no JSON object in llama output".into()))
             .and_then(|json_str| {
                 serde_json::from_str::<Value>(&json_str)
                     .map_err(|e| LlmError::Provider(format!("malformed JSON: {e}")))
             })
-            .and_then(validate_recap_shape)
     }
 }
 
@@ -567,20 +573,13 @@ fn extract_json_object(text: &str) -> Option<String> {
     None
 }
 
-/// Проверить что модель вернула хотя бы обязательные поля. Невалидный
-/// формат → `LlmError::Provider("bad_shape: missing X")` чтобы UI мог
-/// предложить retry / Cloud-fallback.
-fn validate_recap_shape(json: Value) -> Result<Value, LlmError> {
-    if !json.is_object() {
-        return Err(LlmError::Provider("bad_shape: root not object".into()));
-    }
-    for key in ["title", "summary"] {
-        if json.get(key).is_none() {
-            return Err(LlmError::Provider(format!("bad_shape: missing {key}")));
-        }
-    }
-    Ok(json)
-}
+// [P8.1] `validate_recap_shape` удалён — был хардкоднутый title+summary
+// валидатор который ломал classifier и другие non-recap callers
+// (`bad_shape: missing title` на любой `{call_type, confidence}` ответ).
+// Per-stage validation теперь через serde в caller'ах:
+// - `classifier::parse_classifier_response` → `ClassifierJson`
+// - `recap::parse_v2_response` → `RecapV2Json`
+// - `action_item_post_pass::parse_response` → list shape
 
 /// Промпт для local-LLM. Отдельный от Anthropic (PRD §M12.3.3): явные
 /// инструкции «отвечай только JSON», few-shot пример. Готов сейчас чтобы
@@ -775,27 +774,10 @@ mod tests {
         assert!(extract_json_object("{\"a\":1").is_none());
     }
 
-    // ── validate_recap_shape ────────────────────────────────────────────
-
-    #[test]
-    fn validate_accepts_minimal_recap() {
-        let v: Value = serde_json::from_str(r#"{"title":"T","summary":"S"}"#).unwrap();
-        assert!(validate_recap_shape(v).is_ok());
-    }
-
-    #[test]
-    fn validate_rejects_missing_title() {
-        let v: Value = serde_json::from_str(r#"{"summary":"S"}"#).unwrap();
-        let err = validate_recap_shape(v).unwrap_err();
-        assert!(err.to_string().contains("missing title"));
-    }
-
-    #[test]
-    fn validate_rejects_non_object_root() {
-        let v: Value = serde_json::from_str("[\"not\", \"object\"]").unwrap();
-        let err = validate_recap_shape(v).unwrap_err();
-        assert!(err.to_string().contains("not object"));
-    }
+    // [P8.1] validate_recap_shape удалён — shape валидация теперь
+    // per-caller через serde structs. Зеркало-тесты живут в
+    // `pipeline::recap` (RecapV2Json serde tests) и
+    // `pipeline::classifier` (ClassifierJson).
 
     // ── write_user_only ─────────────────────────────────────────────────
 
