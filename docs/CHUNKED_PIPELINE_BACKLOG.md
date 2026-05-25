@@ -77,6 +77,55 @@ reprocess всё равно делает re-STT всех чанков. Возм�
   Если оставить done как done и только rerun failed → значительная экономия
   времени для частично-успешных записей.
 
+## Deferred — Live duration tracking (reported 2026-05-25)
+
+User зарепортил screenshots: запись активно идёт 31+ мин, но UI показывает
+stale длительность в двух местах:
+
+- **HomePage list:** «1:56» — = `duration_sec` из DB, который NULL / stale
+  во время recording.
+- **CallDetailPage player:** «21:55» — = реальная длина merged root WAV
+  (только закрытые chunks, без in-progress активного).
+- **Реальная запись:** 31+ мин. Никакая UI surface не отражает фактическую
+  длительность.
+
+**Root cause (confirmed):**
+
+- [`db/calls/lifecycle.rs::finish_recording`](../apps/desktop/src-tauri/src/db/calls/lifecycle.rs)
+  — единственный writer `duration_sec`, fires только на `stop_recording`.
+- `audio:rotated` event несёт `duration_sec` в payload, но в DB не пишется.
+- [`pipeline/audio_merger.rs`](../apps/desktop/src-tauri/src/pipeline/audio_merger.rs)
+  запускается post-pipeline; root `mic.wav` не отражает активный
+  незакрытый chunk.
+- HomePage `listCalls()` initial fetch + нет re-fetch на `call:progress`.
+- CallDetailPage `useCallAudio` fallback = stale DB `duration_sec`; реальная
+  длина приходит из WAV `onDurationchange` (но без активного chunk).
+
+**Возможные подходы (исследовать):**
+
+1. **DB rotation update.** На каждый `audio:rotated` event в
+   `commands/recording.rs` rotate handler → `update_call_duration(call_id,
+   accumulated_sec)`. HomePage / CallDetailPage refresh через existing
+   `call:progress` либо новый `recording:duration` event. Минимально-инвазивный.
+
+2. **Sidecar live duration ping.** Sidecar шлёт `audio:duration_tick`
+   каждые ~5s с текущим accumulated time. Backend пишет в DB + emit event.
+   Reactive UI без race на rotation boundaries.
+
+3. **UI-only fix (без DB writes).** Frontend tracks recording start
+   timestamp + `Date.now() - start` для активной записи. `RecordingProvider`
+   уже знает `call_id` recording session. На HomePage list для записей
+   `status='recording'` показывать live counter; для остальных — DB
+   `duration_sec`. Минимум backend изменений; не покрывает crash recovery.
+
+**Acceptance.** UI везде показывает корректную длительность во время
+активной recording: HomePage list, CallDetailPage player fallback, любые
+другие surface'ы. Stop recording → переход на финальный `duration_sec`
+seamless.
+
+**Связано с P2.1** (audio player UI badge). Эти 2 backlog item'а вместе
+закрывают «audio во время recording» UX gap.
+
 ## Deferred — Архитектурный
 
 - **`db/calls.rs` split** — файл 791 строк (см. ROADMAP активный backlog).
