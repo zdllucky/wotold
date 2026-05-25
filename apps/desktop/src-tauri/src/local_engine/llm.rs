@@ -34,13 +34,24 @@ use serde_json::Value;
 use tauri::AppHandle;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 
 use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 
 use super::models::{model_path, ModelId};
 use super::preset::LocalEnginePreset;
 use super::sidecar::SidecarGuard;
+
+/// Global semaphore: serializes all local-LLM subprocess spawns. llama-cli
+/// загружает 1.5-7B GGUF (~3-5 GB RAM, cold-start ~3-5 sec) per вызов.
+/// Параллельные вызовы из pipeline (regen, classifier, action_items,
+/// map-reduce) спавнят независимые subprocess'ы → 4× RAM, 4× CPU contention,
+/// OOM crash на Mac с <32GB. Permit=1 гарантирует FIFO queue: один llama
+/// в air-time, остальные ждут. Cold-start cost остаётся, но system survives.
+///
+/// Future: replace with llama-server persistent backend для re-use модели
+/// между requests (M14 T-? backlog).
+static LLM_SEMAPHORE: Semaphore = Semaphore::const_new(1);
 
 /// Имя sidecar бинаря — совпадает с `tauri.conf.json::externalBin` и
 /// capability whitelist'ом. Файлы на диске: `binaries/wotold-llama-<triple>`.
@@ -162,6 +173,14 @@ impl LlmProvider for LocalLlamaProvider {
             // Headless context (tests) — без AppHandle нет shell-доступа.
             return Err(LlmError::NotImplemented);
         };
+
+        // Serialize subprocess spawns — 1 llama-completion at a time.
+        // Acquired permit держится до конца функции (drop при return),
+        // следующий caller автоматически продолжает с очереди.
+        let _permit = LLM_SEMAPHORE
+            .acquire()
+            .await
+            .map_err(|e| LlmError::Provider(format!("llm semaphore closed: {e}")))?;
 
         // 1. Сериализуем prompt в файл. llama-cli `-f` читает целиком с диска,
         //    не страдает от stdin escaping на UTF-8 кириллице.
