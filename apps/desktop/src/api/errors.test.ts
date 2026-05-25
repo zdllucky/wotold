@@ -83,4 +83,47 @@ describe('humanError', () => {
     expect(humanError(null)).toBe('Неизвестная ошибка');
     expect(humanError(undefined)).toBe('Неизвестная ошибка');
   });
+
+  // [P2.2] Closing local_engine error coverage gaps. Без этих pattern'ов
+  // юзер видел бы raw token «local_engine_recap_persist: ...» в баннере
+  // failed_reason.
+
+  test('local_engine_no_app_handle → внутренняя ошибка + перезапуск', () => {
+    expect(
+      humanError('local_engine_no_app_handle: pipeline requires Tauri runtime'),
+    ).toMatch(/внутренняя ошибка/i);
+    expect(
+      humanError('local_engine_no_app_handle: pipeline requires Tauri runtime'),
+    ).toMatch(/перезапусти/i);
+  });
+
+  test('local_engine_transcript_read → переобработать', () => {
+    expect(humanError('local_engine_transcript_read: enoent')).toMatch(
+      /прочитать транскрипт/i,
+    );
+    expect(humanError('local_engine_transcript_read: enoent')).toMatch(/переобработать/i);
+  });
+
+  test('local_engine_stt_failed (mic) → проверь модели', () => {
+    expect(humanError('local_engine_stt_failed (mic): sherpa-onnx panic')).toMatch(
+      /транскрипция не справилась/i,
+    );
+    expect(humanError('local_engine_stt_failed (mic): sherpa-onnx panic')).toMatch(
+      /модели установлены/i,
+    );
+  });
+
+  test('local_engine_recap_persist → сгенерировано но не сохранилось', () => {
+    expect(humanError('local_engine_recap_persist: sqlite write')).toMatch(
+      /сгенерировано, но не сохранилось/i,
+    );
+  });
+
+  // Регрессия: новые pattern'ы должны идти ДО generic local_engine_llm_failed.
+  // Verify что persist/stt_failed/transcript_read не cabbed под "не справилась
+  // с задачей".
+  test('local_engine_recap_persist НЕ catches как llm_failed', () => {
+    const out = humanError('local_engine_recap_persist: sqlite');
+    expect(out).not.toMatch(/не справилась с задачей/i);
+  });
 });
