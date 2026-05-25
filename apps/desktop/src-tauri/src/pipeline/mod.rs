@@ -298,6 +298,19 @@ pub async fn reprocess_call(
     run(pool, ctx, app).await
 }
 
+/// [P5.1] Resolve current local preset → engine label string для persist
+/// в `calls.summary_engine`. Best-effort: на ошибке чтения preset либо
+/// None preset возвращает None — caller передаёт это в `set_recap_failure`
+/// и `summary_engine` остаётся unchanged (safer чем persist неправильный).
+async fn local_engine_label_from_pool(pool: &SqlitePool) -> Option<String> {
+    let raw = db::get_setting(pool, crate::local_engine::preset::SETTING_ACTIVE_PRESET)
+        .await
+        .ok()
+        .flatten()?;
+    let preset = crate::local_engine::preset::LocalEnginePreset::from_str(&raw)?;
+    Some(preset.engine_label().to_string())
+}
+
 /// M4.5 паспорта: ручная регенерация рекапа без повторной транскрипции.
 /// Используется когда:
 ///   - первая попытка LLM упала (квота / network) и пользователь хочет повторить
@@ -376,7 +389,16 @@ pub async fn regenerate_recap(
                 Ok(())
             }
             Err(e) => {
-                let _ = db::set_recap_failed_reason(pool, call_id, Some(&e.to_string())).await;
+                // [P5.1] Persist engine label atomically с reason —
+                // banner badge ↔ failure text всегда matched.
+                let engine_label = local_engine_label_from_pool(pool).await;
+                let _ = db::set_recap_failure(
+                    pool,
+                    call_id,
+                    Some(&e.to_string()),
+                    engine_label.as_deref(),
+                )
+                .await;
                 Err(e)
             }
         };
@@ -407,7 +429,11 @@ pub async fn regenerate_recap(
         Err(e) => {
             // Persist для UI + пробросываем (regenerate explicit user-action,
             // надо показать ошибку прямо в кнопке).
-            let _ = db::set_recap_failed_reason(pool, call_id, Some(&e.to_string())).await;
+            // [P5.1] Engine label = "cloud-managed" — banner badge ↔ reason
+            // matched (без mismatch с stale local engine из prior attempt).
+            let _ =
+                db::set_recap_failure(pool, call_id, Some(&e.to_string()), Some("cloud-managed"))
+                    .await;
             Err(e)
         }
     }
@@ -1013,17 +1039,20 @@ async fn run_local_inner(
         ))),
     };
 
+    // [P5.1] Hoist label derivation outside match — нужен в обеих ветках
+    // (success persist + failure atomic UPDATE).
+    let local_engine_label = match llm_id.as_str() {
+        id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
+        id if id.contains("3b") => "local-qwen-3b",
+        id if id.contains("7b") => "local-qwen-7b",
+        _ => "local-qwen",
+    };
+
     match llm_result {
         Ok(json_value) => {
             // [M14 T-02] persist_recap_from_json теперь требует engine_label +
             // transcript_md (для evidence validator) + generation_ms (None
             // на local path; в T-04+ доделаем).
-            let local_engine_label = match llm_id.as_str() {
-                id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
-                id if id.contains("3b") => "local-qwen-3b",
-                id if id.contains("7b") => "local-qwen-7b",
-                _ => "local-qwen",
-            };
             if let Err(e) = recap::persist_recap_from_json(
                 pool,
                 &ctx.call_id,
@@ -1038,10 +1067,12 @@ async fn run_local_inner(
             )
             .await
             {
-                let _ = db::set_recap_failed_reason(
+                // [P5.1] Engine label atomic с reason — banner consistent.
+                let _ = db::set_recap_failure(
                     pool,
                     &ctx.call_id,
                     Some(&format!("local_engine_recap_persist: {e}")),
+                    Some(local_engine_label),
                 )
                 .await;
             } else {
@@ -1054,7 +1085,10 @@ async fn run_local_inner(
         Err(e) => {
             let reason = format!("local_engine_llm_failed: {e}");
             log::warn!("{reason}");
-            let _ = db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await;
+            // [P5.1] Engine label atomic с reason.
+            let _ =
+                db::set_recap_failure(pool, &ctx.call_id, Some(&reason), Some(local_engine_label))
+                    .await;
         }
     }
     emit_progress(pool, Some(app), &ctx.call_id, recap_step, 100, None, None).await;
@@ -1377,8 +1411,13 @@ async fn stage_recap(
             let reason = e.to_string();
             log::warn!("recap {} skipped: {reason}", ctx.call_id);
             // [B16]: persist recap failure для UI banner. status='ready' остаётся.
-            if let Err(e2) = db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await {
-                log::error!("set_recap_failed_reason {} failed: {e2}", ctx.call_id);
+            // [P5.1] Atomic UPDATE c engine_label="cloud-managed" — match
+            // recap_ctx.engine_label выше. Banner badge ↔ reason consistent.
+            if let Err(e2) =
+                db::set_recap_failure(pool, &ctx.call_id, Some(&reason), Some("cloud-managed"))
+                    .await
+            {
+                log::error!("set_recap_failure {} failed: {e2}", ctx.call_id);
             }
         }
     }

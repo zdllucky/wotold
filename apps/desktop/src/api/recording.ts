@@ -146,3 +146,13 @@ export interface RecapProgressEvent {
   elapsed_sec: number;
 }
 export const RECAP_PROGRESS_EVENT = 'recap:progress';
+
+/** [P5.2] Live duration update во время recording — fires на каждый
+ *  sidecar `rotated` event (~раз в 10 мин). HomePage / CallDetailPage
+ *  patch'ат `call.duration_sec` чтобы не показывать stale «1:56» для
+ *  активных 30+ мин записей. */
+export interface RecordingDurationEvent {
+  call_id: string;
+  duration_sec: number;
+}
+export const RECORDING_DURATION_EVENT = 'recording:duration';

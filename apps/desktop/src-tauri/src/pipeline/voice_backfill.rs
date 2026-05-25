@@ -294,23 +294,19 @@ mod tests {
         })
         .to_string();
 
-        let inserted = maybe_backfill_voice_sample(
-            &db.pool,
-            &call.id,
-            "owner",
-            &[1, 2, 3, 4],
-            Some(&raw_stt),
-        )
-        .await
-        .unwrap();
-        assert!(inserted);
-
-        let (start, end, track): (Option<f64>, Option<f64>, Option<String>) =
-            sqlx::query_as("SELECT start_sec, end_sec, track_kind FROM voice_samples WHERE contact_id = ?1")
-                .bind(&alice)
-                .fetch_one(&db.pool)
+        let inserted =
+            maybe_backfill_voice_sample(&db.pool, &call.id, "owner", &[1, 2, 3, 4], Some(&raw_stt))
                 .await
                 .unwrap();
+        assert!(inserted);
+
+        let (start, end, track): (Option<f64>, Option<f64>, Option<String>) = sqlx::query_as(
+            "SELECT start_sec, end_sec, track_kind FROM voice_samples WHERE contact_id = ?1",
+        )
+        .bind(&alice)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
         assert_eq!(start, Some(3.0));
         assert_eq!(end, Some(8.0));
         assert_eq!(track.as_deref(), Some("mic"));
@@ -329,12 +325,13 @@ mod tests {
             .unwrap();
         assert!(inserted);
 
-        let (start, end, track): (Option<f64>, Option<f64>, Option<String>) =
-            sqlx::query_as("SELECT start_sec, end_sec, track_kind FROM voice_samples WHERE contact_id = ?1")
-                .bind(&alice)
-                .fetch_one(&db.pool)
-                .await
-                .unwrap();
+        let (start, end, track): (Option<f64>, Option<f64>, Option<String>) = sqlx::query_as(
+            "SELECT start_sec, end_sec, track_kind FROM voice_samples WHERE contact_id = ?1",
+        )
+        .bind(&alice)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
         assert!(start.is_none() && end.is_none() && track.is_none());
     }
 

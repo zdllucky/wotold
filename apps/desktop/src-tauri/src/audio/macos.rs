@@ -293,6 +293,17 @@ async fn run_dispatcher(
                             // rotate event редкий (раз в 10мин), full send OK.
                             let _ = channels.rotate_tx.send(json.clone()).await;
                         }
+                        // [P5.2] Live duration update: persist в DB + emit
+                        // `recording:duration` event для UI. Без этого
+                        // HomePage показывал stale «1:56» для 30+ мин активных
+                        // записей (duration_sec writeable только в finish_recording).
+                        if let Some(duration_sec) = json.get("duration_sec").and_then(Value::as_f64)
+                        {
+                            let app_clone = app.clone();
+                            tokio::spawn(async move {
+                                update_duration_from_rotate(&app_clone, duration_sec).await;
+                            });
+                        }
                     }
                     "stopped" | "error" => {
                         if let Some(tx) = terminal_tx.take() {
@@ -378,4 +389,35 @@ impl AudioCapture for MacOsCoreAudioCapture {
             "use audio::macos::stop() with session instead".into(),
         ))
     }
+}
+
+/// [P5.2] Helper для rotated event handler: persist live duration в DB +
+/// emit `recording:duration` event.
+///
+/// Spawned background task — все errors логируются, не блокируют dispatcher.
+/// Resolve'ит current call_id через AppState (один writer recording session
+/// active).
+async fn update_duration_from_rotate(app: &AppHandle, duration_sec: f64) {
+    use tauri::Manager;
+
+    let Some(state) = app.try_state::<crate::state::AppState>() else {
+        log::warn!("recording:duration: AppState not yet initialized");
+        return;
+    };
+    let call_id = {
+        let guard = state.recording.lock().await;
+        guard.as_ref().map(|s| s.call_id.clone())
+    };
+    let Some(call_id) = call_id else {
+        // Нет active recording — duration_sec от sidecar бесполезен.
+        return;
+    };
+    if let Err(e) = crate::db::update_call_duration(&state.db, &call_id, duration_sec).await {
+        log::warn!("recording:duration: DB update failed for {call_id}: {e}");
+        return;
+    }
+    EventBus::new(Some(app)).recording_duration(&crate::events::RecordingDurationEvent {
+        call_id,
+        duration_sec: duration_sec.round() as i64,
+    });
 }
