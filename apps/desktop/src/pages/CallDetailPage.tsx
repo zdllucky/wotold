@@ -76,6 +76,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     openQuestions,
     micSrc,
     systemSrc,
+    recapElapsedSec,
+    setRecapElapsedSec,
     loading,
     error,
     setError,
@@ -177,6 +179,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const onRegenerateRecap = async () => {
     setRegenerating(true);
     setError(null);
+    // [P1.3] Сброс elapsed timer'а на старте — UI начинает с «Пересоздаём…»
+    // (без «… 0s») пока первый periodic event не придёт через 15s.
+    setRecapElapsedSec(null);
     // [Bug-fix] Optimistic clear stale recap_failed_reason — баннер исчезает
     // сразу при клике, чтобы юзер не видел старую ошибку пока идёт новая
     // попытка. Если новая попытка упадёт, refetchAll вернёт актуальный
@@ -195,6 +200,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       setError(t('callDetail.regenerateFailed', { error: humanError(e) }));
     } finally {
       setRegenerating(false);
+      // [P1.3] Final reset — даже если событие пришло позже completion.
+      setRecapElapsedSec(null);
     }
   };
 
@@ -331,6 +338,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           regenerateTitleDisabled={!transcript}
           exporting={exporting}
           deleting={deleting}
+          recapElapsedSec={recapElapsedSec}
         />
 
         {/* Participants chips — same row после title */}

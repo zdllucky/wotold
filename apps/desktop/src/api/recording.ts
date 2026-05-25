@@ -136,3 +136,13 @@ export interface ChunkDoneEvent {
   status: 'done' | 'failed';
   segment_count: number;
 }
+
+/** [P1.3] Periodic emit во время local LLM recap generation. Backend
+ *  `pipeline::recap_progress::with_recap_progress_emitter` шлёт каждые 15s
+ *  пока future не resolve'нется. UI рендерит «Пересоздаём… {sec}s» в
+ *  HeaderActions. */
+export interface RecapProgressEvent {
+  call_id: string;
+  elapsed_sec: number;
+}
+export const RECAP_PROGRESS_EVENT = 'recap:progress';

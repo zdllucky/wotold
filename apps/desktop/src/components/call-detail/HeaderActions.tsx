@@ -19,6 +19,10 @@ interface HeaderActionsProps {
   regenerateTitleDisabled: boolean;
   exporting: boolean;
   deleting: boolean;
+  /** [P1.3] Elapsed seconds во время local LLM recap regen — рендерим в
+   *  кнопке как «Пересоздаём… {sec}s». `null` пока первый periodic event
+   *  не пришёл, либо cloud engine (не emit'ит). */
+  recapElapsedSec?: number | null;
 }
 
 export function HeaderActions({
@@ -34,6 +38,7 @@ export function HeaderActions({
   regenerateTitleDisabled,
   exporting,
   deleting,
+  recapElapsedSec = null,
 }: HeaderActionsProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -63,7 +68,10 @@ export function HeaderActions({
         aria-label={t('callDetail.actionsAria')}
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={reprocessing || deleting || exporting || regenerating || regeneratingTitle}
+        // [P1.3] Allow opening menu во время regenerating/regeneratingTitle —
+        // user должен видеть «Пересоздаём… {sec}s» прогресс. Individual
+        // MenuItem'ы остаются disabled, double-click prevention intact.
+        disabled={reprocessing || deleting || exporting}
         style={{
           width: 32,
           height: 32,
@@ -122,7 +130,11 @@ export function HeaderActions({
             }
             title={regenerateDisabled ? t('callDetail.regenerateNoTranscript') : undefined}
           >
-            {regenerating ? t('callDetail.regenerating') : t('callDetail.regenerateRecap')}
+            {regenerating
+              ? recapElapsedSec !== null
+                ? t('callDetail.regeneratingWithElapsed', { sec: recapElapsedSec })
+                : t('callDetail.regenerating')
+              : t('callDetail.regenerateRecap')}
           </MenuItem>
           <MenuItem
             onClick={() => {

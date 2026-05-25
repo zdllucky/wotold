@@ -178,6 +178,8 @@ export const kk: TranslationStrings = {
     reprocessing: 'Қайта өңдеуде…',
     regenerateRecap: '↻ Қорытындыны қайта жасау',
     regenerating: 'Қайта жасаудамыз…',
+    // [P1.3] Elapsed timer для local LLM regen — backend шлёт каждые 15s.
+    regeneratingWithElapsed: 'Қайта жасаудамыз… {sec}s',
     regenerateNoTranscript: 'Регенерация үшін транскрипт жоқ',
     regenerateTitle: '↻ Атауын қайта жасау',
     regeneratingTitle: 'Атау қайта жасалуда…',
