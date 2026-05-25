@@ -44,6 +44,10 @@ pub mod chunk_orchestrator;
 // full-file STT когда chunks_completed > 0.
 pub mod chunk_assembly;
 
+// [Tech-debt P0.1] Конкатенация per-chunk WAV файлов в root mic.wav/system.wav.
+// Без этого AudioScrubber играет только первый chunk вместо полной записи.
+pub mod audio_merger;
+
 // [M13.2.1] Global agglomerative single-link cosine clustering на
 // per-chunk WeSpeaker embeddings — сводит local speaker:N tags к global
 // IDs между chunks (один физ.спикер = один global tag).
@@ -727,6 +731,27 @@ async fn run_local_inner(
                 "call {}: using chunked transcripts (skip full-file STT)",
                 ctx.call_id
             );
+            // [Tech-debt P0.1] Sidecar пишет аудио в chunks/{idx}/mic.wav, но
+            // root mic.wav/system.wav остаются от первого chunk'а. Плеер
+            // (AudioScrubber) играет только этот фрагмент. Склеиваем все
+            // chunk WAV'ы в root для полной длительности.
+            //
+            // Запускаем в blocking pool — hound load/save синхронен и для
+            // 1-часовой записи на 16kHz mono ≈ 115 MB RAM + ~1-2s CPU.
+            let chunks_dir = ctx.call_dir.join("chunks");
+            let call_dir_clone = ctx.call_dir.clone();
+            let call_id_clone = ctx.call_id.clone();
+            tokio::task::spawn_blocking(move || {
+                let (mic_r, sys_r) = audio_merger::merge_both_tracks(&chunks_dir, &call_dir_clone);
+                if mic_r.is_none() && sys_r.is_none() {
+                    log::warn!(
+                        "audio_merger: оба merge упали для call {call_id_clone} — \
+                         плеер будет играть старый root WAV (если есть)"
+                    );
+                }
+            })
+            .await
+            .ok();
             // UI ожидает progress на Stage::Transcribe — эмитим 100%
             // мгновенно чтобы прогресс-бар не висел.
             let step = Stage::Transcribe.step();
