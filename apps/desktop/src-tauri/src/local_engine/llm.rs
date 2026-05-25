@@ -397,25 +397,75 @@ async fn run_sidecar_with_timeout(
     // unhandled Err — без него process переживает abort task'а на 5+ минут.
     let mut guard = Some(SidecarGuard::new(child));
 
+    let start = std::time::Instant::now();
+    log::info!("llama sidecar spawn: timeout={}s", timeout.as_secs());
+
     let mut stdout = Vec::<u8>::new();
     let mut stderr = Vec::<u8>::new();
     let mut exit_code: Option<i32> = None;
     let drained = tokio::time::timeout(timeout, async {
-        while let Some(event) = rx.recv().await {
+        loop {
+            // Heartbeat: если 30s нет событий — log warning что процесс
+            // молчит (model load или stuck). Outer timeout всё равно
+            // прикончит через `timeout` seconds — heartbeat lapping в
+            // паузах между ним.
+            let event = tokio::time::timeout(Duration::from_secs(30), rx.recv()).await;
+            let event = match event {
+                Ok(Some(ev)) => ev,
+                Ok(None) => return Ok::<(), LlmError>(()), // channel closed
+                Err(_) => {
+                    log::warn!(
+                        "llama silent for 30s+ (elapsed={}s, stdout={}b, stderr={}b)",
+                        start.elapsed().as_secs(),
+                        stdout.len(),
+                        stderr.len()
+                    );
+                    continue;
+                }
+            };
             match event {
-                CommandEvent::Stdout(b) => stdout.extend_from_slice(&b),
-                CommandEvent::Stderr(b) => stderr.extend_from_slice(&b),
+                CommandEvent::Stdout(b) => {
+                    stdout.extend_from_slice(&b);
+                    let chunk = String::from_utf8_lossy(&b);
+                    log::info!(
+                        "llama stdout +{}b ({}ms, total={}b): {}",
+                        b.len(),
+                        start.elapsed().as_millis(),
+                        stdout.len(),
+                        chunk.trim_end()
+                    );
+                }
+                CommandEvent::Stderr(b) => {
+                    stderr.extend_from_slice(&b);
+                    let chunk = String::from_utf8_lossy(&b);
+                    log::debug!(
+                        "llama stderr +{}b ({}ms): {}",
+                        b.len(),
+                        start.elapsed().as_millis(),
+                        chunk.trim_end()
+                    );
+                }
                 CommandEvent::Terminated(p) => {
                     exit_code = p.code;
+                    log::info!(
+                        "llama Terminated: code={:?}, elapsed={}ms, stdout={}b, stderr={}b",
+                        p.code,
+                        start.elapsed().as_millis(),
+                        stdout.len(),
+                        stderr.len()
+                    );
                     return Ok::<(), LlmError>(());
                 }
                 CommandEvent::Error(e) => {
+                    log::warn!(
+                        "llama Error event: {e} (elapsed={}ms)",
+                        start.elapsed().as_millis()
+                    );
                     return Err(LlmError::Provider(format!("sidecar error: {e}")));
                 }
                 _ => {}
             }
         }
-        Ok(())
     })
     .await;
 
