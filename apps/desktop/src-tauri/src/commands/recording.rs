@@ -606,3 +606,132 @@ fn make_enqueue_fn(
         })
     }
 }
+
+/// [Tech-debt P0.2] Retry одного failed chunk'а через background spawn.
+///
+/// Wire-up:
+/// - DB `mark_chunk_pending` (FSM gate failed → pending) — sync, fail если
+///   chunk не в failed.
+/// - Resolve providers тем же путём что `prepare_chunked_setup` (preset →
+///   LocalWhisperProvider mic + system).
+/// - `tokio::spawn` background task: `chunk_runner::run_chunk` пишет
+///   результат в DB + emit'ит `transcript:chunk_done` — UI обновится сам.
+/// - Return Ok(()) сразу — не блокируем Tauri command поток.
+#[tauri::command]
+pub async fn retry_chunk(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    call_id: String,
+    chunk_idx: u32,
+) -> Result<(), AppError> {
+    use crate::pipeline::chunk_runner;
+
+    // 1. Validate chunk существует + status == failed (mark_chunk_pending
+    //    enforce'ит FSM, но row lookup всё равно нужен для start/end_ms).
+    let rows = db::chunks::list_chunks_by_call(&state.db, &call_id).await?;
+    let row = rows
+        .iter()
+        .find(|r| r.chunk_idx == chunk_idx)
+        .ok_or_else(|| AppError::NotFound(format!("chunk {call_id}/{chunk_idx} not found")))?;
+    if row.status != "failed" {
+        return Err(AppError::Other(format!(
+            "retry_chunk: chunk {call_id}/{chunk_idx} status={} (need 'failed')",
+            row.status
+        )));
+    }
+    let start_ms = row.start_ms.max(0) as u64;
+    let end_ms = row.end_ms.unwrap_or(start_ms as i64).max(0) as u64;
+
+    // 2. Engine check — chunked path только для Local. Cloud не chunked.
+    let engine = db::get_setting(&state.db, SETTING_ACTIVE_ENGINE)
+        .await?
+        .as_deref()
+        .and_then(EngineKind::from_str);
+    if !matches!(engine, Some(EngineKind::Local)) {
+        return Err(AppError::Other(
+            "retry_chunk: требуется локальный движок (Cloud не chunked)".into(),
+        ));
+    }
+
+    // 3. Build providers — mirror prepare_chunked_setup без orchestrator setup.
+    let preset = db::get_setting(&state.db, SETTING_ACTIVE_PRESET)
+        .await?
+        .as_deref()
+        .and_then(LocalEnginePreset::from_str)
+        .ok_or_else(|| {
+            AppError::Other("retry_chunk: preset не выбран (Settings → Локальный движок)".into())
+        })?;
+    let whisper_id = preset.whisper_model_id();
+    let mic_provider =
+        LocalWhisperProvider::for_preset(&state.app_data_dir, whisper_id, TrackKind::MicOwner)
+            .with_app(app.clone())
+            .await;
+    let system_provider =
+        LocalWhisperProvider::for_preset(&state.app_data_dir, whisper_id, TrackKind::System)
+            .with_app(app.clone())
+            .await;
+    let mic_provider: Arc<dyn TranscriptionProvider> = Arc::new(mic_provider);
+    let system_provider: Arc<dyn TranscriptionProvider> = Arc::new(system_provider);
+
+    let stt_lang = db::get_setting(&state.db, "stt_lang")
+        .await?
+        .unwrap_or_else(|| "auto".to_string());
+    let mic_off = matches!(
+        db::get_setting(&state.db, SETTING_MIC_DIARIZATION)
+            .await?
+            .as_deref(),
+        Some("0") | Some("false")
+    );
+    let mic_diarization = !mic_off;
+
+    // 4. FSM gate failed → pending. После этого chunk_runner внутри сделает
+    //    pending → processing → done|failed.
+    db::chunks::mark_chunk_pending(&state.db, &call_id, chunk_idx).await?;
+
+    // 5. Background spawn — не блокируем UI. Errors handled внутри
+    //    chunk_runner (mark_failed + emit chunk_done event).
+    let mic_path = state.store.chunk_mic_path(&call_id, chunk_idx);
+    let system_path = state.store.chunk_system_path(&call_id, chunk_idx);
+    let pool = state.db.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let app_for_task = app.clone();
+    let call_id_clone = call_id.clone();
+    log::info!(
+        "retry_chunk: spawning run_chunk for {call_id_clone}/{chunk_idx} \
+         (preset={preset:?}, start_ms={start_ms}, end_ms={end_ms})"
+    );
+    tokio::spawn(async move {
+        let input = ChunkRunInput {
+            call_id: call_id_clone.clone(),
+            chunk_idx,
+            start_ms,
+            end_ms,
+            mic_path,
+            system_path,
+            // No prev_prompt — chunk N-1 tail может быть устаревший после
+            // первого fail'а. Точность первой фразы пострадает на ~10pp,
+            // acceptable trade-off для retry-сценария.
+            prev_prompt: None,
+            lang: stt_lang,
+            app_data_dir: Some(app_data_dir),
+            app_handle: Some(app_for_task),
+            mic_diarization,
+        };
+        match chunk_runner::run_chunk(
+            &pool,
+            mic_provider.as_ref(),
+            system_provider.as_ref(),
+            input,
+        )
+        .await
+        {
+            Ok(out) => log::info!(
+                "retry_chunk[{call_id_clone}/{chunk_idx}]: success, {} segments",
+                out.segment_count
+            ),
+            Err(e) => log::warn!("retry_chunk[{call_id_clone}/{chunk_idx}]: failed: {e}"),
+        }
+    });
+
+    Ok(())
+}

@@ -121,6 +121,13 @@ export function listCallChunks(callId: string): Promise<CallChunk[]> {
   return invoke<CallChunk[]>('list_call_chunks', { callId });
 }
 
+/** [Tech-debt P0.2] Retry failed chunk — backend `mark_chunk_pending` +
+ *  background `chunk_runner::run_chunk`. Status update приходит через
+ *  существующий `transcript:chunk_done` event без рефетча. */
+export function retryChunk(callId: string, chunkIdx: number): Promise<void> {
+  return invoke<void>('retry_chunk', { callId, chunkIdx });
+}
+
 /** [M13.2.3] Per-chunk pipeline finished — эмитится из `chunk_runner` на
  *  done/failed. UI patch'ит ChunkProgressStrip без полного refetch'а. */
 export interface ChunkDoneEvent {

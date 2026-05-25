@@ -1,8 +1,11 @@
-import { describe, expect, test } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, expect, test, vi } from 'vitest';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { afterEach } from 'vitest';
 
 import { ChunkProgressStrip } from './ChunkProgressStrip';
 import type { CallChunk } from '../../api/recording';
+
+afterEach(() => cleanup());
 // useI18n() fallback context работает без Provider (см. PipelineStrip.test.tsx);
 // navigator.language пиннится в ru-RU в src/test/setup.ts → строки в ru.
 
@@ -68,6 +71,61 @@ describe('ChunkProgressStrip', () => {
     expect(steps[3]?.classList.contains('step--pending')).toBe(true);
     // Active step имеет shimmer fake loader (как у PipelineStrip).
     expect(steps[1]?.querySelector('.step-shimmer')).toBeTruthy();
+  });
+
+  // [Tech-debt P0.2] Failed chunk retry button.
+  test('retry button appears for failed chunk when onRetryChunk provided', () => {
+    const onRetry = vi.fn();
+    const chunks = [chunk(0, 'done'), chunk(1, 'failed')];
+    const { getByText } = render(
+      <ChunkProgressStrip chunks={chunks} defaultOpen onRetryChunk={onRetry} />,
+    );
+    const btn = getByText('↻ Повторить');
+    expect(btn).toBeTruthy();
+    fireEvent.click(btn);
+    expect(onRetry).toHaveBeenCalledWith(1);
+  });
+
+  test('retry button hidden when onRetryChunk omitted', () => {
+    const chunks = [chunk(0, 'failed')];
+    const { queryByText } = render(
+      <ChunkProgressStrip chunks={chunks} defaultOpen />,
+    );
+    expect(queryByText('↻ Повторить')).toBeNull();
+  });
+
+  test('retry button shows "Повторяем…" disabled after click; re-enables when chunk leaves failed', () => {
+    const onRetry = vi.fn();
+    const chunks = [chunk(0, 'failed')];
+    const { getByText, rerender } = render(
+      <ChunkProgressStrip chunks={chunks} defaultOpen onRetryChunk={onRetry} />,
+    );
+    const btn = getByText('↻ Повторить') as HTMLButtonElement;
+    fireEvent.click(btn);
+    // Локальный optimistic state — кнопка показывает "Повторяем…" + disabled.
+    const busy = getByText('Повторяем…') as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    // Когда статус сменился на pending — useEffect должен очистить state.
+    rerender(
+      <ChunkProgressStrip
+        chunks={[chunk(0, 'pending')]}
+        defaultOpen
+        onRetryChunk={onRetry}
+      />,
+    );
+    // Retry button исчез (chunk больше не failed) — нет 'Повторяем…' / 'Повторить'.
+    expect(() => getByText('↻ Повторить')).toThrow();
+    expect(() => getByText('Повторяем…')).toThrow();
+  });
+
+  test('failed summary banner appears when failedCount > 0', () => {
+    const chunks = [chunk(0, 'done'), chunk(1, 'failed'), chunk(2, 'failed')];
+    const { getByText } = render(
+      <ChunkProgressStrip chunks={chunks} defaultOpen />,
+    );
+    // ru i18n: "2 из 3 сегментов не удалось — нажми ↻ чтобы переcпавнить."
+    const summary = getByText(/2 из 3 сегментов не удалось/);
+    expect(summary).toBeTruthy();
   });
 
   test('time range mm:ss—mm:ss rendered for each chunk', () => {

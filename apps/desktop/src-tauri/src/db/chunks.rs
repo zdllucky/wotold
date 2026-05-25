@@ -71,6 +71,34 @@ pub async fn insert_chunk(
     Ok(())
 }
 
+/// [Tech-debt P0.2] Транзишн `failed → pending`. Используется
+/// `commands::recording::retry_chunk` чтобы переcпавнить chunk_runner
+/// после fail'а. FSM gate `failed → pending` only — protect от race с
+/// running chunk (processing → pending запрещён, иначе chunk_runner
+/// finish может смешаться с retry-spawn'ом).
+pub async fn mark_chunk_pending(
+    pool: &SqlitePool,
+    call_id: &str,
+    chunk_idx: u32,
+) -> Result<(), AppError> {
+    let res = sqlx::query(
+        "UPDATE call_chunks
+         SET status = 'pending', updated_at = CURRENT_TIMESTAMP
+         WHERE call_id = ?1 AND chunk_idx = ?2 AND status = 'failed'",
+    )
+    .bind(call_id)
+    .bind(chunk_idx)
+    .execute(pool)
+    .await
+    .map_err(AppError::from)?;
+    if res.rows_affected() == 0 {
+        return Err(AppError::Other(format!(
+            "mark_chunk_pending: chunk {call_id}/{chunk_idx} not in 'failed' status"
+        )));
+    }
+    Ok(())
+}
+
 /// Транзишн `pending → processing`. Используется chunk_runner перед
 /// reached'ом STT. Если status был не pending — Err (caller skip'ает).
 pub async fn mark_chunk_processing(
@@ -402,6 +430,76 @@ mod tests {
             .unwrap();
         let rows = list_chunks_by_call(&test_db.pool, "c1").await.unwrap();
         assert_eq!(rows[0].status, "failed");
+    }
+
+    // [Tech-debt P0.2] mark_chunk_pending — FSM gate failed → pending only.
+    #[tokio::test]
+    async fn mark_pending_from_failed_ok() {
+        let test_db = fresh_db().await;
+        insert_dummy_call(&test_db.pool, "c1").await;
+        insert_chunk(
+            &test_db.pool,
+            "c1",
+            0,
+            0,
+            &PathBuf::from("/m"),
+            &PathBuf::from("/s"),
+        )
+        .await
+        .unwrap();
+        mark_chunk_failed(&test_db.pool, "c1", 0, "test reason")
+            .await
+            .unwrap();
+        // failed → pending OK.
+        mark_chunk_pending(&test_db.pool, "c1", 0).await.unwrap();
+        let rows = list_chunks_by_call(&test_db.pool, "c1").await.unwrap();
+        assert_eq!(rows[0].status, "pending");
+    }
+
+    #[tokio::test]
+    async fn mark_pending_from_pending_errors() {
+        let test_db = fresh_db().await;
+        insert_dummy_call(&test_db.pool, "c1").await;
+        insert_chunk(
+            &test_db.pool,
+            "c1",
+            0,
+            0,
+            &PathBuf::from("/m"),
+            &PathBuf::from("/s"),
+        )
+        .await
+        .unwrap();
+        // pending → pending запрещён (FSM gate).
+        let err = mark_chunk_pending(&test_db.pool, "c1", 0)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("not in 'failed' status"),
+            "expected FSM err, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mark_pending_from_processing_errors() {
+        let test_db = fresh_db().await;
+        insert_dummy_call(&test_db.pool, "c1").await;
+        insert_chunk(
+            &test_db.pool,
+            "c1",
+            0,
+            0,
+            &PathBuf::from("/m"),
+            &PathBuf::from("/s"),
+        )
+        .await
+        .unwrap();
+        mark_chunk_processing(&test_db.pool, "c1", 0).await.unwrap();
+        // processing → pending запрещён (защита от race).
+        let err = mark_chunk_pending(&test_db.pool, "c1", 0)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("not in 'failed' status"));
     }
 
     #[tokio::test]

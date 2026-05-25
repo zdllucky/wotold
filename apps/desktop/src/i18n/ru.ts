@@ -1021,6 +1021,10 @@ const ruInternal = {
     statusFailed: 'не удалось',
     statusProcessing: 'обрабатываем',
     statusPending: 'ожидает',
+    // [Tech-debt P0.2] Retry failed chunk.
+    retry: '↻ Повторить',
+    retrying: 'Повторяем…',
+    failedSummary: '{n} из {total} сегментов не удалось — нажми ↻ чтобы переcпавнить.',
   },
 } as const;
 

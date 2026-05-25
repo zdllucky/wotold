@@ -952,6 +952,9 @@ export const en: TranslationStrings = {
     statusFailed: 'failed',
     statusProcessing: 'processing',
     statusPending: 'waiting',
+    retry: '↻ Retry',
+    retrying: 'Retrying…',
+    failedSummary: '{n} of {total} segments failed — click ↻ to respawn.',
   },
 };
 
