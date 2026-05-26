@@ -739,6 +739,11 @@ pub async fn retry_chunk(
     let app_data_dir = state.app_data_dir.clone();
     let app_for_task = app.clone();
     let call_id_clone = call_id.clone();
+    // [P11.1] Дополнительные клоны для post-success auto-resume hook.
+    let store_for_resume = state.store.clone();
+    let device_for_resume = state.device_id.clone();
+    let tasks_for_resume = state.pipeline_tasks.clone();
+    let app_for_resume = app.clone();
     log::info!(
         "retry_chunk: spawning run_chunk for {call_id_clone}/{chunk_idx} \
          (preset={preset:?}, start_ms={start_ms}, end_ms={end_ms})"
@@ -769,13 +774,88 @@ pub async fn retry_chunk(
         )
         .await
         {
-            Ok(out) => log::info!(
-                "retry_chunk[{call_id_clone}/{chunk_idx}]: success, {} segments",
-                out.segment_count
-            ),
+            Ok(out) => {
+                log::info!(
+                    "retry_chunk[{call_id_clone}/{chunk_idx}]: success, {} segments",
+                    out.segment_count
+                );
+                // [P11.1] Auto-resume pipeline: если все chunks теперь done и
+                // звонок не активен (не recording) — spawn reprocess через тот
+                // же PipelineRunner что использует stop_recording. Idempotent
+                // через `spawn_reprocess` abort+respawn для same call_id.
+                if let Err(e) = maybe_resume_pipeline_after_chunk(
+                    &pool,
+                    &call_id_clone,
+                    store_for_resume,
+                    device_for_resume,
+                    app_for_resume,
+                    tasks_for_resume,
+                )
+                .await
+                {
+                    log::warn!(
+                        "retry_chunk[{call_id_clone}/{chunk_idx}]: auto-resume failed: {e}"
+                    );
+                }
+            }
             Err(e) => log::warn!("retry_chunk[{call_id_clone}/{chunk_idx}]: failed: {e}"),
         }
     });
 
     Ok(())
+}
+
+/// [P11.1] После того как chunk_runner перевёл chunk failed→done в
+/// `retry_chunk`, проверить: можно ли уже автоматически возобновить
+/// downstream pipeline (diarize → audio_merger → recap).
+///
+/// **Гарантии auto-resume:**
+/// - Все chunks для звонка `status='done'` (нет ни pending, ни failed).
+/// - Звонок не recording (active recording owns orchestrator, не наш case).
+/// - Звонок не уже `status='ready'` (recap уже persisted).
+///
+/// Если условия совпали — `PipelineRunner::spawn_reprocess` сам идемпотентен:
+/// abort'ает existing task для этого `call_id` (если есть) и spawn'ит новый
+/// `pipeline::run` через chunked path (load_chunked_transcripts skip STT).
+async fn maybe_resume_pipeline_after_chunk(
+    pool: &SqlitePool,
+    call_id: &str,
+    store: Arc<crate::call_store::CallStore>,
+    device_id: Arc<str>,
+    app: AppHandle,
+    tasks: crate::services::pipeline_runner::PipelineTasks,
+) -> Result<(), AppError> {
+    if !db::chunks::all_chunks_done(pool, call_id).await? {
+        log::debug!(
+            "maybe_resume_pipeline_after_chunk[{call_id}]: not all chunks done, skip"
+        );
+        return Ok(());
+    }
+    let Some(call) = db::get_call(pool, call_id).await? else {
+        return Err(AppError::NotFound(format!("call {call_id}")));
+    };
+    if call.status == "recording" {
+        log::debug!(
+            "maybe_resume_pipeline_after_chunk[{call_id}]: still recording, skip"
+        );
+        return Ok(());
+    }
+    if call.status == "ready" && call.recap_failed_reason.is_none() {
+        log::debug!(
+            "maybe_resume_pipeline_after_chunk[{call_id}]: already ready w/o failure, skip"
+        );
+        return Ok(());
+    }
+    log::info!(
+        "maybe_resume_pipeline_after_chunk[{call_id}]: all chunks done, spawning reprocess"
+    );
+    PipelineRunner::spawn_reprocess(
+        pool.clone(),
+        store,
+        device_id,
+        app,
+        tasks,
+        call_id.to_string(),
+    )
+    .await
 }
