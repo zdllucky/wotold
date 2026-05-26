@@ -120,16 +120,36 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
     // 1. FSM gate: pending → processing.
     db::chunks::mark_chunk_processing(pool, &call_id, chunk_idx).await?;
 
+    // [P12.3] Language pinning per-call. Если на предыдущем chunk'е
+    // whisper уже задетектил язык (сохранено в calls.lang_detected) —
+    // используем его независимо от lang argument. Это предотвращает
+    // `[FOREIGN]` спам когда каждый chunk детектит язык независимо
+    // и иногда ошибается.
+    //
+    // Override rules:
+    //   - DB lang_detected non-null AND input lang == 'auto' → use DB.
+    //   - DB lang_detected non-null AND input lang explicit (e.g. 'ru')
+    //     → user explicit override wins, use input lang.
+    //   - DB lang_detected null → use input lang as is.
+    let effective_lang = if lang == "auto" {
+        match db::get_call(pool, &call_id).await {
+            Ok(Some(c)) => c.lang_detected.unwrap_or(lang.clone()),
+            _ => lang.clone(),
+        }
+    } else {
+        lang.clone()
+    };
+
     // 2. Параллельный mic+system STT. Prompt-priming идёт только в mic —
     //    system track имеет другой speaker (собеседник), prev_prompt от
     //    owner-mic дал бы ложный bias.
     let mic_opts = TranscriptionOpts {
-        lang: lang.clone(),
+        lang: effective_lang.clone(),
         diarization: true,
         prompt: prev_prompt,
     };
     let sys_opts = TranscriptionOpts {
-        lang,
+        lang: effective_lang,
         diarization: true,
         prompt: None,
     };
@@ -253,6 +273,25 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         embeddings_json.as_deref(),
     )
     .await?;
+
+    // [P12.3] Сохранить detected language на call row после успешного
+    // chunk'а. Используется на последующих chunks как override 'auto'
+    // (см. effective_lang logic выше) — предотвращает hallucination
+    // [FOREIGN] tag когда каждый chunk детектит язык независимо и
+    // иногда ошибается.
+    if let Some(detected) = mic_transcript
+        .lang_detected
+        .as_deref()
+        .filter(|s| !s.is_empty())
+    {
+        if let Err(e) =
+            db::set_call_meta(pool, &call_id, Some(detected), "local").await
+        {
+            log::warn!(
+                "chunk {call_id}/{chunk_idx}: set_call_meta(lang={detected}) failed: {e}"
+            );
+        }
+    }
 
     // [M13.2.3] Emit chunk_done(status=done) после persist'а.
     bus.transcript_chunk_done(&ChunkDoneEvent {
