@@ -23,6 +23,10 @@ interface HeaderActionsProps {
    *  кнопке как «Пересоздаём… {sec}s». `null` пока первый periodic event
    *  не пришёл, либо cloud engine (не emit'ит). */
   recapElapsedSec?: number | null;
+  /** [P11.3] Reprocess блокирован пока есть failed chunks — иначе user
+   *  re-обрабатывает с потерянным контентом. Tooltip объясняет почему.
+   *  Defaults `false` для backward-compat callsites. */
+  hasFailedChunks?: boolean;
 }
 
 export function HeaderActions({
@@ -39,6 +43,7 @@ export function HeaderActions({
   exporting,
   deleting,
   recapElapsedSec = null,
+  hasFailedChunks = false,
 }: HeaderActionsProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -111,7 +116,19 @@ export function HeaderActions({
               setOpen(false);
               onReprocess();
             }}
-            disabled={reprocessing || deleting || exporting || regenerating || regeneratingTitle}
+            disabled={
+              reprocessing ||
+              deleting ||
+              exporting ||
+              regenerating ||
+              regeneratingTitle ||
+              hasFailedChunks
+            }
+            title={
+              hasFailedChunks
+                ? t('chunkProgress.resumeBlockedHint')
+                : undefined
+            }
           >
             {reprocessing ? t('callDetail.reprocessing') : t('callDetail.reprocess')}
           </MenuItem>

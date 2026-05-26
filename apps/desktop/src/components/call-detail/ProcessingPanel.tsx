@@ -1,35 +1,40 @@
-// [V6.4 / V9] ProcessingPanel — PipelineStrip + reassurance строчка.
+// [V6.4 / V9 / P11.2] ProcessingPanel — единый 5-step PipelineStrip +
+// reassurance строчка + conditional ChunkFailureAccordion при failed chunks.
 //
-// [V9] Изменения по user feedback:
-// - Ghost-rows удалены (визуальный шум — табы CallDetailPage уже показывают
-//   skeleton'ы пока транскрипт грузится, дублировать не надо)
-// - PipelineStrip collapsed by default — юзер сам разворачивает «подробнее»
-//   если хочет видеть шаги. Сама компактная полоска с прогрессом — достаточно.
-// - ProgressRail внутри strip переходит на real macro-progress
-//   ((step-1 + pct/100) / 5 → 0-100%) вместо indeterminate shimmer.
+// [P11.2 — unified UX] Раньше был switch между ChunkProgressStrip vs
+// PipelineStrip по `chunks.length > 0`. У user'а получалось два разных
+// mental model на одну фичу: пятишаговый pipeline или сегментная полоска.
 //
-// [M13.3.1] Когда `chunks.length > 0` (chunked-pipeline запись) — рендерим
-// `ChunkProgressStrip` с per-segment progress. Иначе fallback на классический
-// 5-step PipelineStrip (cloud-managed, legacy local, или local-engine без
-// chunked флага).
+// Реальность: chunks = implementation detail STT-параллелизации, замаскированный
+// step 2 «Распознаём речь». Pipeline один и тот же из 5 шагов независимо
+// от длины записи.
+//
+// Новая модель:
+// 1. Всегда рендерим `PipelineStrip` с 5 stages.
+// 2. Если step=2 и chunks непустой — PipelineStrip показывает inline-badge
+//    «N из M сегментов» (без раскрытия списка).
+// 3. Если есть failed chunks (status='failed') — снизу появляется
+//    `ChunkFailureAccordion`, collapsed by default. User раскрывает и
+//    жмёт retry на нужном сегменте.
+// 4. Когда все chunks done → accordion исчезает, P11.1 backend auto-spawns
+//    next pipeline stages (diarize → recap).
 
 import type { Call, CallChunk } from '../../api/recording';
-import { ChunkProgressStrip, PipelineStrip } from '../call-state';
+import { ChunkFailureAccordion, PipelineStrip } from '../call-state';
 import { PIPELINE_STEP_KEYS, type CallProgress } from '../../types/callState';
 import { useI18n } from '../../i18n';
 
 interface ProcessingPanelProps {
   call: Call;
-  /** [M13.3.1] Список chunks для chunked-pipeline записей. Non-empty —
-   *  показываем ChunkProgressStrip; пусто — fallback на PipelineStrip. */
+  /** Chunks для chunked-pipeline записей. Используется в inline-badge
+   *  PipelineStrip'а на step 2 и в ChunkFailureAccordion при failed. */
   chunks?: CallChunk[];
-  /** [Tech-debt P0.2] Forward callback retry failed chunk. */
+  /** Callback retry failed chunk. Прокидывается в ChunkFailureAccordion. */
   onRetryChunk?: (chunkIdx: number) => void;
 }
 
 export function ProcessingPanel({ call, chunks, onRetryChunk }: ProcessingPanelProps) {
   const { t } = useI18n();
-  const useChunkStrip = chunks !== undefined && chunks.length > 0;
 
   // Step может быть NULL до первого emit_progress — показываем step=1 (upload).
   const step = (Math.min(
@@ -46,12 +51,12 @@ export function ProcessingPanel({ call, chunks, onRetryChunk }: ProcessingPanelP
     stageLabel: t(stageKey),
     etaSec: eta,
   };
+  const hasFailedChunks = (chunks ?? []).some((c) => c.status === 'failed');
   return (
     <div style={{ marginBottom: 18 }}>
-      {useChunkStrip ? (
-        <ChunkProgressStrip chunks={chunks} onRetryChunk={onRetryChunk} />
-      ) : (
-        <PipelineStrip progress={progress} />
+      <PipelineStrip progress={progress} chunks={chunks} />
+      {hasFailedChunks && onRetryChunk && chunks && (
+        <ChunkFailureAccordion chunks={chunks} onRetryChunk={onRetryChunk} />
       )}
       <p
         className="muted"
