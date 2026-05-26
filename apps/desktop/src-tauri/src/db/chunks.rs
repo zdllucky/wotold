@@ -231,6 +231,26 @@ pub async fn list_chunks_by_call(
         .collect())
 }
 
+/// [P11.1] Все chunks для звонка имеют status='done'. `false` если хотя бы
+/// один pending/processing/failed, либо если у звонка вообще нет chunks
+/// (cloud-managed / non-chunked path → caller должен использовать другую
+/// логику, не auto-resume).
+pub async fn all_chunks_done(pool: &SqlitePool, call_id: &str) -> Result<bool, AppError> {
+    let row: (i64, i64) = sqlx::query_as(
+        "SELECT
+           COUNT(*) AS total,
+           COUNT(CASE WHEN status = 'done' THEN 1 END) AS done
+         FROM call_chunks
+         WHERE call_id = ?1",
+    )
+    .bind(call_id)
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)?;
+    let (total, done) = row;
+    Ok(total > 0 && total == done)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,6 +288,56 @@ mod tests {
         assert_eq!(rows[0].status, "pending");
         assert_eq!(rows[0].mic_path, "/abs/c1/chunks/0/mic.wav");
         assert!(rows[0].end_ms.is_none());
+    }
+
+    #[tokio::test]
+    async fn all_chunks_done_returns_true_only_when_all_done() {
+        let test_db = fresh_db().await;
+        insert_dummy_call(&test_db.pool, "c1").await;
+
+        // No chunks → false.
+        assert!(!all_chunks_done(&test_db.pool, "c1").await.unwrap());
+
+        // 1 chunk pending → false.
+        insert_chunk(
+            &test_db.pool,
+            "c1",
+            0,
+            0,
+            &PathBuf::from("/m0"),
+            &PathBuf::from("/s0"),
+        )
+        .await
+        .unwrap();
+        assert!(!all_chunks_done(&test_db.pool, "c1").await.unwrap());
+
+        // Mark chunk 0 done — single chunk, all done → true.
+        mark_chunk_processing(&test_db.pool, "c1", 0).await.unwrap();
+        mark_chunk_done(
+            &test_db.pool,
+            "c1",
+            0,
+            600_000,
+            r#"{"segments":[]}"#,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(all_chunks_done(&test_db.pool, "c1").await.unwrap());
+
+        // Add chunk 1 pending → false again.
+        insert_chunk(
+            &test_db.pool,
+            "c1",
+            1,
+            600_000,
+            &PathBuf::from("/m1"),
+            &PathBuf::from("/s1"),
+        )
+        .await
+        .unwrap();
+        assert!(!all_chunks_done(&test_db.pool, "c1").await.unwrap());
     }
 
     #[tokio::test]
