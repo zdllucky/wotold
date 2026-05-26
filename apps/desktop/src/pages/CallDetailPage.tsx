@@ -17,7 +17,7 @@ import {
   regenerateTitle,
   reprocessCall,
 } from '../api/calls';
-import { retryChunk } from '../api/recording';
+import { forceRestt, retryChunk } from '../api/recording';
 import { humanError } from '../api/errors';
 import { engineLabelHuman } from '../utils/engineLabel';
 import { Tabs } from '../ui';
@@ -95,6 +95,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [regeneratingTitle, setRegeneratingTitle] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [forceRestting, setForceRestting] = useState(false);
   // [Bug-fix #6] После bind speaker → contact подсказываем regenerate recap.
   // Memory-only flag — пере-показывается на следующий bind action в звонке.
   const [pendingRecapRegen, setPendingRecapRegen] = useState(false);
@@ -161,6 +162,47 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       await refetchAll();
     } finally {
       setReprocessing(false);
+    }
+  };
+
+  // [P14.1] Force re-STT — destructive. Дропает existing transcripts +
+  // recap артефакты и запускает полный re-recognition. Применяется когда
+  // existing transcripts содержат hallucinations (pre-P12 filter) либо
+  // [FOREIGN] теги — chunk_assembly skip-STT path не применяет filter
+  // post-hoc, нужен полный rerun.
+  const onForceRestt = async () => {
+    if (!call) return;
+    // Cloud engine не chunked → backend всё равно refuse'нёт, скрываем UI.
+    if (call.processing_via !== 'local') return;
+    const ok = await ask(t('callDetail.forceResttConfirmBody'), {
+      title: t('callDetail.forceResttConfirmTitle'),
+      kind: 'warning',
+      okLabel: t('callDetail.forceResttConfirmOk'),
+      cancelLabel: t('common.cancel'),
+    });
+    if (!ok) return;
+    setForceRestting(true);
+    setError(null);
+    setCall((prev) =>
+      prev
+        ? {
+            ...prev,
+            status: 'processing',
+            pipeline_step: 1,
+            pipeline_pct: 0,
+            pipeline_eta_sec: null,
+            upload_bytes: null,
+            recap_failed_reason: null,
+          }
+        : prev,
+    );
+    try {
+      await forceRestt(call.id);
+    } catch (e) {
+      setError(t('callDetail.forceResttFailed', { error: humanError(e) }));
+      await refetchAll();
+    } finally {
+      setForceRestting(false);
     }
   };
 
@@ -340,6 +382,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           deleting={deleting}
           recapElapsedSec={recapElapsedSec}
           hasFailedChunks={(chunks ?? []).some((c) => c.status === 'failed')}
+          onForceRestt={
+            call.processing_via === 'local' ? () => void onForceRestt() : undefined
+          }
+          forceRestting={forceRestting}
         />
 
         {/* Participants chips — same row после title */}
@@ -504,7 +550,24 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
               audio.seek(ms / 1000);
             }}
           />
-          <MdPanel md={recap} emptyHint={t('callDetail.emptyRecap')} />
+          <MdPanel
+            md={recap}
+            emptyHint={t('callDetail.emptyRecap')}
+            onRegenerate={() => void onRegenerateRecap()}
+            regenerating={regenerating}
+            regenerateDisabled={!transcript || reprocessing || forceRestting}
+            emptyBody={
+              call.recap_failed_reason
+                ? t('callDetail.recapEmptyFailed', {
+                    error: humanError(call.recap_failed_reason),
+                  })
+                : call.status === 'processing'
+                  ? t('callDetail.recapEmptyProcessing')
+                  : !transcript
+                    ? t('callDetail.recapEmptyNoTranscript')
+                    : t('callDetail.recapEmptyIdle')
+            }
+          />
         </Tabs.Panel>
         <Tabs.Panel value="transcript">
           <InteractiveTranscript

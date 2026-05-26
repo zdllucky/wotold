@@ -284,12 +284,8 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         .as_deref()
         .filter(|s| !s.is_empty())
     {
-        if let Err(e) =
-            db::set_call_meta(pool, &call_id, Some(detected), "local").await
-        {
-            log::warn!(
-                "chunk {call_id}/{chunk_idx}: set_call_meta(lang={detected}) failed: {e}"
-            );
+        if let Err(e) = db::set_call_meta(pool, &call_id, Some(detected), "local").await {
+            log::warn!("chunk {call_id}/{chunk_idx}: set_call_meta(lang={detected}) failed: {e}");
         }
     }
 

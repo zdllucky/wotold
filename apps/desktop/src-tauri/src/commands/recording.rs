@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use crate::{
     audio::macos::{self as audio_macos, OrchestratorChannels, RecordingSession},
     audio::permissions::{self, PermissionsStatus},
-    call_store::CallStore,
+    call_store::{ArtifactKind, CallStore},
     db::{self, Call},
     events::EventBus,
     local_engine::{
@@ -40,12 +40,14 @@ const SETTING_MIC_DIARIZATION_NUM_SPEAKERS: &str = "mic_diarization_num_speakers
 
 /// [P1.2] Helper: прочитать `SETTING_MIC_DIARIZATION_NUM_SPEAKERS` из DB и
 /// вернуть `Option<i32>` с clamping. Out-of-range / non-numeric → `None`.
+/// [P14.3] Range 1..=MAX_LOCAL_SPEAKERS (=3). Старые legacy values "4" →
+/// None (auto fallback) — `with_num_speakers` log warn'нёт.
 async fn read_num_speakers_override(pool: &sqlx::SqlitePool) -> Result<Option<i32>, AppError> {
     Ok(db::get_setting(pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS)
         .await?
         .as_deref()
         .and_then(|s| s.parse::<i32>().ok())
-        .filter(|n| (1..=4).contains(n)))
+        .filter(|n| (1..=crate::local_engine::diarization::MAX_LOCAL_SPEAKERS as i32).contains(n)))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -793,9 +795,7 @@ pub async fn retry_chunk(
                 )
                 .await
                 {
-                    log::warn!(
-                        "retry_chunk[{call_id_clone}/{chunk_idx}]: auto-resume failed: {e}"
-                    );
+                    log::warn!("retry_chunk[{call_id_clone}/{chunk_idx}]: auto-resume failed: {e}");
                 }
             }
             Err(e) => log::warn!("retry_chunk[{call_id_clone}/{chunk_idx}]: failed: {e}"),
@@ -826,18 +826,14 @@ async fn maybe_resume_pipeline_after_chunk(
     tasks: crate::services::pipeline_runner::PipelineTasks,
 ) -> Result<(), AppError> {
     if !db::chunks::all_chunks_done(pool, call_id).await? {
-        log::debug!(
-            "maybe_resume_pipeline_after_chunk[{call_id}]: not all chunks done, skip"
-        );
+        log::debug!("maybe_resume_pipeline_after_chunk[{call_id}]: not all chunks done, skip");
         return Ok(());
     }
     let Some(call) = db::get_call(pool, call_id).await? else {
         return Err(AppError::NotFound(format!("call {call_id}")));
     };
     if call.status == "recording" {
-        log::debug!(
-            "maybe_resume_pipeline_after_chunk[{call_id}]: still recording, skip"
-        );
+        log::debug!("maybe_resume_pipeline_after_chunk[{call_id}]: still recording, skip");
         return Ok(());
     }
     if call.status == "ready" && call.recap_failed_reason.is_none() {
@@ -846,9 +842,7 @@ async fn maybe_resume_pipeline_after_chunk(
         );
         return Ok(());
     }
-    log::info!(
-        "maybe_resume_pipeline_after_chunk[{call_id}]: all chunks done, spawning reprocess"
-    );
+    log::info!("maybe_resume_pipeline_after_chunk[{call_id}]: all chunks done, spawning reprocess");
     PipelineRunner::spawn_reprocess(
         pool.clone(),
         store,
@@ -856,6 +850,102 @@ async fn maybe_resume_pipeline_after_chunk(
         app,
         tasks,
         call_id.to_string(),
+    )
+    .await
+}
+
+/// [P14.1] Force re-STT — destructive operation. Дропает existing per-chunk
+/// transcripts + merged artifacts (transcript.md / raw_stt.json / recap.md) и
+/// сбрасывает chunks в pending. Затем spawn'ит full pipeline rerun через
+/// `PipelineRunner::spawn_reprocess` — chunked path запустит chunk_runner
+/// для каждого pending chunk заново, с применением свежих P12 filters
+/// (hallucination patterns + whisper anti-hallucination flags).
+///
+/// Используется когда existing transcripts содержат hallucinations
+/// созданные pre-P12.1 (`[Редактор субтитров...]`, `[FOREIGN]` теги) —
+/// chunk_assembly skip-STT path не применяет filter post-hoc, нужен
+/// полный re-recognition.
+///
+/// **Гарантии:**
+/// - Refuse если `engine != Local` (cloud не chunked).
+/// - Refuse если `status == 'recording'` (sidecar активен — нельзя дропать).
+/// - Idempotent через `spawn_reprocess` abort+respawn.
+#[tauri::command]
+pub async fn force_restt_call(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<(), AppError> {
+    // 1. Verify call exists.
+    let call = db::get_call(&state.db, &call_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
+
+    // 2. Refuse если активная запись — sidecar держит файлы.
+    if call.status == "recording" {
+        return Err(AppError::Other(
+            "force_restt_call: запись активна — сначала останови".into(),
+        ));
+    }
+
+    // 3. Engine check — chunked path только для Local.
+    let engine = db::get_setting(&state.db, SETTING_ACTIVE_ENGINE)
+        .await?
+        .as_deref()
+        .and_then(EngineKind::from_str);
+    if !matches!(engine, Some(EngineKind::Local)) {
+        return Err(AppError::Other(
+            "force_restt_call: требуется локальный движок (Cloud не chunked)".into(),
+        ));
+    }
+
+    // 4. Delete artifacts на диске. Ошибки игнорируем (best-effort) — если
+    //    файла нет, ничего страшного.
+    let call_dir = state.store.call_dir(&call_id);
+    for kind in [
+        ArtifactKind::Transcript,
+        ArtifactKind::RawStt,
+        ArtifactKind::Recap,
+    ] {
+        let p = state.store.artifact_path(&call_id, kind);
+        if let Err(e) = tokio::fs::remove_file(&p).await {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("force_restt_call: remove artifact {:?}: {e}", p);
+            }
+        }
+    }
+    // Per-chunk transcript JSON files (mic_transcript.json / system_transcript.json).
+    let chunks_dir = call_dir.join("chunks");
+    if let Ok(mut entries) = tokio::fs::read_dir(&chunks_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            for fname in ["mic_transcript.json", "system_transcript.json"] {
+                let p = entry.path().join(fname);
+                if let Err(e) = tokio::fs::remove_file(&p).await {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        log::warn!("force_restt_call: remove {:?}: {e}", p);
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Reset DB chunks state + clear failure reason.
+    let reset_count = db::chunks::reset_chunks_for_restt(&state.db, &call_id).await?;
+    log::info!(
+        "force_restt_call[{call_id}]: reset {reset_count} chunks → pending, \
+         engine=local, spawning reprocess"
+    );
+    db::set_recap_failed_reason(&state.db, &call_id, None).await?;
+
+    // 6. Spawn full pipeline rerun. spawn_reprocess идемпотентен — abort'ает
+    //    existing task для этого call_id.
+    PipelineRunner::spawn_reprocess(
+        state.db.clone(),
+        state.store.clone(),
+        state.device_id.clone(),
+        app,
+        state.pipeline_tasks.clone(),
+        call_id,
     )
     .await
 }

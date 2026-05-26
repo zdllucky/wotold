@@ -332,20 +332,14 @@ pub(crate) fn is_hallucination(text: &str) -> bool {
     if HALLUCINATIONS_EXACT.contains(&lower.as_str()) {
         return true;
     }
-    if HALLUCINATION_SUBSTRINGS
-        .iter()
-        .any(|p| lower.contains(p))
-    {
+    if HALLUCINATION_SUBSTRINGS.iter().any(|p| lower.contains(p)) {
         return true;
     }
     // Bracket-only shape: текст начинается с '[' и заканчивается ']',
     // длина >20 chars (catch'ит длинные attribution патены). Короткие
     // bracket tags типа `[music]` пропускаются (уже в exact list если
     // hallucination).
-    if trimmed.starts_with('[')
-        && trimmed.ends_with(']')
-        && trimmed.chars().count() > 20
-    {
+    if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.chars().count() > 20 {
         return true;
     }
     false
@@ -508,6 +502,11 @@ fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTransc
         .as_ref()
         .and_then(|r| r.language.clone())
         .filter(|s| !s.is_empty());
+    // [P14.4] Telemetry — сколько segments дропнуто hallucination filter.
+    // Без этого regressions невозможно отловить ни в dev'е, ни в prod'е.
+    let mut dropped_count: usize = 0;
+    let mut empty_count: usize = 0;
+    let total_before = parsed.transcription.len();
     let mut segments: Vec<TranscriptSegment> = parsed
         .transcription
         .into_iter()
@@ -519,11 +518,14 @@ fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTransc
             }
             let text = seg.text.trim().to_string();
             if text.is_empty() {
+                empty_count += 1;
                 return None;
             }
             // [P12.1] Whisper hallucinates на silence / low-confidence
             // фреймах. Comprehensive filter — exact + substring + shape.
             if is_hallucination(&text) {
+                log::debug!("stt[{track:?}]: hallucination drop: {text:?}");
+                dropped_count += 1;
                 return None;
             }
             let speaker_tag = match track {
@@ -539,6 +541,12 @@ fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTransc
             })
         })
         .collect();
+    if dropped_count > 0 || empty_count > 0 {
+        log::info!(
+            "stt[{track:?}]: filter stats — {dropped_count} hallucinations + {empty_count} empty / {total_before} total → {} kept",
+            segments.len()
+        );
+    }
     let duration_sec = segments.last().map(|s| s.end).unwrap_or(0.0);
     segments.sort_by(|a, b| {
         a.start
@@ -752,9 +760,7 @@ mod tests {
 
     #[test]
     fn is_hallucination_filters_russian_subtitle_credits() {
-        assert!(is_hallucination(
-            "[Редактор субтитров Н.Александрова]"
-        ));
+        assert!(is_hallucination("[Редактор субтитров Н.Александрова]"));
         assert!(is_hallucination("[Апалькова]"));
         assert!(is_hallucination("[Александрова]"));
         assert!(is_hallucination(
@@ -778,9 +784,7 @@ mod tests {
     #[test]
     fn is_hallucination_filters_long_bracket_only_shape() {
         // Generic: bracket-only длина >20 chars → hallucination shape.
-        assert!(is_hallucination(
-            "[Some Long Mystery Attribution Label]"
-        ));
+        assert!(is_hallucination("[Some Long Mystery Attribution Label]"));
         // Короткий bracket tag — не дропаем (если не в exact list).
         // Эти НЕ должны фильтроваться:
         assert!(!is_hallucination("[unknown]")); // 9 chars

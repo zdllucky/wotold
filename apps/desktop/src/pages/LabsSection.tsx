@@ -43,12 +43,12 @@ export function LabsSection() {
         () => null,
       );
       setSpeculativeEnabled(rawSpec === '1');
-      // [P1.2] Force N speakers — whitelist enforce: '2'|'3'|'4' → keep;
-      // всё прочее → 'auto'.
+      // [P1.2] Force N speakers — whitelist enforce: '2'|'3' → keep;
+      // всё прочее (включая legacy '4') → 'auto'. [P14.3] MAX=3 → '4' dropped.
       const rawNum = await getSetting(SETTINGS_KEYS.MIC_DIARIZATION_NUM_SPEAKERS).catch(
         () => null,
       );
-      if (rawNum === '2' || rawNum === '3' || rawNum === '4') {
+      if (rawNum === '2' || rawNum === '3') {
         setNumSpeakers(rawNum);
       } else {
         setNumSpeakers('auto');

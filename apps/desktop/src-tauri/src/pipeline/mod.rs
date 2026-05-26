@@ -1306,13 +1306,24 @@ async fn diarize_track(
     if let Some(n) = num_speakers {
         log::info!("diarize_track[{track_kind}]: forcing num_clusters={n} (Labs override)");
     }
-    let speaker_segments = match diarizer.diarize(audio_path).await {
+    let mut speaker_segments = match diarizer.diarize(audio_path).await {
         Ok(segs) => segs,
         Err(e) => {
             log::warn!("diarize_track[{track_kind}]: sortformer err: {e} — fall back");
             return transcript;
         }
     };
+
+    // [P14.3] Reassign overflow `speaker:unknown` segments к ближайшему
+    // named-спикеру в окне ±2s. Снижает шум в ParticipantsRow когда
+    // sortformer вывел больше MAX_LOCAL_SPEAKERS (=3) кластеров.
+    let reassigned =
+        crate::local_engine::diarization::reassign_unknown_to_neighbors(&mut speaker_segments, 2.0);
+    if reassigned > 0 {
+        log::info!(
+            "diarize_track[{track_kind}]: reassigned {reassigned} unknown → neighbor speakers"
+        );
+    }
 
     // [Bug-fix] Diagnostic: сколько уникальных спикеров sortformer выделил
     // + суммарные durations. Без этого silent-collapse невозможно отличить
@@ -1769,11 +1780,7 @@ mod tests {
         assert!(ensure_all_chunks_done(&test_db.pool, "c1").await.is_ok());
     }
 
-    async fn insert_and_mark_done(
-        pool: &sqlx::SqlitePool,
-        call_id: &str,
-        idx: u32,
-    ) {
+    async fn insert_and_mark_done(pool: &sqlx::SqlitePool, call_id: &str, idx: u32) {
         use std::path::PathBuf;
         db::chunks::insert_chunk(
             pool,
