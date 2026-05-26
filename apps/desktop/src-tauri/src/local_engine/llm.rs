@@ -269,11 +269,25 @@ impl LlmProvider for LocalLlamaProvider {
                 &format!("{max_tokens}"),
                 "--threads",
                 &format!("{DEFAULT_THREADS}"),
-                // Newer llama.cpp attempts Metal shader compilation on first run
-                // which can exceed LOCAL_LLM_TIMEOUT. CPU is fast enough for
-                // 1.5–7B models on M-series and avoids GPU init entirely.
+                // [P9.1] Metal GPU offload — Apple Silicon M-series ~5-7×
+                // быстрее CPU на Qwen 1.5-7B Q4_K_M. Metal shaders компилируются
+                // первый раз на ~30 сек, потом кешируются (`~/Library/Caches/
+                // llama.cpp/ggml-metal.shaderlib` либо рядом с binary). Этот
+                // 30-сек overhead покрывается `LOCAL_LLM_TIMEOUT` (10 мин)
+                // для самой первой инвокации после `brew upgrade llama.cpp`;
+                // последующие вызовы стартуют instant.
                 "-ngl",
-                "0",
+                "99",
+                // [P9.1] Flash attention — 1.3-1.5× prompt eval speedup на
+                // длинных prompts (full transcript + system instructions).
+                "-fa",
+                // [P9.1] KV cache quantization q8_0 — ~50% RAM cut (важно для
+                // 7B + ctx 8192 на 16 GB M1 Pro где GPU wired limit ~10.6 GB).
+                // Accuracy impact на recap-уровне ниже шума temperature=0.2.
+                "-ctk",
+                "q8_0",
+                "-ctv",
+                "q8_0",
                 "--no-conversation",
                 "--no-display-prompt",
                 "--simple-io",
