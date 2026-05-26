@@ -193,6 +193,15 @@ export const en: TranslationStrings = {
     reprocessConfirmBody:
       'Reprocess this call?\n\nThe recording will be re-transcribed and the recap regenerated. The current transcript and recap will be overwritten.',
     reprocessConfirmOk: 'Reprocess',
+    forceRestt: '⚠ Re-recognize from scratch',
+    forceRestting: 'Recognizing…',
+    forceResttHint:
+      'Drop current transcript (with hallucinations / [FOREIGN] tags) and re-recognize from scratch',
+    forceResttConfirmTitle: 'Re-recognize?',
+    forceResttConfirmBody:
+      'Delete current transcript and summary, re-run recognition?\n\nUseful if the recording was processed by an older recognizer and contains hallucinations or [FOREIGN] tags.',
+    forceResttConfirmOk: 'Re-recognize',
+    forceResttFailed: 'Failed to restart recognition: {error}',
     deleteConfirmBody:
       'Delete call “{title}”?\n\nThis permanently removes the recording, transcript, recap, tasks and voice samples from this call.',
     deleteConfirmOk: 'Delete',
@@ -206,6 +215,16 @@ export const en: TranslationStrings = {
     retry: 'Try again',
     retrying: 'Restarting…',
     emptyRecap: 'Recap not generated yet.',
+    recapEmptyTitle: 'No summary yet',
+    recapEmptyAction: 'Generate summary',
+    recapEmptyIdle:
+      'Click the button to have Wotold analyze the transcript and produce a summary.',
+    recapEmptyProcessing:
+      'The pipeline is still processing this call — the summary will appear once it finishes. Wait or refresh the page in a minute.',
+    recapEmptyFailed:
+      'Previous attempt failed: {error}\n\nTry again — transient errors usually clear up.',
+    recapEmptyNoTranscript:
+      'A transcript is needed first — nothing to summarize without it. Try reprocessing the call.',
     emptyTranscript: 'Transcript not ready yet.',
     emptyTasks:
       'Tasks mentioned in the call will appear here. Wotold has not found any yet — try reprocessing the call.',
@@ -320,6 +339,9 @@ export const en: TranslationStrings = {
     many: 'participants',
     anonymousLabel: 'Speaker {n}',
     anonymousHint: 'Click to bind to a contact',
+    tooManyBadge: 'too many?',
+    tooManyHint:
+      'If fewer in reality — Settings → Labs → "Force speaker count".',
   },
 
   scrubber: {
@@ -548,12 +570,11 @@ export const en: TranslationStrings = {
       'Uses a small 0.5B draft model in parallel with 7B Quality. 2-3× speedup. Requires Quality preset and ~380MB extra model download.',
     forceNumSpeakersLabel: 'Force speaker count',
     forceNumSpeakersHint:
-      'Applied on next reprocess. Use this when you know the exact speaker count and auto-detect gets it wrong. Capped at 4 speakers.',
+      'Applied on next reprocess. Use this when you know the exact speaker count and auto-detect gets it wrong. Capped at 3 speakers.',
     forceNumSpeakersOptions: {
       auto: 'Auto (recommended)',
       '2': '2 speakers',
       '3': '3 speakers',
-      '4': '4 speakers',
     },
     wipeBtn: 'Delete all data',
     wipeBusy: 'Deleting…',

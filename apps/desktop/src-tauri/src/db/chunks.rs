@@ -231,6 +231,32 @@ pub async fn list_chunks_by_call(
         .collect())
 }
 
+/// [P14.1] Reset всех chunks звонка для force re-STT.
+///
+/// Сбрасывает status → pending, обнуляет transcript_json +
+/// system_transcript_json + embeddings_json + end_ms. Используется когда
+/// existing transcripts содержат hallucinations (pre-P12.1 filter) — user
+/// явно запрашивает re-recognition через UI «Распознать заново».
+///
+/// Возвращает количество затронутых rows.
+pub async fn reset_chunks_for_restt(pool: &SqlitePool, call_id: &str) -> Result<u64, AppError> {
+    let res = sqlx::query(
+        "UPDATE call_chunks
+         SET status = 'pending',
+             transcript_json = NULL,
+             system_transcript_json = NULL,
+             embeddings_json = NULL,
+             end_ms = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE call_id = ?1",
+    )
+    .bind(call_id)
+    .execute(pool)
+    .await
+    .map_err(AppError::from)?;
+    Ok(res.rows_affected())
+}
+
 /// [P11.1] Все chunks для звонка имеют status='done'. `false` если хотя бы
 /// один pending/processing/failed, либо если у звонка вообще нет chunks
 /// (cloud-managed / non-chunked path → caller должен использовать другую
@@ -570,6 +596,79 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("not in 'failed' status"));
+    }
+
+    // [P14.1] reset_chunks_for_restt — все chunks → pending, transcripts NULL.
+    #[tokio::test]
+    async fn reset_chunks_for_restt_resets_all_state() {
+        let test_db = fresh_db().await;
+        insert_dummy_call(&test_db.pool, "c1").await;
+        for idx in [0u32, 1, 2] {
+            insert_chunk(
+                &test_db.pool,
+                "c1",
+                idx,
+                u64::from(idx) * 600_000,
+                &PathBuf::from(format!("/m{idx}")),
+                &PathBuf::from(format!("/s{idx}")),
+            )
+            .await
+            .unwrap();
+            mark_chunk_processing(&test_db.pool, "c1", idx)
+                .await
+                .unwrap();
+        }
+        // 2 done + 1 failed (mixed state, как у user'а с hallucinations).
+        mark_chunk_done(
+            &test_db.pool,
+            "c1",
+            0,
+            600_000,
+            r#"{"mic":1}"#,
+            Some(r#"{"sys":1}"#),
+            Some(r#"{"speaker:0":[0.1]}"#),
+        )
+        .await
+        .unwrap();
+        mark_chunk_done(
+            &test_db.pool,
+            "c1",
+            1,
+            1_200_000,
+            r#"{"mic":2}"#,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        mark_chunk_failed(&test_db.pool, "c1", 2, "test")
+            .await
+            .unwrap();
+
+        let n = reset_chunks_for_restt(&test_db.pool, "c1").await.unwrap();
+        assert_eq!(n, 3);
+
+        let rows = list_chunks_by_call(&test_db.pool, "c1").await.unwrap();
+        assert_eq!(rows.len(), 3);
+        for r in &rows {
+            assert_eq!(r.status, "pending", "chunk {} status", r.chunk_idx);
+            assert!(
+                r.transcript_json.is_none(),
+                "chunk {} transcript",
+                r.chunk_idx
+            );
+            assert!(r.system_transcript_json.is_none());
+            assert!(r.embeddings_json.is_none());
+            assert!(r.end_ms.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn reset_chunks_for_restt_noop_when_no_chunks() {
+        let test_db = fresh_db().await;
+        insert_dummy_call(&test_db.pool, "c1").await;
+        let n = reset_chunks_for_restt(&test_db.pool, "c1").await.unwrap();
+        assert_eq!(n, 0);
     }
 
     #[tokio::test]

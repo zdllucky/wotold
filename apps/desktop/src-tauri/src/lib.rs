@@ -622,6 +622,7 @@ pub fn run() {
             commands::get_active_pipeline_count,
             commands::list_call_chunks,
             commands::retry_chunk,
+            commands::force_restt_call,
             commands::list_call_decisions,
             commands::list_call_open_questions,
             commands::get_call_audio_path,

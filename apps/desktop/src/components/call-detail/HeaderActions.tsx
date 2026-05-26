@@ -12,6 +12,9 @@ interface HeaderActionsProps {
   onRegenerateTitle: () => void;
   onExport: () => void;
   onDelete: () => void;
+  /** [P14.1] Force re-STT — danger action с confirm modal. `undefined` →
+   *  пункт меню скрыт (cloud engine / нет права). */
+  onForceRestt?: () => void;
   reprocessing: boolean;
   regenerating: boolean;
   regenerateDisabled: boolean;
@@ -19,6 +22,8 @@ interface HeaderActionsProps {
   regenerateTitleDisabled: boolean;
   exporting: boolean;
   deleting: boolean;
+  /** [P14.1] true пока идёт force restt — disable пункт меню. */
+  forceRestting?: boolean;
   /** [P1.3] Elapsed seconds во время local LLM recap regen — рендерим в
    *  кнопке как «Пересоздаём… {sec}s». `null` пока первый periodic event
    *  не пришёл, либо cloud engine (не emit'ит). */
@@ -42,6 +47,8 @@ export function HeaderActions({
   regenerateTitleDisabled,
   exporting,
   deleting,
+  onForceRestt,
+  forceRestting = false,
   recapElapsedSec = null,
   hasFailedChunks = false,
 }: HeaderActionsProps) {
@@ -185,6 +192,28 @@ export function HeaderActions({
           >
             {exporting ? t('callDetail.exporting') : t('callDetail.exportMd')}
           </MenuItem>
+          {onForceRestt && (
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                onForceRestt();
+              }}
+              disabled={
+                forceRestting ||
+                reprocessing ||
+                regenerating ||
+                regeneratingTitle ||
+                deleting ||
+                exporting
+              }
+              danger
+              title={t('callDetail.forceResttHint')}
+            >
+              {forceRestting
+                ? t('callDetail.forceRestting')
+                : t('callDetail.forceRestt')}
+            </MenuItem>
+          )}
           <MenuItem
             onClick={() => {
               setOpen(false);

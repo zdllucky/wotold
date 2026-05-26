@@ -128,6 +128,13 @@ export function retryChunk(callId: string, chunkIdx: number): Promise<void> {
   return invoke<void>('retry_chunk', { callId, chunkIdx });
 }
 
+/** [P14.1] Force re-STT — destructive. Дропает existing transcripts +
+ *  recap артефакты, сбрасывает все chunks в pending, запускает full
+ *  pipeline rerun. UI confirm modal обязателен. */
+export function forceRestt(callId: string): Promise<void> {
+  return invoke<void>('force_restt_call', { callId });
+}
+
 /** [M13.2.3] Per-chunk pipeline finished — эмитится из `chunk_runner` на
  *  done/failed. UI patch'ит ChunkProgressStrip без полного refetch'а. */
 export interface ChunkDoneEvent {
