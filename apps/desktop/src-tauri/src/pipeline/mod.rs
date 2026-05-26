@@ -167,6 +167,48 @@ async fn emit_progress(
 }
 
 /// Запуск STT после остановки записи (M2.4-2.5 паспорта). Транскрибирует
+/// [P13] Halt gate перед stage 2→3 transition в chunked path. Strict
+/// all-or-nothing — если есть ЛЮБОЙ non-done chunk (pending/processing/
+/// failed) → возвращает Err с явным reason для UI surface через
+/// `recap_failed_reason`. Pipeline не должен build'ить partial transcript.
+///
+/// **0 chunks** → `Ok(())` (cloud / non-chunked path unaffected — там
+/// pipeline идёт через full-file STT, halt не релевантен).
+///
+/// **All done** → `Ok(())` (proceed to merge/diarize/recap).
+///
+/// **Любой non-done** → `Err("chunks_need_retry: N of M ...")`. UI читает
+/// через humanError pattern, P11.2 ChunkFailureAccordion уже показывает
+/// retry buttons. После retry → P11.1 auto-resume → halt gate проходит.
+///
+/// Callsites:
+/// - [`reprocess_call`] pre-flight (заменяет existing P1.1 warn).
+/// - [`run_local_inner`] перед `chunk_assembly::load_chunked_transcripts`
+///   (initial pipeline после stop_recording тоже gate'ится).
+pub(crate) async fn ensure_all_chunks_done(
+    pool: &SqlitePool,
+    call_id: &str,
+) -> Result<(), AppError> {
+    let chunks = db::chunks::list_chunks_by_call(pool, call_id).await?;
+    if chunks.is_empty() {
+        return Ok(());
+    }
+    let not_done: Vec<u32> = chunks
+        .iter()
+        .filter(|c| c.status != "done")
+        .map(|c| c.chunk_idx)
+        .collect();
+    if !not_done.is_empty() {
+        return Err(AppError::Other(format!(
+            "chunks_need_retry: {} of {} chunks not done (idx: {:?})",
+            not_done.len(),
+            chunks.len(),
+            not_done
+        )));
+    }
+    Ok(())
+}
+
 /// mic и system параллельно, сливает таймлайн, сохраняет `raw_stt.json` и
 /// `transcript.md`, проставляет `calls.status = ready/failed`.
 ///
@@ -246,23 +288,18 @@ pub async fn reprocess_call(
         ));
     }
 
-    // [Tech-debt P1.1] Pre-flight surface failed chunks. `chunk_assembly::load_chunked_transcripts`
-    // тихо фильтрует `status='done'` и пропускает failed chunks — final transcript неполный
-    // без явного сигнала. Не блокируем (user мог намеренно хотеть partial recap), но видимо
-    // в логах. UI уже surface'ит failed badge + retry в ChunkProgressStrip (P0.2).
-    let chunks = db::chunks::list_chunks_by_call(pool, call_id).await?;
-    let failed_chunks: Vec<u32> = chunks
-        .iter()
-        .filter(|c| c.status == "failed")
-        .map(|c| c.chunk_idx)
-        .collect();
-    if !failed_chunks.is_empty() {
-        log::warn!(
-            "reprocess_call {call_id}: skipping {} failed chunk(s): {:?}. \
-             Retry chunks individually before reprocess for complete content.",
-            failed_chunks.len(),
-            failed_chunks
-        );
+    // [P13] Halt gate перед reprocess — pipeline strict all-or-nothing.
+    // Если есть failed chunks → bail с явным reason, UI читает через
+    // `recap_failed_reason` (existing banner pattern). User должен retry
+    // failed chunks; P11.1 auto-resume подхватит pipeline когда все done.
+    //
+    // Заменяет existing P1.1 log::warn — раньше continued с partial data
+    // и pipeline шёл по 1/3 как по 3/3, build'ил incomplete transcript.
+    if let Err(e) = ensure_all_chunks_done(pool, call_id).await {
+        let reason = e.to_string();
+        log::warn!("reprocess_call {call_id} halt: {reason}");
+        let _ = db::set_recap_failed_reason(pool, call_id, Some(&reason)).await;
+        return Err(e);
     }
 
     // Reset status: was failed → processing, clear failed_reason.
@@ -782,6 +819,13 @@ async fn run_local_inner(
 
     // 4. Stage Transcribe — mic + system параллельно через whisper-cli sidecar.
     //
+    // [P13] Halt gate — если есть failed chunks, не идём дальше step 2.
+    // Strict all-or-nothing: pipeline не должен build'ить partial transcript.
+    // 0 chunks → Ok (non-chunked path, halt не релевантен) — fall back на
+    // full-file STT ниже. После retry failed chunks → P11.1 auto-resume
+    // re-войдёт сюда + halt пройдёт.
+    ensure_all_chunks_done(pool, &ctx.call_id).await?;
+
     // [M13.1.5d] Если за время записи chunk_orchestrator насобирал per-chunk
     // транскрипты (CHUNKED_PIPELINE=ON в start_recording) — пропускаем
     // full-file STT и собираем mic/sys из DB. Cloud engine сюда не доходит
@@ -1699,6 +1743,128 @@ mod tests {
 
     fn arc_device(id: &str) -> Arc<str> {
         Arc::from(id.to_string().into_boxed_str())
+    }
+
+    // ============================================================
+    // [P13] ensure_all_chunks_done — halt gate перед stage 2→3
+    // ============================================================
+
+    async fn insert_call_row(pool: &sqlx::SqlitePool, id: &str) {
+        sqlx::query(
+            "INSERT INTO calls (id, started_at, status, path_label, created_at, updated_at)
+             VALUES (?1, CURRENT_TIMESTAMP, 'recording', 'managed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn ensure_all_chunks_done_returns_ok_when_no_chunks() {
+        // Non-chunked path (cloud / single-pass) — нет rows в call_chunks.
+        // Halt не релевантен — pipeline fall back на full-file STT.
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        assert!(ensure_all_chunks_done(&test_db.pool, "c1").await.is_ok());
+    }
+
+    async fn insert_and_mark_done(
+        pool: &sqlx::SqlitePool,
+        call_id: &str,
+        idx: u32,
+    ) {
+        use std::path::PathBuf;
+        db::chunks::insert_chunk(
+            pool,
+            call_id,
+            idx,
+            u64::from(idx) * 600_000,
+            &PathBuf::from(format!("/m{idx}")),
+            &PathBuf::from(format!("/s{idx}")),
+        )
+        .await
+        .unwrap();
+        db::chunks::mark_chunk_processing(pool, call_id, idx)
+            .await
+            .unwrap();
+        db::chunks::mark_chunk_done(
+            pool,
+            call_id,
+            idx,
+            u64::from(idx + 1) * 600_000,
+            r#"{"segments":[]}"#,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn ensure_all_chunks_done_returns_ok_when_all_done() {
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        for idx in 0..3 {
+            insert_and_mark_done(&test_db.pool, "c1", idx).await;
+        }
+        assert!(ensure_all_chunks_done(&test_db.pool, "c1").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn ensure_all_chunks_done_returns_err_on_failed_chunk() {
+        use std::path::PathBuf;
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        // 2 done, 1 failed (user's reported scenario: 1/3).
+        for idx in 0..2 {
+            insert_and_mark_done(&test_db.pool, "c1", idx).await;
+        }
+        db::chunks::insert_chunk(
+            &test_db.pool,
+            "c1",
+            2,
+            1_200_000,
+            &PathBuf::from("/m2"),
+            &PathBuf::from("/s2"),
+        )
+        .await
+        .unwrap();
+        db::chunks::mark_chunk_processing(&test_db.pool, "c1", 2)
+            .await
+            .unwrap();
+        db::chunks::mark_chunk_failed(&test_db.pool, "c1", 2, "STT timeout")
+            .await
+            .unwrap();
+        let err = ensure_all_chunks_done(&test_db.pool, "c1")
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("chunks_need_retry"), "got: {msg}");
+        assert!(msg.contains("1 of 3"), "got: {msg}");
+        assert!(msg.contains("[2]"), "got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn ensure_all_chunks_done_returns_err_on_pending_chunk() {
+        use std::path::PathBuf;
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        db::chunks::insert_chunk(
+            &test_db.pool,
+            "c1",
+            0,
+            0,
+            &PathBuf::from("/m0"),
+            &PathBuf::from("/s0"),
+        )
+        .await
+        .unwrap();
+        // Status pending — не failed, но и не done. Должен halt.
+        let err = ensure_all_chunks_done(&test_db.pool, "c1")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("chunks_need_retry"));
     }
 
     // ============================================================

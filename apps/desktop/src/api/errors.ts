@@ -75,6 +75,14 @@ const PATTERNS: ErrorPattern[] = [
     human: 'Локальная модель не справилась с задачей.',
     hint: 'Попробуй preset «Light» или переключись на облако в Настройках.',
   },
+  // [P13] Halt gate сработал — есть failed chunks, pipeline не идёт
+  // дальше step 2 (Расшифровка). User должен retry failed segments
+  // через accordion → P11.1 auto-resume подхватит pipeline.
+  {
+    match: /chunks_need_retry/i,
+    human: 'Часть сегментов не распозналась.',
+    hint: 'Повтори их перед продолжением — нажми ↻ Повторить на каждом неудачном фрагменте ниже.',
+  },
   {
     match: /(timeout|timed out)/i,
     human: 'Запрос занял слишком долго.',

@@ -51,7 +51,7 @@ describe('ChunkFailureAccordion', () => {
     );
     const buttons = container.querySelectorAll('button');
     expect(buttons.length).toBe(1);
-    expect(buttons[0].textContent ?? '').toMatch(/повторить/i);
+    expect(buttons[0]?.textContent ?? '').toMatch(/повторить/i);
   });
 
   it('calls onRetryChunk with chunk_idx on retry click', () => {
@@ -64,7 +64,9 @@ describe('ChunkFailureAccordion', () => {
       />,
     );
     const buttons = container.querySelectorAll('button');
-    fireEvent.click(buttons[1]);
+    const secondButton = buttons[1];
+    if (!secondButton) throw new Error('expected 2 retry buttons');
+    fireEvent.click(secondButton);
     expect(onRetry).toHaveBeenCalledWith(1);
   });
 
