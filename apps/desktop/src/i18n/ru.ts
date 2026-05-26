@@ -1028,10 +1028,19 @@ const ruInternal = {
     step4: 'Сводим транскрипт',
     step5: 'Готовим саммари и задачи',
   },
-  // [M13.3.3] Chunked pipeline (длинные звонки нарезаются на 10-мин сегменты).
+  // [M13.3.3 / P11.2] Chunked pipeline (длинные звонки нарезаются на 10-мин
+  // сегменты). UX модель: chunks = implementation detail STT-параллелизации,
+  // часть step 2 «Распознаём речь». Видны только при failed (accordion).
   chunkProgress: {
     label: 'Сегменты',
     ofN: '{done} из {total}',
+    // [P11.2] Inline badge на step 2 PipelineStrip — показывает прогресс
+    // chunked-STT во время transcription stage.
+    inlineBadge: '{done} из {total} сегментов',
+    // [P11.2] Accordion title — collapsed по умолчанию, появляется только
+    // когда есть failed chunks. User раскрывает чтобы retry.
+    accordionTitle: 'Не удалось распознать сегменты',
+    accordionHint: 'Раскрой чтобы повторить распознавание неудачных фрагментов',
     statusDone: 'готово',
     statusFailed: 'не удалось',
     statusProcessing: 'обрабатываем',
@@ -1040,6 +1049,9 @@ const ruInternal = {
     retry: '↻ Повторить',
     retrying: 'Повторяем…',
     failedSummary: '{n} из {total} сегментов не удалось — нажми ↻ чтобы переcпавнить.',
+    // [P11.3] Resume-blocked tooltip — disabled-state причина на reprocess
+    // кнопке когда есть failed chunks.
+    resumeBlockedHint: 'Сначала повтори неудачные сегменты',
   },
 } as const;
 

@@ -957,6 +957,9 @@ export const kk: TranslationStrings = {
   chunkProgress: {
     label: 'Сегменттер',
     ofN: '{done} / {total}',
+    inlineBadge: '{total} ішінен {done} сегмент',
+    accordionTitle: 'Кейбір сегменттер танылмады',
+    accordionHint: 'Сәтсіз сегменттерді қайта жіберу үшін жайыңыз',
     statusDone: 'дайын',
     statusFailed: 'сәтсіз',
     statusProcessing: 'өңделуде',
@@ -964,6 +967,7 @@ export const kk: TranslationStrings = {
     retry: '↻ Қайталау',
     retrying: 'Қайталаймыз…',
     failedSummary: '{total} ішінен {n} сегмент сәтсіз — қайталау үшін ↻ басыңыз.',
+    resumeBlockedHint: 'Алдымен сәтсіз сегменттерді қайталаңыз',
   },
 };
 

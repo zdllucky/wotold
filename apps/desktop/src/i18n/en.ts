@@ -963,6 +963,9 @@ export const en: TranslationStrings = {
   chunkProgress: {
     label: 'Segments',
     ofN: '{done} of {total}',
+    inlineBadge: '{done} of {total} segments',
+    accordionTitle: "Couldn't transcribe some segments",
+    accordionHint: 'Expand to retry the failed segments',
     statusDone: 'done',
     statusFailed: 'failed',
     statusProcessing: 'processing',
@@ -970,6 +973,7 @@ export const en: TranslationStrings = {
     retry: '↻ Retry',
     retrying: 'Retrying…',
     failedSummary: '{n} of {total} segments failed — click ↻ to respawn.',
+    resumeBlockedHint: 'Retry failed segments first',
   },
 };
 

@@ -339,6 +339,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           exporting={exporting}
           deleting={deleting}
           recapElapsedSec={recapElapsedSec}
+          hasFailedChunks={(chunks ?? []).some((c) => c.status === 'failed')}
         />
 
         {/* Participants chips — same row после title */}

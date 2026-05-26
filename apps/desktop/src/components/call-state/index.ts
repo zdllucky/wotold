@@ -14,3 +14,8 @@ export { CallErrorRow } from './CallErrorRow';
 export type { CallErrorRowProps } from './CallErrorRow';
 export { ChunkProgressStrip } from './ChunkProgressStrip';
 export type { ChunkProgressStripProps } from './ChunkProgressStrip';
+// [P11.2] ChunkFailureAccordion заменяет ChunkProgressStrip как top-level
+// visible component в ProcessingPanel. ChunkProgressStrip оставлен для
+// back-compat / dev и export'ируется для tests; не used в production.
+export { ChunkFailureAccordion } from './ChunkFailureAccordion';
+export type { ChunkFailureAccordionProps } from './ChunkFailureAccordion';
