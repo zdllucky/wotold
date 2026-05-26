@@ -30,6 +30,7 @@
             "-ngl",
             { "validator": "^[0-9]+$" },
             "-fa",
+            { "validator": "^(on|off|auto)$" },
             "-ctk",
             { "validator": "^(q8_0|q4_0|f16)$" },
             "-ctv",
