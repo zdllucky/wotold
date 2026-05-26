@@ -278,9 +278,12 @@ impl LlmProvider for LocalLlamaProvider {
                 // последующие вызовы стартуют instant.
                 "-ngl",
                 "99",
-                // [P9.1] Flash attention — 1.3-1.5× prompt eval speedup на
-                // длинных prompts (full transcript + system instructions).
+                // [P9.1+P10.1] Flash attention — 1.3-1.5× prompt eval speedup
+                // на длинных prompts. Llama.cpp b9270+ требует значение
+                // (`on|off|auto`) после `-fa`; bare flag съедает следующий
+                // arg как value и валит sidecar с exit code 1.
                 "-fa",
+                "on",
                 // [P9.1] KV cache quantization q8_0 — ~50% RAM cut (важно для
                 // 7B + ctx 8192 на 16 GB M1 Pro где GPU wired limit ~10.6 GB).
                 // Accuracy impact на recap-уровне ниже шума temperature=0.2.
