@@ -208,16 +208,37 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 "--threads",
                 &format!("{DEFAULT_THREADS}"),
                 "--no-prints",
+                // [P12.2] Anti-hallucination hardening:
+                // - temperature 0.0 → deterministic, никаких креативных
+                //   догадок на silent/low-conf regions.
+                // - no-speech-thold 0.6 → segment p(no_speech) > 0.6 → skip
+                //   (whisper не пишет hallucination на silence).
+                // - entropy-thold 2.4 → стоп high-entropy chains раньше.
+                // - logprob-thold -1.0 → skip output если confidence слишком
+                //   низкая (whisper sometimes returns текст с logprob<-1).
+                "-t",
+                "0.0",
+                "--no-speech-thold",
+                "0.6",
+                "--entropy-thold",
+                "2.4",
+                "--logprob-thold",
+                "-1.0",
             ]);
-        // [M13.1.3a] Context priming через `--prompt`. opts.prompt — это
-        // последние слова transcript'а chunk N-1 (M13 chunked pipeline).
-        // Sanitize (strip \r\n + 1000 char limit) обязателен — capability
-        // validator block'ает иначе spawn whisper-cli.
-        let sanitized_prompt = opts.prompt.as_deref().map(sanitize_prompt);
-        if let Some(p) = sanitized_prompt.as_deref() {
-            if !p.is_empty() {
-                sidecar = sidecar.args(["--prompt", p]);
-            }
+        // [M13.1.3a / P12.2] Context priming через `--prompt`.
+        // - opts.prompt существует (chunk N-1 tail) → используем как есть.
+        // - opts.prompt None AND lang=="ru" → fallback на default Russian
+        //   anchor («Это разговор на русском языке») — даёт language bias
+        //   модели и снижает шанс [FOREIGN] фактически на тишину.
+        // Sanitize (strip \r\n + 1000 char limit) обязателен.
+        let prompt_to_use: Option<String> = opts
+            .prompt
+            .as_deref()
+            .map(sanitize_prompt)
+            .filter(|p| !p.is_empty())
+            .or_else(|| default_prompt_for_lang(&lang).map(|s| s.to_string()));
+        if let Some(p) = prompt_to_use.as_deref() {
+            sidecar = sidecar.args(["--prompt", p]);
         }
 
         let run_result = run_sidecar_with_timeout(sidecar, self.timeout).await;
@@ -244,6 +265,107 @@ pub(crate) fn sanitize_prompt(raw: &str) -> String {
         out = truncated;
     }
     out
+}
+
+/// [P12.1] Whisper hallucination exact-match patterns (lowercase).
+/// Расширенный список — English boundary fillers + blank/music tags +
+/// `[FOREIGN]` language-confusion tag + multilingual silence markers.
+const HALLUCINATIONS_EXACT: &[&str] = &[
+    // Existing English/blank/music (M13 baseline).
+    "you",
+    "thank you",
+    "thanks",
+    "bye",
+    "goodbye",
+    "thanks for watching",
+    "[blank_audio]",
+    "(silence)",
+    "[music]",
+    "(music)",
+    "[applause]",
+    // [P12.1] Language-confusion tag — whisper выдаёт когда detect failed
+    // на сегменте. Чаще всего после тишины либо короткого шума.
+    "[foreign]",
+    // Multilingual silence/audio markers — YouTube training contamination.
+    "[音楽]",
+    "[bgm]",
+    "[♪音楽♪]",
+];
+
+/// [P12.1] Substring patterns — lowercase substring match (case-insensitive
+/// через `.to_lowercase()` на input). Покрывает Russian subtitle-credit
+/// hallucinations из YouTube training data Whisper'а.
+///
+/// Пример из реальных данных user'а: «[Редактор субтитров Н.Александрова]
+/// [Апалькова]» × N раз. Это classic YouTube-subtitler attribution.
+const HALLUCINATION_SUBSTRINGS: &[&str] = &[
+    // Russian YouTube subtitle credits.
+    "редактор субтитров",
+    "корректор субтитров",
+    "субтитры подготовил",
+    "субтитры:",
+    "[апалькова",
+    "[александрова",
+    "н.александрова",
+    "а.семкин",
+    // Generic YouTube attribution patterns (multilingual).
+    "subtitles by",
+    "transcribed by",
+    "продолжение следует",
+];
+
+/// [P12.1] Проверить, является ли сегмент hallucination'ом по совокупности
+/// признаков. Используется в `build_transcript` filter.
+///
+/// Order:
+/// 1. Exact-match (lowercase) против HALLUCINATIONS_EXACT.
+/// 2. Substring (lowercase) против HALLUCINATION_SUBSTRINGS.
+/// 3. Bracket-only shape: текст полностью в `[...]` длиной >20 — почти
+///    наверняка YouTube subtitle credit или similar artifact. Безопасный
+///    floor: legit `[music]` (5 chars) и `[applause]` (10) уже в exact list.
+pub(crate) fn is_hallucination(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_lowercase();
+    if HALLUCINATIONS_EXACT.contains(&lower.as_str()) {
+        return true;
+    }
+    if HALLUCINATION_SUBSTRINGS
+        .iter()
+        .any(|p| lower.contains(p))
+    {
+        return true;
+    }
+    // Bracket-only shape: текст начинается с '[' и заканчивается ']',
+    // длина >20 chars (catch'ит длинные attribution патены). Короткие
+    // bracket tags типа `[music]` пропускаются (уже в exact list если
+    // hallucination).
+    if trimmed.starts_with('[')
+        && trimmed.ends_with(']')
+        && trimmed.chars().count() > 20
+    {
+        return true;
+    }
+    false
+}
+
+/// [P12.2] Default initial-prompt для anchoring whisper к корректному
+/// языку. Используется когда caller не передал `opts.prompt` (первый
+/// chunk или non-chunked path).
+///
+/// Whisper без prompt на маленькой записи / тишине часто детектит как
+/// английский → `[FOREIGN]` tag на русской речи. Короткий язык-specific
+/// anchor сильно снижает вероятность mis-detect.
+pub(crate) fn default_prompt_for_lang(lang: &str) -> Option<&'static str> {
+    match lang {
+        "ru" => Some("Это разговор на русском языке."),
+        "en" => Some("This is a conversation in English."),
+        "kk" => Some("Бұл қазақ тіліндегі әңгіме."),
+        // Для 'auto' и unknown — без prompt'а, whisper детектит как умеет.
+        _ => None,
+    }
 }
 
 /// 'auto' / '' → 'auto'. Иначе нормализуем lowercase, обрезаем по '-' до
@@ -399,22 +521,9 @@ fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTransc
             if text.is_empty() {
                 return None;
             }
-            // Whisper hallucinates common short words/phrases at audio
-            // boundaries and silence frames. Filter exact matches only.
-            static HALLUCINATIONS: &[&str] = &[
-                "you",
-                "thank you",
-                "thanks",
-                "bye",
-                "goodbye",
-                "thanks for watching",
-                "[blank_audio]",
-                "(silence)",
-                "[music]",
-                "(music)",
-                "[applause]",
-            ];
-            if HALLUCINATIONS.contains(&text.to_lowercase().as_str()) {
+            // [P12.1] Whisper hallucinates на silence / low-confidence
+            // фреймах. Comprehensive filter — exact + substring + shape.
+            if is_hallucination(&text) {
                 return None;
             }
             let speaker_tag = match track {
@@ -630,6 +739,72 @@ mod tests {
         assert_eq!(t.segments.len(), 2);
         assert_eq!(t.segments[0].text, "Thank you.");
         assert_eq!(t.segments[1].text, "real text");
+    }
+
+    // [P12.1] Расширенный hallucination filter — Russian subtitle credits,
+    // [FOREIGN] tag, generic bracket-only shape.
+    #[test]
+    fn is_hallucination_filters_foreign_tag() {
+        assert!(is_hallucination("[FOREIGN]"));
+        assert!(is_hallucination("[foreign]"));
+        assert!(is_hallucination("  [FOREIGN]  "));
+    }
+
+    #[test]
+    fn is_hallucination_filters_russian_subtitle_credits() {
+        assert!(is_hallucination(
+            "[Редактор субтитров Н.Александрова]"
+        ));
+        assert!(is_hallucination("[Апалькова]"));
+        assert!(is_hallucination("[Александрова]"));
+        assert!(is_hallucination(
+            "[Редактор субтитров Н.Александрова] [Апалькова]"
+        ));
+        assert!(is_hallucination("[Субтитры подготовил пользователь]"));
+        assert!(is_hallucination("Subtitles by Anonymous"));
+        assert!(is_hallucination("Transcribed by AI"));
+    }
+
+    #[test]
+    fn is_hallucination_filters_existing_exact_matches() {
+        // Backward-compat — existing list still active.
+        assert!(is_hallucination("you"));
+        assert!(is_hallucination("Thank you"));
+        assert!(is_hallucination("[blank_audio]"));
+        assert!(is_hallucination("(silence)"));
+        assert!(is_hallucination("[music]"));
+    }
+
+    #[test]
+    fn is_hallucination_filters_long_bracket_only_shape() {
+        // Generic: bracket-only длина >20 chars → hallucination shape.
+        assert!(is_hallucination(
+            "[Some Long Mystery Attribution Label]"
+        ));
+        // Короткий bracket tag — не дропаем (если не в exact list).
+        // Эти НЕ должны фильтроваться:
+        assert!(!is_hallucination("[unknown]")); // 9 chars
+        assert!(!is_hallucination("[?]"));
+    }
+
+    #[test]
+    fn is_hallucination_keeps_legit_russian_speech() {
+        assert!(!is_hallucination("Привет, как дела?"));
+        assert!(!is_hallucination(
+            "Мы обсуждали проект, нужно подготовить документы."
+        ));
+        assert!(!is_hallucination("Да, согласен."));
+        // Edge: реальное слово которое случайно matches никаким substring.
+        assert!(!is_hallucination("Александр сказал что согласен"));
+    }
+
+    #[test]
+    fn default_prompt_for_lang_returns_anchor_for_known_lang() {
+        assert!(default_prompt_for_lang("ru").is_some());
+        assert!(default_prompt_for_lang("en").is_some());
+        assert!(default_prompt_for_lang("kk").is_some());
+        assert!(default_prompt_for_lang("auto").is_none());
+        assert!(default_prompt_for_lang("xyz").is_none());
     }
 
     #[test]
