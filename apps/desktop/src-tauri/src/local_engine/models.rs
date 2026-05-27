@@ -71,6 +71,10 @@ impl ModelId {
     /// [M12-D5] Pyannote segmentation 3.0 для sherpa-onnx
     /// OfflineSpeakerDiarization. Shared across all 3 presets (~6 MB).
     pub const PYANNOTE_SEGMENTATION: ModelId = ModelId("pyannote-segmentation");
+    /// [P15.2] Silero VAD v5.1.2 для whisper-cli `--vad` silence-trim.
+    /// Shared across all 3 presets (~1.6 MB). Дропает silence regions ДО
+    /// encoder pass → 30-50% wall-clock reduction на pause-heavy calls.
+    pub const SILERO_VAD: ModelId = ModelId("silero-vad-v5");
 
     pub fn as_str(&self) -> &'static str {
         self.0
@@ -93,7 +97,7 @@ pub struct ModelEntry {
 /// Каталог — 3 Whisper + 3 LLM модели. SHA256 + size_bytes получены через
 /// `scripts/refresh-model-catalog.sh` (PRD §14 pre-flight) на 2026-05-22.
 /// При замене файла на HF — bump version в скрипте + регенерировать.
-pub const MODEL_CATALOG: [ModelEntry; 8] = [
+pub const MODEL_CATALOG: [ModelEntry; 9] = [
     ModelEntry {
         id: ModelId::WHISPER_SMALL,
         kind: ModelKind::Stt,
@@ -171,6 +175,20 @@ pub const MODEL_CATALOG: [ModelEntry; 8] = [
         sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079",
         size_bytes: 5_992_913,
         license_url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0",
+    },
+    // [P15.2] Silero VAD model для whisper-cli `--vad`. ggml-org официально
+    // публикует ggml-silero-v5.1.2.bin (~1.6 MB). SHA256 + size — placeholder,
+    // нужен refresh через scripts/refresh-model-catalog.sh ДО production.
+    // Если SHA mismatch — download_model отказывает; pipeline gracefully
+    // fallback'ится без `--vad`.
+    ModelEntry {
+        id: ModelId::SILERO_VAD,
+        kind: ModelKind::Stt,
+        display_name: "Silero VAD v5",
+        url: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin",
+        sha256: "PLACEHOLDER_REFRESH_VIA_SCRIPT_BEFORE_PRODUCTION",
+        size_bytes: 1_627_136,
+        license_url: "https://huggingface.co/ggml-org/whisper-vad",
     },
 ];
 
@@ -546,9 +564,10 @@ mod tests {
             .iter()
             .filter(|m| m.kind == ModelKind::Diarization)
             .count();
+        // [P15.2] +silero-vad-v5 (Stt-kind, helper для whisper-cli `--vad`).
         assert_eq!(
-            stt, 3,
-            "expected 3 STT models (whisper small/medium/large-v3)"
+            stt, 4,
+            "expected 4 STT models (whisper small/medium/large-v3 + silero-vad-v5)"
         );
         // [M14 T-16 P2] +qwen25-0_5b (draft model для speculative decoding).
         assert_eq!(

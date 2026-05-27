@@ -48,7 +48,10 @@ const SIDECAR_NAME: &str = "wotold-whisper";
 /// override через `with_timeout`.
 pub const LOCAL_WHISPER_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
-const DEFAULT_THREADS: u32 = 6;
+/// [P15.1] 6 → 8. M-series chips имеют 8+ performance cores; whisper-cli
+/// CPU decoder pass scales линейно до 8 threads на Apple Silicon. Encoder
+/// уже GPU-bound через Metal backend.
+const DEFAULT_THREADS: u32 = 8;
 
 /// Per-PRD-§M12.1.2 «per-track processing»: mic-дорожка получает
 /// owner-speaker (без диаризации, M3.7), system-дорожка идёт в M12.2.
@@ -208,23 +211,46 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 "--threads",
                 &format!("{DEFAULT_THREADS}"),
                 "--no-prints",
-                // [P12.2] Anti-hallucination hardening:
-                // - temperature 0.0 → deterministic, никаких креативных
-                //   догадок на silent/low-conf regions.
-                // - no-speech-thold 0.6 → segment p(no_speech) > 0.6 → skip
-                //   (whisper не пишет hallucination на silence).
-                // - entropy-thold 2.4 → стоп high-entropy chains раньше.
-                // - logprob-thold -1.0 → skip output если confidence слишком
-                //   низкая (whisper sometimes returns текст с logprob<-1).
-                "-t",
+                // [P15.1 bug-fix] Whisper-cli `-t N` = `--threads N`,
+                // НЕ temperature! Раньше передавали `-t 0.0` думая что это
+                // temperature → клобрило `--threads` setting в 0.
+                // Temperature в whisper-cli — `-tp` / `--temperature`.
+                // P12.2 anti-hallucination флаги `--no-speech-thold 0.6`,
+                // `--entropy-thold 2.4`, `--logprob-thold -1.0` совпадают
+                // с whisper-cli defaults — удалили как no-op (см. --help).
+                "--temperature",
                 "0.0",
-                "--no-speech-thold",
-                "0.6",
-                "--entropy-thold",
-                "2.4",
-                "--logprob-thold",
-                "-1.0",
             ]);
+
+        // [P15.2] VAD silence-trim — если silero-vad model скачана, добавляем
+        // `--vad --vad-model <path>`. Дропает silence regions ДО encoder pass
+        // → 30-50% wall-clock reduction на pause-heavy calls. Если модель
+        // отсутствует, gracefully skip — STT работает без VAD как раньше.
+        let vad_model_path = self
+            .model_path
+            .parent()
+            .map(|d| d.join("silero-vad-v5.bin"));
+        if let Some(vad_path) = vad_model_path
+            .as_ref()
+            .filter(|p| p.exists())
+            .and_then(|p| p.to_str())
+        {
+            log::debug!(
+                "stt[{:?}]: enabling --vad with model {vad_path}",
+                self.track
+            );
+            sidecar = sidecar.args([
+                "--vad",
+                "--vad-model",
+                vad_path,
+                "--vad-threshold",
+                "0.5",
+                "--vad-min-speech-duration-ms",
+                "250",
+                "--vad-min-silence-duration-ms",
+                "300",
+            ]);
+        }
         // [M13.1.3a / P12.2] Context priming через `--prompt`.
         // - opts.prompt существует (chunk N-1 tail) → используем как есть.
         // - opts.prompt None AND lang=="ru" → fallback на default Russian
@@ -241,11 +267,33 @@ impl TranscriptionProvider for LocalWhisperProvider {
             sidecar = sidecar.args(["--prompt", p]);
         }
 
+        // [P15.3] STT timing telemetry — RTF (Real-Time Factor) = audio_sec
+        // / wall_clock_sec. RTF=10× значит «в 10 раз быстрее реального
+        // времени». M-series + Metal на Whisper Medium даёт RTF~15-25×;
+        // RTF~1-3× указывает на CPU-only path (Metal backend не загрузился).
+        let start = std::time::Instant::now();
         let run_result = run_sidecar_with_timeout(sidecar, self.timeout).await;
+        let elapsed = start.elapsed();
         let parse_result = match run_result {
             Ok(()) => parse_whisper_json(&json_path, self.track).await,
             Err(e) => Err(e),
         };
+        if let Ok(ref t) = parse_result {
+            let elapsed_sec = elapsed.as_secs_f64();
+            let rtf = if elapsed_sec > 0.001 {
+                t.duration_sec / elapsed_sec
+            } else {
+                0.0
+            };
+            log::info!(
+                "stt[{:?}]: {:.1}s audio → {:.1}s wall-clock, RTF={:.2}× ({} segments)",
+                self.track,
+                t.duration_sec,
+                elapsed_sec,
+                rtf,
+                t.segments.len()
+            );
+        }
 
         // Cleanup temp JSON (best-effort).
         let _ = tokio::fs::remove_file(&json_path).await;
