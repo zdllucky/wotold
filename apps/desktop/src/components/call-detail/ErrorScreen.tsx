@@ -9,9 +9,18 @@ interface ErrorScreenProps {
   call: Call;
   reprocessing: boolean;
   onRetry: () => void;
+  /** [P16.1] Gate — если есть failed chunks, reprocess гарантированно
+   *  упадёт через P13 `ensure_all_chunks_done`. Disable retry + tooltip
+   *  чтобы user сначала повторил chunks через ChunkFailureAccordion. */
+  hasFailedChunks?: boolean;
 }
 
-export function ErrorScreen({ call, reprocessing, onRetry }: ErrorScreenProps) {
+export function ErrorScreen({
+  call,
+  reprocessing,
+  onRetry,
+  hasFailedChunks = false,
+}: ErrorScreenProps) {
   const { t } = useI18n();
   const kind = mapFailureToUxKind(call.failed_reason ?? null);
 
@@ -51,7 +60,8 @@ export function ErrorScreen({ call, reprocessing, onRetry }: ErrorScreenProps) {
             type="button"
             className="btn btn--quiet btn--sm"
             onClick={onRetry}
-            disabled={reprocessing}
+            disabled={reprocessing || hasFailedChunks}
+            title={hasFailedChunks ? t('chunkProgress.resumeBlockedHint') : undefined}
           >
             {reprocessing ? t('callDetail.retrying') : t('failure.brokenRecording.retryCloud')}
           </button>
@@ -136,7 +146,8 @@ export function ErrorScreen({ call, reprocessing, onRetry }: ErrorScreenProps) {
           type="button"
           className="btn btn--primary btn--sm"
           onClick={onRetry}
-          disabled={reprocessing}
+          disabled={reprocessing || hasFailedChunks}
+          title={hasFailedChunks ? t('chunkProgress.resumeBlockedHint') : undefined}
         >
           {reprocessing ? t('callDetail.retrying') : t('callDetail.errorRetry')}
         </button>
@@ -145,13 +156,25 @@ export function ErrorScreen({ call, reprocessing, onRetry }: ErrorScreenProps) {
             type="button"
             className="btn btn--quiet btn--sm"
             onClick={onRetry}
-            disabled={reprocessing}
-            title={t('callDetail.errorRetryProvider', { provider: alternativeProvider })}
+            disabled={reprocessing || hasFailedChunks}
+            title={
+              hasFailedChunks
+                ? t('chunkProgress.resumeBlockedHint')
+                : t('callDetail.errorRetryProvider', { provider: alternativeProvider })
+            }
           >
             {t('callDetail.errorRetryProvider', { provider: alternativeProvider })}
           </button>
         )}
       </div>
+      {hasFailedChunks && (
+        <p
+          className="muted"
+          style={{ fontSize: 12, fontStyle: 'italic', margin: '10px 0 0' }}
+        >
+          {t('chunkProgress.resumeBlockedHint')}
+        </p>
+      )}
       <ErrorDiagnostics call={call} />
     </div>
   );

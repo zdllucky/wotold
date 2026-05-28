@@ -298,6 +298,11 @@ pub async fn reprocess_call(
     if let Err(e) = ensure_all_chunks_done(pool, call_id).await {
         let reason = e.to_string();
         log::warn!("reprocess_call {call_id} halt: {reason}");
+        // [P16.2] Write `failed_reason` тоже (ErrorScreen его читает) +
+        // recap_failed_reason для recap banner backward compat. Также
+        // clears pipeline_* fields чтобы UI не показывал stale processing
+        // UI если frontend optimistic patch не reverted.
+        let _ = db::fail_recording_with_reason(pool, call_id, Some(&reason)).await;
         let _ = db::set_recap_failed_reason(pool, call_id, Some(&reason)).await;
         return Err(e);
     }
