@@ -141,6 +141,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     // ReprocessBanner показался. Backend `reprocess_call` теперь spawn'ит
     // task и возвращается мгновенно; точное состояние подтянется через
     // `call:progress` / `pipeline:finished` события.
+    // [P16.1] Snapshot pre-patch state — на sync-error revert immediately
+    // вместо waiting на refetchAll → нет fake spinner пока refetch crawl'ит.
+    const snapshotBefore = call;
     setCall((prev) =>
       prev
         ? {
@@ -157,8 +160,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       await reprocessCall(call.id);
     } catch (e) {
       setError(t('callDetail.reprocessFailed', { error: humanError(e) }));
-      // Откат optimistic patch — если backend сразу же отверг (например
-      // нет аудио на диске), возвращаем status каким был.
+      // [P16.1] Immediate revert optimistic patch — UI status вернётся в
+      // failed без задержки. refetchAll ниже подтянет свежий failed_reason
+      // (backend P16.2 теперь пишет failed_reason на chunks gate reject).
+      setCall(snapshotBefore);
       await refetchAll();
     } finally {
       setReprocessing(false);
@@ -183,6 +188,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     if (!ok) return;
     setForceRestting(true);
     setError(null);
+    // [P16.1] Snapshot pre-patch — revert на sync error.
+    const snapshotBefore = call;
     setCall((prev) =>
       prev
         ? {
@@ -200,6 +207,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       await forceRestt(call.id);
     } catch (e) {
       setError(t('callDetail.forceResttFailed', { error: humanError(e) }));
+      // [P16.1] Immediate revert чтобы UI не залип в fake processing.
+      setCall(snapshotBefore);
       await refetchAll();
     } finally {
       setForceRestting(false);
@@ -228,6 +237,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     // сразу при клике, чтобы юзер не видел старую ошибку пока идёт новая
     // попытка. Если новая попытка упадёт, refetchAll вернёт актуальный
     // failed_reason (с свежим engine label).
+    // [P16.1] Snapshot pre-patch — revert sync на reject.
+    const snapshotBefore = call;
     setCall((prev) => (prev ? { ...prev, recap_failed_reason: null } : prev));
     try {
       await regenerateRecap(callId);
@@ -240,6 +251,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       setPendingRecapRegen(false);
     } catch (e) {
       setError(t('callDetail.regenerateFailed', { error: humanError(e) }));
+      // [P16.1] Revert recap_failed_reason clear — backend reject не
+      // должен показать UI что прошлая ошибка исчезла.
+      if (snapshotBefore) setCall(snapshotBefore);
     } finally {
       setRegenerating(false);
       // [P1.3] Final reset — даже если событие пришло позже completion.
@@ -426,6 +440,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           call={call}
           reprocessing={reprocessing}
           onRetry={() => void onReprocess()}
+          hasFailedChunks={(chunks ?? []).some((c) => c.status === 'failed')}
         />
       )}
 
