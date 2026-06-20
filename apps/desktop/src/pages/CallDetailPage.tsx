@@ -163,7 +163,24 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       // [P16.1] Immediate revert optimistic patch — UI status вернётся в
       // failed без задержки. refetchAll ниже подтянет свежий failed_reason
       // (backend P16.2 теперь пишет failed_reason на chunks gate reject).
-      setCall(snapshotBefore);
+      // [P16.1 review] Functional updater — capture latest state inside
+      // updater, не stale closure. Между snapshot capture и catch
+      // `call:progress` Tauri event мог обновить state — revert не должен
+      // discard concurrent updates. Берём только поля которые мы patched:
+      // status + pipeline_* — остальное (`prev` actual) keeps.
+      setCall((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: snapshotBefore.status,
+              pipeline_step: snapshotBefore.pipeline_step,
+              pipeline_pct: snapshotBefore.pipeline_pct,
+              pipeline_eta_sec: snapshotBefore.pipeline_eta_sec,
+              upload_bytes: snapshotBefore.upload_bytes,
+              recap_failed_reason: snapshotBefore.recap_failed_reason,
+            }
+          : prev,
+      );
       await refetchAll();
     } finally {
       setReprocessing(false);
@@ -208,7 +225,24 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     } catch (e) {
       setError(t('callDetail.forceResttFailed', { error: humanError(e) }));
       // [P16.1] Immediate revert чтобы UI не залип в fake processing.
-      setCall(snapshotBefore);
+      // [P16.1 review] Functional updater — capture latest state inside
+      // updater, не stale closure. Между snapshot capture и catch
+      // `call:progress` Tauri event мог обновить state — revert не должен
+      // discard concurrent updates. Берём только поля которые мы patched:
+      // status + pipeline_* — остальное (`prev` actual) keeps.
+      setCall((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: snapshotBefore.status,
+              pipeline_step: snapshotBefore.pipeline_step,
+              pipeline_pct: snapshotBefore.pipeline_pct,
+              pipeline_eta_sec: snapshotBefore.pipeline_eta_sec,
+              upload_bytes: snapshotBefore.upload_bytes,
+              recap_failed_reason: snapshotBefore.recap_failed_reason,
+            }
+          : prev,
+      );
       await refetchAll();
     } finally {
       setForceRestting(false);
@@ -253,7 +287,15 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       setError(t('callDetail.regenerateFailed', { error: humanError(e) }));
       // [P16.1] Revert recap_failed_reason clear — backend reject не
       // должен показать UI что прошлая ошибка исчезла.
-      if (snapshotBefore) setCall(snapshotBefore);
+      // [P16.1 review] Functional updater — restore только patched поле,
+      // не stomp concurrent state из `call:progress`.
+      if (snapshotBefore) {
+        setCall((prev) =>
+          prev
+            ? { ...prev, recap_failed_reason: snapshotBefore.recap_failed_reason }
+            : prev,
+        );
+      }
     } finally {
       setRegenerating(false);
       // [P1.3] Final reset — даже если событие пришло позже completion.
