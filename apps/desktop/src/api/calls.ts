@@ -79,10 +79,17 @@ export function regenerateRecap(callId: string): Promise<void> {
   return invoke<void>('regenerate_recap', { callId });
 }
 
-/** [M14 T-17] Lightweight title-only regen. Engine-aware: Local-движок → локальный
- *  Qwen (~5-10s), cloud → Anthropic (мгновенно). Returns new title (persisted in DB). */
-export function regenerateTitle(callId: string): Promise<string> {
-  return invoke<string>('regenerate_title', { callId });
+/** [M14 T-17] Lightweight title-only regen. Engine-aware (Local Qwen / cloud).
+ *  [Global regen] Фоновая задача — возвращается сразу; новый title подтянется
+ *  через refetch на `pipeline:finished`. */
+export function regenerateTitle(callId: string): Promise<void> {
+  return invoke<void>('regenerate_title', { callId });
+}
+
+/** [Global regen] Есть ли активная фон-задача (reprocess / regen) для звонка —
+ *  для restore busy-состояния CallDetailPage после возврата на страницу. */
+export function isCallProcessing(callId: string): Promise<boolean> {
+  return invoke<boolean>('is_call_processing', { callId });
 }
 
 /** Прогресс массового регена пустых рекапов (`recap:bulk_progress`). */
