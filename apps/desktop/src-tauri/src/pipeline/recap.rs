@@ -641,6 +641,26 @@ pub(crate) async fn build_known_speakers_block(
 ///
 /// Localization: labels подбираются по `summary.language` (ru/en/kk → ru/en/kk
 /// localized; иначе ru fallback).
+/// Семантически-пустой recap.md: только heading-строки (`# …`) и пробелы, без
+/// тела. v2 render всегда даёт «# Рекап\n\n», поэтому до-фиксный пустой рекап =
+/// `"# Рекап\n\n"` (строка непустая). Используется bulk-регеном чтобы найти
+/// звонки требующие пересоздания. Mirror TS `isMarkdownBlank`.
+pub(crate) fn recap_md_is_blank(md: &str) -> bool {
+    !md.lines().any(|line| {
+        let t = line.trim();
+        !t.is_empty() && !is_md_heading(t)
+    })
+}
+
+fn is_md_heading(trimmed: &str) -> bool {
+    let hashes = trimmed.chars().take_while(|c| *c == '#').count();
+    (1..=6).contains(&hashes)
+        && trimmed[hashes..]
+            .chars()
+            .next()
+            .is_some_and(char::is_whitespace)
+}
+
 fn render_recap_md_v2(
     summary: &CallSummaryV2,
     contacts: &[db::Contact],
@@ -1083,6 +1103,25 @@ mod tests {
         assert!(!md.contains("## Решения"));
         assert!(!md.contains("## Открытые вопросы"));
         assert!(!md.contains("## Задачи"));
+    }
+
+    #[test]
+    fn recap_md_is_blank_detects_header_only() {
+        // Старый до-фиксный пустой рекап = «# Рекап\n\n».
+        assert!(recap_md_is_blank("# Рекап\n\n"));
+        assert!(recap_md_is_blank("# Рекап"));
+        assert!(recap_md_is_blank("  \n## A\n\n"));
+        assert!(recap_md_is_blank(""));
+        // С телом — не blank.
+        assert!(!recap_md_is_blank("# Рекап\n\nКоманда обсудила релиз."));
+        assert!(!recap_md_is_blank("# Рекап\n\n## Ключевое\n- пункт"));
+        // render пустого summary с одним полем → не blank.
+        let mut s = empty_summary_v2("ru");
+        s.summary = "Brief".into();
+        assert!(!recap_md_is_blank(&render_recap_md_v2(&s, &[], &[])));
+        // render полностью пустого summary → blank (как старые звонки).
+        let empty = empty_summary_v2("ru");
+        assert!(recap_md_is_blank(&render_recap_md_v2(&empty, &[], &[])));
     }
 
     #[test]

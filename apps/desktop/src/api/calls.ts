@@ -84,6 +84,31 @@ export function regenerateTitle(callId: string): Promise<string> {
   return invoke<string>('regenerate_title', { callId });
 }
 
+/** Прогресс массового регена пустых рекапов (`recap:bulk_progress`). */
+export interface BulkRecapProgress {
+  done: number;
+  total: number;
+  call_id: string;
+}
+
+/** Итог массового регена (`recap:bulk_done`). */
+export interface BulkRecapDone {
+  regenerated: number;
+  failed: number;
+  cancelled: boolean;
+}
+
+/** [Bulk recap] Пересоздать рекапы всех ready-звонков с пустым recap.md.
+ *  Возвращает кол-во звонков на обработку; реген идёт в фоне с событиями. */
+export function regenerateEmptyRecaps(): Promise<number> {
+  return invoke<number>('regenerate_empty_recaps');
+}
+
+/** [Bulk recap] Прервать активный массовый реген. */
+export function cancelBulkRecap(): Promise<void> {
+  return invoke<void>('cancel_bulk_recap');
+}
+
 /** [B16]: путь к WAV-файлу звонка для аудиоплеера. */
 export function getCallAudioPath(callId: string, kind: 'mic' | 'system'): Promise<string> {
   return invoke<string>('get_call_audio_path', { callId, kind });

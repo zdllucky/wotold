@@ -439,6 +439,17 @@ export const en: TranslationStrings = {
     sectionRecording: 'Recording',
     sectionSpeakers: 'Speakers',
     sectionLabs: 'Labs',
+    sectionMaintenance: 'Maintenance',
+    maintenanceTitle: 'Data maintenance.',
+    maintenanceLede:
+      'Calls processed earlier may have an empty recap. Regenerate summaries for all such calls in one action.',
+    bulkRecapStart: 'Regenerate empty summaries',
+    bulkRecapRunning: 'Processing…',
+    bulkRecapScanning: 'Scanning for empty recaps…',
+    bulkRecapProgress: 'Regenerating {done} of {total}…',
+    bulkRecapStop: 'Stop',
+    bulkRecapResult: 'Done: {regenerated} regenerated, {failed} failed.',
+    bulkRecapNoneEmpty: 'No empty recaps found — all good.',
     sectionPrivacy: 'Privacy',
     sectionProcessingSubtitle:
       'Where your calls are processed. Local — free, offline. Cloud — faster, more accurate.',

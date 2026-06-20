@@ -438,6 +438,17 @@ export const kk: TranslationStrings = {
     sectionRecording: 'Жазу',
     sectionSpeakers: 'Сөйлеушілер',
     sectionLabs: 'Зертхана',
+    sectionMaintenance: 'Қызмет көрсету',
+    maintenanceTitle: 'Деректерге қызмет көрсету.',
+    maintenanceLede:
+      'Бұрын өңделген қоңыраулардың түйіні бос болуы мүмкін. Осындай барлық қоңыраулар үшін түйіндемені бір әрекетпен қайта жасауға болады.',
+    bulkRecapStart: 'Бос түйіндемелерді қайта жасау',
+    bulkRecapRunning: 'Өңделуде…',
+    bulkRecapScanning: 'Бос түйіндер ізделуде…',
+    bulkRecapProgress: '{total} ішінен {done} қайта жасалуда…',
+    bulkRecapStop: 'Тоқтату',
+    bulkRecapResult: 'Дайын: {regenerated} қайта жасалды, {failed} қатемен.',
+    bulkRecapNoneEmpty: 'Бос түйіндер табылмады — бәрі орнында.',
     sectionPrivacy: 'Құпиялылық',
     sectionProcessingSubtitle:
       'Қоңырауларыңыз қайда өңделеді. Жергілікті — тегін, желісіз. Бұлт — жылдамырақ, дәлірек.',

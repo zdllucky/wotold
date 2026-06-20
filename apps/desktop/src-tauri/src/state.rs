@@ -49,6 +49,10 @@ pub struct AppState {
     /// `take()` — sender дропается, orchestrator корректно exit'ит на
     /// `stop_rx` arm.
     pub orchestrator_stop_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    /// [Bulk recap] Cancel-флаг для массового пересоздания пустых рекапов.
+    /// `regenerate_empty_recaps` проверяет его между звонками; `cancel_bulk_recap`
+    /// взводит. Sequential по природе (local LLM semaphore=1).
+    pub bulk_recap_cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
@@ -92,6 +96,7 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         orchestrator: Arc::new(Mutex::new(None)),
         orchestrator_pause_tx: Arc::new(Mutex::new(None)),
         orchestrator_stop_tx: Arc::new(Mutex::new(None)),
+        bulk_recap_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
 }
 
