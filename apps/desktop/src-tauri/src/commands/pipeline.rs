@@ -3,7 +3,12 @@
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
-use crate::{db, services::pipeline_runner::PipelineRunner, state::AppState, AppError};
+use crate::{
+    db,
+    services::pipeline_runner::{PipelineRunner, RegenKind},
+    state::AppState,
+    AppError,
+};
 
 /// [M13.3.1] Public view над `call_chunks` row. UI рендерит ChunkProgressStrip
 /// из этого payload'а — transcript/embeddings_json не включены (UI они не
@@ -49,47 +54,60 @@ pub async fn get_active_pipeline_count(state: State<'_, AppState>) -> Result<usi
     Ok(tasks.len())
 }
 
-/// M4.5 паспорта: пересоздать рекап + action_items без повторной транскрипции.
-/// Ошибки LLM пробрасываются (UI показывает toast / error), в отличие от
-/// pipeline::run где рекап silent-skip при ошибке (транскрипт важнее).
+/// M4.5: пересоздать рекап + action_items без повторной транскрипции.
 ///
-/// [Bug-fix] AppHandle plumbed для local-engine path — LocalLlamaProvider
-/// требует его для sidecar invoke. Cloud-managed path AppHandle игнорирует.
+/// [Global regen] Запускается как ФОНОВАЯ задача (spawn + register в
+/// `pipeline_tasks`) — переживает уход со страницы, считается в бейдже у
+/// «Звонки», эмитит `pipeline:started`/`pipeline:finished`. Команда возвращается
+/// сразу; фронт подтягивает результат через `pipeline:finished` listener.
 #[tauri::command]
 pub async fn regenerate_recap(
     app: AppHandle,
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<(), AppError> {
-    crate::pipeline::regenerate_recap(
-        &state.db,
-        &state.app_data_dir,
-        &state.device_id,
-        &call_id,
-        Some(&app),
+    PipelineRunner::spawn_regen(
+        state.db.clone(),
+        state.store.clone(),
+        state.device_id.clone(),
+        app,
+        state.pipeline_tasks.clone(),
+        call_id,
+        RegenKind::Recap,
     )
     .await
 }
 
-/// [M14 T-17] Lightweight title-only regen. Separate path от regenerate_recap —
-/// один LLM-call (~150 max_tokens) → `db::set_call_title` → return new title.
-/// Не трогает recap.md / decisions / action_items.
-///
-/// Cloud-only path (matches regenerate_recap). Local engine support — backlog M14.6.
+/// [M14 T-17] Lightweight title-only regen (engine-aware). Как `regenerate_recap`
+/// — ФОНОВАЯ задача (survives навигацию, в бейдже). Возвращается сразу; новый
+/// title подтянется через refetch на `pipeline:finished`.
 #[tauri::command]
 pub async fn regenerate_title(
     app: AppHandle,
     state: State<'_, AppState>,
     call_id: String,
-) -> Result<String, AppError> {
-    crate::pipeline::title_regen::regenerate_title(
-        &state.db,
-        &state.app_data_dir,
-        &state.device_id,
-        &call_id,
-        Some(&app),
+) -> Result<(), AppError> {
+    PipelineRunner::spawn_regen(
+        state.db.clone(),
+        state.store.clone(),
+        state.device_id.clone(),
+        app,
+        state.pipeline_tasks.clone(),
+        call_id,
+        RegenKind::Title,
     )
     .await
+}
+
+/// [Global regen] Есть ли активная фон-задача (reprocess / regen) для звонка.
+/// Frontend использует на mount CallDetailPage чтобы восстановить busy-состояние
+/// после возврата на страницу.
+#[tauri::command]
+pub async fn is_call_processing(
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<bool, AppError> {
+    Ok(state.pipeline_tasks.lock().await.contains_key(&call_id))
 }
 
 /// Перезапустить полный pipeline (STT + recap) для существующего звонка.

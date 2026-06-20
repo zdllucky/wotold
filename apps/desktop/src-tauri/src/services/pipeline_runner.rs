@@ -22,12 +22,21 @@ use tauri::AppHandle;
 use tokio::sync::Mutex;
 
 use crate::call_store::{ArtifactKind, CallStore};
-use crate::events::{EventBus, PipelineCancelledEvent};
+use crate::events::{EventBus, PipelineCancelledEvent, PipelineFinishedEvent};
 use crate::pipeline::{self, PipelineCtx};
 use crate::AppError;
 
 /// Реестр active pipeline tasks. Cheap to clone (Arc внутри).
 pub type PipelineTasks = Arc<Mutex<HashMap<String, JoinHandle<()>>>>;
+
+/// [Global regen] Какой именно регенератор гнать в фоне через `spawn_regen`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegenKind {
+    /// Пересоздать recap.md + decisions/open_questions/action_items.
+    Recap,
+    /// Пересоздать только заголовок звонка (lightweight).
+    Title,
+}
 
 /// Результат `cancel` — для frontend / тестов чтобы знать, остались ли
 /// артефакты на диске (transcript.md). Если да — был успешный previous run
@@ -107,6 +116,87 @@ impl PipelineRunner {
             /* is_reprocess */ true,
         )
         .await;
+        Ok(())
+    }
+
+    /// [Global regen] Запустить regen-recap/title как ФОНОВУЮ задачу,
+    /// зарегистрированную в `pipeline_tasks` (mirror reprocess): переживает
+    /// навигацию, считается в бейдже у «Звонки», эмитит `pipeline:started`/
+    /// `pipeline:finished`. Возвращается сразу — генерация бежит в фоне.
+    ///
+    /// Статус звонка НЕ меняется (остаётся `ready`) — regen это не full-pipeline,
+    /// ProcessingPanel не всплывает. Guard: если для call_id уже бежит task
+    /// (reprocess / другой regen) — `Err` (не клобберим handle).
+    pub async fn spawn_regen(
+        pool: SqlitePool,
+        store: Arc<CallStore>,
+        device_id: Arc<str>,
+        app_handle: AppHandle,
+        tasks: PipelineTasks,
+        call_id: String,
+        kind: RegenKind,
+    ) -> Result<(), AppError> {
+        // Pre-flight: row существует.
+        let _call = crate::db::get_call(&pool, &call_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
+
+        // Guard: уже бежит task для этого звонка → не запускаем второй.
+        if tasks.lock().await.contains_key(&call_id) {
+            return Err(AppError::Other(format!(
+                "call_already_processing: звонок {call_id} уже обрабатывается"
+            )));
+        }
+
+        let app_data_dir = store.app_data_dir().to_path_buf();
+        let call_id_for_task = call_id.clone();
+        let tasks_for_task = tasks.clone();
+        let handle = tauri::async_runtime::spawn(async move {
+            let bus = EventBus::new(Some(&app_handle));
+            bus.pipeline_started(&call_id_for_task);
+
+            let result: Result<(), AppError> = match kind {
+                RegenKind::Recap => {
+                    pipeline::regenerate_recap(
+                        &pool,
+                        &app_data_dir,
+                        &device_id,
+                        &call_id_for_task,
+                        Some(&app_handle),
+                    )
+                    .await
+                }
+                RegenKind::Title => pipeline::title_regen::regenerate_title(
+                    &pool,
+                    &app_data_dir,
+                    &device_id,
+                    &call_id_for_task,
+                    Some(&app_handle),
+                )
+                .await
+                .map(|_title| ()),
+            };
+
+            let event = match &result {
+                Ok(()) => PipelineFinishedEvent {
+                    call_id: call_id_for_task.clone(),
+                    status: "ready",
+                    failed_reason: None,
+                },
+                Err(e) => {
+                    log::warn!("regen ({kind:?}) {call_id_for_task} error: {e}");
+                    PipelineFinishedEvent {
+                        call_id: call_id_for_task.clone(),
+                        status: "failed",
+                        failed_reason: Some(e.to_string()),
+                    }
+                }
+            };
+            bus.pipeline_finished(&event);
+
+            tasks_for_task.lock().await.remove(&call_id_for_task);
+        });
+        tasks.lock().await.insert(call_id, handle);
         Ok(())
     }
 
@@ -254,6 +344,33 @@ mod tests {
         // DB должна остаться чистой (нет такой row).
         let row = crate::db::get_call(&db.pool, "ghost-id").await.unwrap();
         assert!(row.is_none());
+    }
+
+    #[tokio::test]
+    async fn spawn_regen_guard_detects_active_task() {
+        // [Global regen] Guard в spawn_regen: если для call_id уже бежит task
+        // (reprocess / другой regen) — не запускаем второй (не клобберим handle).
+        // Без AppHandle полный spawn_regen не дёрнуть — проверяем сам guard
+        // (contains_key) через map напрямую, в стиле cancel-теста.
+        let tasks: PipelineTasks = Arc::new(Mutex::new(HashMap::new()));
+        assert!(
+            !tasks.lock().await.contains_key("c1"),
+            "пусто → guard пропускает"
+        );
+        let dummy = tauri::async_runtime::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        });
+        tasks.lock().await.insert("c1".to_string(), dummy);
+        assert!(
+            tasks.lock().await.contains_key("c1"),
+            "task активна → guard отклонит второй spawn"
+        );
+        // Cleanup — снимаем guard в отдельный statement (temporary в if-let
+        // держал бы borrow `tasks` до конца блока → E0597).
+        let removed = tasks.lock().await.remove("c1");
+        if let Some(h) = removed {
+            h.abort();
+        }
     }
 
     #[tokio::test]

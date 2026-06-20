@@ -78,6 +78,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     systemSrc,
     recapElapsedSec,
     setRecapElapsedSec,
+    bgBusy,
+    setBgBusy,
     loading,
     error,
     setError,
@@ -91,8 +93,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [confirmingTag, setConfirmingTag] = useState<string | null>(null);
 
   const [deleting, setDeleting] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
-  const [regeneratingTitle, setRegeneratingTitle] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [forceRestting, setForceRestting] = useState(false);
@@ -227,52 +227,41 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     }
   };
 
+  // [Global regen] Fire-and-forget: команда regenerate_recap регистрирует
+  // фон-задачу в pipeline_tasks и возвращается сразу. Результат подтянет
+  // pipeline:finished listener (refetchAll в useCallDetail) даже после возврата
+  // на страницу; busy-флаг (bgBusy) сбросит он же. Задача переживает навигацию
+  // и считается в бейдже у «Звонки».
   const onRegenerateRecap = async () => {
-    setRegenerating(true);
+    setBgBusy(true);
     setError(null);
-    // [P1.3] Сброс elapsed timer'а на старте — UI начинает с «Пересоздаём…»
-    // (без «… 0s») пока первый periodic event не придёт через 15s.
+    // [P1.3] Сброс elapsed timer'а на старте — UI начинает с «Пересоздаём…».
     setRecapElapsedSec(null);
-    // [Bug-fix] Optimistic clear stale recap_failed_reason — баннер исчезает
-    // сразу при клике, чтобы юзер не видел старую ошибку пока идёт новая
-    // попытка. Если новая попытка упадёт, refetchAll вернёт актуальный
-    // failed_reason (с свежим engine label).
-    // [P16.1] Snapshot pre-patch — revert sync на reject.
+    // [Bug-fix #6] Регенерация запущена — recap-regen suggestion больше не нужен.
+    setPendingRecapRegen(false);
+    // Optimistic clear stale recap_failed_reason; snapshot для revert на reject.
     const snapshotBefore = call;
     setCall((prev) => (prev ? { ...prev, recap_failed_reason: null } : prev));
     try {
       await regenerateRecap(callId);
-      // [M14 T-15] refetchAll вместо узкого recap+tasks. После legacy v1 →
-      // v2 миграции меняются и Call.summary_schema_version (нужно чтобы
-      // LegacyRecapBanner исчез), и decisions/open_questions (новые v2-блоки
-      // в Рекап табе), и call_type (CallTypeBadge в header).
-      await refetchAll();
-      // [Bug-fix #6] Регенерация прошла — recap-regen suggestion больше не нужен.
-      setPendingRecapRegen(false);
     } catch (e) {
+      // Reject = guard «уже обрабатывается» / spawn-ошибка → revert busy + state.
       setError(t('callDetail.regenerateFailed', { error: humanError(e) }));
-      // [P16.1] Revert recap_failed_reason clear — backend reject не
-      // должен показать UI что прошлая ошибка исчезла.
       if (snapshotBefore) setCall(snapshotBefore);
-    } finally {
-      setRegenerating(false);
-      // [P1.3] Final reset — даже если событие пришло позже completion.
-      setRecapElapsedSec(null);
+      setBgBusy(false);
     }
   };
 
-  // [M14 T-17] Lightweight title-only regen. После success — refetchAll чтобы
-  // header показал новый title (Call object подтянет updated row).
+  // [M14 T-17 / Global regen] Title regen — тоже фон-задача. Новый title
+  // подтянется через refetchAll на pipeline:finished.
   const onRegenerateTitle = async () => {
-    setRegeneratingTitle(true);
+    setBgBusy(true);
     setError(null);
     try {
       await regenerateTitle(callId);
-      await refetchAll();
     } catch (e) {
       setError(t('callDetail.regenerateTitleFailed', { error: humanError(e) }));
-    } finally {
-      setRegeneratingTitle(false);
+      setBgBusy(false);
     }
   };
 
@@ -388,9 +377,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           onExport={() => void onExportMarkdown()}
           onDelete={onDelete}
           reprocessing={reprocessing}
-          regenerating={regenerating}
+          regenerating={bgBusy}
           regenerateDisabled={!transcript}
-          regeneratingTitle={regeneratingTitle}
+          regeneratingTitle={bgBusy}
           regenerateTitleDisabled={!transcript}
           exporting={exporting}
           deleting={deleting}
@@ -489,9 +478,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             type="button"
             className="btn btn--primary btn--sm"
             onClick={() => void onRegenerateRecap()}
-            disabled={regenerating}
+            disabled={bgBusy}
           >
-            {regenerating ? t('callDetail.regenerating') : t('callDetail.regenerateRecap')}
+            {bgBusy ? t('callDetail.regenerating') : t('callDetail.regenerateRecap')}
           </button>
         </div>
       )}
@@ -512,7 +501,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         recap !== null &&
         call.status !== 'processing' && (
           <LegacyRecapBanner
-            busy={regenerating}
+            busy={bgBusy}
             onUpgrade={() => void onRegenerateRecap()}
           />
         )}
@@ -525,7 +514,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         recap !== null &&
         call.status !== 'processing' && (
           <RecapRegenSuggestionStrip
-            busy={regenerating}
+            busy={bgBusy}
             onRegenerate={() => void onRegenerateRecap()}
             onDismiss={() => setPendingRecapRegen(false)}
           />
@@ -569,7 +558,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             md={recap}
             emptyHint={t('callDetail.emptyRecap')}
             onRegenerate={() => void onRegenerateRecap()}
-            regenerating={regenerating}
+            regenerating={bgBusy}
             regenerateDisabled={!transcript || reprocessing || forceRestting}
             emptyBody={
               call.recap_failed_reason

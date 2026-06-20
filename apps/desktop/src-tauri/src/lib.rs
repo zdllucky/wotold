@@ -621,6 +621,7 @@ pub fn run() {
             commands::cancel_reprocess,
             commands::regenerate_empty_recaps,
             commands::cancel_bulk_recap,
+            commands::is_call_processing,
             commands::get_active_pipeline_count,
             commands::list_call_chunks,
             commands::retry_chunk,
