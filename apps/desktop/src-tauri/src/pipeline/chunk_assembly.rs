@@ -338,6 +338,7 @@ mod tests {
 
     /// Расширенный helper: дополнительно сериализованный
     /// `HashMap<String, Vec<f32>>` для per-chunk embeddings_json (M13.2.1).
+    #[allow(clippy::too_many_arguments)]
     async fn add_done_chunk_full(
         pool: &SqlitePool,
         call_id: &str,
