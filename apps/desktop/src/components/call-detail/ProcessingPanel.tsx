@@ -21,7 +21,11 @@
 
 import type { Call, CallChunk } from '../../api/recording';
 import { ChunkFailureAccordion, PipelineStrip } from '../call-state';
-import { PIPELINE_STEP_KEYS, type CallProgress } from '../../types/callState';
+import {
+  PIPELINE_STEP_KEYS,
+  pipelineStepKey,
+  type CallProgress,
+} from '../../types/callState';
 import { useI18n } from '../../i18n';
 
 interface ProcessingPanelProps {
@@ -43,12 +47,12 @@ export function ProcessingPanel({ call, chunks, onRetryChunk }: ProcessingPanelP
   ) as CallProgress['step']);
   const pct = Math.max(0, Math.min(100, call.pipeline_pct ?? 0));
   const eta = call.pipeline_eta_sec ?? undefined;
-  const stageKey =
-    PIPELINE_STEP_KEYS[step - 1] ?? PIPELINE_STEP_KEYS[0];
+  // Единый источник лейбла шага (тот же helper, что CallsPage тег) — список и
+  // деталь не могут показать разный шаг для одного звонка.
   const progress: CallProgress = {
     step,
     pct,
-    stageLabel: t(stageKey),
+    stageLabel: t(pipelineStepKey(call.pipeline_step)),
     etaSec: eta,
   };
   const hasFailedChunks = (chunks ?? []).some((c) => c.status === 'failed');

@@ -71,5 +71,27 @@ export const PIPELINE_STEP_KEYS = [
   'pipeline.step5', // «Готовим рекап и задачи»
 ] as const;
 
+/**
+ * ЕДИНЫЙ источник ключа лейбла текущего шага из сырого `pipeline_step`.
+ * Используется и CallsPage (тег + подзаголовок строки), и ProcessingPanel
+ * (PipelineStrip на CallDetail) — чтобы лейбл шага физически не мог разойтись
+ * между экранами.
+ *
+ * NULL / undefined / NaN / 0 → step1 (только-что-стартовавшая обработка до
+ * первого `set_call_progress`). Раньше CallsPage дефолтил в step3, а
+ * ProcessingPanel в step1 — отсюда «список: шаг 3, деталь: шаг 1» на одном
+ * и том же звонке. Теперь дефолт един.
+ */
+export function pipelineStepKey(
+  pipelineStep: number | null | undefined,
+): (typeof PIPELINE_STEP_KEYS)[number] {
+  const n =
+    typeof pipelineStep === 'number' && Number.isFinite(pipelineStep)
+      ? Math.trunc(pipelineStep)
+      : 1;
+  const clamped = Math.min(Math.max(n, 1), PIPELINE_STEP_KEYS.length);
+  return PIPELINE_STEP_KEYS[clamped - 1]!;
+}
+
 /** Max retries (matches pipeline::retry::RetryConfig). */
 export const PIPELINE_MAX_RETRIES = 3;
