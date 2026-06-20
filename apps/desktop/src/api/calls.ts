@@ -79,7 +79,8 @@ export function regenerateRecap(callId: string): Promise<void> {
   return invoke<void>('regenerate_recap', { callId });
 }
 
-/** [M14 T-17] Lightweight title-only regen. Returns new title (already persisted in DB). */
+/** [M14 T-17] Lightweight title-only regen. Engine-aware: Local-движок → локальный
+ *  Qwen (~5-10s), cloud → Anthropic (мгновенно). Returns new title (persisted in DB). */
 export function regenerateTitle(callId: string): Promise<string> {
   return invoke<string>('regenerate_title', { callId });
 }
