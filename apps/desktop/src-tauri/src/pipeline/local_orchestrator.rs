@@ -120,10 +120,15 @@ pub(crate) async fn run_v2_pipeline(
             input: ctx.transcript_md.to_string(),
             max_tokens: Some(MAIN_MAX_TOKENS),
             grammar: None,
+            json_schema: None,
         };
-        gbnf::generate_with_grammar_fallback(provider, request)
-            .await
-            .map_err(|e| AppError::Other(format!("local llm: {e}")))?
+        gbnf::generate_with_schema(
+            provider,
+            request,
+            crate::pipeline::llm_schemas::SUMMARY_V2_JSON_SCHEMA,
+        )
+        .await
+        .map_err(|e| AppError::Other(format!("local llm: {e}")))?
     };
 
     // 4. [M14 T-08 Phase D] Action-item post-pass — best-effort refinement

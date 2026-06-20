@@ -135,6 +135,7 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
         input: ctx.transcript_md.to_string(),
         max_tokens: Some(4096),
         grammar: None,
+        json_schema: None,
     };
 
     let started = Instant::now();

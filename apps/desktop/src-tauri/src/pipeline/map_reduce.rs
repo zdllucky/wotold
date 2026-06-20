@@ -181,6 +181,7 @@ pub(crate) async fn run_map_reduce(
             input: chunk.clone(),
             max_tokens: Some(MAP_MAX_TOKENS),
             grammar: None,
+            json_schema: None,
         };
         match gbnf::generate_with_grammar_fallback(provider, request).await {
             Ok(json_value) => map_outputs.push(json_value),
@@ -217,10 +218,15 @@ pub(crate) async fn run_map_reduce(
         input: String::new(),
         max_tokens: Some(REDUCE_MAX_TOKENS),
         grammar: None,
+        json_schema: None,
     };
-    gbnf::generate_with_grammar_fallback(provider, request)
-        .await
-        .map_err(|e| AppError::Other(format!("reduce llm: {e}")))
+    gbnf::generate_with_schema(
+        provider,
+        request,
+        crate::pipeline::llm_schemas::SUMMARY_V2_JSON_SCHEMA,
+    )
+    .await
+    .map_err(|e| AppError::Other(format!("reduce llm: {e}")))
 }
 
 // ── [M14 T-18 P2] Hierarchical 3-level pipeline ──────────────────────────
@@ -282,6 +288,7 @@ async fn run_single_mid_reduce(
         input: group_json,
         max_tokens: Some(MID_REDUCE_MAX_TOKENS),
         grammar: None,
+        json_schema: None,
     };
     gbnf::generate_with_grammar_fallback(provider, request)
         .await
@@ -328,6 +335,7 @@ pub(crate) async fn run_pipeline(
             input: chunk.clone(),
             max_tokens: Some(MAP_MAX_TOKENS),
             grammar: None,
+            json_schema: None,
         };
         match gbnf::generate_with_grammar_fallback(provider, request).await {
             Ok(json_value) => map_outputs.push(json_value),
@@ -370,10 +378,15 @@ pub(crate) async fn run_pipeline(
         input: String::new(),
         max_tokens: Some(REDUCE_MAX_TOKENS),
         grammar: None,
+        json_schema: None,
     };
-    gbnf::generate_with_grammar_fallback(provider, request)
-        .await
-        .map_err(|e| AppError::Other(format!("hierarchical final reduce llm: {e}")))
+    gbnf::generate_with_schema(
+        provider,
+        request,
+        crate::pipeline::llm_schemas::SUMMARY_V2_JSON_SCHEMA,
+    )
+    .await
+    .map_err(|e| AppError::Other(format!("hierarchical final reduce llm: {e}")))
 }
 
 #[cfg(test)]

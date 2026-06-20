@@ -18,6 +18,12 @@ pub struct LlmRequest {
     /// `AnthropicProvider` игнорирует (proxy validates JSON через API).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grammar: Option<String>,
+    /// Optional JSON Schema text. Сильнее `grammar`: llama.cpp конвертит схему
+    /// в GBNF и форсит ИМЕННО форму (required-поля, enum, массивы). `LocalLlama`
+    /// пишет в temp + передаёт `--json-schema-file`; `Anthropic` игнорирует.
+    /// Если задано — провайдер использует схему вместо `grammar`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub json_schema: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]

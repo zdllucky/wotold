@@ -113,10 +113,15 @@ pub(crate) async fn classify_call(
         input: transcript_head.to_string(),
         max_tokens: Some(256), // Compact output — экономим латентность
         grammar: None,
+        json_schema: None,
     };
-    let json_value = gbnf::generate_with_grammar_fallback(provider, request)
-        .await
-        .map_err(|e| AppError::Other(format!("classifier llm: {e}")))?;
+    let json_value = gbnf::generate_with_schema(
+        provider,
+        request,
+        crate::pipeline::llm_schemas::CLASSIFIER_JSON_SCHEMA,
+    )
+    .await
+    .map_err(|e| AppError::Other(format!("classifier llm: {e}")))?;
     parse_classifier_response(json_value)
 }
 
