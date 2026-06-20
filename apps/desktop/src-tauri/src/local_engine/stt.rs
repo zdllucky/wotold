@@ -109,7 +109,9 @@ impl LocalWhisperProvider {
         self
     }
 
+    // [CI] dead_code под default-features --all-targets — caller voice-onnx-gated.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn with_tmp_dir(mut self, dir: PathBuf) -> Self {
         self.tmp_dir = dir;
         self

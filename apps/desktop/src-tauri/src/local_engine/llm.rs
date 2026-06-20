@@ -145,7 +145,10 @@ impl LocalLlamaProvider {
     }
 
     /// Override temp dir для тестов (изолируем prompt-файлы).
+    /// [CI] `--all-targets` default-features clippy флагует dead_code т.к.
+    /// текущие callers — voice-onnx-gated; helper сохраняем для future tests.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn with_tmp_dir(mut self, dir: PathBuf) -> Self {
         self.tmp_dir = dir;
         self
