@@ -94,6 +94,13 @@ fn default_commitment() -> ActionItemCategory {
     ActionItemCategory::Commitment
 }
 
+/// Default `id` для items, когда модель его не эмитит (JSON-schema не требует
+/// id — мелкие local-модели часто опускают). Без serde-default serde падал на
+/// `missing field id` → весь CallSummaryV2 parse откатывался на v1 legacy.
+fn gen_item_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 /// Substring-anchored evidence quote. `quote` обязательно verbatim substring
 /// transcript'а (≥ 90% fuzzy match per [`crate::pipeline::summary_validator`]).
 /// Если evidence не найдётся — caller drop'ит item (degraded ok).
@@ -112,6 +119,7 @@ pub struct EvidenceAnchor {
 /// badges per PRD §7.2.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionItemV2 {
+    #[serde(default = "gen_item_id")]
     pub id: String,
     pub text: String,
     #[serde(default, alias = "ownerHint")]
@@ -133,6 +141,7 @@ pub struct ActionItemV2 {
 /// Decision (явный выбор сделанный в звонке).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Decision {
+    #[serde(default = "gen_item_id")]
     pub id: String,
     pub text: String,
     #[serde(default)]
@@ -144,6 +153,7 @@ pub struct Decision {
 /// Open question (поднятый, не разрешённый вопрос).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenQuestion {
+    #[serde(default = "gen_item_id")]
     pub id: String,
     pub text: String,
     #[serde(default, alias = "raisedBy")]
@@ -227,6 +237,22 @@ mod tests {
         let json_no_cat = r#"{"id":"a1","text":"do stuff"}"#;
         let ai: ActionItemV2 = serde_json::from_str(json_no_cat).unwrap();
         assert_eq!(ai.category, ActionItemCategory::Commitment);
+    }
+
+    #[test]
+    fn items_without_id_get_autogen_default() {
+        // [Fix B2] Слабая local-модель часто опускает `id` (schema его не
+        // требует). Раньше serde падал на missing field → весь CallSummaryV2
+        // откатывался на v1 legacy. Теперь id авто-генерится, parse проходит.
+        let ai: ActionItemV2 = serde_json::from_str(r#"{"text":"no id here"}"#).unwrap();
+        assert!(!ai.id.is_empty(), "id должен авто-сгенериться");
+        let d: Decision = serde_json::from_str(r#"{"text":"decided"}"#).unwrap();
+        assert!(!d.id.is_empty());
+        let q: OpenQuestion = serde_json::from_str(r#"{"text":"open?"}"#).unwrap();
+        assert!(!q.id.is_empty());
+        // Два разных item'а получают разные id.
+        let a2: ActionItemV2 = serde_json::from_str(r#"{"text":"x"}"#).unwrap();
+        assert_ne!(ai.id, a2.id);
     }
 
     #[test]

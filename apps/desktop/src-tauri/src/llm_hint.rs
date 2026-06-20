@@ -59,6 +59,7 @@ pub async fn request_speaker_hints(
         input: prompt,
         max_tokens: Some(800),
         grammar: None,
+        json_schema: None,
     };
 
     // AnthropicProvider возвращает уже распарсенный JSON (Value).

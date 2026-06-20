@@ -71,6 +71,21 @@ pub(crate) async fn generate_with_grammar_fallback(
     provider.generate(request).await
 }
 
+/// [M14 follow-up] Generate под **строгую JSON Schema** (сильнее generic
+/// grammar). `LocalLlamaProvider` передаёт `--json-schema-file` → llama.cpp
+/// конвертит схему в GBNF и форсит ИМЕННО форму (required-поля, enum, массивы).
+/// Используется на стейджах с known shape: classifier (`CLASSIFIER_JSON_SCHEMA`)
+/// и main/reduce summary (`SUMMARY_V2_JSON_SCHEMA`). Cloud-провайдер игнорит
+/// `json_schema`. Single attempt — без retry (как grammar-вариант).
+pub(crate) async fn generate_with_schema(
+    provider: &dyn LlmProvider,
+    mut request: LlmRequest,
+    json_schema: &str,
+) -> Result<Value, LlmError> {
+    request.json_schema = Some(json_schema.to_string());
+    provider.generate(request).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,6 +129,7 @@ mod tests {
             input: "input".into(),
             max_tokens: Some(1024),
             grammar: None,
+            json_schema: None,
         }
     }
 
@@ -189,5 +205,23 @@ mod tests {
             captured[0].grammar.as_deref(),
             Some(UNIVERSAL_JSON_OBJECT_GRAMMAR)
         );
+    }
+
+    #[tokio::test]
+    async fn schema_variant_sets_json_schema_not_grammar() {
+        // generate_with_schema форсит форму через json_schema (→ --json-schema-file),
+        // grammar при этом НЕ ставится.
+        let mock = MockProvider::new(vec![Ok(serde_json::json!({"ok": true}))]);
+        let schema = r#"{"type":"object","required":["call_type"]}"#;
+        let _ = generate_with_schema(&mock, dummy_request(), schema)
+            .await
+            .unwrap();
+        let captured = mock.captured();
+        assert_eq!(captured[0].json_schema.as_deref(), Some(schema));
+        assert!(
+            captured[0].grammar.is_none(),
+            "в schema-режиме grammar не ставится"
+        );
+        assert_eq!(mock.call_count(), 1, "single attempt");
     }
 }

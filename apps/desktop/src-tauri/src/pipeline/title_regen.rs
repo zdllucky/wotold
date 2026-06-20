@@ -146,6 +146,7 @@ pub async fn regenerate_title(
         input: head.to_string(),
         max_tokens: Some(TITLE_MAX_TOKENS),
         grammar: None,
+        json_schema: None,
     };
 
     let provider = AnthropicProvider::new(mode);

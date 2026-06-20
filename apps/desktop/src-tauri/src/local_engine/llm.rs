@@ -146,6 +146,7 @@ impl LocalLlamaProvider {
 
     /// Override temp dir для тестов (изолируем prompt-файлы).
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn with_tmp_dir(mut self, dir: PathBuf) -> Self {
         self.tmp_dir = dir;
         self
@@ -229,6 +230,22 @@ impl LlmProvider for LocalLlamaProvider {
             None
         };
 
+        // [M14 follow-up] Optional JSON Schema file. Когда request.json_schema set —
+        // пишем во временный файл + передаём `--json-schema-file <path>`; llama.cpp
+        // сам конвертит схему в GBNF и форсит форму. Сильнее generic grammar.
+        let schema_path: Option<PathBuf> = if let Some(schema_text) = &request.json_schema {
+            let path = self
+                .tmp_dir
+                .join(format!("wotold-schema-{}.json", uuid::Uuid::new_v4()));
+            write_user_only(&path, schema_text.as_bytes())
+                .await
+                .map_err(|e| LlmError::Provider(format!("json-schema write: {e}")))?;
+            ensure_path_under(&path, &self.tmp_dir).map_err(LlmError::Provider)?;
+            Some(path)
+        } else {
+            None
+        };
+
         let max_tokens = request
             .max_tokens
             .map(|n| n.clamp(256, 8192))
@@ -247,6 +264,14 @@ impl LlmProvider for LocalLlamaProvider {
             .map(|p| {
                 p.to_str()
                     .ok_or_else(|| LlmError::Provider("non-utf8 grammar path".into()))
+                    .map(|s| s.to_string())
+            })
+            .transpose()?;
+        let schema_path_str: Option<String> = schema_path
+            .as_ref()
+            .map(|p| {
+                p.to_str()
+                    .ok_or_else(|| LlmError::Provider("non-utf8 schema path".into()))
                     .map(|s| s.to_string())
             })
             .transpose()?;
@@ -305,6 +330,9 @@ impl LlmProvider for LocalLlamaProvider {
         if let Some(g) = grammar_path_str.as_deref() {
             sidecar = sidecar.args(["--grammar-file", g]);
         }
+        if let Some(s) = schema_path_str.as_deref() {
+            sidecar = sidecar.args(["--json-schema-file", s]);
+        }
 
         // [M14 T-16 P2] Speculative decoding — добавить `--model-draft <path>`
         // когда draft model configured AND file exists. Если file отсутствует
@@ -326,10 +354,13 @@ impl LlmProvider for LocalLlamaProvider {
 
         let result = run_sidecar_with_timeout(sidecar, self.timeout).await;
 
-        // 3. Чистим prompt-файл + grammar-файл (если был) вне зависимости от исхода.
+        // 3. Чистим prompt + grammar + schema файлы (если были) вне зависимости от исхода.
         let _ = tokio::fs::remove_file(&prompt_path).await;
         if let Some(g) = grammar_path.as_ref() {
             let _ = tokio::fs::remove_file(g).await;
+        }
+        if let Some(s) = schema_path.as_ref() {
+            let _ = tokio::fs::remove_file(s).await;
         }
 
         let stdout = result?;
@@ -697,6 +728,7 @@ mod tests {
                 input: "transcript".to_string(),
                 max_tokens: Some(1024),
                 grammar: None,
+                json_schema: None,
             })
             .await
             .expect_err("stub must error");
@@ -731,6 +763,7 @@ mod tests {
             input: "BODY".into(),
             max_tokens: None,
             grammar: None,
+            json_schema: None,
         };
         let p = build_prompt(&req);
         assert!(p.starts_with("SYS"));
@@ -750,6 +783,7 @@ mod tests {
             input: "BODY".into(),
             max_tokens: None,
             grammar: None,
+            json_schema: None,
         };
         let p = build_prompt(&req);
         assert!(p.contains("SYS\n\nBODY"));

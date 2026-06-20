@@ -122,6 +122,10 @@ pub(crate) mod g_eval;
 // Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
 pub(crate) mod local_orchestrator;
 
+// [M14 follow-up] JSON Schemas для schema-constrained local generation —
+// форсят v2-форму через llama `--json-schema-file` (вместо generic json.gbnf).
+pub(crate) mod llm_schemas;
+
 pub use merge::{merge_tracks, render_transcript_md};
 pub use settings::PipelineSettings;
 pub use stage::Stage;
