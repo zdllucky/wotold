@@ -20,6 +20,7 @@
 
 use sqlx::SqlitePool;
 
+use crate::pipeline::voice_sample_picker::best_sample_segment;
 use crate::AppError;
 
 /// Если speaker УЖЕ confirmed и контакт opt-in (consent_voice='true'), то
@@ -32,11 +33,16 @@ use crate::AppError;
 /// - `Ok(false)` — backfill пропущен (нет consent / не confirmed / no contact /
 ///   пустой embedding). Это НЕ ошибка — нормальный flow.
 /// - `Err(_)` — SQL / serde ошибка. Caller'у решать (pipeline логирует warning).
+///
+/// [P4] `raw_stt_json` — содержимое merged `raw_stt.json` artifact (caller
+/// читает с диска once per pipeline run). `None` либо malformed → INSERT
+/// без slice metadata (graceful, не блокирует backfill).
 pub async fn maybe_backfill_voice_sample(
     pool: &SqlitePool,
     call_id: &str,
     speaker_tag: &str,
     embedding_blob: &[u8],
+    raw_stt_json: Option<&str>,
 ) -> Result<bool, AppError> {
     if embedding_blob.is_empty() {
         return Ok(false);
@@ -99,10 +105,22 @@ pub async fn maybe_backfill_voice_sample(
     let voice_sample_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
     let quality = suggestion_score.unwrap_or(1.0);
+
+    // [P4] Best-segment slice metadata — для playback short audio fragment.
+    // None если raw_stt_json missing/malformed либо нет segments ≥ 1.5 sec
+    // для speaker_tag. Legacy fallback: INSERT с NULL'ями (UI выключает play).
+    let slice = raw_stt_json
+        .and_then(|json| best_sample_segment(json, speaker_tag, crate::pipeline::merge::OWNER_TAG));
+    let (start_sec, end_sec, track_kind) = match slice {
+        Some((s, e, t)) => (Some(s), Some(e), Some(t.as_str().to_string())),
+        None => (None, None, None),
+    };
+
     sqlx::query(
         "INSERT INTO voice_samples
-           (id, contact_id, embedding, source_call, quality, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+           (id, contact_id, embedding, source_call, quality, created_at,
+            start_sec, end_sec, track_kind)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )
     .bind(&voice_sample_id)
     .bind(&cid)
@@ -110,6 +128,9 @@ pub async fn maybe_backfill_voice_sample(
     .bind(call_id)
     .bind(quality)
     .bind(&now)
+    .bind(start_sec)
+    .bind(end_sec)
+    .bind(&track_kind)
     .execute(&mut *tx)
     .await?;
 
@@ -179,7 +200,7 @@ mod tests {
         let alice = insert_contact_with_consent(&db.pool, "Alice", true).await;
         insert_confirmed_speaker(&db.pool, &call.id, "S1", &alice).await;
 
-        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[])
+        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[], None)
             .await
             .unwrap();
         assert!(!inserted);
@@ -194,9 +215,10 @@ mod tests {
     async fn unknown_speaker_returns_false() {
         let db = fresh_db().await;
         let call = insert_recording(&db.pool, "managed").await.unwrap();
-        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "ghost", &[1, 2, 3, 4])
-            .await
-            .unwrap();
+        let inserted =
+            maybe_backfill_voice_sample(&db.pool, &call.id, "ghost", &[1, 2, 3, 4], None)
+                .await
+                .unwrap();
         assert!(!inserted);
     }
 
@@ -217,7 +239,7 @@ mod tests {
         .await
         .unwrap();
 
-        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[1, 2, 3, 4])
+        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[1, 2, 3, 4], None)
             .await
             .unwrap();
         assert!(!inserted);
@@ -230,7 +252,7 @@ mod tests {
         let bob = insert_contact_with_consent(&db.pool, "Bob", false).await;
         insert_confirmed_speaker(&db.pool, &call.id, "S1", &bob).await;
 
-        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[1, 2, 3, 4])
+        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[1, 2, 3, 4], None)
             .await
             .unwrap();
         assert!(!inserted);
@@ -243,7 +265,7 @@ mod tests {
         let alice = insert_contact_with_consent(&db.pool, "Alice", true).await;
         insert_confirmed_speaker(&db.pool, &call.id, "S1", &alice).await;
 
-        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[1, 2, 3, 4])
+        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[1, 2, 3, 4], None)
             .await
             .unwrap();
         assert!(inserted);
@@ -256,6 +278,63 @@ mod tests {
         assert_eq!(samples, 1);
     }
 
+    // [P4] Slice metadata persisted при наличии rawStt + ≥1.5s segment.
+    #[tokio::test]
+    async fn persists_slice_metadata_when_raw_stt_provided() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = insert_contact_with_consent(&db.pool, "Alice", true).await;
+        insert_confirmed_speaker(&db.pool, &call.id, "owner", &alice).await;
+
+        let raw_stt = serde_json::json!({
+            "merged": [
+                { "speakerTag": "owner", "start": 0.0, "end": 2.0, "text": "hi" },
+                { "speakerTag": "owner", "start": 3.0, "end": 8.0, "text": "longer one" },
+            ]
+        })
+        .to_string();
+
+        let inserted =
+            maybe_backfill_voice_sample(&db.pool, &call.id, "owner", &[1, 2, 3, 4], Some(&raw_stt))
+                .await
+                .unwrap();
+        assert!(inserted);
+
+        let (start, end, track): (Option<f64>, Option<f64>, Option<String>) = sqlx::query_as(
+            "SELECT start_sec, end_sec, track_kind FROM voice_samples WHERE contact_id = ?1",
+        )
+        .bind(&alice)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert_eq!(start, Some(3.0));
+        assert_eq!(end, Some(8.0));
+        assert_eq!(track.as_deref(), Some("mic"));
+    }
+
+    // [P4] None rawStt → INSERT с NULL'ями (legacy-compat fallback).
+    #[tokio::test]
+    async fn null_slice_metadata_when_no_raw_stt() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = insert_contact_with_consent(&db.pool, "Alice", true).await;
+        insert_confirmed_speaker(&db.pool, &call.id, "S1", &alice).await;
+
+        let inserted = maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[1, 2, 3, 4], None)
+            .await
+            .unwrap();
+        assert!(inserted);
+
+        let (start, end, track): (Option<f64>, Option<f64>, Option<String>) = sqlx::query_as(
+            "SELECT start_sec, end_sec, track_kind FROM voice_samples WHERE contact_id = ?1",
+        )
+        .bind(&alice)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+        assert!(start.is_none() && end.is_none() && track.is_none());
+    }
+
     #[tokio::test]
     async fn idempotent_on_repeat_call() {
         // Reprocess: backfill вызывается дважды, остаётся ровно 1 sample.
@@ -264,10 +343,10 @@ mod tests {
         let alice = insert_contact_with_consent(&db.pool, "Alice", true).await;
         insert_confirmed_speaker(&db.pool, &call.id, "S1", &alice).await;
 
-        maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[1, 2, 3, 4])
+        maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[1, 2, 3, 4], None)
             .await
             .unwrap();
-        maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[5, 6, 7, 8])
+        maybe_backfill_voice_sample(&db.pool, &call.id, "S1", &[5, 6, 7, 8], None)
             .await
             .unwrap();
 

@@ -29,10 +29,15 @@
             { "validator": "^[0-9]+$" },
             "-ngl",
             { "validator": "^[0-9]+$" },
+            "-fa",
+            { "validator": "^(on|off|auto)$" },
+            "-ctk",
+            { "validator": "^(q8_0|q4_0|f16)$" },
+            "-ctv",
+            { "validator": "^(q8_0|q4_0|f16)$" },
             "--no-conversation",
             "--no-display-prompt",
             "--simple-io",
-            "--log-disable",
             "-f",
             { "validator": "^[A-Za-z0-9._/ \\-]+$" },
             "--grammar-file",
@@ -57,8 +62,19 @@
             "--threads",
             { "validator": "^[0-9]+$" },
             "--no-prints",
+            "--temperature",
+            { "validator": "^[0-9]+(\\.[0-9]+)?$" },
             "--prompt",
-            { "validator": "^[^\\r\\n]{0,1000}$" }
+            { "validator": "^[^\\r\\n]{0,1000}$" },
+            "--vad",
+            "--vad-model",
+            { "validator": "^[A-Za-z0-9._/ \\-]+$" },
+            "--vad-threshold",
+            { "validator": "^[0-9]+(\\.[0-9]+)?$" },
+            "--vad-min-speech-duration-ms",
+            { "validator": "^[0-9]+$" },
+            "--vad-min-silence-duration-ms",
+            { "validator": "^[0-9]+$" }
           ]
         }
       ]

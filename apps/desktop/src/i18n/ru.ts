@@ -192,6 +192,8 @@ const ruInternal = {
     reprocessing: 'Переобработка…',
     regenerateRecap: '↻ Пересоздать саммари',
     regenerating: 'Пересоздаём…',
+    // [P1.3] Elapsed timer для local LLM regen — backend шлёт каждые 15s.
+    regeneratingWithElapsed: 'Пересоздаём… {sec}s',
     regenerateNoTranscript: 'Нет транскрипта для регенерации',
     // [M14 T-17] Title-only regen — отдельный lightweight LLM-call.
     regenerateTitle: '↻ Пересоздать название',
@@ -205,6 +207,16 @@ const ruInternal = {
     reprocessConfirmBody:
       'Перезапустить обработку звонка?\n\nЗапись будет заново распознана и пересоздана саммари. Текущая расшифровка и рекап перезапишутся.',
     reprocessConfirmOk: 'Перезапустить',
+    // [P14.1] Force re-STT — destructive action для дропа hallucinated transcripts.
+    forceRestt: '⚠ Распознать заново',
+    forceRestting: 'Распознаём…',
+    forceResttHint:
+      'Дропнуть текущую расшифровку (с галлюцинациями / [FOREIGN] метками) и распознать с нуля',
+    forceResttConfirmTitle: 'Распознать заново?',
+    forceResttConfirmBody:
+      'Удалить текущую расшифровку и саммари, запустить распознавание заново?\n\nПолезно если запись была обработана старой версией распознавания и содержит галлюцинации или [FOREIGN] метки.',
+    forceResttConfirmOk: 'Распознать заново',
+    forceResttFailed: 'Не удалось перезапустить распознавание: {error}',
     deleteConfirmBody:
       'Удалить звонок «{title}»?\n\nЭто навсегда удалит запись, расшифровку, саммари, задачи и образцы голоса этого звонка.',
     deleteConfirmOk: 'Удалить',
@@ -220,6 +232,17 @@ const ruInternal = {
     retry: 'Попробовать ещё раз',
     retrying: 'Перезапускаем…',
     emptyRecap: 'Саммари ещё не сгенерировано.',
+    // [P14.2] Explicit empty-state с CTA вместо silent placeholder.
+    recapEmptyTitle: 'Саммари не создано',
+    recapEmptyAction: 'Создать саммари',
+    recapEmptyIdle:
+      'Нажми кнопку чтобы Wotold проанализировал расшифровку и сделал саммари.',
+    recapEmptyProcessing:
+      'Pipeline ещё обрабатывает звонок — саммари появится после завершения. Подожди или обнови страницу через минуту.',
+    recapEmptyFailed:
+      'Прошлая попытка упала: {error}\n\nМожно попробовать ещё раз — обычно временные ошибки проходят.',
+    recapEmptyNoTranscript:
+      'Сначала нужна расшифровка — без неё нечего саммаризировать. Попробуй переобработать звонок.',
     emptyTranscript: 'Транскрипт ещё не готов.',
     emptyTasks:
       'Здесь будут задачи, упомянутые в звонке. Пока Wotold их не нашёл — попробуй переобработать звонок или дождись пересборки.',
@@ -347,6 +370,11 @@ const ruInternal = {
     // [Bug-fix] Anonymous chip — sortformer выделил голос, контакт не привязан.
     anonymousLabel: 'Спикер {n}',
     anonymousHint: 'Нажмите чтобы привязать к контакту',
+    // [P14.3] Hint когда спикеров много — overflow noise обычно от
+    // sortformer'а на перекрытиях. User может уточнить через Labs.
+    tooManyBadge: 'много?',
+    tooManyHint:
+      'Если реально меньше — в Настройки → Labs выбери «Принудительное количество спикеров».',
   },
 
   // ── Audio scrubber ─────────────────────────────────────────────────────
@@ -430,6 +458,10 @@ const ruInternal = {
     deleteAria: 'Удалить семпл',
     deleteConfirmBody:
       'Удалить voice sample от {created}?\n\nЭто навсегда удалит embedding из профиля контакта. Биометрия не восстанавливается.',
+    // [P4] Inline play — slice WAV bytes из правильной track (start..end).
+    playAria: 'Прослушать семпл',
+    pauseAria: 'Пауза',
+    playDisabledHint: 'Старый семпл — прослушать недоступно (нет slice metadata)',
   },
 
   // ── Settings — sections + interior content ─────────────────────────────
@@ -578,12 +610,11 @@ const ruInternal = {
       'Использует малую модель 0.5B для draft-токенов параллельно с 7B Quality. 2-3× speedup. Требует preset «Quality» и скачивание дополнительной модели ~380MB.',
     forceNumSpeakersLabel: 'Принудительное количество спикеров',
     forceNumSpeakersHint:
-      'Применяется к следующей переобработке. Используй если знаешь точное количество собеседников и автоматика ошибается. Лимит — 4 спикера.',
+      'Применяется к следующей переобработке. Используй если знаешь точное количество собеседников и автоматика ошибается. Лимит — 3 спикера.',
     forceNumSpeakersOptions: {
       auto: 'Авто (рекомендовано)',
       '2': '2 спикера',
       '3': '3 спикера',
-      '4': '4 спикера',
     },
     wipeBtn: 'Удалить все данные',
     wipeBusy: 'Удаляем…',
@@ -1022,10 +1053,19 @@ const ruInternal = {
     step4: 'Сводим транскрипт',
     step5: 'Готовим саммари и задачи',
   },
-  // [M13.3.3] Chunked pipeline (длинные звонки нарезаются на 10-мин сегменты).
+  // [M13.3.3 / P11.2] Chunked pipeline (длинные звонки нарезаются на 10-мин
+  // сегменты). UX модель: chunks = implementation detail STT-параллелизации,
+  // часть step 2 «Распознаём речь». Видны только при failed (accordion).
   chunkProgress: {
     label: 'Сегменты',
     ofN: '{done} из {total}',
+    // [P11.2] Inline badge на step 2 PipelineStrip — показывает прогресс
+    // chunked-STT во время transcription stage.
+    inlineBadge: '{done} из {total} сегментов',
+    // [P11.2] Accordion title — collapsed по умолчанию, появляется только
+    // когда есть failed chunks. User раскрывает чтобы retry.
+    accordionTitle: 'Не удалось распознать сегменты',
+    accordionHint: 'Раскрой чтобы повторить распознавание неудачных фрагментов',
     statusDone: 'готово',
     statusFailed: 'не удалось',
     statusProcessing: 'обрабатываем',
@@ -1034,6 +1074,9 @@ const ruInternal = {
     retry: '↻ Повторить',
     retrying: 'Повторяем…',
     failedSummary: '{n} из {total} сегментов не удалось — нажми ↻ чтобы переcпавнить.',
+    // [P11.3] Resume-blocked tooltip — disabled-state причина на reprocess
+    // кнопке когда есть failed chunks.
+    resumeBlockedHint: 'Сначала повтори неудачные сегменты',
   },
 } as const;
 

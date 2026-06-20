@@ -31,8 +31,13 @@ use crate::AppError;
 
 /// Per-chunk map output: small max_tokens (~1024) — JSON компактнее full v2.
 const MAP_MAX_TOKENS: u32 = 1024;
-/// Final reduce: full CallSummaryV2 — 4096 tokens достаточно.
-const REDUCE_MAX_TOKENS: u32 = 4096;
+/// Final reduce: full CallSummaryV2.
+/// [P8.2] Понижен с 4096 → 1536 — зеркало MAIN_MAX_TOKENS в
+/// `local_orchestrator`. Финальный reduce агрегирует mid-reduce'ы (которые
+/// уже compact) → JSON shape тот же что в single-pass main recap. 1500
+/// tokens достаточно для typical-length call. На очень длинных звонках
+/// (>2 час, >12 chunks) могут truncate'нуться details — known trade-off.
+const REDUCE_MAX_TOKENS: u32 = 1536;
 /// [M14 T-18 P2] Hierarchical pipeline trigger — когда `chunks.len()`
 /// больше этого порога, переключаемся на 3-level (map → mid-reduce per
 /// group → final reduce). Меньше — flat 2-level path (run_map_reduce).
@@ -547,14 +552,10 @@ mod tests {
 
     #[tokio::test]
     async fn run_map_reduce_skips_failed_map_continues_reduce() {
-        // [M14 T-09 Phase E] gbnf wrapper retries failing map call — need
-        // 2 Err для chunk 1 (initial + grammar retry).
+        // [P8.3] gbnf wrapper больше не ретраит — single attempt per call.
         let mock = MockProvider::new(vec![
             Ok(minimal_map_json(0)),
-            Err(LlmError::Provider("simulated map crash 1".into())),
-            Err(LlmError::Provider(
-                "simulated map crash 2 (grammar retry)".into(),
-            )),
+            Err(LlmError::Provider("simulated map crash".into())),
             Ok(minimal_map_json(2)),
             Ok(minimal_v2_json()),
         ]);
@@ -565,8 +566,8 @@ mod tests {
         assert_eq!(result["schema_version"], 2);
 
         let systems = mock.captured_systems();
-        // chunk0 (1) + chunk1 attempts (2) + chunk2 (1) + reduce (1) = 5.
-        assert_eq!(systems.len(), 5, "expected 5 calls");
+        // chunk0 (1) + chunk1 fail (1) + chunk2 (1) + reduce (1) = 4 calls.
+        assert_eq!(systems.len(), 4, "expected 4 calls (single attempt each)");
         // Reduce — последний, должен видеть только 2 map outputs (idx 0 и 2).
         let reduce_prompt = systems.last().unwrap();
         assert!(reduce_prompt.contains("fact from chunk 0"));
@@ -576,13 +577,10 @@ mod tests {
 
     #[tokio::test]
     async fn run_map_reduce_all_maps_fail_returns_error() {
-        // [M14 T-09 Phase E] gbnf wrapper retries each map — need 4 Err total
-        // для 2 chunks × 2 attempts.
+        // [P8.3] gbnf wrapper больше не ретраит — single attempt per chunk.
         let mock = MockProvider::new(vec![
-            Err(LlmError::Provider("c0 attempt 1".into())),
-            Err(LlmError::Provider("c0 attempt 2 (grammar)".into())),
-            Err(LlmError::Provider("c1 attempt 1".into())),
-            Err(LlmError::Provider("c1 attempt 2 (grammar)".into())),
+            Err(LlmError::Provider("c0 crash".into())),
+            Err(LlmError::Provider("c1 crash".into())),
         ]);
         let chunks = vec!["c0".to_string(), "c1".to_string()];
         let err = run_map_reduce(&mock, &chunks, None, None, None)
@@ -688,10 +686,8 @@ mod tests {
             "decisions_candidates": [], "action_candidates": [],
             "open_questions_candidates": [], "topic_tags": [], "participants_mentioned": []
         })));
+        // [P8.3] Single attempt — no grammar retry.
         responses.push(Err(LlmError::Provider("mid-reduce crash".into())));
-        responses.push(Err(LlmError::Provider(
-            "mid-reduce crash grammar retry".into(),
-        )));
         responses.push(Ok(serde_json::json!({
             "group_idx": 2, "facts": ["g2"],
             "decisions_candidates": [], "action_candidates": [],
@@ -714,9 +710,9 @@ mod tests {
 
     #[tokio::test]
     async fn run_pipeline_all_maps_fail_returns_error() {
-        // 9 chunks, все map calls fail (с grammar retry — 2 attempts each = 18 errs).
+        // [P8.3] 9 chunks, все map calls fail — 1 attempt each = 9 errs.
         let mut responses: Vec<Result<serde_json::Value, LlmError>> = Vec::new();
-        for i in 0..18 {
+        for i in 0..9 {
             responses.push(Err(LlmError::Provider(format!("crash {i}"))));
         }
         let mock = MockProvider::new(responses);
@@ -737,8 +733,8 @@ mod tests {
         for i in 0..9 {
             responses.push(Ok(minimal_map_json(i)));
         }
-        // 3 groups × 2 attempts (retry) = 6 errors.
-        for i in 0..6 {
+        // [P8.3] 3 groups × 1 attempt = 3 errors.
+        for i in 0..3 {
             responses.push(Err(LlmError::Provider(format!("mid-reduce crash {i}"))));
         }
         let mock = MockProvider::new(responses);

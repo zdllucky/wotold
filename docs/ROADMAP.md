@@ -26,6 +26,7 @@
 - Real OnnxEmbedder (`#[cfg(feature = "voice-onnx")]`) + Kaldi-style fbank preprocessing + integration test против reference Python WeSpeaker output. Pipeline уже готов (B3.1–B3.6 scaffold): извлечение clusters, persist в `call_speakers.cluster_embedding`, matching против consenting voice_samples, suggestion + confirm hook записывающий voice_samples — всё работает «вхолостую» (StubEmbedder возвращает empty → нет данных). Как только модель + preprocessing появятся в `$APP_DATA/models/embedder.onnx`, `try_load_onnx_embedder` подменит Stub и biometric matching включится без UI-изменений.
 
 **Активный backlog (пост-MVP улучшения):**
+- Chunked pipeline + local-engine tech-debt: см. [docs/CHUNKED_PIPELINE_BACKLOG.md](CHUNKED_PIPELINE_BACKLOG.md) — diarization tuning, LLM progress UX, audio player conditional badge, telemetry dashboard, reprocess incremental.
 - B13 preferred_language UI control (constant `SETTING_PREFERRED_LANGUAGE` уже читается pipeline'ом; нужен Settings UI).
 - Export markdown для recap/transcript с CallDetailPage (Tauri save dialog → `.md`).
 - Settings auto-name из NSFullUserName (требует Swift bridge).

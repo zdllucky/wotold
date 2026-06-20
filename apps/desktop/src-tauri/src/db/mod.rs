@@ -32,8 +32,9 @@ pub use calls::{
     fail_recording_with_reason, finish_recording, get_call, insert_recording,
     insert_speaker_suggestions, list_call_speakers, list_calls, mark_call_ready, pause_call,
     resume_call, set_call_meta, set_call_progress, set_call_speaker_cluster,
-    set_call_speaker_suggestion, set_call_title, set_recap_failed_reason, set_summary_metadata,
-    sweep_stale_calls, unbind_call_speaker, Call, CallSpeakerView, SummaryMetadata,
+    set_call_speaker_suggestion, set_call_title, set_recap_failed_reason, set_recap_failure,
+    set_summary_metadata, sweep_stale_calls, unbind_call_speaker, update_call_duration, Call,
+    CallSpeakerView, SummaryMetadata,
 };
 pub use contacts::{
     create_contact, delete_contact, ensure_owner_contact, list_contacts, rename_owner_contact,

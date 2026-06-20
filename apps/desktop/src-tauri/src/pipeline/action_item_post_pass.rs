@@ -248,21 +248,13 @@ mod tests {
 
     #[tokio::test]
     async fn refine_action_items_llm_failure_returns_original() {
-        // [M14 T-09 Phase E] generate_with_grammar_fallback ретраит на
-        // Provider error — нужны 2 Err для двух attempts.
-        let mock = MockProvider::new(vec![
-            Err(LlmError::Provider("crash".into())),
-            Err(LlmError::Provider("retry also fails".into())),
-        ]);
+        // [P8.3] gbnf wrapper больше не ретраит — single attempt per call.
+        let mock = MockProvider::new(vec![Err(LlmError::Provider("crash".into()))]);
         let original = sample_action_items();
         let result =
             refine_action_items(&mock, original.clone(), "stub transcript", Some("en")).await;
         assert_eq!(result, original);
-        assert_eq!(
-            mock.call_count(),
-            2,
-            "wrapper performs 1 retry на Provider error"
-        );
+        assert_eq!(mock.call_count(), 1, "single attempt, no retry");
     }
 
     #[tokio::test]

@@ -128,6 +128,13 @@ export function retryChunk(callId: string, chunkIdx: number): Promise<void> {
   return invoke<void>('retry_chunk', { callId, chunkIdx });
 }
 
+/** [P14.1] Force re-STT — destructive. Дропает existing transcripts +
+ *  recap артефакты, сбрасывает все chunks в pending, запускает full
+ *  pipeline rerun. UI confirm modal обязателен. */
+export function forceRestt(callId: string): Promise<void> {
+  return invoke<void>('force_restt_call', { callId });
+}
+
 /** [M13.2.3] Per-chunk pipeline finished — эмитится из `chunk_runner` на
  *  done/failed. UI patch'ит ChunkProgressStrip без полного refetch'а. */
 export interface ChunkDoneEvent {
@@ -136,3 +143,23 @@ export interface ChunkDoneEvent {
   status: 'done' | 'failed';
   segment_count: number;
 }
+
+/** [P1.3] Periodic emit во время local LLM recap generation. Backend
+ *  `pipeline::recap_progress::with_recap_progress_emitter` шлёт каждые 15s
+ *  пока future не resolve'нется. UI рендерит «Пересоздаём… {sec}s» в
+ *  HeaderActions. */
+export interface RecapProgressEvent {
+  call_id: string;
+  elapsed_sec: number;
+}
+export const RECAP_PROGRESS_EVENT = 'recap:progress';
+
+/** [P5.2] Live duration update во время recording — fires на каждый
+ *  sidecar `rotated` event (~раз в 10 мин). HomePage / CallDetailPage
+ *  patch'ат `call.duration_sec` чтобы не показывать stale «1:56» для
+ *  активных 30+ мин записей. */
+export interface RecordingDurationEvent {
+  call_id: string;
+  duration_sec: number;
+}
+export const RECORDING_DURATION_EVENT = 'recording:duration';
