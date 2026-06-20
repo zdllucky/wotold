@@ -89,10 +89,11 @@ function AppShell() {
       });
   }, []);
 
-  // [V8.2] Active-pipeline counter — DB source of truth. На mount считаем
-  // status IN ('recording','processing') из list_calls. События только
-  // инкрементят/декрементят без resync (быстро), а полная пере-сверка
-  // выполняется на pipeline:cancelled и при возврате окна в фокус.
+  // [V8.2] Active-pipeline counter. Источник правды — in-memory Rust
+  // `pipeline_tasks` registry через `getActivePipelineCount` (точен: задача
+  // сама удаляет себя из реестра на завершении/ошибке). Каждое lifecycle-
+  // событие триггерит полный resync вместо хрупкого +1/-1 — раньше счётчик
+  // дрейфовал (пропущенный/задвоенный started/finished → застрявший «2»).
   useEffect(() => {
     const resync = async () => {
       try {
@@ -112,23 +113,17 @@ function AppShell() {
     const unlisteners: UnlistenFn[] = [];
     const attach = async () => {
       try {
+        // Все три события → full resync. +/- дрейфовал; реестр точен, а IPC
+        // round-trip (мс) >> registry remove (мкс), так что finished-гонка
+        // на практике не наблюдается.
         unlisteners.push(
-          await listen('pipeline:started', () =>
-            setActivePipelines((n) => n + 1),
-          ),
+          await listen('pipeline:started', () => void resync()),
         );
         unlisteners.push(
-          await listen('pipeline:finished', () =>
-            setActivePipelines((n) => Math.max(0, n - 1)),
-          ),
+          await listen('pipeline:finished', () => void resync()),
         );
-        // V8: cancelled event — раньше counter не декрементился и зависал.
         unlisteners.push(
-          await listen('pipeline:cancelled', () => {
-            // Full resync — race с finished возможен (cancel пришёл уже
-            // после того как pipeline эмитнул finished), точный +/- ненадёжен.
-            void resync();
-          }),
+          await listen('pipeline:cancelled', () => void resync()),
         );
       } catch (e) {
         console.warn('pipeline event listeners failed:', e);

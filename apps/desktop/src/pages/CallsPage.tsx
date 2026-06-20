@@ -23,7 +23,7 @@ import { List, type RowComponentProps } from 'react-window';
 import { CallRowSkeleton, Empty } from '../ui';
 import { bcp47, useI18n } from '../i18n';
 import { CallStateTag, ProgressRail } from '../components/call-state';
-import { PIPELINE_STEP_KEYS, type CallState } from '../types/callState';
+import { pipelineStepKey, type CallState } from '../types/callState';
 
 const VIRTUALIZATION_THRESHOLD = 200;
 const ROW_HEIGHT = 78;
@@ -495,7 +495,20 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
           >
             {title}
           </span>
-          {showTag && <CallStateTag state={uiState} />}
+          {showTag && (
+            <CallStateTag
+              state={uiState}
+              // [Fix] processing/uploading тег показывает ТОЧНЫЙ текущий шаг
+              // (тот же источник, что CallDetail PipelineStrip) — чтобы статус
+              // совпадал между списком и деталью. Раньше тег печатал generic
+              // callState.processing='распознаём', конфликтуя с шагом в строке.
+              labelOverride={
+                uiState === 'processing' || uiState === 'uploading'
+                  ? t(pipelineStepKey(call.pipeline_step))
+                  : undefined
+              }
+            />
+          )}
           {!showTag && call.processing_via && (
             <EngineChip kind={call.processing_via} variant="inline" />
           )}
@@ -615,63 +628,32 @@ function renderSecondary(
     );
   }
 
-  // processing — текущий step label + ETA
+  // processing — шаг теперь в теге; подзаголовок несёт только ETA (без дубля).
   if (state === 'processing') {
-    const step = clampStep(call.pipeline_step ?? 3);
-    const stageKey = PIPELINE_STEP_KEYS[step - 1] ?? PIPELINE_STEP_KEYS[0];
     const eta = call.pipeline_eta_sec;
-    const text =
-      eta != null
-        ? `${t(stageKey!)} · ${t('calls.secondaryEta', { sec: eta })}`
-        : t(stageKey!);
-    return secondaryText(text);
+    return eta != null
+      ? secondaryText(t('calls.secondaryEta', { sec: eta }))
+      : null;
   }
 
-  // uploading — «Загружаем аудио» + опц. «X / Y МБ»
+  // uploading — шаг (= «Сохраняем аудио») в теге; подзаголовок — только размер.
   if (state === 'uploading') {
     const bytes = call.upload_bytes;
-    const label = t('calls.secondaryUploading');
     if (bytes != null && bytes > 0) {
       return (
         <div
-          className="call-row-secondary"
+          className="call-row-secondary mono"
           style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 12,
-            minWidth: 0,
-            fontFamily: 'var(--font-serif)',
-            fontStyle: 'italic',
-            fontSize: 13,
+            fontSize: 11,
             color: 'var(--text-muted)',
+            minWidth: 0,
           }}
         >
-          <span
-            style={{
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              flex: '1 1 auto',
-            }}
-            title={label}
-          >
-            {label}
-          </span>
-          <span
-            className="mono"
-            style={{
-              fontSize: 11,
-              flexShrink: 0,
-              color: 'var(--text-muted)',
-            }}
-          >
-            {formatMegabytes(bytes)}
-          </span>
+          {formatMegabytes(bytes)}
         </div>
       );
     }
-    return secondaryText(label);
+    return null;
   }
 
   // queued — «в очереди»
@@ -706,11 +688,6 @@ function secondaryText(text: string, color?: string): ReactNode {
       {text}
     </div>
   );
-}
-
-function clampStep(step: number): 1 | 2 | 3 | 4 | 5 {
-  const n = Math.min(Math.max(step | 0, 1), 5);
-  return n as 1 | 2 | 3 | 4 | 5;
 }
 
 function formatMegabytes(bytes: number): string {
