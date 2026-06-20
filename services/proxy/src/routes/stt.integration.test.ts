@@ -1,7 +1,13 @@
 /// <reference types="@cloudflare/vitest-pool-workers" />
 import { afterEach, describe, expect, test, beforeEach, vi } from 'vitest';
-import { SELF, env } from 'cloudflare:test';
+import {
+  SELF,
+  env,
+  createExecutionContext,
+  waitOnExecutionContext,
+} from 'cloudflare:test';
 import { DEVICE_ID_HEADER } from '@wotold/contracts';
+import app from '../index.js';
 import type { Env } from '../lib/env.js';
 
 declare module 'cloudflare:test' {
@@ -113,19 +119,32 @@ describe('POST /v1/stt/staging-url', () => {
     expect(res.status).toBe(400);
   });
 
-  // [Phase 1] Раньше тест принимал `[200, 500]` → не падал никогда (lying
-  // assertion). В test env R2_ACCOUNT_ID и access keys пустые (см.
-  // `wrangler.test.toml`), поэтому presign гарантированно падает с 500
-  // internal_error. Если кто-то случайно подложит creds — тест должен
-  // упасть, чтобы CI заметил конфигурацию.
-  test('returns 500 internal_error when R2 creds unset (test env)', async () => {
-    const res = await SELF.fetch(
+  // [Phase 1] Проверяем guard в `makeClient` (r2-presign.ts): отсутствие
+  // R2-creds → throw → route ловит → 500 internal_error.
+  //
+  // ВАЖНО: с момента B3 KV-resume теста `wrangler.test.toml` СОДЕРЖИТ dummy
+  // R2-creds (нужны чтобы aws4fetch подписал URL). Мутация `env.R2_ACCOUNT_ID`
+  // через `SELF.fetch` не работает — string-vars в vitest-pool-workers не
+  // пробрасываются в isolate (общий только KV/R2 storage). Поэтому вызываем
+  // worker напрямую через `app.fetch(req, customEnv, ctx)`, подменив creds
+  // Proxy-обёрткой (сохраняет все bindings, зануляет только R2_ACCOUNT_ID).
+  test('returns 500 internal_error when R2 creds unset', async () => {
+    const noCredsEnv = new Proxy(env, {
+      get(target, prop) {
+        if (prop === 'R2_ACCOUNT_ID') return '';
+        return Reflect.get(target, prop);
+      },
+    }) as Env;
+    const ctx = createExecutionContext();
+    const req = new Request(
       'http://proxy/v1/stt/staging-url',
       withDevice({
         method: 'POST',
         body: JSON.stringify({ contentType: 'audio/wav' }),
       }),
     );
+    const res = await app.fetch(req, noCredsEnv, ctx);
+    await waitOnExecutionContext(ctx);
     expect(res.status).toBe(500);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe('internal_error');
@@ -168,29 +187,24 @@ describe('POST /v1/stt', () => {
     expect(body.code).toBe('staging_object_not_found');
   });
 
-  test('errors for unknown provider before dispatch', async () => {
-    // Кладём dummy object в R2, чтобы пройти head-check.
-    const key = `stt/${DEVICE}/dummy-unknown-${crypto.randomUUID()}`;
-    await env.STT_STAGING.put(key, new Uint8Array([0, 0, 0, 0]));
-
+  test('rejects unknown provider at validation boundary', async () => {
     const res = await SELF.fetch(
       'http://proxy/v1/stt',
       withDevice({
         method: 'POST',
         body: JSON.stringify({
-          r2Key: key,
+          r2Key: `stt/${DEVICE}/whatever`,
           opts: { provider: 'whisper-xyz' as 'soniox', lang: 'auto' },
         }),
       }),
     );
-    // [Phase 1] В test env R2 creds empty → presign upstream падает 500.
-    // Раньше тест допускал [400, 500] → проходил независимо от ответа.
-    // Точный код зависит от того, успел ли provider validator отвергнуть
-    // 'whisper-xyz' до того как presign упал. Текущая ветвление:
-    // presign выполняется первым и падает с 500. Если refactor изменит
-    // порядок и validator уберёт unknown provider раньше → 400, и тест
-    // упадёт правильно (regression marker, не false-pass).
-    expect(res.status).toBe(500);
+    // `sttRequestSchema.opts.provider = z.enum(['soniox','gladia'])` (B16 Zod)
+    // отвергает unknown provider на границе — ДО presign/head-check/dispatch.
+    // Fail-fast at boundary = корректное поведение (раньше доходило до
+    // upstream и падало 500). 400 bad_request — желаемый результат.
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('bad_request');
   });
 
   test('enforces stt_sec daily quota (429 when exceeded)', async () => {
