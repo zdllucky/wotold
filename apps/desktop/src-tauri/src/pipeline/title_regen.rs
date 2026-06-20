@@ -11,18 +11,21 @@
 //! T-17 даёт separate path:
 //! - ~150 max_tokens (заголовок 3-7 слов + JSON envelope)
 //! - Focused prompt только на title
-//! - Cloud-only path через `AnthropicProvider::Managed`
+//! - Engine-aware: Local-движок → локальный Qwen sidecar (TITLE_JSON_SCHEMA),
+//!   иначе → `AnthropicProvider::Managed` (cloud proxy)
 //! - На fallback: `db::set_call_title` без trigger downstream events
 //!
-//! ## Phase scope
+//! ## Engine dispatch
 //!
-//! Cloud-only. Local engine (Qwen sidecar) support — backlog M14.6.
+//! Mirror `regenerate_recap`: при `EngineKind::Local` название генерится локально
+//! (~5-10s, no cloud/quota — консистентно с саммари); cloud-движок — мгновенно.
 
 use std::path::Path;
 use std::sync::Arc;
 
 use serde::Deserialize;
 use sqlx::SqlitePool;
+use tauri::AppHandle;
 
 use crate::db;
 use crate::pipeline::settings::PipelineSettings;
@@ -95,8 +98,13 @@ pub(crate) fn parse_title_response(json_value: serde_json::Value) -> String {
     }
 }
 
-/// Lightweight title regen. Cloud Anthropic proxy через ProviderMode::Managed.
-/// На любой LLM-error → propagate (caller покажет setError).
+/// Lightweight title regen. Engine-aware: при движке Local — локальный Qwen
+/// (sidecar, ~5-10s, no cloud/quota, mirror `regenerate_recap`); иначе — cloud
+/// Anthropic proxy через `ProviderMode::Managed` (мгновенно). На любой LLM-error
+/// → propagate (caller покажет setError).
+///
+/// `app` нужен только для local-движка (LocalLlamaProvider требует AppHandle
+/// для sidecar). Cloud-путь его игнорит.
 ///
 /// Returns: новый title (уже persisted в DB через `db::set_call_title`).
 pub async fn regenerate_title(
@@ -104,6 +112,7 @@ pub async fn regenerate_title(
     app_data_dir: &Path,
     device_id: &Arc<str>,
     call_id: &str,
+    app: Option<&AppHandle>,
 ) -> Result<String, AppError> {
     let call = db::get_call(pool, call_id)
         .await?
@@ -117,8 +126,36 @@ pub async fn regenerate_title(
 
     let s = PipelineSettings::load(pool).await?;
     let effective_lang = s.effective_recap_lang(call.lang_detected.as_deref());
+    let head = extract_transcript_head(&transcript_md, TRANSCRIPT_HEAD_CHARS);
 
-    // Cloud-only path.
+    // [Local title] При активном Local-движке генерим название локальным Qwen —
+    // консистентно с саммари, без облака/квоты. Mirror regenerate_recap dispatch.
+    // TITLE_JSON_SCHEMA форсит `{ "title": string }` у слабой модели.
+    #[cfg(target_os = "macos")]
+    if s.engine == crate::local_engine::engine::EngineKind::Local {
+        let app = app.ok_or_else(|| {
+            AppError::Other("regenerate_title для local-engine требует AppHandle".into())
+        })?;
+        let (provider, _preset) =
+            crate::pipeline::build_local_llm_provider(pool, app_data_dir, app, &s).await?;
+        let request = LlmRequest {
+            model: None,
+            system: build_title_prompt(effective_lang.as_deref()),
+            input: head.to_string(),
+            max_tokens: Some(TITLE_MAX_TOKENS),
+            grammar: None,
+            json_schema: Some(crate::pipeline::llm_schemas::TITLE_JSON_SCHEMA.to_string()),
+        };
+        let json_value = provider
+            .generate(request)
+            .await
+            .map_err(|e| AppError::Other(format!("local title llm: {e}")))?;
+        let new_title = parse_title_response(json_value);
+        db::set_call_title(pool, call_id, &new_title).await?;
+        return Ok(new_title);
+    }
+
+    // Cloud path (Anthropic proxy через ProviderMode::Managed).
     let mode = match s.provider_path.as_str() {
         "managed" => {
             if s.proxy_base_url.is_empty() {
@@ -139,7 +176,6 @@ pub async fn regenerate_title(
         other => return Err(AppError::Other(format!("unknown provider_path: {other}"))),
     };
 
-    let head = extract_transcript_head(&transcript_md, TRANSCRIPT_HEAD_CHARS);
     let request = LlmRequest {
         model: s.model_override().map(str::to_string),
         system: build_title_prompt(effective_lang.as_deref()),
@@ -216,12 +252,38 @@ mod tests {
         let tmpdir = tempfile::tempdir().unwrap();
         let device: Arc<str> = Arc::from("dev-1");
         let call = db::insert_recording(&db.pool, "managed").await.unwrap();
-        let err = regenerate_title(&db.pool, tmpdir.path(), &device, &call.id)
+        let err = regenerate_title(&db.pool, tmpdir.path(), &device, &call.id, None)
             .await
             .unwrap_err();
         assert!(
             err.to_string().contains("transcript.md"),
             "expected transcript.md error, got: {err}"
+        );
+    }
+
+    /// [Local title] При движке Local + app=None → ошибка про AppHandle
+    /// (до sidecar, который не покрыть юнит-тестом). transcript.md на месте.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn regenerate_title_local_engine_requires_app_handle() {
+        let db = crate::db::test_support::fresh_db().await;
+        let tmpdir = tempfile::tempdir().unwrap();
+        let device: Arc<str> = Arc::from("dev-1");
+        db::set_setting(&db.pool, "local_engine.active", "local")
+            .await
+            .unwrap();
+        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        let call_dir = tmpdir.path().join("calls").join(&call.id);
+        tokio::fs::create_dir_all(&call_dir).await.unwrap();
+        tokio::fs::write(call_dir.join("transcript.md"), "S1: привет")
+            .await
+            .unwrap();
+        let err = regenerate_title(&db.pool, tmpdir.path(), &device, &call.id, None)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("AppHandle"),
+            "expected AppHandle error, got: {err}"
         );
     }
 }

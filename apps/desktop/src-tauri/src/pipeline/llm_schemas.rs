@@ -37,6 +37,14 @@ pub(crate) const CLASSIFIER_JSON_SCHEMA: &str = r#"{
   "required": ["call_type"]
 }"#;
 
+/// Title-only регенерация (T-17 local path). Форсит `{ "title": string }` —
+/// слабая local-модель иначе даёт мусор/массив → fallback «Без названия».
+pub(crate) const TITLE_JSON_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": { "title": { "type": "string" } },
+  "required": ["title"]
+}"#;
+
 /// Полная форма `CallSummaryV2`. Форсит v2-shape → больше нет v1-fallback'а на
 /// слабой local-модели. `evidence`/`id` опциональны; массивы могут быть пусты.
 /// Инлайн без `$ref` — llama `--json-schema-file` предупреждает про $refs.
@@ -147,6 +155,13 @@ mod tests {
 
     fn parse(s: &str) -> Value {
         serde_json::from_str(s).expect("schema должна быть валидным JSON")
+    }
+
+    #[test]
+    fn title_schema_valid_json_requires_title() {
+        let v = parse(TITLE_JSON_SCHEMA);
+        assert_eq!(v["required"][0], "title");
+        assert_eq!(v["properties"]["title"]["type"], "string");
     }
 
     #[test]

@@ -485,35 +485,31 @@ pub async fn regenerate_recap(
     }
 }
 
-/// [Bug-fix] Local engine path для `regenerate_recap`. Mirror блока в
-/// `run_local_inner` (preset resolve → model presence check → LocalLlamaProvider
-/// build → local_orchestrator → persist_recap_from_json), но БЕЗ STT/merge
-/// stages (transcript.md уже есть). Errors propagate как AppError —
-/// regenerate_recap setter caller персистит failed_reason + возвращает Err
-/// в UI.
+/// [DRY] Собрать `LocalLlamaProvider` для активного preset'а: resolve preset
+/// (`SETTING_ACTIVE_PRESET`) → проверка LLM-модели на диске (`local_engine_model_missing`)
+/// → speculative draft gate → build с per-preset timeout + AppHandle. Возвращает
+/// `(provider, preset)` (`LocalEnginePreset` — Copy). Используется
+/// `regenerate_recap_local` + `title_regen` (local path). `run_local_inner` имеет
+/// свою копию (STT-путь) — отдельный backlog на унификацию.
 #[cfg(target_os = "macos")]
-#[allow(clippy::too_many_arguments)] // регенерация — internal helper; structured args = backlog
-async fn regenerate_recap_local(
+pub(crate) async fn build_local_llm_provider(
     pool: &SqlitePool,
     app_data_dir: &std::path::Path,
-    call_dir: &std::path::Path,
-    call_id: &str,
-    transcript_md: &str,
-    lang_detected: Option<&str>,
     app: &AppHandle,
     s: &PipelineSettings,
-) -> Result<(), AppError> {
+) -> Result<
+    (
+        crate::local_engine::llm::LocalLlamaProvider,
+        crate::local_engine::preset::LocalEnginePreset,
+    ),
+    AppError,
+> {
     use crate::local_engine::{
         llm::LocalLlamaProvider,
         models::{self, ModelId, ModelStatus},
         preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
     };
 
-    if transcript_md.trim().is_empty() {
-        return Err(AppError::Other("local_engine_transcript_empty".into()));
-    }
-
-    // Preset resolve.
     let preset_str = db::get_setting(pool, SETTING_ACTIVE_PRESET).await?;
     let preset = preset_str
         .as_deref()
@@ -525,18 +521,8 @@ async fn regenerate_recap_local(
             )
         })?;
     let llm_id = preset.llm_model_id();
-    let whisper_id = preset.whisper_model_id();
 
-    log::info!(
-        "regenerate_recap_local: call_id={} preset={:?} llm_id={} whisper_id={}",
-        call_id,
-        preset,
-        llm_id.as_str(),
-        whisper_id.as_str(),
-    );
-
-    // Проверяем что LLM модель на диске + SHA OK (whisper для recap не нужен
-    // но touch_usage обновим — пользователь может всё-таки запустить reprocess).
+    // Проверяем что LLM модель на диске + SHA OK.
     let status = models::check_status(app_data_dir, llm_id.as_str()).await?;
     if !matches!(status, ModelStatus::Present { .. }) {
         return Err(AppError::Other(format!(
@@ -544,12 +530,6 @@ async fn regenerate_recap_local(
             llm_id.as_str()
         )));
     }
-
-    // Known speakers context для prompt'а (подтверждённые bindings).
-    let known_speakers = recap::build_known_speakers_block(pool, call_id)
-        .await
-        .ok()
-        .flatten();
 
     // Speculative decoding gate (mirror run_local_inner).
     let draft_path: Option<std::path::PathBuf> =
@@ -568,6 +548,47 @@ async fn regenerate_recap_local(
         .with_app(app.clone())
         .await
         .with_draft_model(draft_path);
+
+    Ok((provider, preset))
+}
+
+/// [Bug-fix] Local engine path для `regenerate_recap`. Mirror блока в
+/// `run_local_inner` (preset resolve → model presence check → LocalLlamaProvider
+/// build → local_orchestrator → persist_recap_from_json), но БЕЗ STT/merge
+/// stages (transcript.md уже есть). Errors propagate как AppError —
+/// regenerate_recap setter caller персистит failed_reason + возвращает Err
+/// в UI.
+#[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)] // регенерация — internal helper; structured args = backlog
+async fn regenerate_recap_local(
+    pool: &SqlitePool,
+    app_data_dir: &std::path::Path,
+    call_dir: &std::path::Path,
+    call_id: &str,
+    transcript_md: &str,
+    lang_detected: Option<&str>,
+    app: &AppHandle,
+    s: &PipelineSettings,
+) -> Result<(), AppError> {
+    if transcript_md.trim().is_empty() {
+        return Err(AppError::Other("local_engine_transcript_empty".into()));
+    }
+
+    let (provider, preset) = build_local_llm_provider(pool, app_data_dir, app, s).await?;
+    let llm_id = preset.llm_model_id();
+    log::info!(
+        "regenerate_recap_local: call_id={} preset={:?} llm_id={} whisper_id={}",
+        call_id,
+        preset,
+        llm_id.as_str(),
+        preset.whisper_model_id().as_str(),
+    );
+
+    // Known speakers context для prompt'а (подтверждённые bindings).
+    let known_speakers = recap::build_known_speakers_block(pool, call_id)
+        .await
+        .ok()
+        .flatten();
 
     let orch_ctx = local_orchestrator::LocalOrchestratorCtx {
         transcript_md,
@@ -605,8 +626,9 @@ async fn regenerate_recap_local(
     .await?;
 
     // Storage UI «активно X дней назад».
-    let _ = models::touch_usage(pool, whisper_id.as_str()).await;
-    let _ = models::touch_usage(pool, llm_id.as_str()).await;
+    let _ =
+        crate::local_engine::models::touch_usage(pool, preset.whisper_model_id().as_str()).await;
+    let _ = crate::local_engine::models::touch_usage(pool, llm_id.as_str()).await;
     Ok(())
 }
 

@@ -78,6 +78,7 @@ pub async fn regenerate_recap(
 /// Cloud-only path (matches regenerate_recap). Local engine support — backlog M14.6.
 #[tauri::command]
 pub async fn regenerate_title(
+    app: AppHandle,
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<String, AppError> {
@@ -86,6 +87,7 @@ pub async fn regenerate_title(
         &state.app_data_dir,
         &state.device_id,
         &call_id,
+        Some(&app),
     )
     .await
 }
