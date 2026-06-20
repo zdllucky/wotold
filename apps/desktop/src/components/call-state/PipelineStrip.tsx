@@ -5,6 +5,7 @@
 // <details> = free a11y (keyboard + ARIA), без extra JS state.
 
 import { useI18n } from '../../i18n';
+import type { CallChunk } from '../../api/recording';
 import type { CallProgress } from '../../types/callState';
 import { PIPELINE_STEP_KEYS } from '../../types/callState';
 import { CallStateTag } from './CallStateTag';
@@ -14,9 +15,15 @@ export interface PipelineStripProps {
   progress: CallProgress;
   /** Раскрыто ли по умолчанию (для тестов / debug). */
   defaultOpen?: boolean;
+  /** [P11.2] Опциональные chunks для inline-badge на step 2 «Распознаём».
+   *  Когда массив непустой и step=2 — рядом с label показываем «N из M
+   *  сегментов» как progress-hint. На других step'ах не показываем (chunks
+   *  уже сделаны).
+   */
+  chunks?: CallChunk[];
 }
 
-export function PipelineStrip({ progress, defaultOpen = false }: PipelineStripProps) {
+export function PipelineStrip({ progress, defaultOpen = false, chunks }: PipelineStripProps) {
   const { t } = useI18n();
   const totalSteps = PIPELINE_STEP_KEYS.length;
   // [V9] Macro progress 0-100%: each completed step contributes 1/total,
@@ -28,6 +35,20 @@ export function PipelineStrip({ progress, defaultOpen = false }: PipelineStripPr
   const macroPct = Math.round(
     ((progress.step - 1 + Math.min(progress.pct, 100) / 100) / totalSteps) * 100,
   );
+  // [P11.2] Inline chunks badge — только на step 2 (Transcribe) и если есть
+  // непустой массив chunks. Отображается рядом с label step'а как progress
+  // hint, без раскрытия списка (для retry — отдельный ChunkFailureAccordion).
+  const chunksOnStep2 =
+    progress.step === 2 && chunks !== undefined && chunks.length > 0;
+  const chunksDone = chunksOnStep2
+    ? (chunks as CallChunk[]).filter((c) => c.status === 'done').length
+    : 0;
+  const chunksTotal = chunksOnStep2 ? (chunks as CallChunk[]).length : 0;
+  const chunksBadge = chunksOnStep2
+    ? t('chunkProgress.inlineBadge')
+        .replace('{done}', String(chunksDone))
+        .replace('{total}', String(chunksTotal))
+    : null;
   return (
     <details className="proc-strip" open={defaultOpen}>
       <summary className="proc-strip-summary">
@@ -49,6 +70,15 @@ export function PipelineStrip({ progress, defaultOpen = false }: PipelineStripPr
         >
           <span className="proc-strip-label-text">{progress.stageLabel}</span>
           <span className="caret" aria-hidden="true" />
+          {chunksBadge !== null && (
+            <span
+              className="mono muted"
+              style={{ marginLeft: 8, fontSize: 11 }}
+              aria-live="polite"
+            >
+              · {chunksBadge}
+            </span>
+          )}
           {progress.etaSec !== undefined && (
             <span
               className="mono muted"

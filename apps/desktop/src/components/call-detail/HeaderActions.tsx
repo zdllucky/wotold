@@ -12,6 +12,9 @@ interface HeaderActionsProps {
   onRegenerateTitle: () => void;
   onExport: () => void;
   onDelete: () => void;
+  /** [P14.1] Force re-STT — danger action с confirm modal. `undefined` →
+   *  пункт меню скрыт (cloud engine / нет права). */
+  onForceRestt?: () => void;
   reprocessing: boolean;
   regenerating: boolean;
   regenerateDisabled: boolean;
@@ -19,6 +22,16 @@ interface HeaderActionsProps {
   regenerateTitleDisabled: boolean;
   exporting: boolean;
   deleting: boolean;
+  /** [P14.1] true пока идёт force restt — disable пункт меню. */
+  forceRestting?: boolean;
+  /** [P1.3] Elapsed seconds во время local LLM recap regen — рендерим в
+   *  кнопке как «Пересоздаём… {sec}s». `null` пока первый periodic event
+   *  не пришёл, либо cloud engine (не emit'ит). */
+  recapElapsedSec?: number | null;
+  /** [P11.3] Reprocess блокирован пока есть failed chunks — иначе user
+   *  re-обрабатывает с потерянным контентом. Tooltip объясняет почему.
+   *  Defaults `false` для backward-compat callsites. */
+  hasFailedChunks?: boolean;
 }
 
 export function HeaderActions({
@@ -34,6 +47,10 @@ export function HeaderActions({
   regenerateTitleDisabled,
   exporting,
   deleting,
+  onForceRestt,
+  forceRestting = false,
+  recapElapsedSec = null,
+  hasFailedChunks = false,
 }: HeaderActionsProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -63,7 +80,10 @@ export function HeaderActions({
         aria-label={t('callDetail.actionsAria')}
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={reprocessing || deleting || exporting || regenerating || regeneratingTitle}
+        // [P1.3] Allow opening menu во время regenerating/regeneratingTitle —
+        // user должен видеть «Пересоздаём… {sec}s» прогресс. Individual
+        // MenuItem'ы остаются disabled, double-click prevention intact.
+        disabled={reprocessing || deleting || exporting}
         style={{
           width: 32,
           height: 32,
@@ -103,7 +123,19 @@ export function HeaderActions({
               setOpen(false);
               onReprocess();
             }}
-            disabled={reprocessing || deleting || exporting || regenerating || regeneratingTitle}
+            disabled={
+              reprocessing ||
+              deleting ||
+              exporting ||
+              regenerating ||
+              regeneratingTitle ||
+              hasFailedChunks
+            }
+            title={
+              hasFailedChunks
+                ? t('chunkProgress.resumeBlockedHint')
+                : undefined
+            }
           >
             {reprocessing ? t('callDetail.reprocessing') : t('callDetail.reprocess')}
           </MenuItem>
@@ -122,7 +154,11 @@ export function HeaderActions({
             }
             title={regenerateDisabled ? t('callDetail.regenerateNoTranscript') : undefined}
           >
-            {regenerating ? t('callDetail.regenerating') : t('callDetail.regenerateRecap')}
+            {regenerating
+              ? recapElapsedSec !== null
+                ? t('callDetail.regeneratingWithElapsed', { sec: recapElapsedSec })
+                : t('callDetail.regenerating')
+              : t('callDetail.regenerateRecap')}
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -156,6 +192,28 @@ export function HeaderActions({
           >
             {exporting ? t('callDetail.exporting') : t('callDetail.exportMd')}
           </MenuItem>
+          {onForceRestt && (
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                onForceRestt();
+              }}
+              disabled={
+                forceRestting ||
+                reprocessing ||
+                regenerating ||
+                regeneratingTitle ||
+                deleting ||
+                exporting
+              }
+              danger
+              title={t('callDetail.forceResttHint')}
+            >
+              {forceRestting
+                ? t('callDetail.forceRestting')
+                : t('callDetail.forceRestt')}
+            </MenuItem>
+          )}
           <MenuItem
             onClick={() => {
               setOpen(false);

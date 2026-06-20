@@ -118,6 +118,57 @@ pub fn merge_track(
     output_path: &Path,
     kind: TrackKind,
 ) -> Result<MergeReport, MergeError> {
+    // [P6+P7] Promote root WAV → chunks/0/ on first merge. Sidecar пишет
+    // first chunk (0-10 мин до first rotate) в root `mic.wav`, не в
+    // `chunks/0/mic.wav` — иначе AudioScrubber играл бы пустой root до
+    // окончания pipeline. На rotate sidecar переключается на chunks/N/.
+    // audio_merger же сканирует chunks/{idx}/ → missing chunk 0 → output
+    // = chunks 1+2+3 only (player «21:55» вместо real 31:56).
+    //
+    // **CRITICAL DATA-LOSS GUARD.** Без promotion merge перезаписывает root
+    // WAV выходом из chunks/{1..N}/, уничтожая аудио первых 10 минут
+    // (reported regression на call fd4b3380, 2026-05-25).
+    //
+    // Fix: если chunks/0/{filename} отсутствует но root WAV существует
+    // и **любой** chunks/{N}/{filename} есть (N≥1) — move root →
+    // chunks/0/. [P7] прежняя версия требовала именно chunks/1/, что
+    // ломалось если первая ротация ушла в failed и DB row удалили.
+    //
+    // [Sentinel] `chunks/.merged` marker предотвращает data corruption на
+    // reprocess: после успешного merge root WAV содержит merged result
+    // (не original chunk 0). Без marker'а pre-promote повторно переименует
+    // root → chunks/0/ → double audio в следующем merge. Marker write'ится
+    // в самом конце успешного merge_track.
+    let merged_sentinel = chunks_dir.join(".merged");
+    let chunks_idx0 = chunks_dir.join("0").join(kind.filename());
+    let has_any_other_chunk = list_chunk_wavs(chunks_dir, kind)
+        .iter()
+        .any(|(idx, _)| *idx >= 1);
+    if !merged_sentinel.exists()
+        && !chunks_idx0.exists()
+        && output_path.exists()
+        && has_any_other_chunk
+    {
+        if let Err(e) = fs::create_dir_all(chunks_dir.join("0")) {
+            log::warn!("audio_merger: failed to create chunks/0/: {e}");
+        } else if let Err(e) = fs::rename(output_path, &chunks_idx0) {
+            log::warn!(
+                "audio_merger: failed to promote root {} → chunks/0/: {e}",
+                output_path.display()
+            );
+        } else {
+            log::info!(
+                "audio_merger: promoted root WAV → {} (first-merge fix)",
+                chunks_idx0.display()
+            );
+        }
+    } else if merged_sentinel.exists() {
+        log::debug!(
+            "audio_merger: skip pre-promote (.merged sentinel exists at {})",
+            merged_sentinel.display()
+        );
+    }
+
     let chunks = list_chunk_wavs(chunks_dir, kind);
     if chunks.is_empty() {
         return Err(MergeError::NoChunks(kind, chunks_dir.to_path_buf()));
@@ -233,6 +284,16 @@ pub fn merge_track(
     if merged == 0 {
         let _ = fs::remove_file(&tmp_path);
         return Err(MergeError::NoChunks(kind, chunks_dir.to_path_buf()));
+    }
+
+    // [P6 sentinel] Write `.merged` marker — pre-promote logic skip'ает
+    // root WAV move на следующем reprocess. Без marker'а двойной merge
+    // удвоил бы audio (chunks 0(=prev_merge)+1+2+3 = 2× chunks 1+2+3).
+    if let Err(e) = fs::write(chunks_dir.join(".merged"), b"v1") {
+        log::warn!(
+            "audio_merger: failed to write .merged sentinel в {}: {e}",
+            chunks_dir.display()
+        );
     }
 
     // Атомарный swap tmp → output_path. На Unix rename перезаписывает.
@@ -417,6 +478,81 @@ mod tests {
         let (mic, sys) = merge_both_tracks(&chunks_dir, dir.path());
         assert!(mic.is_some());
         assert!(sys.is_none()); // NoChunks для system — это OK.
+    }
+
+    #[test]
+    fn pre_promote_root_to_chunk_zero_when_chunk_zero_missing() {
+        // [P6] Root WAV есть (sidecar first chunk до ротации), chunks/0/
+        // нет, chunks/1/ есть → merger должен promote root → chunks/0/
+        // ДО merge, иначе chunk 0 audio теряется.
+        let dir = tempdir().unwrap();
+        let chunks_dir = dir.path().join("chunks");
+        let spec = spec_16k_mono_i16();
+        write_stub_wav(&dir.path().join("mic.wav"), spec, &[100, 101, 102]);
+        write_stub_wav(&chunks_dir.join("1/mic.wav"), spec, &[200, 201]);
+        let out = dir.path().join("mic.wav");
+        let report = merge_track(&chunks_dir, &out, TrackKind::Mic).unwrap();
+        assert_eq!(report.chunks_merged, 2);
+        // chunks/0/mic.wav теперь содержит original root audio.
+        let preserved: Vec<i16> = WavReader::open(chunks_dir.join("0/mic.wav"))
+            .unwrap()
+            .into_samples::<i16>()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(preserved, vec![100, 101, 102]);
+        // Merged root содержит chunks 0+1.
+        let merged: Vec<i16> = WavReader::open(&out)
+            .unwrap()
+            .into_samples::<i16>()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(merged, vec![100, 101, 102, 200, 201]);
+    }
+
+    #[test]
+    fn pre_promote_works_when_only_chunk_two_exists() {
+        // [P7] Прежняя версия требовала именно chunks/1/. Если первая
+        // rotation ушла в failed и dir удалили — promote не срабатывал.
+        // Теперь триггер — любой chunks/{N≥1}/.
+        let dir = tempdir().unwrap();
+        let chunks_dir = dir.path().join("chunks");
+        let spec = spec_16k_mono_i16();
+        write_stub_wav(&dir.path().join("mic.wav"), spec, &[10, 11]);
+        write_stub_wav(&chunks_dir.join("2/mic.wav"), spec, &[20, 21]);
+        let out = dir.path().join("mic.wav");
+        let report = merge_track(&chunks_dir, &out, TrackKind::Mic).unwrap();
+        assert_eq!(report.chunks_merged, 2);
+        let preserved: Vec<i16> = WavReader::open(chunks_dir.join("0/mic.wav"))
+            .unwrap()
+            .into_samples::<i16>()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(preserved, vec![10, 11]);
+    }
+
+    #[test]
+    fn pre_promote_skipped_when_sentinel_present() {
+        // [P6] После успешного merge .merged sentinel выставлен. На
+        // reprocess root WAV содержит merged output (не chunk 0).
+        // Pre-promote НЕ должен запуститься — иначе двойной audio.
+        let dir = tempdir().unwrap();
+        let chunks_dir = dir.path().join("chunks");
+        fs::create_dir_all(&chunks_dir).unwrap();
+        fs::write(chunks_dir.join(".merged"), b"v1").unwrap();
+        let spec = spec_16k_mono_i16();
+        // Root содержит merged-from-prev-run [1,2,3,4].
+        write_stub_wav(&dir.path().join("mic.wav"), spec, &[1, 2, 3, 4]);
+        write_stub_wav(&chunks_dir.join("0/mic.wav"), spec, &[1, 2]);
+        write_stub_wav(&chunks_dir.join("1/mic.wav"), spec, &[3, 4]);
+        let out = dir.path().join("mic.wav");
+        merge_track(&chunks_dir, &out, TrackKind::Mic).unwrap();
+        // chunks/0/ остался [1,2] не [1,2,3,4].
+        let preserved: Vec<i16> = WavReader::open(chunks_dir.join("0/mic.wav"))
+            .unwrap()
+            .into_samples::<i16>()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(preserved, vec![1, 2]);
     }
 
     #[test]

@@ -178,6 +178,8 @@ export const kk: TranslationStrings = {
     reprocessing: 'Қайта өңдеуде…',
     regenerateRecap: '↻ Қорытындыны қайта жасау',
     regenerating: 'Қайта жасаудамыз…',
+    // [P1.3] Elapsed timer для local LLM regen — backend шлёт каждые 15s.
+    regeneratingWithElapsed: 'Қайта жасаудамыз… {sec}s',
     regenerateNoTranscript: 'Регенерация үшін транскрипт жоқ',
     regenerateTitle: '↻ Атауын қайта жасау',
     regeneratingTitle: 'Атау қайта жасалуда…',
@@ -190,6 +192,15 @@ export const kk: TranslationStrings = {
     reprocessConfirmBody:
       'Қоңырауды қайта өңдеу керек пе?\n\nЖазба қайта танылады және қорытынды қайта жасалады. Ағымдағы транскрипт пен қорытынды жоғалады.',
     reprocessConfirmOk: 'Қайта іске қосу',
+    forceRestt: '⚠ Қайта тану',
+    forceRestting: 'Танып жатырмыз…',
+    forceResttHint:
+      'Ағымдағы транскриптті (галлюцинациялармен / [FOREIGN] белгілерімен) тастап, нөлден қайта тану',
+    forceResttConfirmTitle: 'Қайта тану керек пе?',
+    forceResttConfirmBody:
+      'Ағымдағы транскрипт пен қорытындыны жойып, тануды қайта іске қосу керек пе?\n\nЕгер жазба ескі тану нұсқасымен өңделсе және галлюцинациялар немесе [FOREIGN] белгілері бар болса пайдалы.',
+    forceResttConfirmOk: 'Қайта тану',
+    forceResttFailed: 'Тануды қайта іске қосу мүмкін болмады: {error}',
     deleteConfirmBody:
       '«{title}» қоңырауын жоясыз ба?\n\nБұл жазбаны, транскриптті, қорытындыны, тапсырмаларды және осы қоңыраудың дауыс үлгілерін біржола жояды.',
     deleteConfirmOk: 'Жою',
@@ -203,6 +214,16 @@ export const kk: TranslationStrings = {
     retry: 'Қайтадан көру',
     retrying: 'Қайта іске қосудамыз…',
     emptyRecap: 'Қорытынды әлі жасалған жоқ.',
+    recapEmptyTitle: 'Қорытынды жасалмаған',
+    recapEmptyAction: 'Қорытынды жасау',
+    recapEmptyIdle:
+      'Батырманы бас, Wotold транскриптті талдап қорытынды жасайды.',
+    recapEmptyProcessing:
+      'Pipeline әлі қоңырауды өңдеуде — қорытынды аяқталғаннан кейін пайда болады. Күт немесе бір минуттан кейін бетті жаңарт.',
+    recapEmptyFailed:
+      'Алдыңғы әрекет сәтсіз: {error}\n\nҚайтадан көр — әдетте уақытша қателер шешіледі.',
+    recapEmptyNoTranscript:
+      'Алдымен транскрипт қажет — онсыз қорытындалайтын ештеңе жоқ. Қоңырауды қайта өңдеп көр.',
     emptyTranscript: 'Транскрипт әлі дайын емес.',
     emptyTasks:
       'Бұл жерде қоңырауда айтылған тапсырмалар көрсетіледі. Wotold әлі тапқан жоқ — қайта өңдеп көріңіз.',
@@ -317,6 +338,9 @@ export const kk: TranslationStrings = {
     many: 'қатысушы',
     anonymousLabel: '{n}-спикер',
     anonymousHint: 'Контактқа байлау үшін басыңыз',
+    tooManyBadge: 'көп пе?',
+    tooManyHint:
+      'Шынында азырақ болса — Параметрлер → Labs → «Сөйлеуші саны мәжбүрлі».',
   },
 
   scrubber: {
@@ -397,6 +421,10 @@ export const kk: TranslationStrings = {
     deleteAria: 'Үлгіні жою',
     deleteConfirmBody:
       '{created} дауыс үлгісін жоясыз ба?\n\nБұл контакт профилінен embedding-ті біржола жояды. Биометрия қалпына келмейді.',
+    // [P4] Inline play — slice WAV bytes дұрыс track-тан (start..end).
+    playAria: 'Үлгіні тыңдау',
+    pauseAria: 'Кідірту',
+    playDisabledHint: 'Ескі үлгі — ойнату мүмкін емес (slice metadata жоқ)',
   },
 
   settings: {
@@ -539,12 +567,11 @@ export const kk: TranslationStrings = {
       '0.5B шағын модельді 7B Quality-мен қатар қолданады. 2-3× жылдамдау. «Quality» пресеті мен ~380МБ қосымша модельді жүктеу қажет.',
     forceNumSpeakersLabel: 'Сөйлеуші саны мәжбүрлі',
     forceNumSpeakersHint:
-      'Келесі қайта өңдеуде қолданылады. Сұхбаттасушылардың нақты санын білсеңіз және автоматика қателессе қолданыңыз. Шектеу — 4 спикер.',
+      'Келесі қайта өңдеуде қолданылады. Сұхбаттасушылардың нақты санын білсеңіз және автоматика қателессе қолданыңыз. Шектеу — 3 спикер.',
     forceNumSpeakersOptions: {
       auto: 'Авто (ұсынылады)',
       '2': '2 сөйлеуші',
       '3': '3 сөйлеуші',
-      '4': '4 сөйлеуші',
     },
     wipeBtn: 'Барлық деректерді жою',
     wipeBusy: 'Жоюдамыз…',
@@ -951,6 +978,9 @@ export const kk: TranslationStrings = {
   chunkProgress: {
     label: 'Сегменттер',
     ofN: '{done} / {total}',
+    inlineBadge: '{total} ішінен {done} сегмент',
+    accordionTitle: 'Кейбір сегменттер танылмады',
+    accordionHint: 'Сәтсіз сегменттерді қайта жіберу үшін жайыңыз',
     statusDone: 'дайын',
     statusFailed: 'сәтсіз',
     statusProcessing: 'өңделуде',
@@ -958,6 +988,7 @@ export const kk: TranslationStrings = {
     retry: '↻ Қайталау',
     retrying: 'Қайталаймыз…',
     failedSummary: '{total} ішінен {n} сегмент сәтсіз — қайталау үшін ↻ басыңыз.',
+    resumeBlockedHint: 'Алдымен сәтсіз сегменттерді қайталаңыз',
   },
 };
 

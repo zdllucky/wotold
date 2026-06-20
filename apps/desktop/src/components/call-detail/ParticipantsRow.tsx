@@ -123,6 +123,23 @@ export function ParticipantsRow({ speakers, onConfirmAnonymous }: ParticipantsRo
       <span className="muted" style={{ fontSize: 12, marginLeft: 4 }}>
         · {total} {declN}
       </span>
+      {/* [P14.3] Hint когда sortformer выделил больше спикеров чем
+          ожидалось. MAX_LOCAL_SPEAKERS=3 — если видно ≥3, скорее всего
+          overflow noise; предлагаем явный override через Labs. */}
+      {total >= 3 && (
+        <span
+          className="muted"
+          style={{
+            fontSize: 11,
+            fontStyle: 'italic',
+            marginLeft: 6,
+            color: 'var(--subtle)',
+          }}
+          title={t('participants.tooManyHint')}
+        >
+          {t('participants.tooManyBadge')}
+        </span>
+      )}
     </div>
   );
 }

@@ -48,7 +48,10 @@ const SIDECAR_NAME: &str = "wotold-whisper";
 /// override через `with_timeout`.
 pub const LOCAL_WHISPER_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
-const DEFAULT_THREADS: u32 = 6;
+/// [P15.1] 6 → 8. M-series chips имеют 8+ performance cores; whisper-cli
+/// CPU decoder pass scales линейно до 8 threads на Apple Silicon. Encoder
+/// уже GPU-bound через Metal backend.
+const DEFAULT_THREADS: u32 = 8;
 
 /// Per-PRD-§M12.1.2 «per-track processing»: mic-дорожка получает
 /// owner-speaker (без диаризации, M3.7), system-дорожка идёт в M12.2.
@@ -106,7 +109,9 @@ impl LocalWhisperProvider {
         self
     }
 
+    // [CI] dead_code под default-features --all-targets — caller voice-onnx-gated.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn with_tmp_dir(mut self, dir: PathBuf) -> Self {
         self.tmp_dir = dir;
         self
@@ -208,23 +213,89 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 "--threads",
                 &format!("{DEFAULT_THREADS}"),
                 "--no-prints",
+                // [P15.1 bug-fix] Whisper-cli `-t N` = `--threads N`,
+                // НЕ temperature! Раньше передавали `-t 0.0` думая что это
+                // temperature → клобрило `--threads` setting в 0.
+                // Temperature в whisper-cli — `-tp` / `--temperature`.
+                // P12.2 anti-hallucination флаги `--no-speech-thold 0.6`,
+                // `--entropy-thold 2.4`, `--logprob-thold -1.0` совпадают
+                // с whisper-cli defaults — удалили как no-op (см. --help).
+                "--temperature",
+                "0.0",
             ]);
-        // [M13.1.3a] Context priming через `--prompt`. opts.prompt — это
-        // последние слова transcript'а chunk N-1 (M13 chunked pipeline).
-        // Sanitize (strip \r\n + 1000 char limit) обязателен — capability
-        // validator block'ает иначе spawn whisper-cli.
-        let sanitized_prompt = opts.prompt.as_deref().map(sanitize_prompt);
-        if let Some(p) = sanitized_prompt.as_deref() {
-            if !p.is_empty() {
-                sidecar = sidecar.args(["--prompt", p]);
-            }
+
+        // [P15.2] VAD silence-trim — если silero-vad model скачана, добавляем
+        // `--vad --vad-model <path>`. Дропает silence regions ДО encoder pass
+        // → 30-50% wall-clock reduction на pause-heavy calls. Если модель
+        // отсутствует, gracefully skip — STT работает без VAD как раньше.
+        let vad_model_path = self
+            .model_path
+            .parent()
+            .map(|d| d.join("silero-vad-v5.bin"));
+        if let Some(vad_path) = vad_model_path
+            .as_ref()
+            .filter(|p| p.exists())
+            .and_then(|p| p.to_str())
+        {
+            log::debug!(
+                "stt[{:?}]: enabling --vad with model {vad_path}",
+                self.track
+            );
+            sidecar = sidecar.args([
+                "--vad",
+                "--vad-model",
+                vad_path,
+                "--vad-threshold",
+                "0.5",
+                "--vad-min-speech-duration-ms",
+                "250",
+                "--vad-min-silence-duration-ms",
+                "300",
+            ]);
+        }
+        // [M13.1.3a / P12.2] Context priming через `--prompt`.
+        // - opts.prompt существует (chunk N-1 tail) → используем как есть.
+        // - opts.prompt None AND lang=="ru" → fallback на default Russian
+        //   anchor («Это разговор на русском языке») — даёт language bias
+        //   модели и снижает шанс [FOREIGN] фактически на тишину.
+        // Sanitize (strip \r\n + 1000 char limit) обязателен.
+        let prompt_to_use: Option<String> = opts
+            .prompt
+            .as_deref()
+            .map(sanitize_prompt)
+            .filter(|p| !p.is_empty())
+            .or_else(|| default_prompt_for_lang(&lang).map(|s| s.to_string()));
+        if let Some(p) = prompt_to_use.as_deref() {
+            sidecar = sidecar.args(["--prompt", p]);
         }
 
+        // [P15.3] STT timing telemetry — RTF (Real-Time Factor) = audio_sec
+        // / wall_clock_sec. RTF=10× значит «в 10 раз быстрее реального
+        // времени». M-series + Metal на Whisper Medium даёт RTF~15-25×;
+        // RTF~1-3× указывает на CPU-only path (Metal backend не загрузился).
+        let start = std::time::Instant::now();
         let run_result = run_sidecar_with_timeout(sidecar, self.timeout).await;
+        let elapsed = start.elapsed();
         let parse_result = match run_result {
             Ok(()) => parse_whisper_json(&json_path, self.track).await,
             Err(e) => Err(e),
         };
+        if let Ok(ref t) = parse_result {
+            let elapsed_sec = elapsed.as_secs_f64();
+            let rtf = if elapsed_sec > 0.001 {
+                t.duration_sec / elapsed_sec
+            } else {
+                0.0
+            };
+            log::info!(
+                "stt[{:?}]: {:.1}s audio → {:.1}s wall-clock, RTF={:.2}× ({} segments)",
+                self.track,
+                t.duration_sec,
+                elapsed_sec,
+                rtf,
+                t.segments.len()
+            );
+        }
 
         // Cleanup temp JSON (best-effort).
         let _ = tokio::fs::remove_file(&json_path).await;
@@ -244,6 +315,101 @@ pub(crate) fn sanitize_prompt(raw: &str) -> String {
         out = truncated;
     }
     out
+}
+
+/// [P12.1] Whisper hallucination exact-match patterns (lowercase).
+/// Расширенный список — English boundary fillers + blank/music tags +
+/// `[FOREIGN]` language-confusion tag + multilingual silence markers.
+const HALLUCINATIONS_EXACT: &[&str] = &[
+    // Existing English/blank/music (M13 baseline).
+    "you",
+    "thank you",
+    "thanks",
+    "bye",
+    "goodbye",
+    "thanks for watching",
+    "[blank_audio]",
+    "(silence)",
+    "[music]",
+    "(music)",
+    "[applause]",
+    // [P12.1] Language-confusion tag — whisper выдаёт когда detect failed
+    // на сегменте. Чаще всего после тишины либо короткого шума.
+    "[foreign]",
+    // Multilingual silence/audio markers — YouTube training contamination.
+    "[音楽]",
+    "[bgm]",
+    "[♪音楽♪]",
+];
+
+/// [P12.1] Substring patterns — lowercase substring match (case-insensitive
+/// через `.to_lowercase()` на input). Покрывает Russian subtitle-credit
+/// hallucinations из YouTube training data Whisper'а.
+///
+/// Пример из реальных данных user'а: «[Редактор субтитров Н.Александрова]
+/// [Апалькова]» × N раз. Это classic YouTube-subtitler attribution.
+const HALLUCINATION_SUBSTRINGS: &[&str] = &[
+    // Russian YouTube subtitle credits.
+    "редактор субтитров",
+    "корректор субтитров",
+    "субтитры подготовил",
+    "субтитры:",
+    "[апалькова",
+    "[александрова",
+    "н.александрова",
+    "а.семкин",
+    // Generic YouTube attribution patterns (multilingual).
+    "subtitles by",
+    "transcribed by",
+    "продолжение следует",
+];
+
+/// [P12.1] Проверить, является ли сегмент hallucination'ом по совокупности
+/// признаков. Используется в `build_transcript` filter.
+///
+/// Order:
+/// 1. Exact-match (lowercase) против HALLUCINATIONS_EXACT.
+/// 2. Substring (lowercase) против HALLUCINATION_SUBSTRINGS.
+/// 3. Bracket-only shape: текст полностью в `[...]` длиной >20 — почти
+///    наверняка YouTube subtitle credit или similar artifact. Безопасный
+///    floor: legit `[music]` (5 chars) и `[applause]` (10) уже в exact list.
+pub(crate) fn is_hallucination(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_lowercase();
+    if HALLUCINATIONS_EXACT.contains(&lower.as_str()) {
+        return true;
+    }
+    if HALLUCINATION_SUBSTRINGS.iter().any(|p| lower.contains(p)) {
+        return true;
+    }
+    // Bracket-only shape: текст начинается с '[' и заканчивается ']',
+    // длина >20 chars (catch'ит длинные attribution патены). Короткие
+    // bracket tags типа `[music]` пропускаются (уже в exact list если
+    // hallucination).
+    if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.chars().count() > 20 {
+        return true;
+    }
+    false
+}
+
+/// [P12.2] Default initial-prompt для anchoring whisper к корректному
+/// языку. Используется когда caller не передал `opts.prompt` (первый
+/// chunk или non-chunked path).
+///
+/// Whisper без prompt на маленькой записи / тишине часто детектит как
+/// английский → `[FOREIGN]` tag на русской речи. Короткий язык-specific
+/// anchor сильно снижает вероятность mis-detect.
+pub(crate) fn default_prompt_for_lang(lang: &str) -> Option<&'static str> {
+    match lang {
+        "ru" => Some("Это разговор на русском языке."),
+        "en" => Some("This is a conversation in English."),
+        "kk" => Some("Бұл қазақ тіліндегі әңгіме."),
+        // Для 'auto' и unknown — без prompt'а, whisper детектит как умеет.
+        _ => None,
+    }
 }
 
 /// 'auto' / '' → 'auto'. Иначе нормализуем lowercase, обрезаем по '-' до
@@ -386,6 +552,11 @@ fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTransc
         .as_ref()
         .and_then(|r| r.language.clone())
         .filter(|s| !s.is_empty());
+    // [P14.4] Telemetry — сколько segments дропнуто hallucination filter.
+    // Без этого regressions невозможно отловить ни в dev'е, ни в prod'е.
+    let mut dropped_count: usize = 0;
+    let mut empty_count: usize = 0;
+    let total_before = parsed.transcription.len();
     let mut segments: Vec<TranscriptSegment> = parsed
         .transcription
         .into_iter()
@@ -397,24 +568,14 @@ fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTransc
             }
             let text = seg.text.trim().to_string();
             if text.is_empty() {
+                empty_count += 1;
                 return None;
             }
-            // Whisper hallucinates common short words/phrases at audio
-            // boundaries and silence frames. Filter exact matches only.
-            static HALLUCINATIONS: &[&str] = &[
-                "you",
-                "thank you",
-                "thanks",
-                "bye",
-                "goodbye",
-                "thanks for watching",
-                "[blank_audio]",
-                "(silence)",
-                "[music]",
-                "(music)",
-                "[applause]",
-            ];
-            if HALLUCINATIONS.contains(&text.to_lowercase().as_str()) {
+            // [P12.1] Whisper hallucinates на silence / low-confidence
+            // фреймах. Comprehensive filter — exact + substring + shape.
+            if is_hallucination(&text) {
+                log::debug!("stt[{track:?}]: hallucination drop: {text:?}");
+                dropped_count += 1;
                 return None;
             }
             let speaker_tag = match track {
@@ -430,6 +591,12 @@ fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTransc
             })
         })
         .collect();
+    if dropped_count > 0 || empty_count > 0 {
+        log::info!(
+            "stt[{track:?}]: filter stats — {dropped_count} hallucinations + {empty_count} empty / {total_before} total → {} kept",
+            segments.len()
+        );
+    }
     let duration_sec = segments.last().map(|s| s.end).unwrap_or(0.0);
     segments.sort_by(|a, b| {
         a.start
@@ -630,6 +797,68 @@ mod tests {
         assert_eq!(t.segments.len(), 2);
         assert_eq!(t.segments[0].text, "Thank you.");
         assert_eq!(t.segments[1].text, "real text");
+    }
+
+    // [P12.1] Расширенный hallucination filter — Russian subtitle credits,
+    // [FOREIGN] tag, generic bracket-only shape.
+    #[test]
+    fn is_hallucination_filters_foreign_tag() {
+        assert!(is_hallucination("[FOREIGN]"));
+        assert!(is_hallucination("[foreign]"));
+        assert!(is_hallucination("  [FOREIGN]  "));
+    }
+
+    #[test]
+    fn is_hallucination_filters_russian_subtitle_credits() {
+        assert!(is_hallucination("[Редактор субтитров Н.Александрова]"));
+        assert!(is_hallucination("[Апалькова]"));
+        assert!(is_hallucination("[Александрова]"));
+        assert!(is_hallucination(
+            "[Редактор субтитров Н.Александрова] [Апалькова]"
+        ));
+        assert!(is_hallucination("[Субтитры подготовил пользователь]"));
+        assert!(is_hallucination("Subtitles by Anonymous"));
+        assert!(is_hallucination("Transcribed by AI"));
+    }
+
+    #[test]
+    fn is_hallucination_filters_existing_exact_matches() {
+        // Backward-compat — existing list still active.
+        assert!(is_hallucination("you"));
+        assert!(is_hallucination("Thank you"));
+        assert!(is_hallucination("[blank_audio]"));
+        assert!(is_hallucination("(silence)"));
+        assert!(is_hallucination("[music]"));
+    }
+
+    #[test]
+    fn is_hallucination_filters_long_bracket_only_shape() {
+        // Generic: bracket-only длина >20 chars → hallucination shape.
+        assert!(is_hallucination("[Some Long Mystery Attribution Label]"));
+        // Короткий bracket tag — не дропаем (если не в exact list).
+        // Эти НЕ должны фильтроваться:
+        assert!(!is_hallucination("[unknown]")); // 9 chars
+        assert!(!is_hallucination("[?]"));
+    }
+
+    #[test]
+    fn is_hallucination_keeps_legit_russian_speech() {
+        assert!(!is_hallucination("Привет, как дела?"));
+        assert!(!is_hallucination(
+            "Мы обсуждали проект, нужно подготовить документы."
+        ));
+        assert!(!is_hallucination("Да, согласен."));
+        // Edge: реальное слово которое случайно matches никаким substring.
+        assert!(!is_hallucination("Александр сказал что согласен"));
+    }
+
+    #[test]
+    fn default_prompt_for_lang_returns_anchor_for_known_lang() {
+        assert!(default_prompt_for_lang("ru").is_some());
+        assert!(default_prompt_for_lang("en").is_some());
+        assert!(default_prompt_for_lang("kk").is_some());
+        assert!(default_prompt_for_lang("auto").is_none());
+        assert!(default_prompt_for_lang("xyz").is_none());
     }
 
     #[test]

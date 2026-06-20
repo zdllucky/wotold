@@ -34,12 +34,24 @@ use serde_json::Value;
 use tauri::AppHandle;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 
 use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 
 use super::models::{model_path, ModelId};
+use super::preset::LocalEnginePreset;
 use super::sidecar::SidecarGuard;
+
+/// Global semaphore: serializes all local-LLM subprocess spawns. llama-cli
+/// загружает 1.5-7B GGUF (~3-5 GB RAM, cold-start ~3-5 sec) per вызов.
+/// Параллельные вызовы из pipeline (regen, classifier, action_items,
+/// map-reduce) спавнят независимые subprocess'ы → 4× RAM, 4× CPU contention,
+/// OOM crash на Mac с <32GB. Permit=1 гарантирует FIFO queue: один llama
+/// в air-time, остальные ждут. Cold-start cost остаётся, но system survives.
+///
+/// Future: replace with llama-server persistent backend для re-use модели
+/// между requests (M14 T-? backlog).
+static LLM_SEMAPHORE: Semaphore = Semaphore::const_new(1);
 
 /// Имя sidecar бинаря — совпадает с `tauri.conf.json::externalBin` и
 /// capability whitelist'ом. Файлы на диске: `binaries/wotold-llama-<triple>`.
@@ -58,7 +70,23 @@ const DEFAULT_THREADS: u32 = 6;
 /// constraint плюс 7B/3B inference на M-series CPU могут занимать около 5-8
 /// минут в worst case. 10 минут — margin без зависания; на таймауте
 /// `drop(child)` шлёт kill сигнал, юзер видит явный error.
+///
+/// [P1.3] Backward-compat дефолт; для production callers использовать
+/// [`timeout_for_preset`] — Light быстрее, Quality медленнее.
 pub const LOCAL_LLM_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// [P1.3] Timeout per preset — отражает реальный compute cost. Без этой
+/// дифференциации Light (1.5B) имел overkill cap (10 мин при реальных 1-3
+/// мин), а Quality (7B) на длинных map-reduce transcripts получал SIGKILL
+/// при еле-уложившемся в cap результате. Применяется через `.with_timeout(...)`
+/// в callsite (`pipeline::run_local_inner` + `regenerate_recap_local`).
+pub const fn timeout_for_preset(preset: LocalEnginePreset) -> Duration {
+    match preset {
+        LocalEnginePreset::Light => Duration::from_secs(5 * 60),
+        LocalEnginePreset::Balanced => Duration::from_secs(10 * 60),
+        LocalEnginePreset::Quality => Duration::from_secs(15 * 60),
+    }
+}
 
 /// Локальный LLM на llama.cpp. Owns путь к GGUF модели + sidecar config.
 pub struct LocalLlamaProvider {
@@ -109,17 +137,18 @@ impl LocalLlamaProvider {
         self
     }
 
-    /// Кастомный timeout — для тестов и потенциальных tier'ов.
-    /// Helper used by tests + диагностическим UI; production pipeline
-    /// полагается на `LOCAL_LLM_TIMEOUT` default.
-    #[allow(dead_code)]
+    /// Кастомный timeout — для тестов, диагностики, и [P1.3] per-preset
+    /// дифференциации (`timeout_for_preset(preset)`).
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
     /// Override temp dir для тестов (изолируем prompt-файлы).
+    /// [CI] `--all-targets` default-features clippy флагует dead_code т.к.
+    /// текущие callers — voice-onnx-gated; helper сохраняем для future tests.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn with_tmp_dir(mut self, dir: PathBuf) -> Self {
         self.tmp_dir = dir;
         self
@@ -147,6 +176,14 @@ impl LlmProvider for LocalLlamaProvider {
             // Headless context (tests) — без AppHandle нет shell-доступа.
             return Err(LlmError::NotImplemented);
         };
+
+        // Serialize subprocess spawns — 1 llama-completion at a time.
+        // Acquired permit держится до конца функции (drop при return),
+        // следующий caller автоматически продолжает с очереди.
+        let _permit = LLM_SEMAPHORE
+            .acquire()
+            .await
+            .map_err(|e| LlmError::Provider(format!("llm semaphore closed: {e}")))?;
 
         // 1. Сериализуем prompt в файл. llama-cli `-f` читает целиком с диска,
         //    не страдает от stdin escaping на UTF-8 кириллице.
@@ -235,15 +272,36 @@ impl LlmProvider for LocalLlamaProvider {
                 &format!("{max_tokens}"),
                 "--threads",
                 &format!("{DEFAULT_THREADS}"),
-                // Newer llama.cpp attempts Metal shader compilation on first run
-                // which can exceed LOCAL_LLM_TIMEOUT. CPU is fast enough for
-                // 1.5–7B models on M-series and avoids GPU init entirely.
+                // [P9.1] Metal GPU offload — Apple Silicon M-series ~5-7×
+                // быстрее CPU на Qwen 1.5-7B Q4_K_M. Metal shaders компилируются
+                // первый раз на ~30 сек, потом кешируются (`~/Library/Caches/
+                // llama.cpp/ggml-metal.shaderlib` либо рядом с binary). Этот
+                // 30-сек overhead покрывается `LOCAL_LLM_TIMEOUT` (10 мин)
+                // для самой первой инвокации после `brew upgrade llama.cpp`;
+                // последующие вызовы стартуют instant.
                 "-ngl",
-                "0",
+                "99",
+                // [P9.1+P10.1] Flash attention — 1.3-1.5× prompt eval speedup
+                // на длинных prompts. Llama.cpp b9270+ требует значение
+                // (`on|off|auto`) после `-fa`; bare flag съедает следующий
+                // arg как value и валит sidecar с exit code 1.
+                "-fa",
+                "on",
+                // [P9.1] KV cache quantization q8_0 — ~50% RAM cut (важно для
+                // 7B + ctx 8192 на 16 GB M1 Pro где GPU wired limit ~10.6 GB).
+                // Accuracy impact на recap-уровне ниже шума temperature=0.2.
+                "-ctk",
+                "q8_0",
+                "-ctv",
+                "q8_0",
                 "--no-conversation",
                 "--no-display-prompt",
                 "--simple-io",
-                "--log-disable",
+                // NOTE: НЕ передаём `--log-disable` — в `llama-completion` (b9270+)
+                // этот флаг подавляет не только internal logs но и сам ответ модели
+                // (stdout становится пустым). Pipeline парсит stdout → "no JSON
+                // object in llama output". perf-логи всё равно идут в stderr, мы
+                // их не читаем.
                 "-f",
                 &prompt_path_str,
             ]);
@@ -280,13 +338,19 @@ impl LlmProvider for LocalLlamaProvider {
         let stdout = result?;
         // 4. Извлекаем JSON из stdout (модель может выдать echo / whitespace
         //    даже с no-display-prompt).
+        //
+        // [P8.1] Shape validation НЕ делается на этом уровне — provider
+        // возвращает любой parseable JSON. Per-stage caller'ы (classifier
+        // парсит `ClassifierJson`, recap парсит `RecapV2Json`, action_items
+        // post-pass свой shape) валидируют через serde. Хардкоднутый
+        // recap-shape валидатор тут раньше ломал classifier callers
+        // (missing title) → wasted retry-cycle через gbnf grammar fallback.
         extract_json_object(&stdout)
             .ok_or_else(|| LlmError::Provider("no JSON object in llama output".into()))
             .and_then(|json_str| {
                 serde_json::from_str::<Value>(&json_str)
                     .map_err(|e| LlmError::Provider(format!("malformed JSON: {e}")))
             })
-            .and_then(validate_recap_shape)
     }
 }
 
@@ -359,25 +423,75 @@ async fn run_sidecar_with_timeout(
     // unhandled Err — без него process переживает abort task'а на 5+ минут.
     let mut guard = Some(SidecarGuard::new(child));
 
+    let start = std::time::Instant::now();
+    log::info!("llama sidecar spawn: timeout={}s", timeout.as_secs());
+
     let mut stdout = Vec::<u8>::new();
     let mut stderr = Vec::<u8>::new();
     let mut exit_code: Option<i32> = None;
     let drained = tokio::time::timeout(timeout, async {
-        while let Some(event) = rx.recv().await {
+        loop {
+            // Heartbeat: если 30s нет событий — log warning что процесс
+            // молчит (model load или stuck). Outer timeout всё равно
+            // прикончит через `timeout` seconds — heartbeat lapping в
+            // паузах между ним.
+            let event = tokio::time::timeout(Duration::from_secs(30), rx.recv()).await;
+            let event = match event {
+                Ok(Some(ev)) => ev,
+                Ok(None) => return Ok::<(), LlmError>(()), // channel closed
+                Err(_) => {
+                    log::warn!(
+                        "llama silent for 30s+ (elapsed={}s, stdout={}b, stderr={}b)",
+                        start.elapsed().as_secs(),
+                        stdout.len(),
+                        stderr.len()
+                    );
+                    continue;
+                }
+            };
             match event {
-                CommandEvent::Stdout(b) => stdout.extend_from_slice(&b),
-                CommandEvent::Stderr(b) => stderr.extend_from_slice(&b),
+                CommandEvent::Stdout(b) => {
+                    stdout.extend_from_slice(&b);
+                    let chunk = String::from_utf8_lossy(&b);
+                    log::info!(
+                        "llama stdout +{}b ({}ms, total={}b): {}",
+                        b.len(),
+                        start.elapsed().as_millis(),
+                        stdout.len(),
+                        chunk.trim_end()
+                    );
+                }
+                CommandEvent::Stderr(b) => {
+                    stderr.extend_from_slice(&b);
+                    let chunk = String::from_utf8_lossy(&b);
+                    log::debug!(
+                        "llama stderr +{}b ({}ms): {}",
+                        b.len(),
+                        start.elapsed().as_millis(),
+                        chunk.trim_end()
+                    );
+                }
                 CommandEvent::Terminated(p) => {
                     exit_code = p.code;
+                    log::info!(
+                        "llama Terminated: code={:?}, elapsed={}ms, stdout={}b, stderr={}b",
+                        p.code,
+                        start.elapsed().as_millis(),
+                        stdout.len(),
+                        stderr.len()
+                    );
                     return Ok::<(), LlmError>(());
                 }
                 CommandEvent::Error(e) => {
+                    log::warn!(
+                        "llama Error event: {e} (elapsed={}ms)",
+                        start.elapsed().as_millis()
+                    );
                     return Err(LlmError::Provider(format!("sidecar error: {e}")));
                 }
                 _ => {}
             }
         }
-        Ok(())
     })
     .await;
 
@@ -479,20 +593,13 @@ fn extract_json_object(text: &str) -> Option<String> {
     None
 }
 
-/// Проверить что модель вернула хотя бы обязательные поля. Невалидный
-/// формат → `LlmError::Provider("bad_shape: missing X")` чтобы UI мог
-/// предложить retry / Cloud-fallback.
-fn validate_recap_shape(json: Value) -> Result<Value, LlmError> {
-    if !json.is_object() {
-        return Err(LlmError::Provider("bad_shape: root not object".into()));
-    }
-    for key in ["title", "summary"] {
-        if json.get(key).is_none() {
-            return Err(LlmError::Provider(format!("bad_shape: missing {key}")));
-        }
-    }
-    Ok(json)
-}
+// [P8.1] `validate_recap_shape` удалён — был хардкоднутый title+summary
+// валидатор который ломал classifier и другие non-recap callers
+// (`bad_shape: missing title` на любой `{call_type, confidence}` ответ).
+// Per-stage validation теперь через serde в caller'ах:
+// - `classifier::parse_classifier_response` → `ClassifierJson`
+// - `recap::parse_v2_response` → `RecapV2Json`
+// - `action_item_post_pass::parse_response` → list shape
 
 /// Промпт для local-LLM. Отдельный от Anthropic (PRD §M12.3.3): явные
 /// инструкции «отвечай только JSON», few-shot пример. Готов сейчас чтобы
@@ -550,6 +657,37 @@ mod tests {
         let p = LocalLlamaProvider::for_preset(Path::new("/d"), ModelId::QWEN25_1_5B)
             .with_timeout(Duration::from_secs(10));
         assert_eq!(p.timeout(), Duration::from_secs(10));
+    }
+
+    // [P1.3] Per-preset timeout dispatch — Light быстрее (1.5B), Quality
+    // медленнее (7B + map-reduce). Жёстко прописанные values защищают от
+    // случайной перестановки.
+    #[test]
+    fn timeout_for_preset_light_is_5_min() {
+        assert_eq!(
+            timeout_for_preset(LocalEnginePreset::Light),
+            Duration::from_secs(5 * 60)
+        );
+    }
+
+    #[test]
+    fn timeout_for_preset_balanced_matches_legacy_default() {
+        assert_eq!(
+            timeout_for_preset(LocalEnginePreset::Balanced),
+            Duration::from_secs(10 * 60)
+        );
+        assert_eq!(
+            timeout_for_preset(LocalEnginePreset::Balanced),
+            LOCAL_LLM_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn timeout_for_preset_quality_is_15_min() {
+        assert_eq!(
+            timeout_for_preset(LocalEnginePreset::Quality),
+            Duration::from_secs(15 * 60)
+        );
     }
 
     #[tokio::test]
@@ -656,27 +794,10 @@ mod tests {
         assert!(extract_json_object("{\"a\":1").is_none());
     }
 
-    // ── validate_recap_shape ────────────────────────────────────────────
-
-    #[test]
-    fn validate_accepts_minimal_recap() {
-        let v: Value = serde_json::from_str(r#"{"title":"T","summary":"S"}"#).unwrap();
-        assert!(validate_recap_shape(v).is_ok());
-    }
-
-    #[test]
-    fn validate_rejects_missing_title() {
-        let v: Value = serde_json::from_str(r#"{"summary":"S"}"#).unwrap();
-        let err = validate_recap_shape(v).unwrap_err();
-        assert!(err.to_string().contains("missing title"));
-    }
-
-    #[test]
-    fn validate_rejects_non_object_root() {
-        let v: Value = serde_json::from_str("[\"not\", \"object\"]").unwrap();
-        let err = validate_recap_shape(v).unwrap_err();
-        assert!(err.to_string().contains("not object"));
-    }
+    // [P8.1] validate_recap_shape удалён — shape валидация теперь
+    // per-caller через serde structs. Зеркало-тесты живут в
+    // `pipeline::recap` (RecapV2Json serde tests) и
+    // `pipeline::classifier` (ClassifierJson).
 
     // ── write_user_only ─────────────────────────────────────────────────
 

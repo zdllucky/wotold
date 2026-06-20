@@ -37,7 +37,13 @@ pub struct SpeakerSegment {
 
 /// Hard cap на число спикеров в local-режиме. Лишние объединяются в
 /// `speaker_unknown` (PRD §M12.2.5).
-pub const MAX_LOCAL_SPEAKERS: usize = 4;
+///
+/// [P14.3] 4 → 3. Для типичного 2-3-speaker mic-звонка 4-й кластер почти
+/// всегда — фантомный шум sortformer'а на перекрытиях или фоне. Если
+/// реальные 4+ speakers нужны, user override через Labs «Force N speakers»
+/// (`mic_diarization_num_speakers` setting). `reassign_unknown_to_neighbors`
+/// в pipeline дополнительно сводит overflow segments к neighbor speakers.
+pub const MAX_LOCAL_SPEAKERS: usize = 3;
 
 /// Public tag для речи без определённого спикера.
 pub const SPEAKER_UNKNOWN: &str = "speaker:unknown";
@@ -279,19 +285,88 @@ fn parse_speaker_index(tag: &str) -> Option<usize> {
     tag.strip_prefix("speaker:")?.parse().ok()
 }
 
+/// [P14.3] Reassign `SPEAKER_UNKNOWN` сегменты к ближайшему по timestamp
+/// named-спикеру в пределах `window_sec`. Снижает визуальный шум
+/// в ParticipantsRow / транскрипте, когда sortformer выделил больше
+/// `MAX_LOCAL_SPEAKERS` кластеров и overflow ушёл в unknown.
+///
+/// **Heuristic.** Для каждого unknown сегмента ищем neighbor (не unknown)
+/// с минимальным временным расстоянием. Если в `window_sec` (по обе
+/// стороны) такой neighbor найден — наследуем его tag. Иначе оставляем
+/// unknown (вероятно реальный «дополнительный голос», не overflow noise).
+///
+/// **Idempotent.** Повторный вызов не меняет результат (нет unknown'ов
+/// для reassign'а после первого прохода + window не растягивается).
+///
+/// **Single pass.** Решение fix'ится по input snapshot чтобы избежать
+/// race effect (если сосед unknown reassign'ился к speaker:0, не хотим
+/// чтобы следующий unknown через него же подхватил speaker:0 не имея
+/// прямого соседства).
+///
+/// Returns: количество reassigned segments.
+pub fn reassign_unknown_to_neighbors(segments: &mut [SpeakerSegment], window_sec: f64) -> usize {
+    if segments.is_empty() {
+        return 0;
+    }
+    // Snapshot tags ДО mutation — predicate fixed на input state.
+    let original_tags: Vec<String> = segments.iter().map(|s| s.speaker_tag.clone()).collect();
+    let mut reassigned = 0usize;
+    for i in 0..segments.len() {
+        if original_tags[i] != SPEAKER_UNKNOWN {
+            continue;
+        }
+        let center_start = segments[i].start;
+        let center_end = segments[i].end;
+        let mut best: Option<(f64, String)> = None;
+        for (j, j_tag) in original_tags.iter().enumerate() {
+            if i == j || j_tag == SPEAKER_UNKNOWN {
+                continue;
+            }
+            // Минимальное расстояние между интервалами [start,end]. Три кейса:
+            // - j заканчивается до начала i → gap = center.start - j.end
+            // - j начинается после конца i → gap = j.start - center.end
+            // - overlap (или один внутри другого) → 0
+            let dist = if segments[j].end < center_start {
+                center_start - segments[j].end
+            } else if segments[j].start > center_end {
+                segments[j].start - center_end
+            } else {
+                0.0
+            };
+            if dist <= window_sec && best.as_ref().map(|(d, _)| dist < *d).unwrap_or(true) {
+                best = Some((dist, j_tag.clone()));
+            }
+        }
+        if let Some((_, tag)) = best {
+            segments[i].speaker_tag = tag;
+            reassigned += 1;
+        }
+    }
+    if reassigned > 0 {
+        log::info!(
+            "reassign_unknown_to_neighbors: {reassigned}/{} unknown → neighbor tag (window={}s)",
+            segments.len(),
+            window_sec
+        );
+    }
+    reassigned
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn cap_under_max_keeps_tag() {
+        // [P14.3] MAX_LOCAL_SPEAKERS=3 — indices 0..=2 keep their tag.
         assert_eq!(cap_speaker_tag(0), "speaker:0");
-        assert_eq!(cap_speaker_tag(3), "speaker:3");
+        assert_eq!(cap_speaker_tag(2), "speaker:2");
     }
 
     #[test]
     fn cap_at_or_above_max_maps_to_unknown() {
-        assert_eq!(cap_speaker_tag(4), SPEAKER_UNKNOWN);
+        // [P14.3] MAX=3 → index 3 already overflow.
+        assert_eq!(cap_speaker_tag(3), SPEAKER_UNKNOWN);
         assert_eq!(cap_speaker_tag(7), SPEAKER_UNKNOWN);
     }
 
@@ -315,9 +390,10 @@ mod tests {
             },
         ];
         let out = apply_speaker_cap(input);
+        // [P14.3] MAX=3 → speaker:3 теперь тоже overflow.
         assert_eq!(out[0].speaker_tag, "speaker:0");
         assert_eq!(out[1].speaker_tag, SPEAKER_UNKNOWN);
-        assert_eq!(out[2].speaker_tag, "speaker:3");
+        assert_eq!(out[2].speaker_tag, SPEAKER_UNKNOWN);
     }
 
     #[test]
@@ -379,6 +455,72 @@ mod tests {
         let d_alt =
             SortformerDiarizer::with_num_speakers("/tmp/s.onnx".into(), "/tmp/e.onnx".into(), None);
         assert_eq!(d_new.num_speakers(), d_alt.num_speakers());
+    }
+
+    // [P14.3] reassign_unknown_to_neighbors — overflow noise mitigation.
+
+    fn seg(start: f64, end: f64, tag: &str) -> SpeakerSegment {
+        SpeakerSegment {
+            start,
+            end,
+            speaker_tag: tag.into(),
+        }
+    }
+
+    #[test]
+    fn reassign_unknown_to_nearest_named() {
+        let mut segs = vec![
+            seg(0.0, 5.0, "speaker:0"),
+            seg(5.0, 6.0, SPEAKER_UNKNOWN), // прямо рядом с speaker:0
+            seg(6.0, 10.0, "speaker:1"),
+        ];
+        let n = reassign_unknown_to_neighbors(&mut segs, 2.0);
+        assert_eq!(n, 1);
+        // Дистанция 0 в обе стороны — ties → first wins (speaker:0).
+        assert_eq!(segs[1].speaker_tag, "speaker:0");
+    }
+
+    #[test]
+    fn reassign_unknown_keeps_when_no_neighbor_in_window() {
+        let mut segs = vec![
+            seg(0.0, 5.0, "speaker:0"),
+            seg(100.0, 101.0, SPEAKER_UNKNOWN), // далеко
+        ];
+        let n = reassign_unknown_to_neighbors(&mut segs, 2.0);
+        assert_eq!(n, 0);
+        assert_eq!(segs[1].speaker_tag, SPEAKER_UNKNOWN);
+    }
+
+    #[test]
+    fn reassign_unknown_skips_when_only_unknowns() {
+        let mut segs = vec![
+            seg(0.0, 1.0, SPEAKER_UNKNOWN),
+            seg(2.0, 3.0, SPEAKER_UNKNOWN),
+        ];
+        let n = reassign_unknown_to_neighbors(&mut segs, 5.0);
+        assert_eq!(n, 0);
+        assert!(segs.iter().all(|s| s.speaker_tag == SPEAKER_UNKNOWN));
+    }
+
+    #[test]
+    fn reassign_unknown_idempotent() {
+        let mut segs = vec![seg(0.0, 5.0, "speaker:0"), seg(5.0, 6.0, SPEAKER_UNKNOWN)];
+        reassign_unknown_to_neighbors(&mut segs, 2.0);
+        let n = reassign_unknown_to_neighbors(&mut segs, 2.0);
+        assert_eq!(n, 0, "повторный вызов — no-op");
+    }
+
+    #[test]
+    fn reassign_unknown_picks_closer_when_two_neighbors() {
+        // speaker:0 ближе (gap=1s) чем speaker:1 (gap=10s).
+        let mut segs = vec![
+            seg(0.0, 4.0, "speaker:0"),
+            seg(5.0, 6.0, SPEAKER_UNKNOWN),
+            seg(16.0, 20.0, "speaker:1"),
+        ];
+        let n = reassign_unknown_to_neighbors(&mut segs, 30.0);
+        assert_eq!(n, 1);
+        assert_eq!(segs[1].speaker_tag, "speaker:0");
     }
 
     #[cfg(not(feature = "voice-onnx"))]

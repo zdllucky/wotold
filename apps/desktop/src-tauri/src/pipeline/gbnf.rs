@@ -51,32 +51,24 @@ number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
 ws     ::= [ \t\n\r]*
 "#;
 
-/// Retry wrapper: первая попытка БЕЗ grammar; на `LlmError::Provider`
-/// (включая JSON parse failures из `LocalLlamaProvider::generate`) —
-/// retry с grammar set. На second failure → propagate.
+/// [P8.3] Generate с **обязательной** GBNF grammar на первой попытке. Маленькие
+/// модели (Qwen 1.5-3B) почти всегда дают невалидный JSON без grammar
+/// constraint — first-attempt-without-grammar pattern удваивал LLM calls
+/// на каждом локальном стейдже (classifier, recap, action_items, decisions).
+///
+/// На provider error retry НЕ делаем — grammar gives best-effort JSON
+/// constraint, повторный вызов с тем же grammar даст тот же результат.
+/// Если grammar+model не справляется — error propagate'ится в caller для
+/// surface через `recap_failed_reason`.
+///
+/// Backward-compat alias `generate_with_grammar_fallback` сохранён на этот
+/// commit; callers переименуются в follow-up если нужно.
 pub(crate) async fn generate_with_grammar_fallback(
     provider: &dyn LlmProvider,
     mut request: LlmRequest,
 ) -> Result<Value, LlmError> {
-    // First attempt — без grammar.
-    request.grammar = None;
-    match provider.generate(request.clone()).await {
-        Ok(v) => Ok(v),
-        Err(first_err) => {
-            // Только LlmError::Provider triggers retry. Auth / Network /
-            // QuotaExceeded / NotImplemented — не parse failures, retry
-            // не поможет, propagate сразу.
-            if !matches!(first_err, LlmError::Provider(_)) {
-                return Err(first_err);
-            }
-            log::warn!("local LLM call failed ({first_err}), retrying с GBNF grammar fallback");
-            request.grammar = Some(UNIVERSAL_JSON_OBJECT_GRAMMAR.to_string());
-            provider.generate(request).await.map_err(|e| {
-                log::warn!("GBNF fallback also failed: {e} (propagating original parse failure)");
-                e
-            })
-        }
-    }
+    request.grammar = Some(UNIVERSAL_JSON_OBJECT_GRAMMAR.to_string());
+    provider.generate(request).await
 }
 
 #[cfg(test)]
@@ -136,66 +128,66 @@ mod tests {
         assert!(g.contains("number"));
     }
 
+    // [P8.3] gbnf wrapper теперь всегда передаёт grammar на первой попытке.
+    // Retry-pattern удалён — маленькие local модели слишком ненадёжны без
+    // grammar constraint, retry с grammar после free-form attempt лишь
+    // удваивал LLM calls на каждом этапе pipeline'а.
+
     #[tokio::test]
-    async fn fallback_first_attempt_success_no_retry() {
+    async fn grammar_applied_on_first_attempt() {
         let mock = MockProvider::new(vec![Ok(serde_json::json!({"ok": true}))]);
         let result = generate_with_grammar_fallback(&mock, dummy_request())
             .await
             .unwrap();
         assert_eq!(result["ok"], true);
         assert_eq!(mock.call_count(), 1);
-        // First call grammar=None.
-        assert!(mock.captured()[0].grammar.is_none());
-    }
-
-    #[tokio::test]
-    async fn fallback_retries_on_provider_error_with_grammar_set() {
-        let mock = MockProvider::new(vec![
-            Err(LlmError::Provider("malformed JSON".into())),
-            Ok(serde_json::json!({"recovered": true})),
-        ]);
-        let result = generate_with_grammar_fallback(&mock, dummy_request())
-            .await
-            .unwrap();
-        assert_eq!(result["recovered"], true);
-        assert_eq!(mock.call_count(), 2);
+        // grammar set на первую же попытку — без free-form attempt.
         let captured = mock.captured();
-        // First call — no grammar; second call — grammar set.
-        assert!(captured[0].grammar.is_none());
         assert_eq!(
-            captured[1].grammar.as_deref(),
-            Some(UNIVERSAL_JSON_OBJECT_GRAMMAR)
+            captured[0].grammar.as_deref(),
+            Some(UNIVERSAL_JSON_OBJECT_GRAMMAR),
+            "grammar должна быть set с первого вызова"
         );
     }
 
     #[tokio::test]
-    async fn fallback_propagates_error_when_retry_also_fails() {
-        let mock = MockProvider::new(vec![
-            Err(LlmError::Provider("first crash".into())),
-            Err(LlmError::Provider("retry crash".into())),
-        ]);
+    async fn no_retry_on_provider_error() {
+        // Раньше Provider error → retry с grammar. Теперь grammar всегда
+        // активен — retry не имеет смысла, error propagate'ится сразу.
+        let mock = MockProvider::new(vec![Err(LlmError::Provider("malformed JSON".into()))]);
         let err = generate_with_grammar_fallback(&mock, dummy_request())
             .await
             .unwrap_err();
         match err {
-            LlmError::Provider(msg) => assert!(msg.contains("retry crash")),
+            LlmError::Provider(msg) => assert!(msg.contains("malformed JSON")),
             other => panic!("expected Provider variant, got {other:?}"),
         }
-        assert_eq!(mock.call_count(), 2);
+        assert_eq!(mock.call_count(), 1, "no retry — single attempt only");
     }
 
     #[tokio::test]
-    async fn fallback_does_not_retry_on_non_provider_error() {
-        // Auth / Network / QuotaExceeded — retry бессмыслен.
+    async fn no_retry_on_non_provider_error() {
+        // Auth / Network / QuotaExceeded — propagate как раньше.
         let mock = MockProvider::new(vec![Err(LlmError::QuotaExceeded)]);
         let err = generate_with_grammar_fallback(&mock, dummy_request())
             .await
             .unwrap_err();
         assert!(matches!(err, LlmError::QuotaExceeded));
+        assert_eq!(mock.call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn caller_grammar_overridden_with_universal() {
+        // Если caller передал свою grammar — wrapper её overrides универсальной.
+        // Per-shape grammar — backlog (Phase E PRD §5.7).
+        let mut req = dummy_request();
+        req.grammar = Some("root ::= \"custom\"".to_string());
+        let mock = MockProvider::new(vec![Ok(serde_json::json!({}))]);
+        let _ = generate_with_grammar_fallback(&mock, req).await.unwrap();
+        let captured = mock.captured();
         assert_eq!(
-            mock.call_count(),
-            1,
-            "non-Provider error should NOT trigger retry"
+            captured[0].grammar.as_deref(),
+            Some(UNIVERSAL_JSON_OBJECT_GRAMMAR)
         );
     }
 }

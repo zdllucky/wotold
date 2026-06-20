@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use crate::{
     audio::macos::{self as audio_macos, OrchestratorChannels, RecordingSession},
     audio::permissions::{self, PermissionsStatus},
-    call_store::CallStore,
+    call_store::{ArtifactKind, CallStore},
     db::{self, Call},
     events::EventBus,
     local_engine::{
@@ -40,12 +40,14 @@ const SETTING_MIC_DIARIZATION_NUM_SPEAKERS: &str = "mic_diarization_num_speakers
 
 /// [P1.2] Helper: прочитать `SETTING_MIC_DIARIZATION_NUM_SPEAKERS` из DB и
 /// вернуть `Option<i32>` с clamping. Out-of-range / non-numeric → `None`.
+/// [P14.3] Range 1..=MAX_LOCAL_SPEAKERS (=3). Старые legacy values "4" →
+/// None (auto fallback) — `with_num_speakers` log warn'нёт.
 async fn read_num_speakers_override(pool: &sqlx::SqlitePool) -> Result<Option<i32>, AppError> {
     Ok(db::get_setting(pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS)
         .await?
         .as_deref()
         .and_then(|s| s.parse::<i32>().ok())
-        .filter(|n| (1..=4).contains(n)))
+        .filter(|n| (1..=crate::local_engine::diarization::MAX_LOCAL_SPEAKERS as i32).contains(n)))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -177,6 +179,10 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     let call_id = session.call_id.clone();
     let mic_path = session.mic_path.clone();
     let system_path = session.system_path.clone();
+    // [P6] Capture wall-clock start ДО move session — sidecar's stopped
+    // event возвращает duration ТОЛЬКО текущего chunk'а (с last rotate),
+    // не total. Используем Rust-side started_at для real total duration.
+    let started_at = session.started_at;
 
     // [M13 review fix] Signal stop через oneshot — это каноничный path для
     // orchestrator exit. До fix'а `stop_tx` дропался в `spawn_orchestrator`
@@ -200,7 +206,21 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     let result = audio_macos::stop(session).await;
 
     let call = match result {
-        Ok(r) => crate::db::finish_recording(&state.db, &call_id, r.duration_sec).await?,
+        Ok(_r) => {
+            // [P6] Real total wall-clock duration. `_r.duration_sec` от sidecar
+            // = только current chunk (per-rotate reset в Swift AudioRecorder
+            // → не accumulated). Используем session.started_at, минус
+            // paused_total_ms из DB (finish_recording не делает это сам).
+            let elapsed_ms = (chrono::Utc::now() - started_at).num_milliseconds().max(0);
+            let paused_ms: i64 =
+                sqlx::query_scalar("SELECT paused_total_ms FROM calls WHERE id = ?1")
+                    .bind(&call_id)
+                    .fetch_optional(&state.db)
+                    .await?
+                    .unwrap_or(0);
+            let total_sec = (elapsed_ms - paused_ms).max(0) as f64 / 1000.0;
+            crate::db::finish_recording(&state.db, &call_id, total_sec).await?
+        }
         Err(e) => {
             let _ = crate::db::fail_recording(&state.db, &call_id).await;
             EventBus::new(Some(&app)).recording_state_changed();
@@ -721,6 +741,11 @@ pub async fn retry_chunk(
     let app_data_dir = state.app_data_dir.clone();
     let app_for_task = app.clone();
     let call_id_clone = call_id.clone();
+    // [P11.1] Дополнительные клоны для post-success auto-resume hook.
+    let store_for_resume = state.store.clone();
+    let device_for_resume = state.device_id.clone();
+    let tasks_for_resume = state.pipeline_tasks.clone();
+    let app_for_resume = app.clone();
     log::info!(
         "retry_chunk: spawning run_chunk for {call_id_clone}/{chunk_idx} \
          (preset={preset:?}, start_ms={start_ms}, end_ms={end_ms})"
@@ -751,13 +776,176 @@ pub async fn retry_chunk(
         )
         .await
         {
-            Ok(out) => log::info!(
-                "retry_chunk[{call_id_clone}/{chunk_idx}]: success, {} segments",
-                out.segment_count
-            ),
+            Ok(out) => {
+                log::info!(
+                    "retry_chunk[{call_id_clone}/{chunk_idx}]: success, {} segments",
+                    out.segment_count
+                );
+                // [P11.1] Auto-resume pipeline: если все chunks теперь done и
+                // звонок не активен (не recording) — spawn reprocess через тот
+                // же PipelineRunner что использует stop_recording. Idempotent
+                // через `spawn_reprocess` abort+respawn для same call_id.
+                if let Err(e) = maybe_resume_pipeline_after_chunk(
+                    &pool,
+                    &call_id_clone,
+                    store_for_resume,
+                    device_for_resume,
+                    app_for_resume,
+                    tasks_for_resume,
+                )
+                .await
+                {
+                    log::warn!("retry_chunk[{call_id_clone}/{chunk_idx}]: auto-resume failed: {e}");
+                }
+            }
             Err(e) => log::warn!("retry_chunk[{call_id_clone}/{chunk_idx}]: failed: {e}"),
         }
     });
 
     Ok(())
+}
+
+/// [P11.1] После того как chunk_runner перевёл chunk failed→done в
+/// `retry_chunk`, проверить: можно ли уже автоматически возобновить
+/// downstream pipeline (diarize → audio_merger → recap).
+///
+/// **Гарантии auto-resume:**
+/// - Все chunks для звонка `status='done'` (нет ни pending, ни failed).
+/// - Звонок не recording (active recording owns orchestrator, не наш case).
+/// - Звонок не уже `status='ready'` (recap уже persisted).
+///
+/// Если условия совпали — `PipelineRunner::spawn_reprocess` сам идемпотентен:
+/// abort'ает existing task для этого `call_id` (если есть) и spawn'ит новый
+/// `pipeline::run` через chunked path (load_chunked_transcripts skip STT).
+async fn maybe_resume_pipeline_after_chunk(
+    pool: &SqlitePool,
+    call_id: &str,
+    store: Arc<crate::call_store::CallStore>,
+    device_id: Arc<str>,
+    app: AppHandle,
+    tasks: crate::services::pipeline_runner::PipelineTasks,
+) -> Result<(), AppError> {
+    if !db::chunks::all_chunks_done(pool, call_id).await? {
+        log::debug!("maybe_resume_pipeline_after_chunk[{call_id}]: not all chunks done, skip");
+        return Ok(());
+    }
+    let Some(call) = db::get_call(pool, call_id).await? else {
+        return Err(AppError::NotFound(format!("call {call_id}")));
+    };
+    if call.status == "recording" {
+        log::debug!("maybe_resume_pipeline_after_chunk[{call_id}]: still recording, skip");
+        return Ok(());
+    }
+    if call.status == "ready" && call.recap_failed_reason.is_none() {
+        log::debug!(
+            "maybe_resume_pipeline_after_chunk[{call_id}]: already ready w/o failure, skip"
+        );
+        return Ok(());
+    }
+    log::info!("maybe_resume_pipeline_after_chunk[{call_id}]: all chunks done, spawning reprocess");
+    PipelineRunner::spawn_reprocess(
+        pool.clone(),
+        store,
+        device_id,
+        app,
+        tasks,
+        call_id.to_string(),
+    )
+    .await
+}
+
+/// [P14.1] Force re-STT — destructive operation. Дропает existing per-chunk
+/// transcripts + merged artifacts (transcript.md / raw_stt.json / recap.md) и
+/// сбрасывает chunks в pending. Затем spawn'ит full pipeline rerun через
+/// `PipelineRunner::spawn_reprocess` — chunked path запустит chunk_runner
+/// для каждого pending chunk заново, с применением свежих P12 filters
+/// (hallucination patterns + whisper anti-hallucination flags).
+///
+/// Используется когда existing transcripts содержат hallucinations
+/// созданные pre-P12.1 (`[Редактор субтитров...]`, `[FOREIGN]` теги) —
+/// chunk_assembly skip-STT path не применяет filter post-hoc, нужен
+/// полный re-recognition.
+///
+/// **Гарантии:**
+/// - Refuse если `engine != Local` (cloud не chunked).
+/// - Refuse если `status == 'recording'` (sidecar активен — нельзя дропать).
+/// - Idempotent через `spawn_reprocess` abort+respawn.
+#[tauri::command]
+pub async fn force_restt_call(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<(), AppError> {
+    // 1. Verify call exists.
+    let call = db::get_call(&state.db, &call_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
+
+    // 2. Refuse если активная запись — sidecar держит файлы.
+    if call.status == "recording" {
+        return Err(AppError::Other(
+            "force_restt_call: запись активна — сначала останови".into(),
+        ));
+    }
+
+    // 3. Engine check — chunked path только для Local.
+    let engine = db::get_setting(&state.db, SETTING_ACTIVE_ENGINE)
+        .await?
+        .as_deref()
+        .and_then(EngineKind::from_str);
+    if !matches!(engine, Some(EngineKind::Local)) {
+        return Err(AppError::Other(
+            "force_restt_call: требуется локальный движок (Cloud не chunked)".into(),
+        ));
+    }
+
+    // 4. Delete artifacts на диске. Ошибки игнорируем (best-effort) — если
+    //    файла нет, ничего страшного.
+    let call_dir = state.store.call_dir(&call_id);
+    for kind in [
+        ArtifactKind::Transcript,
+        ArtifactKind::RawStt,
+        ArtifactKind::Recap,
+    ] {
+        let p = state.store.artifact_path(&call_id, kind);
+        if let Err(e) = tokio::fs::remove_file(&p).await {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("force_restt_call: remove artifact {:?}: {e}", p);
+            }
+        }
+    }
+    // Per-chunk transcript JSON files (mic_transcript.json / system_transcript.json).
+    let chunks_dir = call_dir.join("chunks");
+    if let Ok(mut entries) = tokio::fs::read_dir(&chunks_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            for fname in ["mic_transcript.json", "system_transcript.json"] {
+                let p = entry.path().join(fname);
+                if let Err(e) = tokio::fs::remove_file(&p).await {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        log::warn!("force_restt_call: remove {:?}: {e}", p);
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Reset DB chunks state + clear failure reason.
+    let reset_count = db::chunks::reset_chunks_for_restt(&state.db, &call_id).await?;
+    log::info!(
+        "force_restt_call[{call_id}]: reset {reset_count} chunks → pending, \
+         engine=local, spawning reprocess"
+    );
+    db::set_recap_failed_reason(&state.db, &call_id, None).await?;
+
+    // 6. Spawn full pipeline rerun. spawn_reprocess идемпотентен — abort'ает
+    //    existing task для этого call_id.
+    PipelineRunner::spawn_reprocess(
+        state.db.clone(),
+        state.store.clone(),
+        state.device_id.clone(),
+        app,
+        state.pipeline_tasks.clone(),
+        call_id,
+    )
+    .await
 }

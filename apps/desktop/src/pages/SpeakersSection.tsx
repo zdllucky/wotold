@@ -363,11 +363,17 @@ export function SpeakersSection({
   );
 }
 
-// [B17] Per-speaker first sample из raw_stt.json.merged segments.
-// Возвращает map speaker_tag → {text, start, end, src}. Src по правилу:
-//   - owner_tag → mic
-//   - прочие → system
-// (та же диаризация что и в pipeline cluster extraction).
+// [B17] Per-speaker first sample из raw_stt.json.
+//
+// [P5.3] Rewrite на per-track lookup из `mic.segments` + `system.segments`
+// (вместо merged-only heuristic `tag === OWNER_TAG ? micSrc : systemSrc`).
+// Heuristic ломался для anonymous mic speakers (post-P1.2 диаризация
+// выделяет `speaker:N` на mic-дорожке) — они рендерились с systemSrc → тишина.
+//
+// Algorithm: для каждого speaker_tag собрать сегменты из обеих дорожек,
+// pick track где найден longest segment (по text length). Если только в
+// одной track → та track. Fallback на legacy merged-only heuristic если
+// mic/system отсутствуют (старые звонки до P5.3 либо malformed JSON).
 interface RawSttSegment {
   speakerTag: string;
   text: string;
@@ -375,8 +381,47 @@ interface RawSttSegment {
   end: number;
 }
 
+interface RawSttTrack {
+  segments?: unknown;
+}
+
+interface RawSttRoot {
+  mic?: RawSttTrack;
+  system?: RawSttTrack;
+  merged?: unknown;
+}
+
 const MIN_SAMPLE_LEN = 5; // символов
 const MAX_SAMPLE_LEN = 140;
+
+/** Parse JSON array of raw segments — defensive, skip malformed entries. */
+function parseSegments(raw: unknown): RawSttSegment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RawSttSegment[] = [];
+  for (const s of raw) {
+    if (!s || typeof s !== 'object') continue;
+    const o = s as Record<string, unknown>;
+    if (
+      typeof o.speakerTag !== 'string' ||
+      typeof o.text !== 'string' ||
+      typeof o.start !== 'number' ||
+      typeof o.end !== 'number'
+    )
+      continue;
+    out.push({ speakerTag: o.speakerTag, text: o.text, start: o.start, end: o.end });
+  }
+  return out;
+}
+
+/** Pick longest segment by text length for given tag. */
+function bestForTag(segments: RawSttSegment[], tag: string): RawSttSegment | null {
+  let best: RawSttSegment | null = null;
+  for (const s of segments) {
+    if (s.speakerTag !== tag) continue;
+    if (!best || s.text.length > best.text.length) best = s;
+  }
+  return best;
+}
 
 export function extractSamples(
   json: string | null,
@@ -386,29 +431,61 @@ export function extractSamples(
   const out = new Map<string, SpeakerSample>();
   if (!json) return out;
   try {
-    const data = JSON.parse(json) as { merged?: unknown };
-    if (!Array.isArray(data.merged)) return out;
-    // Bucket первых 5 сегментов на тег.
+    const data = JSON.parse(json) as RawSttRoot;
+    const micSegs = parseSegments(data.mic?.segments);
+    const sysSegs = parseSegments(data.system?.segments);
+    const hasPerTrack = micSegs.length > 0 || sysSegs.length > 0;
+
+    if (hasPerTrack) {
+      // [P5.3] Per-track lookup — correct attribution для anonymous mic speakers.
+      const tags = new Set<string>();
+      for (const s of micSegs) tags.add(s.speakerTag);
+      for (const s of sysSegs) tags.add(s.speakerTag);
+
+      for (const tag of tags) {
+        const micBest = bestForTag(micSegs, tag);
+        const sysBest = bestForTag(sysSegs, tag);
+        let pick: { seg: RawSttSegment; src: string | null } | null = null;
+        if (micBest && sysBest) {
+          // Tie-break: longer text wins; equal length → mic preferred (owner heuristic).
+          pick =
+            sysBest.text.length > micBest.text.length
+              ? { seg: sysBest, src: systemSrc }
+              : { seg: micBest, src: micSrc };
+        } else if (micBest) {
+          pick = { seg: micBest, src: micSrc };
+        } else if (sysBest) {
+          pick = { seg: sysBest, src: systemSrc };
+        }
+        if (!pick || !pick.src) continue;
+        const trimmed = pick.seg.text.trim();
+        if (trimmed.length < MIN_SAMPLE_LEN) continue;
+        out.set(tag, {
+          text:
+            trimmed.length > MAX_SAMPLE_LEN
+              ? trimmed.slice(0, MAX_SAMPLE_LEN - 1) + '…'
+              : trimmed,
+          start: pick.seg.start,
+          end: pick.seg.end,
+          src: pick.src,
+        });
+      }
+      return out;
+    }
+
+    // Legacy fallback: merged-only JSON (старые звонки) → heuristic
+    // OWNER → mic / else → system. Может silent'ить anonymous mic speakers,
+    // но это backwards-compat path для записей сделанных ДО P5.3.
+    const merged = parseSegments(data.merged);
     const buckets = new Map<string, RawSttSegment[]>();
-    for (const s of data.merged) {
-      if (!s || typeof s !== 'object') continue;
-      const o = s as Record<string, unknown>;
-      if (
-        typeof o.speakerTag !== 'string' ||
-        typeof o.text !== 'string' ||
-        typeof o.start !== 'number' ||
-        typeof o.end !== 'number'
-      )
-        continue;
-      const tag = o.speakerTag;
-      const arr = buckets.get(tag) ?? [];
+    for (const s of merged) {
+      const arr = buckets.get(s.speakerTag) ?? [];
       if (arr.length < 5) {
-        arr.push({ speakerTag: tag, text: o.text, start: o.start, end: o.end });
-        buckets.set(tag, arr);
+        arr.push(s);
+        buckets.set(s.speakerTag, arr);
       }
     }
     for (const [tag, arr] of buckets.entries()) {
-      // Берём самый длинный текстом из первых 5.
       const best = arr.reduce(
         (a, b) => (b.text.length > a.text.length ? b : a),
         arr[0]!,

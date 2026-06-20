@@ -80,6 +80,18 @@ impl LocalEnginePreset {
     pub fn shared_model_ids() -> [ModelId; 1] {
         [ModelId::PYANNOTE_SEGMENTATION]
     }
+
+    /// [P5.1] Human-friendly engine label для `calls.summary_engine` field.
+    /// Используется как в success path (`persist_recap_from_json`), так и в
+    /// failure path (`set_recap_failure`) — гарантирует consistent badge ↔
+    /// reason matching в UI.
+    pub fn engine_label(&self) -> &'static str {
+        match self {
+            LocalEnginePreset::Light => "local-qwen-1.5b",
+            LocalEnginePreset::Balanced => "local-qwen-3b",
+            LocalEnginePreset::Quality => "local-qwen-7b",
+        }
+    }
 }
 
 /// Сериализованная raskладка для отдачи на frontend. См. contract

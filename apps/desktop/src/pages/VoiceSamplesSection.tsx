@@ -5,12 +5,13 @@
 // подтверждение спикера). При удалении контакта (#41) семплы зачищаются
 // каскадом — но это удаление контакта; здесь — точечное.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { Badge, Button, Empty, Skeleton } from '../ui';
 import {
   deleteVoiceSample,
+  getVoiceSampleAudio,
   listVoiceSamples,
   type VoiceSampleView,
 } from '../api/voiceSamples';
@@ -46,6 +47,20 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   const [samples, setSamples] = useState<VoiceSampleView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // [P4] Inline playback короткого slice (1.5–10 sec) из правильной track.
+  // Backend `get_voice_sample_audio` возвращает WAV bytes (start_sec..end_sec
+  // из mic.wav либо system.wav по track_kind). Frontend оборачивает в Blob
+  // URL для HTMLAudioElement.src. Legacy samples (NULL slice metadata) —
+  // play button disabled.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Blob URL текущего playing sample — нужен для cleanup через
+  // URL.revokeObjectURL (предотвращает memory leak).
+  const currentBlobUrlRef = useRef<string | null>(null);
+  // `loadingId` — пока fetch'им bytes + создаём Blob URL.
+  // `playingId` — после audio.play() resolve.
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+
   const refresh = useCallback(() => {
     listVoiceSamples(contactId)
       .then((v) => {
@@ -58,6 +73,76 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // [P4] Cleanup audio element + blob URL on unmount / contact switch.
+  useEffect(() => {
+    return () => {
+      const el = audioRef.current;
+      if (el) {
+        el.pause();
+        el.removeAttribute('src');
+        el.load();
+      }
+      if (currentBlobUrlRef.current) {
+        URL.revokeObjectURL(currentBlobUrlRef.current);
+        currentBlobUrlRef.current = null;
+      }
+    };
+  }, [contactId]);
+
+  const stopPlayback = useCallback(() => {
+    const el = audioRef.current;
+    if (el) {
+      el.pause();
+      el.currentTime = 0;
+    }
+    // Revoke blob URL — не оставляем GC-leak.
+    if (currentBlobUrlRef.current) {
+      URL.revokeObjectURL(currentBlobUrlRef.current);
+      currentBlobUrlRef.current = null;
+    }
+    setPlayingId(null);
+    setLoadingId(null);
+  }, []);
+
+  const handlePlay = useCallback(
+    async (s: VoiceSampleView) => {
+      // Legacy sample (NULL slice metadata) — disabled в UI, защитный возврат.
+      if (!s.track_kind || s.start_sec === null || s.end_sec === null) return;
+      // Toggle off если этот sample уже играет.
+      if (playingId === s.id) {
+        stopPlayback();
+        return;
+      }
+      // Switching на другой sample — останавливаем предыдущий.
+      stopPlayback();
+      setLoadingId(s.id);
+      try {
+        const bytes = await getVoiceSampleAudio(s.id);
+        // Race-prevention: если за время fetch'а юзер кликнул другой sample,
+        // bail. loadingId на этот момент может уже не быть s.id.
+        const el = audioRef.current;
+        if (!el) {
+          setLoadingId(null);
+          return;
+        }
+        // ArrayBuffer от Tauri invoke — wrap в Blob audio/wav → ObjectURL.
+        // Cast Uint8Array → BlobPart: ArrayBufferLike covers SharedArrayBuffer
+        // case ts compiler defensive'ит — у нас всегда regular ArrayBuffer.
+        const blob = new Blob([bytes as BlobPart], { type: 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+        currentBlobUrlRef.current = url;
+        el.src = url;
+        await el.play();
+        setLoadingId((prev) => (prev === s.id ? null : prev));
+        setPlayingId(s.id);
+      } catch (e) {
+        setLoadingId(null);
+        setError(humanError(e));
+      }
+    },
+    [playingId, stopPlayback],
+  );
 
   const handleDelete = async (s: VoiceSampleView) => {
     const ok = await ask(
@@ -89,7 +174,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
             key={i}
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr auto auto',
+              gridTemplateColumns: '1fr auto auto auto',
               gap: 12,
               padding: '8px 0',
               alignItems: 'center',
@@ -97,7 +182,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
             }}
           >
             <Skeleton width="60%" height="0.85em" />
-            <Skeleton width="3rem" height="0.7em" />
+            <Skeleton width="1.5rem" height="1rem" />
             <Skeleton width="1.5rem" height="1rem" />
           </div>
         ))}
@@ -142,57 +227,106 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
         />
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-          {samples!.map((s) => (
-            <li
-              key={s.id}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr auto',
-                gap: 12,
-                padding: '10px 0',
-                borderTop: '1px solid var(--line-soft)',
-                alignItems: 'center',
-              }}
-            >
-              <div
+          {samples!.map((s) => {
+            // [P4] Play разрешён только когда slice metadata complete.
+            // Legacy rows (NULL по migration 0017) — disabled.
+            const canPlay =
+              s.track_kind != null && s.start_sec != null && s.end_sec != null;
+            const isLoading = loadingId === s.id;
+            const isPlaying = playingId === s.id;
+            const playLabel = !canPlay
+              ? t('voiceSamples.playDisabledHint')
+              : isPlaying
+                ? t('voiceSamples.pauseAria')
+                : t('voiceSamples.playAria');
+            return (
+              <li
+                key={s.id}
                 style={{
-                  display: 'flex',
-                  gap: 14,
-                  flexWrap: 'wrap',
-                  alignItems: 'baseline',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr auto auto',
+                  gap: 12,
+                  padding: '10px 0',
+                  borderTop: '1px solid var(--line-soft)',
+                  alignItems: 'center',
                 }}
               >
-                <span
-                  className="mono"
-                  style={{ fontSize: 12, color: 'var(--ink)' }}
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 14,
+                    flexWrap: 'wrap',
+                    alignItems: 'baseline',
+                  }}
                 >
-                  {formatCreatedAt(s.created_at, locale)}
-                </span>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  {t('voiceSamples.quality', { pct: formatQuality(s.quality) })}
-                </span>
-                <span className="subtle" style={{ fontSize: 11 }}>
-                  {t('voiceSamples.embedBytes', { n: s.embedding_bytes })}
-                </span>
-                {s.source_call && (
-                  <span className="subtle mono" style={{ fontSize: 10 }}>
-                    {t('voiceSamples.callTag', { short: s.source_call.slice(0, 8) })}
+                  <span
+                    className="mono"
+                    style={{ fontSize: 12, color: 'var(--ink)' }}
+                  >
+                    {formatCreatedAt(s.created_at, locale)}
                   </span>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="danger"
-                size="sm"
-                onClick={() => void handleDelete(s)}
-                aria-label={t('voiceSamples.deleteAria')}
-              >
-                ×
-              </Button>
-            </li>
-          ))}
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {t('voiceSamples.quality', { pct: formatQuality(s.quality) })}
+                  </span>
+                  <span className="subtle" style={{ fontSize: 11 }}>
+                    {t('voiceSamples.embedBytes', { n: s.embedding_bytes })}
+                  </span>
+                  {s.source_call && (
+                    <span className="subtle mono" style={{ fontSize: 10 }}>
+                      {t('voiceSamples.callTag', { short: s.source_call.slice(0, 8) })}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handlePlay(s)}
+                  disabled={!canPlay || isLoading}
+                  aria-label={playLabel}
+                  title={playLabel}
+                >
+                  {/* Glyph: ▶ idle, ❚❚ playing, … loading. Disabled — outline ▷. */}
+                  {isLoading ? '…' : isPlaying ? '❚❚' : canPlay ? '▶' : '▷'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={() => void handleDelete(s)}
+                  aria-label={t('voiceSamples.deleteAria')}
+                >
+                  ×
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       )}
+      {/* [P3] Single shared <audio> для всех samples — single-concurrent
+          playback. Hidden control (manage via refs). onEnded чистит state. */}
+      <audio
+        ref={audioRef}
+        preload="none"
+        onEnded={() => {
+          // [P4] Revoke blob URL по completion playback — memory hygiene.
+          if (currentBlobUrlRef.current) {
+            URL.revokeObjectURL(currentBlobUrlRef.current);
+            currentBlobUrlRef.current = null;
+          }
+          setPlayingId(null);
+          setLoadingId(null);
+        }}
+        onError={() => {
+          if (currentBlobUrlRef.current) {
+            URL.revokeObjectURL(currentBlobUrlRef.current);
+            currentBlobUrlRef.current = null;
+          }
+          setPlayingId(null);
+          setLoadingId(null);
+        }}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }

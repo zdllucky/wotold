@@ -47,6 +47,14 @@ pub mod chunk_assembly;
 // [Tech-debt P0.1] Конкатенация per-chunk WAV файлов в root mic.wav/system.wav.
 // Без этого AudioScrubber играет только первый chunk вместо полной записи.
 pub mod audio_merger;
+/// [P1.3] Periodic `recap:progress` event emitter wrapper. Оборачивает
+/// local LLM future чтобы каждые 15s emit'ить elapsed_sec — UI рендерит
+/// «Пересоздаём… {sec}s».
+pub mod recap_progress;
+/// [P4] Best-segment selector для voice sample slice metadata —
+/// pure-fn lookup в merged raw_stt.json, возвращает (start, end, track)
+/// для voice_backfill INSERT.
+pub mod voice_sample_picker;
 
 // [M13.2.1] Global agglomerative single-link cosine clustering на
 // per-chunk WeSpeaker embeddings — сводит local speaker:N tags к global
@@ -159,6 +167,48 @@ async fn emit_progress(
 }
 
 /// Запуск STT после остановки записи (M2.4-2.5 паспорта). Транскрибирует
+/// [P13] Halt gate перед stage 2→3 transition в chunked path. Strict
+/// all-or-nothing — если есть ЛЮБОЙ non-done chunk (pending/processing/
+/// failed) → возвращает Err с явным reason для UI surface через
+/// `recap_failed_reason`. Pipeline не должен build'ить partial transcript.
+///
+/// **0 chunks** → `Ok(())` (cloud / non-chunked path unaffected — там
+/// pipeline идёт через full-file STT, halt не релевантен).
+///
+/// **All done** → `Ok(())` (proceed to merge/diarize/recap).
+///
+/// **Любой non-done** → `Err("chunks_need_retry: N of M ...")`. UI читает
+/// через humanError pattern, P11.2 ChunkFailureAccordion уже показывает
+/// retry buttons. После retry → P11.1 auto-resume → halt gate проходит.
+///
+/// Callsites:
+/// - [`reprocess_call`] pre-flight (заменяет existing P1.1 warn).
+/// - [`run_local_inner`] перед `chunk_assembly::load_chunked_transcripts`
+///   (initial pipeline после stop_recording тоже gate'ится).
+pub(crate) async fn ensure_all_chunks_done(
+    pool: &SqlitePool,
+    call_id: &str,
+) -> Result<(), AppError> {
+    let chunks = db::chunks::list_chunks_by_call(pool, call_id).await?;
+    if chunks.is_empty() {
+        return Ok(());
+    }
+    let not_done: Vec<u32> = chunks
+        .iter()
+        .filter(|c| c.status != "done")
+        .map(|c| c.chunk_idx)
+        .collect();
+    if !not_done.is_empty() {
+        return Err(AppError::Other(format!(
+            "chunks_need_retry: {} of {} chunks not done (idx: {:?})",
+            not_done.len(),
+            chunks.len(),
+            not_done
+        )));
+    }
+    Ok(())
+}
+
 /// mic и system параллельно, сливает таймлайн, сохраняет `raw_stt.json` и
 /// `transcript.md`, проставляет `calls.status = ready/failed`.
 ///
@@ -238,23 +288,23 @@ pub async fn reprocess_call(
         ));
     }
 
-    // [Tech-debt P1.1] Pre-flight surface failed chunks. `chunk_assembly::load_chunked_transcripts`
-    // тихо фильтрует `status='done'` и пропускает failed chunks — final transcript неполный
-    // без явного сигнала. Не блокируем (user мог намеренно хотеть partial recap), но видимо
-    // в логах. UI уже surface'ит failed badge + retry в ChunkProgressStrip (P0.2).
-    let chunks = db::chunks::list_chunks_by_call(pool, call_id).await?;
-    let failed_chunks: Vec<u32> = chunks
-        .iter()
-        .filter(|c| c.status == "failed")
-        .map(|c| c.chunk_idx)
-        .collect();
-    if !failed_chunks.is_empty() {
-        log::warn!(
-            "reprocess_call {call_id}: skipping {} failed chunk(s): {:?}. \
-             Retry chunks individually before reprocess for complete content.",
-            failed_chunks.len(),
-            failed_chunks
-        );
+    // [P13] Halt gate перед reprocess — pipeline strict all-or-nothing.
+    // Если есть failed chunks → bail с явным reason, UI читает через
+    // `recap_failed_reason` (existing banner pattern). User должен retry
+    // failed chunks; P11.1 auto-resume подхватит pipeline когда все done.
+    //
+    // Заменяет existing P1.1 log::warn — раньше continued с partial data
+    // и pipeline шёл по 1/3 как по 3/3, build'ил incomplete transcript.
+    if let Err(e) = ensure_all_chunks_done(pool, call_id).await {
+        let reason = e.to_string();
+        log::warn!("reprocess_call {call_id} halt: {reason}");
+        // [P16.2] Write `failed_reason` тоже (ErrorScreen его читает) +
+        // recap_failed_reason для recap banner backward compat. Также
+        // clears pipeline_* fields чтобы UI не показывал stale processing
+        // UI если frontend optimistic patch не reverted.
+        let _ = db::fail_recording_with_reason(pool, call_id, Some(&reason)).await;
+        let _ = db::set_recap_failed_reason(pool, call_id, Some(&reason)).await;
+        return Err(e);
     }
 
     // Reset status: was failed → processing, clear failed_reason.
@@ -288,6 +338,19 @@ pub async fn reprocess_call(
     };
 
     run(pool, ctx, app).await
+}
+
+/// [P5.1] Resolve current local preset → engine label string для persist
+/// в `calls.summary_engine`. Best-effort: на ошибке чтения preset либо
+/// None preset возвращает None — caller передаёт это в `set_recap_failure`
+/// и `summary_engine` остаётся unchanged (safer чем persist неправильный).
+async fn local_engine_label_from_pool(pool: &SqlitePool) -> Option<String> {
+    let raw = db::get_setting(pool, crate::local_engine::preset::SETTING_ACTIVE_PRESET)
+        .await
+        .ok()
+        .flatten()?;
+    let preset = crate::local_engine::preset::LocalEnginePreset::from_str(&raw)?;
+    Some(preset.engine_label().to_string())
 }
 
 /// M4.5 паспорта: ручная регенерация рекапа без повторной транскрипции.
@@ -368,7 +431,16 @@ pub async fn regenerate_recap(
                 Ok(())
             }
             Err(e) => {
-                let _ = db::set_recap_failed_reason(pool, call_id, Some(&e.to_string())).await;
+                // [P5.1] Persist engine label atomically с reason —
+                // banner badge ↔ failure text всегда matched.
+                let engine_label = local_engine_label_from_pool(pool).await;
+                let _ = db::set_recap_failure(
+                    pool,
+                    call_id,
+                    Some(&e.to_string()),
+                    engine_label.as_deref(),
+                )
+                .await;
                 Err(e)
             }
         };
@@ -399,7 +471,11 @@ pub async fn regenerate_recap(
         Err(e) => {
             // Persist для UI + пробросываем (regenerate explicit user-action,
             // надо показать ошибку прямо в кнопке).
-            let _ = db::set_recap_failed_reason(pool, call_id, Some(&e.to_string())).await;
+            // [P5.1] Engine label = "cloud-managed" — banner badge ↔ reason
+            // matched (без mismatch с stale local engine из prior attempt).
+            let _ =
+                db::set_recap_failure(pool, call_id, Some(&e.to_string()), Some("cloud-managed"))
+                    .await;
             Err(e)
         }
     }
@@ -482,7 +558,9 @@ async fn regenerate_recap_local(
             None
         };
 
+    // [P1.3] Per-preset timeout: Light 5min / Balanced 10min / Quality 15min.
     let provider = LocalLlamaProvider::for_preset(app_data_dir, llm_id)
+        .with_timeout(crate::local_engine::llm::timeout_for_preset(preset))
         .with_app(app.clone())
         .await
         .with_draft_model(draft_path);
@@ -493,9 +571,16 @@ async fn regenerate_recap_local(
         known_speakers: known_speakers.as_deref(),
         preset,
     };
-    let json_value = local_orchestrator::run_v2_pipeline(&provider, orch_ctx)
-        .await
-        .map_err(|e| AppError::Other(format!("local_engine_llm_failed: {e}")))?;
+    // [P1.3] Wrap LLM future в periodic recap:progress emitter. UI рендерит
+    // «Пересоздаём… {sec}s»; на completion (success / fail / timeout) ticker
+    // аборт'ится через JoinHandle::abort внутри helper'а.
+    let json_value = recap_progress::with_recap_progress_emitter(
+        Some(app.clone()),
+        call_id.to_string(),
+        local_orchestrator::run_v2_pipeline(&provider, orch_ctx),
+    )
+    .await
+    .map_err(|e| AppError::Other(format!("local_engine_llm_failed: {e}")))?;
 
     let local_engine_label = match llm_id.as_str() {
         id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
@@ -739,6 +824,13 @@ async fn run_local_inner(
 
     // 4. Stage Transcribe — mic + system параллельно через whisper-cli sidecar.
     //
+    // [P13] Halt gate — если есть failed chunks, не идём дальше step 2.
+    // Strict all-or-nothing: pipeline не должен build'ить partial transcript.
+    // 0 chunks → Ok (non-chunked path, halt не релевантен) — fall back на
+    // full-file STT ниже. После retry failed chunks → P11.1 auto-resume
+    // re-войдёт сюда + halt пройдёт.
+    ensure_all_chunks_done(pool, &ctx.call_id).await?;
+
     // [M13.1.5d] Если за время записи chunk_orchestrator насобирал per-chunk
     // транскрипты (CHUNKED_PIPELINE=ON в start_recording) — пропускаем
     // full-file STT и собираем mic/sys из DB. Cloud engine сюда не доходит
@@ -964,7 +1056,9 @@ async fn run_local_inner(
                 } else {
                     None
                 };
+            // [P1.3] Per-preset timeout (Light 5min / Balanced 10min / Quality 15min).
             let provider = LocalLlamaProvider::for_preset(&ctx.app_data_dir, llm_id)
+                .with_timeout(crate::local_engine::llm::timeout_for_preset(preset))
                 .with_app(app.clone())
                 .await
                 .with_draft_model(draft_path);
@@ -976,9 +1070,15 @@ async fn run_local_inner(
                 // длинные transcripts автоматически идут map-reduce.
                 preset,
             };
-            local_orchestrator::run_v2_pipeline(&provider, orch_ctx)
-                .await
-                .map_err(|e| crate::providers::llm::LlmError::Provider(e.to_string()))
+            // [P1.3] Wrap LLM future в periodic recap:progress emitter
+            // (mirror regenerate_recap_local). UI рендерит «Пересоздаём… {sec}s».
+            recap_progress::with_recap_progress_emitter(
+                Some(app.clone()),
+                ctx.call_id.clone(),
+                local_orchestrator::run_v2_pipeline(&provider, orch_ctx),
+            )
+            .await
+            .map_err(|e| crate::providers::llm::LlmError::Provider(e.to_string()))
         }
         Ok(_) => Err(crate::providers::llm::LlmError::Provider(
             "local_engine_transcript_empty".into(),
@@ -988,17 +1088,20 @@ async fn run_local_inner(
         ))),
     };
 
+    // [P5.1] Hoist label derivation outside match — нужен в обеих ветках
+    // (success persist + failure atomic UPDATE).
+    let local_engine_label = match llm_id.as_str() {
+        id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
+        id if id.contains("3b") => "local-qwen-3b",
+        id if id.contains("7b") => "local-qwen-7b",
+        _ => "local-qwen",
+    };
+
     match llm_result {
         Ok(json_value) => {
             // [M14 T-02] persist_recap_from_json теперь требует engine_label +
             // transcript_md (для evidence validator) + generation_ms (None
             // на local path; в T-04+ доделаем).
-            let local_engine_label = match llm_id.as_str() {
-                id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
-                id if id.contains("3b") => "local-qwen-3b",
-                id if id.contains("7b") => "local-qwen-7b",
-                _ => "local-qwen",
-            };
             if let Err(e) = recap::persist_recap_from_json(
                 pool,
                 &ctx.call_id,
@@ -1013,10 +1116,12 @@ async fn run_local_inner(
             )
             .await
             {
-                let _ = db::set_recap_failed_reason(
+                // [P5.1] Engine label atomic с reason — banner consistent.
+                let _ = db::set_recap_failure(
                     pool,
                     &ctx.call_id,
                     Some(&format!("local_engine_recap_persist: {e}")),
+                    Some(local_engine_label),
                 )
                 .await;
             } else {
@@ -1029,7 +1134,10 @@ async fn run_local_inner(
         Err(e) => {
             let reason = format!("local_engine_llm_failed: {e}");
             log::warn!("{reason}");
-            let _ = db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await;
+            // [P5.1] Engine label atomic с reason.
+            let _ =
+                db::set_recap_failure(pool, &ctx.call_id, Some(&reason), Some(local_engine_label))
+                    .await;
         }
     }
     emit_progress(pool, Some(app), &ctx.call_id, recap_step, 100, None, None).await;
@@ -1203,13 +1311,24 @@ async fn diarize_track(
     if let Some(n) = num_speakers {
         log::info!("diarize_track[{track_kind}]: forcing num_clusters={n} (Labs override)");
     }
-    let speaker_segments = match diarizer.diarize(audio_path).await {
+    let mut speaker_segments = match diarizer.diarize(audio_path).await {
         Ok(segs) => segs,
         Err(e) => {
             log::warn!("diarize_track[{track_kind}]: sortformer err: {e} — fall back");
             return transcript;
         }
     };
+
+    // [P14.3] Reassign overflow `speaker:unknown` segments к ближайшему
+    // named-спикеру в окне ±2s. Снижает шум в ParticipantsRow когда
+    // sortformer вывел больше MAX_LOCAL_SPEAKERS (=3) кластеров.
+    let reassigned =
+        crate::local_engine::diarization::reassign_unknown_to_neighbors(&mut speaker_segments, 2.0);
+    if reassigned > 0 {
+        log::info!(
+            "diarize_track[{track_kind}]: reassigned {reassigned} unknown → neighbor speakers"
+        );
+    }
 
     // [Bug-fix] Diagnostic: сколько уникальных спикеров sortformer выделил
     // + суммарные durations. Без этого silent-collapse невозможно отличить
@@ -1352,8 +1471,13 @@ async fn stage_recap(
             let reason = e.to_string();
             log::warn!("recap {} skipped: {reason}", ctx.call_id);
             // [B16]: persist recap failure для UI banner. status='ready' остаётся.
-            if let Err(e2) = db::set_recap_failed_reason(pool, &ctx.call_id, Some(&reason)).await {
-                log::error!("set_recap_failed_reason {} failed: {e2}", ctx.call_id);
+            // [P5.1] Atomic UPDATE c engine_label="cloud-managed" — match
+            // recap_ctx.engine_label выше. Banner badge ↔ reason consistent.
+            if let Err(e2) =
+                db::set_recap_failure(pool, &ctx.call_id, Some(&reason), Some("cloud-managed"))
+                    .await
+            {
+                log::error!("set_recap_failure {} failed: {e2}", ctx.call_id);
             }
         }
     }
@@ -1560,6 +1684,18 @@ async fn run_cluster_pipeline(
     // ОДИН раз перед циклом — matching::list_consenting_samples делает join.
     let consenting = matching::list_consenting_samples(pool).await?;
 
+    // [P4] Read merged raw_stt.json one time перед циклом — voice_backfill
+    // использует для best-segment slice metadata. None если файла нет
+    // (race / disk issue) → graceful fallback на legacy INSERT.
+    let raw_stt_json: Option<String> = tokio::fs::read_to_string(
+        app_data_dir
+            .join("calls")
+            .join(call_id)
+            .join("raw_stt.json"),
+    )
+    .await
+    .ok();
+
     for (tag, vector) in &clusters {
         let blob = embeddings::embedding_to_bytes(vector);
         if blob.is_empty() {
@@ -1574,7 +1710,14 @@ async fn run_cluster_pipeline(
         // дал consent_voice — upsert'им voice_sample (idempotent). До Phase 3
         // эта логика жила внутри `set_call_speaker_cluster`. Non-fatal:
         // warning + continue.
-        if let Err(e) = voice_backfill::maybe_backfill_voice_sample(pool, call_id, tag, &blob).await
+        if let Err(e) = voice_backfill::maybe_backfill_voice_sample(
+            pool,
+            call_id,
+            tag,
+            &blob,
+            raw_stt_json.as_deref(),
+        )
+        .await
         {
             log::warn!("voice_backfill {tag}: {e}");
         }
@@ -1616,6 +1759,124 @@ mod tests {
 
     fn arc_device(id: &str) -> Arc<str> {
         Arc::from(id.to_string().into_boxed_str())
+    }
+
+    // ============================================================
+    // [P13] ensure_all_chunks_done — halt gate перед stage 2→3
+    // ============================================================
+
+    async fn insert_call_row(pool: &sqlx::SqlitePool, id: &str) {
+        sqlx::query(
+            "INSERT INTO calls (id, started_at, status, path_label, created_at, updated_at)
+             VALUES (?1, CURRENT_TIMESTAMP, 'recording', 'managed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn ensure_all_chunks_done_returns_ok_when_no_chunks() {
+        // Non-chunked path (cloud / single-pass) — нет rows в call_chunks.
+        // Halt не релевантен — pipeline fall back на full-file STT.
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        assert!(ensure_all_chunks_done(&test_db.pool, "c1").await.is_ok());
+    }
+
+    async fn insert_and_mark_done(pool: &sqlx::SqlitePool, call_id: &str, idx: u32) {
+        use std::path::PathBuf;
+        db::chunks::insert_chunk(
+            pool,
+            call_id,
+            idx,
+            u64::from(idx) * 600_000,
+            &PathBuf::from(format!("/m{idx}")),
+            &PathBuf::from(format!("/s{idx}")),
+        )
+        .await
+        .unwrap();
+        db::chunks::mark_chunk_processing(pool, call_id, idx)
+            .await
+            .unwrap();
+        db::chunks::mark_chunk_done(
+            pool,
+            call_id,
+            idx,
+            u64::from(idx + 1) * 600_000,
+            r#"{"segments":[]}"#,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn ensure_all_chunks_done_returns_ok_when_all_done() {
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        for idx in 0..3 {
+            insert_and_mark_done(&test_db.pool, "c1", idx).await;
+        }
+        assert!(ensure_all_chunks_done(&test_db.pool, "c1").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn ensure_all_chunks_done_returns_err_on_failed_chunk() {
+        use std::path::PathBuf;
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        // 2 done, 1 failed (user's reported scenario: 1/3).
+        for idx in 0..2 {
+            insert_and_mark_done(&test_db.pool, "c1", idx).await;
+        }
+        db::chunks::insert_chunk(
+            &test_db.pool,
+            "c1",
+            2,
+            1_200_000,
+            &PathBuf::from("/m2"),
+            &PathBuf::from("/s2"),
+        )
+        .await
+        .unwrap();
+        db::chunks::mark_chunk_processing(&test_db.pool, "c1", 2)
+            .await
+            .unwrap();
+        db::chunks::mark_chunk_failed(&test_db.pool, "c1", 2, "STT timeout")
+            .await
+            .unwrap();
+        let err = ensure_all_chunks_done(&test_db.pool, "c1")
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("chunks_need_retry"), "got: {msg}");
+        assert!(msg.contains("1 of 3"), "got: {msg}");
+        assert!(msg.contains("[2]"), "got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn ensure_all_chunks_done_returns_err_on_pending_chunk() {
+        use std::path::PathBuf;
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        db::chunks::insert_chunk(
+            &test_db.pool,
+            "c1",
+            0,
+            0,
+            &PathBuf::from("/m0"),
+            &PathBuf::from("/s0"),
+        )
+        .await
+        .unwrap();
+        // Status pending — не failed, но и не done. Должен halt.
+        let err = ensure_all_chunks_done(&test_db.pool, "c1")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("chunks_need_retry"));
     }
 
     // ============================================================

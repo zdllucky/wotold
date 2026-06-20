@@ -30,6 +30,16 @@ pub const AUDIO_ROTATED: &str = "audio:rotated";
 /// `ChunkDoneEvent`. Frontend (Phase 3) подпишется и обновит ChunkProgressStrip;
 /// Phase 2 — backend-only emit (нет TS-typed listener'а).
 pub const TRANSCRIPT_CHUNK_DONE: &str = "transcript:chunk_done";
+/// [P1.3] Periodic emit во время local LLM (recap) generation. Payload —
+/// `RecapProgressEvent` с `elapsed_sec`. UI рендерит «Пересоздаём… {sec}s».
+/// Frequency — 15s; нет percentage signals (llama-cli streaming не parsing'нем).
+pub const RECAP_PROGRESS: &str = "recap:progress";
+/// [P5.2] Live duration update во время active recording. Fires на
+/// каждый sidecar `rotated` event (~раз в 10 мин). Payload —
+/// `RecordingDurationEvent { call_id, duration_sec }`. UI HomePage
+/// list + CallDetailPage subscribe чтобы не показывать stale «1:56»
+/// для 30+ мин активных записей.
+pub const RECORDING_DURATION: &str = "recording:duration";
 /// [S8] Fires whenever the backend recording session changes — start, stop,
 /// pause, resume. Both webviews (main + recording-widget) listen so their
 /// `RecordingProvider` мирror гарантированно in sync. Payload пустой —
@@ -89,6 +99,25 @@ pub struct ChunkDoneEvent {
     pub segment_count: usize,
 }
 
+/// [P1.3] Periodic emit во время local LLM (recap) generation. UI слушает и
+/// показывает elapsed timer в кнопке «Пересоздаём… {sec}s». Cancel'ится через
+/// drop tokio task на completion (success | failure | timeout).
+#[derive(Debug, Clone, Serialize)]
+pub struct RecapProgressEvent {
+    pub call_id: String,
+    pub elapsed_sec: u64,
+}
+
+/// [P5.2] Live duration update во время recording. Fires на sidecar
+/// `rotated` event (~раз в 10 мин). UI HomePage / CallDetailPage subscribe
+/// и патчат `call.duration_sec` чтобы не показывать stale значение для
+/// активных long-recordings.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordingDurationEvent {
+    pub call_id: String,
+    pub duration_sec: i64,
+}
+
 // `audio:level` payload живёт в audio::macos (типобезопасность копий нет).
 // EventBus принимает его generic'ом для совместимости.
 
@@ -146,6 +175,19 @@ impl<'a> EventBus<'a> {
     /// [M13.2.3] Per-chunk pipeline done/failed.
     pub fn transcript_chunk_done(&self, e: &ChunkDoneEvent) {
         self.emit(TRANSCRIPT_CHUNK_DONE, e);
+    }
+
+    /// [P1.3] Periodic emit во время local LLM generation. См.
+    /// `pipeline::recap_progress::with_recap_progress_emitter`.
+    pub fn recap_progress(&self, e: &RecapProgressEvent) {
+        self.emit(RECAP_PROGRESS, e);
+    }
+
+    /// [P5.2] Live duration update на sidecar rotated event. UI patch'ит
+    /// `call.duration_sec` чтобы не показывать stale значение во время
+    /// длинной записи.
+    pub fn recording_duration(&self, e: &RecordingDurationEvent) {
+        self.emit(RECORDING_DURATION, e);
     }
 
     /// `audio:level` payload — `audio::macos::LevelPayload`. Объявлен generic'ом
@@ -213,6 +255,14 @@ mod tests {
             status: "done",
             segment_count: 12,
         });
+        bus.recap_progress(&RecapProgressEvent {
+            call_id: "c1".into(),
+            elapsed_sec: 30,
+        });
+        bus.recording_duration(&RecordingDurationEvent {
+            call_id: "c1".into(),
+            duration_sec: 600,
+        });
     }
 
     #[test]
@@ -228,6 +278,8 @@ mod tests {
         assert_eq!(AUDIO_LEVEL, "audio:level");
         assert_eq!(AUDIO_ROTATED, "audio:rotated");
         assert_eq!(TRANSCRIPT_CHUNK_DONE, "transcript:chunk_done");
+        assert_eq!(RECAP_PROGRESS, "recap:progress");
+        assert_eq!(RECORDING_DURATION, "recording:duration");
         assert_eq!(VOICE_MODEL_PROGRESS, "voice-model:progress");
         assert_eq!(VOICE_MODEL_DONE, "voice-model:done");
     }

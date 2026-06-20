@@ -112,13 +112,13 @@ export const SETTINGS_DEFAULTS = {
 } as const;
 
 /** [P1.2] Labs override values для force-N-speakers. Whitelist enforced
- *  в LabsSection (`<select>` options). Backend clamp'ит к 1..=4. */
-export type MicDiarizationNumSpeakers = 'auto' | '2' | '3' | '4';
+ *  в LabsSection (`<select>` options). Backend clamp'ит к 1..=MAX_LOCAL_SPEAKERS=3
+ *  (P14.3: пониженный cap от 4). Опция '4' удалена т.к. cap не пропустит. */
+export type MicDiarizationNumSpeakers = 'auto' | '2' | '3';
 export const MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS: MicDiarizationNumSpeakers[] = [
   'auto',
   '2',
   '3',
-  '4',
 ];
 
 /** [S1] Whitelist cooldown values 3/5/10/15 min. */

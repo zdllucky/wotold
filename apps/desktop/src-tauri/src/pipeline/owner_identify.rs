@@ -186,7 +186,7 @@ mod tests {
         // соответствует speaker:0 (identical embedding). Biometric выигрывает.
         let db = fresh_db().await;
         let owner_emb = vec![1.0_f32, 0.0, 0.0];
-        insert_owner_with_samples(&db.pool, &[owner_emb.clone()]).await;
+        insert_owner_with_samples(&db.pool, std::slice::from_ref(&owner_emb)).await;
 
         let mut cluster_embeddings = HashMap::new();
         cluster_embeddings.insert("speaker:0".to_string(), owner_emb);
