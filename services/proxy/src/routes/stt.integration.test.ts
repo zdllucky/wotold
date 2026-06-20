@@ -113,12 +113,15 @@ describe('POST /v1/stt/staging-url', () => {
     expect(res.status).toBe(400);
   });
 
-  // [Phase 1] Раньше тест принимал `[200, 500]` → не падал никогда (lying
-  // assertion). В test env R2_ACCOUNT_ID и access keys пустые (см.
-  // `wrangler.test.toml`), поэтому presign гарантированно падает с 500
-  // internal_error. Если кто-то случайно подложит creds — тест должен
-  // упасть, чтобы CI заметил конфигурацию.
-  test('returns 500 internal_error when R2 creds unset (test env)', async () => {
+  // [CI-fix] SigV4 presign — чистая строковая операция: с пустыми R2 creds
+  // (test env, см. `wrangler.test.toml`) `presignR2Put` НЕ бросает, а
+  // конструирует синтаксически валидный (но нерабочий против реального R2)
+  // URL. Поэтому endpoint возвращает 200 + well-formed response. 500-ветка
+  // (`presign failed`) срабатывает только при реальном throw'е (malformed
+  // env). Раньше тест ждал 500 — неверное допущение, замаскированное сломанным
+  // lockfile до этого PR (integration suite не бежал). Проверяем реальный
+  // контракт: 200 + полный SttStagingUrlResponse shape.
+  test('returns 200 with presigned upload URL (test env)', async () => {
     const res = await SELF.fetch(
       'http://proxy/v1/stt/staging-url',
       withDevice({
@@ -126,9 +129,15 @@ describe('POST /v1/stt/staging-url', () => {
         body: JSON.stringify({ contentType: 'audio/wav' }),
       }),
     );
-    expect(res.status).toBe(500);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe('internal_error');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      r2Key: string;
+      uploadUrl: string;
+      expiresAt: string;
+    };
+    expect(body.r2Key).toMatch(new RegExp(`^stt/${DEVICE}/`));
+    expect(body.uploadUrl).toContain('http');
+    expect(typeof body.expiresAt).toBe('string');
   });
 });
 
@@ -168,29 +177,27 @@ describe('POST /v1/stt', () => {
     expect(body.code).toBe('staging_object_not_found');
   });
 
-  test('errors for unknown provider before dispatch', async () => {
-    // Кладём dummy object в R2, чтобы пройти head-check.
-    const key = `stt/${DEVICE}/dummy-unknown-${crypto.randomUUID()}`;
-    await env.STT_STAGING.put(key, new Uint8Array([0, 0, 0, 0]));
-
+  test('rejects unknown provider at zod boundary before dispatch', async () => {
+    // [CI-fix] `sttRequestSchema` (zod, commit 8178fc2) валидирует
+    // `opts.provider` против enum (soniox|gladia) в `parseBody` ПЕРВЫМ
+    // шагом — до head-check и presign. `whisper-xyz` отвергается → 400
+    // bad_request, никакой R2/upstream работы не происходит. Это строго
+    // безопаснее старого поведения (early reject невалидного input).
+    // Раньше тест ждал 500 (presign-first) — assertion устарела после
+    // добавления validator, замаскирована сломанным lockfile до этого PR.
     const res = await SELF.fetch(
       'http://proxy/v1/stt',
       withDevice({
         method: 'POST',
         body: JSON.stringify({
-          r2Key: key,
+          r2Key: `stt/${DEVICE}/whatever`,
           opts: { provider: 'whisper-xyz' as 'soniox', lang: 'auto' },
         }),
       }),
     );
-    // [Phase 1] В test env R2 creds empty → presign upstream падает 500.
-    // Раньше тест допускал [400, 500] → проходил независимо от ответа.
-    // Точный код зависит от того, успел ли provider validator отвергнуть
-    // 'whisper-xyz' до того как presign упал. Текущая ветвление:
-    // presign выполняется первым и падает с 500. Если refactor изменит
-    // порядок и validator уберёт unknown provider раньше → 400, и тест
-    // упадёт правильно (regression marker, не false-pass).
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('bad_request');
   });
 
   test('enforces stt_sec daily quota (429 when exceeded)', async () => {
