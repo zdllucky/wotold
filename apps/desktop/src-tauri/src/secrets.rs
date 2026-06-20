@@ -157,9 +157,17 @@ mod tests {
     use super::*;
 
     fn skip_if_no_keychain() -> bool {
-        // На CI macOS keychain доступен; на Linux/Windows runners — нет.
-        // На GitHub runners macos-latest всё работает через test keychain.
-        // Если creating Entry падает — пропускаем (CI без UI keychain backend).
+        // [CI-fix] На GitHub macOS runners `Entry::new()` СОЗДАЁТСЯ успешно,
+        // но реальные keychain-операции (`SecItemAdd`/`Delete`/`CopyMatching`)
+        // БЛОКИРУЮТСЯ навсегда — нет интерактивной keychain-сессии для unlock
+        // authorization → тесты висят >60s → CI hang + сожранные minutes.
+        // Probe через `Entry::new().is_err()` этот случай не ловит. Поэтому
+        // безусловный skip на CI (`CI=true` ставит GitHub Actions). Keychain —
+        // platform infra, headless-покрытие невозможно; локально (CI unset)
+        // тесты бегут как раньше.
+        if std::env::var("CI").is_ok() {
+            return true;
+        }
         Entry::new("app.wotold.desktop.test.probe", "probe").is_err()
     }
 
