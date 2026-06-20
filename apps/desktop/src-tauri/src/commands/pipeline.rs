@@ -143,6 +143,132 @@ pub async fn cancel_reprocess(
     Ok(())
 }
 
+/// [Bulk recap] Прогресс одного шага массового регена.
+#[derive(Debug, Clone, Serialize)]
+pub struct BulkRecapProgress {
+    /// Сколько звонков уже обработано (0-based текущий индекс).
+    pub done: usize,
+    pub total: usize,
+    pub call_id: String,
+}
+
+/// [Bulk recap] Итог массового регена.
+#[derive(Debug, Clone, Serialize)]
+pub struct BulkRecapDone {
+    pub regenerated: usize,
+    pub failed: usize,
+    pub cancelled: bool,
+}
+
+/// [Bulk recap] Пересоздать рекапы для всех ready-звонков с пустым/отсутствующим
+/// recap.md. Чинит старый корпус (звонки обработанные до schema-fix имеют пустые
+/// «# Рекап» рекапы). Возвращает кол-во звонков на обработку; сам реген идёт в
+/// фоне последовательно (local LLM semaphore=1) с `recap:bulk_progress` events.
+#[tauri::command]
+pub async fn regenerate_empty_recaps(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<usize, AppError> {
+    use crate::call_store::ArtifactKind;
+
+    let calls = db::list_calls(&state.db).await?;
+    let mut targets: Vec<String> = Vec::new();
+    for c in &calls {
+        if c.status != "ready" {
+            continue;
+        }
+        // Реген требует transcript.md — без него regenerate_recap упадёт.
+        let has_transcript = state
+            .store
+            .read_artifact(&c.id, ArtifactKind::Transcript)
+            .await?
+            .is_some();
+        if !has_transcript {
+            continue;
+        }
+        let recap = state
+            .store
+            .read_artifact(&c.id, ArtifactKind::Recap)
+            .await?;
+        let blank = match recap {
+            None => true,
+            Some(md) => crate::pipeline::recap::recap_md_is_blank(&md),
+        };
+        if blank {
+            targets.push(c.id.clone());
+        }
+    }
+
+    let total = targets.len();
+    let bus = crate::events::EventBus::new(Some(&app));
+    if total == 0 {
+        bus.recap_bulk_done(&BulkRecapDone {
+            regenerated: 0,
+            failed: 0,
+            cancelled: false,
+        });
+        return Ok(0);
+    }
+
+    state
+        .bulk_recap_cancel
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+
+    let pool = state.db.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let device_id = state.device_id.clone();
+    let cancel = state.bulk_recap_cancel.clone();
+    let app_for_task = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let bus = crate::events::EventBus::new(Some(&app_for_task));
+        let mut regenerated = 0usize;
+        let mut failed = 0usize;
+        let mut cancelled = false;
+        for (i, id) in targets.iter().enumerate() {
+            if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                cancelled = true;
+                break;
+            }
+            bus.recap_bulk_progress(&BulkRecapProgress {
+                done: i,
+                total,
+                call_id: id.clone(),
+            });
+            match crate::pipeline::regenerate_recap(
+                &pool,
+                &app_data_dir,
+                &device_id,
+                id,
+                Some(&app_for_task),
+            )
+            .await
+            {
+                Ok(()) => regenerated += 1,
+                Err(e) => {
+                    log::warn!("bulk recap regen {id}: {e}");
+                    failed += 1;
+                }
+            }
+        }
+        bus.recap_bulk_done(&BulkRecapDone {
+            regenerated,
+            failed,
+            cancelled,
+        });
+    });
+
+    Ok(total)
+}
+
+/// [Bulk recap] Прервать активный массовый реген (флаг, проверяется между звонками).
+#[tauri::command]
+pub async fn cancel_bulk_recap(state: State<'_, AppState>) -> Result<(), AppError> {
+    state
+        .bulk_recap_cancel
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

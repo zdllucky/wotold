@@ -11,8 +11,15 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { humanError } from '../api/errors';
+import {
+  regenerateEmptyRecaps,
+  cancelBulkRecap,
+  type BulkRecapProgress,
+  type BulkRecapDone,
+} from '../api/calls';
 
 import {
   CALL_DETECT_COOLDOWNS,
@@ -43,6 +50,7 @@ type SectionId =
   | 'recording'
   | 'speakers'
   | 'labs'
+  | 'maintenance'
   | 'privacy';
 
 interface SectionMeta {
@@ -154,6 +162,8 @@ export function SettingsPage() {
     { id: 'speakers', label: t('settings.sectionSpeakers') },
     // [M14 T-14] «Лаборатория» — experimental feature flags.
     { id: 'labs', label: t('settings.sectionLabs') },
+    // [Bulk recap] «Обслуживание» — пересоздать пустые рекапы старых звонков.
+    { id: 'maintenance', label: t('settings.sectionMaintenance') },
     { id: 'privacy', label: t('settings.sectionPrivacy') },
   ];
 
@@ -463,6 +473,15 @@ export function SettingsPage() {
           </SectionShell>
         )}
 
+        {section === 'maintenance' && (
+          <SectionShell
+            title={t('settings.maintenanceTitle')}
+            lede={t('settings.maintenanceLede')}
+          >
+            <BulkRecapSection />
+          </SectionShell>
+        )}
+
         {section === 'privacy' && (
           <SectionShell title={t('settings.privacyTitle')} lede={t('settings.privacyLede')}>
             <DeleteAllDataSection />
@@ -490,6 +509,128 @@ function SectionShell({ title, lede, children }: SectionShellProps) {
       </p>
       {children}
     </>
+  );
+}
+
+// [Bulk recap] Пересоздать пустые рекапы старых звонков (до schema-fix).
+function BulkRecapSection() {
+  const { t } = useI18n();
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<BulkRecapProgress | null>(null);
+  const [result, setResult] = useState<BulkRecapDone | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let unsubs: UnlistenFn[] = [];
+    const attach = async () => {
+      try {
+        unsubs.push(
+          await listen<BulkRecapProgress>('recap:bulk_progress', (e) => {
+            setProgress(e.payload);
+          }),
+        );
+        unsubs.push(
+          await listen<BulkRecapDone>('recap:bulk_done', (e) => {
+            setResult(e.payload);
+            setRunning(false);
+            setProgress(null);
+          }),
+        );
+      } catch (err) {
+        console.warn('bulk recap listeners failed:', err);
+      }
+    };
+    void attach();
+    return () => {
+      for (const u of unsubs) u();
+    };
+  }, []);
+
+  const start = async () => {
+    setError(null);
+    setResult(null);
+    setRunning(true);
+    try {
+      const total = await regenerateEmptyRecaps();
+      if (total === 0) {
+        setRunning(false);
+        setResult({ regenerated: 0, failed: 0, cancelled: false });
+      } else {
+        setProgress({ done: 0, total, call_id: '' });
+      }
+    } catch (e) {
+      setError(humanError(e));
+      setRunning(false);
+    }
+  };
+
+  const stop = async () => {
+    try {
+      await cancelBulkRecap();
+    } catch (e) {
+      console.warn('cancel bulk recap:', e);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      {error && (
+        <p role="alert" style={{ color: 'var(--signal)', marginBottom: 16 }}>
+          {error}
+        </p>
+      )}
+
+      {running && progress ? (
+        <div
+          className="activity-strip"
+          role="status"
+          style={{ marginBottom: 16 }}
+        >
+          <span>
+            {t('settings.bulkRecapProgress', {
+              done: progress.done + 1,
+              total: progress.total,
+            })}
+          </span>
+          <button type="button" className="btn btn--quiet" onClick={() => void stop()}>
+            {t('settings.bulkRecapStop')}
+          </button>
+        </div>
+      ) : running ? (
+        <p className="subtle" style={{ marginBottom: 16 }} role="status">
+          {t('settings.bulkRecapScanning')}
+        </p>
+      ) : null}
+
+      {result && !running && (
+        <p
+          role="status"
+          style={{
+            fontFamily: 'var(--font-serif)',
+            fontSize: 16,
+            color: 'var(--ink)',
+            marginBottom: 16,
+            maxWidth: 560,
+          }}
+        >
+          {result.regenerated === 0 && result.failed === 0 && !result.cancelled
+            ? t('settings.bulkRecapNoneEmpty')
+            : t('settings.bulkRecapResult', {
+                regenerated: result.regenerated,
+                failed: result.failed,
+              })}
+        </p>
+      )}
+
+      <button
+        type="button"
+        className="btn btn--primary"
+        onClick={() => void start()}
+        disabled={running}
+      >
+        {running ? t('settings.bulkRecapRunning') : t('settings.bulkRecapStart')}
+      </button>
+    </div>
   );
 }
 

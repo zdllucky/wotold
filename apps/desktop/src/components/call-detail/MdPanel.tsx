@@ -5,6 +5,7 @@
 import ReactMarkdown from 'react-markdown';
 import { useI18n } from '../../i18n';
 import { Empty } from '../../ui';
+import { isMarkdownBlank } from '../../utils/markdown';
 
 interface MdPanelProps {
   md: string | null;
@@ -30,7 +31,10 @@ export function MdPanel({
   regenerateDisabled = false,
 }: MdPanelProps) {
   const { t } = useI18n();
-  if (!md) {
+  // [Fix] Семантически-пустой рекап (`"# Рекап\n\n"` от старых до-фиксных
+  // звонков) — строка непустая, но тела нет. Раньше рендерился голый заголовок
+  // без CTA → юзер видел пустоту и не мог пересоздать. Теперь трактуем как пусто.
+  if (isMarkdownBlank(md)) {
     // [P14.2] Когда caller передал onRegenerate — рендерим actionable card
     // с CTA вместо silent placeholder. Помогает user'у понять что recap
     // ещё не создан и что можно сделать.

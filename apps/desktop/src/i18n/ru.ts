@@ -476,6 +476,17 @@ const ruInternal = {
     sectionRecording: 'Запись',
     sectionSpeakers: 'Спикеры',
     sectionLabs: 'Лаборатория',
+    sectionMaintenance: 'Обслуживание',
+    maintenanceTitle: 'Обслуживание данных.',
+    maintenanceLede:
+      'Звонки, обработанные раньше, могли сохранить пустой рекап. Здесь можно пересоздать саммари для всех таких звонков одним действием.',
+    bulkRecapStart: 'Пересоздать пустые саммари',
+    bulkRecapRunning: 'Обрабатываем…',
+    bulkRecapScanning: 'Ищем пустые рекапы…',
+    bulkRecapProgress: 'Пересоздаём {done} из {total}…',
+    bulkRecapStop: 'Остановить',
+    bulkRecapResult: 'Готово: {regenerated} пересоздано, {failed} с ошибкой.',
+    bulkRecapNoneEmpty: 'Пустых рекапов не найдено — всё на месте.',
     sectionPrivacy: 'Конфиденциальность',
     sectionProcessingSubtitle:
       'Где обрабатывать ваши звонки. Локально — бесплатно, без сети. Облако — быстрее, точнее.',
