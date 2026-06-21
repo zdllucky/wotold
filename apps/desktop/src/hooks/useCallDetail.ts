@@ -81,6 +81,10 @@ export interface UseCallDetailResult {
    *  из backend pipeline_tasks registry, переживает навигацию. */
   bgBusy: boolean;
   setBgBusy: (v: boolean) => void;
+  /** [P-fix10] One-shot: пайплайн только что завершился → recap/transcript
+   *  «печатаются» (typewriter/каскад). Авто-сброс ~6s + при смене звонка,
+   *  чтобы обычная навигация не реанимировала. */
+  justGenerated: boolean;
   loading: boolean;
   error: string | null;
   setError: (v: string | null) => void;
@@ -108,8 +112,15 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   // + pipeline:started/finished события), а не component-local флаг → переживает
   // уход со страницы и возврат.
   const [bgBusy, setBgBusy] = useState(false);
+  const [justGenerated, setJustGenerated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // [P-fix10] Сброс one-shot reveal-флага при смене звонка — чтобы переход на
+  // другой (уже готовый) звонок не запускал typewriter.
+  useEffect(() => {
+    setJustGenerated(false);
+  }, [callId]);
 
   // Adapter that supports either a value or an updater callback — mirrors
   // React's useState setter API so consumer can do
@@ -235,6 +246,10 @@ export function useCallDetail(callId: string): UseCallDetailResult {
           (e) => {
             if (e.payload.call_id !== callId) return;
             setBgBusy(false);
+            // [P-fix10] One-shot «только что сгенерировано» → typewriter-reveal.
+            // Авто-сброс позже длительности анимации, чтобы навигация не реанимировала.
+            setJustGenerated(true);
+            window.setTimeout(() => setJustGenerated(false), 6000);
             void refetchAll();
           },
         );
@@ -451,6 +466,7 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     setRecapElapsedSec,
     bgBusy,
     setBgBusy,
+    justGenerated,
     loading,
     error,
     setError,

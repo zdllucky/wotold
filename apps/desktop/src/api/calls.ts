@@ -92,6 +92,12 @@ export function isCallProcessing(callId: string): Promise<boolean> {
   return invoke<boolean>('is_call_processing', { callId });
 }
 
+/** [Processing status] call_id'ы всех активных фон-задач — CallsPage показывает
+ *  «обрабатывается» индикатор на этих строках. */
+export function listActiveCallIds(): Promise<string[]> {
+  return invoke<string[]>('list_active_call_ids');
+}
+
 /** Прогресс массового регена пустых рекапов (`recap:bulk_progress`). */
 export interface BulkRecapProgress {
   done: number;
