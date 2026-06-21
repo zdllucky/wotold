@@ -309,8 +309,16 @@ fn check_evidence(
     }
 }
 
-/// Drop items с failing evidence (instead of fail entire summary). Returns
-/// (kept_summary, dropped_count). Caller обычно log'ит count в telemetry.
+/// Drop items с **фабрикованной** evidence-цитатой (present-but-not-found),
+/// instead of fail entire summary. Returns (kept_summary, dropped_count).
+/// Caller обычно log'ит count в telemetry.
+///
+/// **Items БЕЗ evidence (`None`) сохраняются.** Отсутствие цитаты ≠ галлюцинация:
+/// у local-движка (Qwen) и любого v1→v2 promotion (`promote_legacy_to_v2`)
+/// evidence отсутствует by design — раньше это удаляло ВСЕ задачи/решения у
+/// каждого локального звонка. Missing evidence уже сигналится как non-fatal
+/// `validate_schema` warning + UI показывает confidence ●●○; молча удалять
+/// реальные items нельзя. Стрипаем только цитаты, которых нет в транскрипте.
 pub fn strip_unverified_evidence(
     mut summary: CallSummaryV2,
     transcript_text: &str,
@@ -318,21 +326,24 @@ pub fn strip_unverified_evidence(
 ) -> (CallSummaryV2, usize) {
     let mut dropped = 0_usize;
     summary.action_items.retain(|ai| {
-        let keep = evidence_ok(&ai.evidence, transcript_text, fuzzy_threshold);
+        let keep =
+            ai.evidence.is_none() || evidence_ok(&ai.evidence, transcript_text, fuzzy_threshold);
         if !keep {
             dropped += 1;
         }
         keep
     });
     summary.decisions.retain(|d| {
-        let keep = evidence_ok(&d.evidence, transcript_text, fuzzy_threshold);
+        let keep =
+            d.evidence.is_none() || evidence_ok(&d.evidence, transcript_text, fuzzy_threshold);
         if !keep {
             dropped += 1;
         }
         keep
     });
     summary.open_questions.retain(|q| {
-        let keep = evidence_ok(&q.evidence, transcript_text, fuzzy_threshold);
+        let keep =
+            q.evidence.is_none() || evidence_ok(&q.evidence, transcript_text, fuzzy_threshold);
         if !keep {
             dropped += 1;
         }
@@ -564,6 +575,30 @@ mod tests {
             .collect();
         assert!(ids.contains(&"good"));
         assert!(ids.contains(&"good2"));
+    }
+
+    #[test]
+    fn strip_keeps_items_without_evidence() {
+        // [Fix A] v1→v2 promotion (Qwen local path) даёт items с evidence=None.
+        // Раньше strip удалял их все → 0 задач у каждого локального звонка.
+        // Теперь сохраняются; стрипается только present-but-not-found.
+        let mut s = base_summary();
+        s.action_items.push(ai("noev1", "x", None));
+        s.action_items.push(ai("noev2", "y", None));
+        s.action_items
+            .push(ai("fabricated", "z", Some("quote nowhere in transcript")));
+        let transcript = "Alice: unrelated chatter here.";
+        let (stripped, dropped) = strip_unverified_evidence(s, transcript, DEFAULT_FUZZY_THRESHOLD);
+        // Оба None-evidence сохранены; только фабрикованный удалён.
+        assert_eq!(dropped, 1, "только present-but-not-found стрипается");
+        let ids: Vec<&str> = stripped
+            .action_items
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect();
+        assert!(ids.contains(&"noev1"));
+        assert!(ids.contains(&"noev2"));
+        assert!(!ids.contains(&"fabricated"));
     }
 
     // ──────── validate_schema ────────

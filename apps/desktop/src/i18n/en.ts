@@ -157,6 +157,8 @@ export const en: TranslationStrings = {
     secondaryUploading: 'Uploading audio',
     secondaryQueued: 'Queued',
     secondaryEta: '~{sec} sec left',
+    // [Processing status] background regen of a call (status stays ready).
+    secondaryBusy: 'processing',
     tooltipRecording: 'Recording right now.',
     tooltipProcessing: 'Recording finished, STT in progress.',
     tooltipReady: 'Ready — transcript.md and raw_stt.json exist.',
@@ -181,6 +183,11 @@ export const en: TranslationStrings = {
     regenerating: 'Regenerating…',
     // [P1.3] Elapsed timer для local LLM regen — backend шлёт каждые 15s.
     regeneratingWithElapsed: 'Regenerating… {sec}s',
+    // [Processing status] strip above tabs during background regen.
+    bgBusyStrip: 'Regenerating summary…',
+    bgBusyStripElapsed: 'Regenerating summary… {sec}s',
+    generatingRecap: 'Generating summary…',
+    generatingTranscript: 'Transcribing speech…',
     regenerateNoTranscript: 'No transcript to regenerate from',
     regenerateTitle: '↻ Regenerate title',
     regeneratingTitle: 'Regenerating title…',
@@ -193,15 +200,6 @@ export const en: TranslationStrings = {
     reprocessConfirmBody:
       'Reprocess this call?\n\nThe recording will be re-transcribed and the recap regenerated. The current transcript and recap will be overwritten.',
     reprocessConfirmOk: 'Reprocess',
-    forceRestt: '⚠ Re-recognize from scratch',
-    forceRestting: 'Recognizing…',
-    forceResttHint:
-      'Drop current transcript (with hallucinations / [FOREIGN] tags) and re-recognize from scratch',
-    forceResttConfirmTitle: 'Re-recognize?',
-    forceResttConfirmBody:
-      'Delete current transcript and summary, re-run recognition?\n\nUseful if the recording was processed by an older recognizer and contains hallucinations or [FOREIGN] tags.',
-    forceResttConfirmOk: 'Re-recognize',
-    forceResttFailed: 'Failed to restart recognition: {error}',
     deleteConfirmBody:
       'Delete call “{title}”?\n\nThis permanently removes the recording, transcript, recap, tasks and voice samples from this call.',
     deleteConfirmOk: 'Delete',
@@ -301,6 +299,7 @@ export const en: TranslationStrings = {
     sampleStop: '◼ stop',
     samplePlayAria: 'Play sample',
     sampleStopAria: 'Stop sample',
+    sampleScrubAria: 'Scrub sample',
     sampleUnavailable: 'Audio sample unavailable',
     suggestion: 'Looks like',
     confidence: 'Confidence',
@@ -439,6 +438,17 @@ export const en: TranslationStrings = {
     sectionRecording: 'Recording',
     sectionSpeakers: 'Speakers',
     sectionLabs: 'Labs',
+    sectionMaintenance: 'Maintenance',
+    maintenanceTitle: 'Data maintenance.',
+    maintenanceLede:
+      'Calls processed earlier may have an empty recap. Regenerate summaries for all such calls in one action.',
+    bulkRecapStart: 'Regenerate empty summaries',
+    bulkRecapRunning: 'Processing…',
+    bulkRecapScanning: 'Scanning for empty recaps…',
+    bulkRecapProgress: 'Regenerating {done} of {total}…',
+    bulkRecapStop: 'Stop',
+    bulkRecapResult: 'Done: {regenerated} regenerated, {failed} failed.',
+    bulkRecapNoneEmpty: 'No empty recaps found — all good.',
     sectionPrivacy: 'Privacy',
     sectionProcessingSubtitle:
       'Where your calls are processed. Local — free, offline. Cloud — faster, more accurate.',
@@ -484,6 +494,9 @@ export const en: TranslationStrings = {
       'STT provider and recap language. Auto switches between Soniox and Gladia on failure.',
     sttProviderLabel: 'Provider',
     sttProviderAuto: 'Auto (Soniox → Gladia)',
+    sttLangLabel: 'Recognition language (STT)',
+    sttLangHint:
+      "Speech language for recognition. 'Auto-detect' is usually fine, but with a quiet mic whisper sometimes mis-detects the language — for Russian calls it's safer to pick the explicit language.",
     sttRecapLangLabel: 'Recap and tasks language',
     sttRecapLangHint:
       "Language used for recap and tasks. 'Auto' = detected speech language. Does not affect STT itself.",
@@ -568,13 +581,13 @@ export const en: TranslationStrings = {
     speculativeDecodingLabel: 'Speed up generation (draft model)',
     speculativeDecodingHint:
       'Uses a small 0.5B draft model in parallel with 7B Quality. 2-3× speedup. Requires Quality preset and ~380MB extra model download.',
-    forceNumSpeakersLabel: 'Force speaker count',
+    forceNumSpeakersLabel: 'Other participants (besides you)',
     forceNumSpeakersHint:
-      'Applied on next reprocess. Use this when you know the exact speaker count and auto-detect gets it wrong. Capped at 3 speakers.',
+      'Your voice is always separate («Me»). This is how many OTHER people are on the remote side. Set the exact number if auto-splitting gets it wrong, then reprocess. Max 3.',
     forceNumSpeakersOptions: {
       auto: 'Auto (recommended)',
-      '2': '2 speakers',
-      '3': '3 speakers',
+      '2': '2 participants',
+      '3': '3 participants',
     },
     wipeBtn: 'Delete all data',
     wipeBusy: 'Deleting…',
@@ -962,6 +975,8 @@ export const en: TranslationStrings = {
     processing: 'transcribing',
     ready: 'ready',
     error: 'error',
+    // [Processing status] generic busy (regen — no real step).
+    busyGeneric: 'processing',
     audioSaved: 'audio saved',
     moreDetails: 'details →',
     errorFallback: 'could not transcribe',

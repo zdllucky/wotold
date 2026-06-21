@@ -3,7 +3,12 @@
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
-use crate::{db, services::pipeline_runner::PipelineRunner, state::AppState, AppError};
+use crate::{
+    db,
+    services::pipeline_runner::{PipelineRunner, RegenKind},
+    state::AppState,
+    AppError,
+};
 
 /// [M13.3.1] Public view над `call_chunks` row. UI рендерит ChunkProgressStrip
 /// из этого payload'а — transcript/embeddings_json не включены (UI они не
@@ -49,50 +54,81 @@ pub async fn get_active_pipeline_count(state: State<'_, AppState>) -> Result<usi
     Ok(tasks.len())
 }
 
-/// M4.5 паспорта: пересоздать рекап + action_items без повторной транскрипции.
-/// Ошибки LLM пробрасываются (UI показывает toast / error), в отличие от
-/// pipeline::run где рекап silent-skip при ошибке (транскрипт важнее).
+/// M4.5: пересоздать рекап + action_items без повторной транскрипции.
 ///
-/// [Bug-fix] AppHandle plumbed для local-engine path — LocalLlamaProvider
-/// требует его для sidecar invoke. Cloud-managed path AppHandle игнорирует.
+/// [Global regen] Запускается как ФОНОВАЯ задача (spawn + register в
+/// `pipeline_tasks`) — переживает уход со страницы, считается в бейдже у
+/// «Звонки», эмитит `pipeline:started`/`pipeline:finished`. Команда возвращается
+/// сразу; фронт подтягивает результат через `pipeline:finished` listener.
 #[tauri::command]
 pub async fn regenerate_recap(
     app: AppHandle,
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<(), AppError> {
-    crate::pipeline::regenerate_recap(
-        &state.db,
-        &state.app_data_dir,
-        &state.device_id,
-        &call_id,
-        Some(&app),
+    PipelineRunner::spawn_regen(
+        state.db.clone(),
+        state.store.clone(),
+        state.device_id.clone(),
+        app,
+        state.pipeline_tasks.clone(),
+        call_id,
+        RegenKind::Recap,
     )
     .await
 }
 
-/// [M14 T-17] Lightweight title-only regen. Separate path от regenerate_recap —
-/// один LLM-call (~150 max_tokens) → `db::set_call_title` → return new title.
-/// Не трогает recap.md / decisions / action_items.
-///
-/// Cloud-only path (matches regenerate_recap). Local engine support — backlog M14.6.
+/// [M14 T-17] Lightweight title-only regen (engine-aware). Как `regenerate_recap`
+/// — ФОНОВАЯ задача (survives навигацию, в бейдже). Возвращается сразу; новый
+/// title подтянется через refetch на `pipeline:finished`.
 #[tauri::command]
 pub async fn regenerate_title(
+    app: AppHandle,
     state: State<'_, AppState>,
     call_id: String,
-) -> Result<String, AppError> {
-    crate::pipeline::title_regen::regenerate_title(
-        &state.db,
-        &state.app_data_dir,
-        &state.device_id,
-        &call_id,
+) -> Result<(), AppError> {
+    PipelineRunner::spawn_regen(
+        state.db.clone(),
+        state.store.clone(),
+        state.device_id.clone(),
+        app,
+        state.pipeline_tasks.clone(),
+        call_id,
+        RegenKind::Title,
     )
     .await
 }
 
-/// Перезапустить полный pipeline (STT + recap) для существующего звонка.
-/// Применяется к failed | ready | processing звонкам — берёт mic.wav/system.wav
-/// с диска и прогоняет заново.
+/// [Global regen] Есть ли активная фон-задача (reprocess / regen) для звонка.
+/// Frontend использует на mount CallDetailPage чтобы восстановить busy-состояние
+/// после возврата на страницу.
+#[tauri::command]
+pub async fn is_call_processing(
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<bool, AppError> {
+    Ok(state.pipeline_tasks.lock().await.contains_key(&call_id))
+}
+
+/// [Processing status] call_id'ы всех активных фон-задач (reprocess / regen).
+/// CallsPage показывает «обрабатывается» индикатор на этих строках (даже если
+/// status='ready' — regen статус не меняет).
+#[tauri::command]
+pub async fn list_active_call_ids(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
+    Ok(state.pipeline_tasks.lock().await.keys().cloned().collect())
+}
+
+/// Перезапустить полный pipeline (STT + recap) для существующего звонка —
+/// «Переобработать целиком». Применяется к failed | ready | processing.
+///
+/// [P-fix4] «Целиком» = ВСЕГДА заново из аудио, включая STT. Для local
+/// chunked-звонков удаляем кэш per-chunk транскриптов → 0 chunks →
+/// `load_chunked_transcripts` None → full-file STT по полному root WAV
+/// (re-recognition). Раньше local-reprocess реассемблил старый кэш (STT не
+/// трогал) — отсюда понадобилась отдельная «Распознать заново»; теперь дубль
+/// не нужен. Cloud / non-chunked: 0 chunks → delete no-op → full-file STT как
+/// и было. Артефакты на диске НЕ удаляем — старый транскрипт виден до
+/// перезаписи (V8 ReprocessBanner + Cancel восстанавливает 'ready').
 ///
 /// [V8] Spawn'им как stop_recording — invoke возвращается сразу, фронт
 /// идёт оптимистично рендерить reprocess banner и подтягивает state через
@@ -105,6 +141,13 @@ pub async fn reprocess_call(
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<(), AppError> {
+    // [P-fix4] Сбросить chunked-кэш → форсим re-STT. Чистим recap-fail reason.
+    let deleted = db::chunks::delete_chunks_for_call(&state.db, &call_id).await?;
+    if deleted > 0 {
+        log::info!("reprocess_call[{call_id}]: deleted {deleted} chunks → full-file re-STT");
+    }
+    db::set_recap_failed_reason(&state.db, &call_id, None).await?;
+
     PipelineRunner::spawn_reprocess(
         state.db.clone(),
         state.store.clone(),
@@ -140,6 +183,132 @@ pub async fn cancel_reprocess(
         &call_id,
     )
     .await?;
+    Ok(())
+}
+
+/// [Bulk recap] Прогресс одного шага массового регена.
+#[derive(Debug, Clone, Serialize)]
+pub struct BulkRecapProgress {
+    /// Сколько звонков уже обработано (0-based текущий индекс).
+    pub done: usize,
+    pub total: usize,
+    pub call_id: String,
+}
+
+/// [Bulk recap] Итог массового регена.
+#[derive(Debug, Clone, Serialize)]
+pub struct BulkRecapDone {
+    pub regenerated: usize,
+    pub failed: usize,
+    pub cancelled: bool,
+}
+
+/// [Bulk recap] Пересоздать рекапы для всех ready-звонков с пустым/отсутствующим
+/// recap.md. Чинит старый корпус (звонки обработанные до schema-fix имеют пустые
+/// «# Рекап» рекапы). Возвращает кол-во звонков на обработку; сам реген идёт в
+/// фоне последовательно (local LLM semaphore=1) с `recap:bulk_progress` events.
+#[tauri::command]
+pub async fn regenerate_empty_recaps(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<usize, AppError> {
+    use crate::call_store::ArtifactKind;
+
+    let calls = db::list_calls(&state.db).await?;
+    let mut targets: Vec<String> = Vec::new();
+    for c in &calls {
+        if c.status != "ready" {
+            continue;
+        }
+        // Реген требует transcript.md — без него regenerate_recap упадёт.
+        let has_transcript = state
+            .store
+            .read_artifact(&c.id, ArtifactKind::Transcript)
+            .await?
+            .is_some();
+        if !has_transcript {
+            continue;
+        }
+        let recap = state
+            .store
+            .read_artifact(&c.id, ArtifactKind::Recap)
+            .await?;
+        let blank = match recap {
+            None => true,
+            Some(md) => crate::pipeline::recap::recap_md_is_blank(&md),
+        };
+        if blank {
+            targets.push(c.id.clone());
+        }
+    }
+
+    let total = targets.len();
+    let bus = crate::events::EventBus::new(Some(&app));
+    if total == 0 {
+        bus.recap_bulk_done(&BulkRecapDone {
+            regenerated: 0,
+            failed: 0,
+            cancelled: false,
+        });
+        return Ok(0);
+    }
+
+    state
+        .bulk_recap_cancel
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+
+    let pool = state.db.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let device_id = state.device_id.clone();
+    let cancel = state.bulk_recap_cancel.clone();
+    let app_for_task = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let bus = crate::events::EventBus::new(Some(&app_for_task));
+        let mut regenerated = 0usize;
+        let mut failed = 0usize;
+        let mut cancelled = false;
+        for (i, id) in targets.iter().enumerate() {
+            if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                cancelled = true;
+                break;
+            }
+            bus.recap_bulk_progress(&BulkRecapProgress {
+                done: i,
+                total,
+                call_id: id.clone(),
+            });
+            match crate::pipeline::regenerate_recap(
+                &pool,
+                &app_data_dir,
+                &device_id,
+                id,
+                Some(&app_for_task),
+            )
+            .await
+            {
+                Ok(()) => regenerated += 1,
+                Err(e) => {
+                    log::warn!("bulk recap regen {id}: {e}");
+                    failed += 1;
+                }
+            }
+        }
+        bus.recap_bulk_done(&BulkRecapDone {
+            regenerated,
+            failed,
+            cancelled,
+        });
+    });
+
+    Ok(total)
+}
+
+/// [Bulk recap] Прервать активный массовый реген (флаг, проверяется между звонками).
+#[tauri::command]
+pub async fn cancel_bulk_recap(state: State<'_, AppState>) -> Result<(), AppError> {
+    state
+        .bulk_recap_cancel
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     Ok(())
 }
 

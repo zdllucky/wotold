@@ -79,9 +79,48 @@ export function regenerateRecap(callId: string): Promise<void> {
   return invoke<void>('regenerate_recap', { callId });
 }
 
-/** [M14 T-17] Lightweight title-only regen. Returns new title (already persisted in DB). */
-export function regenerateTitle(callId: string): Promise<string> {
-  return invoke<string>('regenerate_title', { callId });
+/** [M14 T-17] Lightweight title-only regen. Engine-aware (Local Qwen / cloud).
+ *  [Global regen] Фоновая задача — возвращается сразу; новый title подтянется
+ *  через refetch на `pipeline:finished`. */
+export function regenerateTitle(callId: string): Promise<void> {
+  return invoke<void>('regenerate_title', { callId });
+}
+
+/** [Global regen] Есть ли активная фон-задача (reprocess / regen) для звонка —
+ *  для restore busy-состояния CallDetailPage после возврата на страницу. */
+export function isCallProcessing(callId: string): Promise<boolean> {
+  return invoke<boolean>('is_call_processing', { callId });
+}
+
+/** [Processing status] call_id'ы всех активных фон-задач — CallsPage показывает
+ *  «обрабатывается» индикатор на этих строках. */
+export function listActiveCallIds(): Promise<string[]> {
+  return invoke<string[]>('list_active_call_ids');
+}
+
+/** Прогресс массового регена пустых рекапов (`recap:bulk_progress`). */
+export interface BulkRecapProgress {
+  done: number;
+  total: number;
+  call_id: string;
+}
+
+/** Итог массового регена (`recap:bulk_done`). */
+export interface BulkRecapDone {
+  regenerated: number;
+  failed: number;
+  cancelled: boolean;
+}
+
+/** [Bulk recap] Пересоздать рекапы всех ready-звонков с пустым recap.md.
+ *  Возвращает кол-во звонков на обработку; реген идёт в фоне с событиями. */
+export function regenerateEmptyRecaps(): Promise<number> {
+  return invoke<number>('regenerate_empty_recaps');
+}
+
+/** [Bulk recap] Прервать активный массовый реген. */
+export function cancelBulkRecap(): Promise<void> {
+  return invoke<void>('cancel_bulk_recap');
 }
 
 /** [B16]: путь к WAV-файлу звонка для аудиоплеера. */

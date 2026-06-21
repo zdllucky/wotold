@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCallAudioPath } from '../api/calls';
 import { humanError } from '../api/errors';
+import { decodeWavPeaks } from '../lib/audioPeaks';
 
 const PEAK_COUNT = 200;
 
@@ -281,37 +282,4 @@ function combinePeaks(
     out[i] = Math.max(a[i] ?? 0, b[i] ?? 0);
   }
   return out;
-}
-
-async function decodeWavPeaks(url: string, count: number): Promise<number[]> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`fetch ${response.status}`);
-  const buffer = await response.arrayBuffer();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const Ctx = window.AudioContext ?? (window as any).webkitAudioContext;
-  const ctx: AudioContext = new Ctx();
-  try {
-    const audio = await ctx.decodeAudioData(buffer.slice(0));
-    const channel = audio.getChannelData(0);
-    const bucketSize = Math.max(1, Math.floor(channel.length / count));
-    const peaks = new Array<number>(count).fill(0);
-    let maxAbs = 0;
-    for (let i = 0; i < count; i++) {
-      const start = i * bucketSize;
-      const end = Math.min(channel.length, start + bucketSize);
-      let peak = 0;
-      for (let j = start; j < end; j++) {
-        const v = Math.abs(channel[j]!);
-        if (v > peak) peak = v;
-      }
-      peaks[i] = peak;
-      if (peak > maxAbs) maxAbs = peak;
-    }
-    if (maxAbs > 0) {
-      for (let i = 0; i < count; i++) peaks[i]! /= maxAbs;
-    }
-    return peaks;
-  } finally {
-    void ctx.close().catch(() => undefined);
-  }
 }

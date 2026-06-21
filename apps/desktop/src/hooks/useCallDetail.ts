@@ -22,6 +22,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   getCall,
   getCallAudioPath,
+  isCallProcessing,
   listCallActionItems,
   listCallDecisions,
   listCallOpenQuestions,
@@ -76,6 +77,14 @@ export interface UseCallDetailResult {
    *  Resets на `null` когда `regenerating` flips false в CallDetailPage. */
   recapElapsedSec: number | null;
   setRecapElapsedSec: (v: number | null) => void;
+  /** [Global regen] Активна ли фон-задача (reprocess / regen) для звонка —
+   *  из backend pipeline_tasks registry, переживает навигацию. */
+  bgBusy: boolean;
+  setBgBusy: (v: boolean) => void;
+  /** [P-fix10] One-shot: пайплайн только что завершился → recap/transcript
+   *  «печатаются» (typewriter/каскад). Авто-сброс ~6s + при смене звонка,
+   *  чтобы обычная навигация не реанимировала. */
+  justGenerated: boolean;
   loading: boolean;
   error: string | null;
   setError: (v: string | null) => void;
@@ -98,8 +107,20 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   const [systemSrc, setSystemSrc] = useState<string | null>(null);
   // [P1.3] Elapsed timer для recap regen UI. См. JSDoc на интерфейсе.
   const [recapElapsedSec, setRecapElapsedSec] = useState<number | null>(null);
+  // [Global regen] Активна ли фон-задача (reprocess / regen) для звонка.
+  // Источник правды — backend pipeline_tasks registry (через isCallProcessing
+  // + pipeline:started/finished события), а не component-local флаг → переживает
+  // уход со страницы и возврат.
+  const [bgBusy, setBgBusy] = useState(false);
+  const [justGenerated, setJustGenerated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // [P-fix10] Сброс one-shot reveal-флага при смене звонка — чтобы переход на
+  // другой (уже готовый) звонок не запускал typewriter.
+  useEffect(() => {
+    setJustGenerated(false);
+  }, [callId]);
 
   // Adapter that supports either a value or an updater callback — mirrors
   // React's useState setter API so consumer can do
@@ -205,11 +226,17 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   // На started: refetch call meta (статус 'processing' уже стоит, ок).
   // На finished/cancelled: refetch всё (артефакты могли обновиться).
   useEffect(() => {
+    // [Global regen] Restore busy-состояния после возврата на страницу: если
+    // фон-задача (reprocess / regen) ещё бежит — bgBusy=true.
+    void isCallProcessing(callId)
+      .then(setBgBusy)
+      .catch(() => {});
     const unlisteners: UnlistenFn[] = [];
     const attach = async () => {
       try {
         const u1 = await listen<{ call_id: string }>('pipeline:started', (e) => {
           if (e.payload.call_id !== callId) return;
+          setBgBusy(true);
           // Status уже processing — лёгкий refetch только meta для синка.
           void getCall(callId).then((c) => c && setCallState(c));
         });
@@ -218,6 +245,11 @@ export function useCallDetail(callId: string): UseCallDetailResult {
           'pipeline:finished',
           (e) => {
             if (e.payload.call_id !== callId) return;
+            setBgBusy(false);
+            // [P-fix10] One-shot «только что сгенерировано» → typewriter-reveal.
+            // Авто-сброс позже длительности анимации, чтобы навигация не реанимировала.
+            setJustGenerated(true);
+            window.setTimeout(() => setJustGenerated(false), 6000);
             void refetchAll();
           },
         );
@@ -226,6 +258,7 @@ export function useCallDetail(callId: string): UseCallDetailResult {
           'pipeline:cancelled',
           (e) => {
             if (e.payload.call_id !== callId) return;
+            setBgBusy(false);
             void refetchAll();
           },
         );
@@ -431,6 +464,9 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     systemSrc,
     recapElapsedSec,
     setRecapElapsedSec,
+    bgBusy,
+    setBgBusy,
+    justGenerated,
     loading,
     error,
     setError,

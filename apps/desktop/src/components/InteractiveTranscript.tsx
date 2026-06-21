@@ -113,6 +113,12 @@ interface Props {
   onSeek?: (seconds: number) => void;
   /** Клик по «? Кто это?» chip → открывает SpeakerConfirmModal на заданном теге. */
   onIdentifySpeaker?: (speakerTag: string) => void;
+  /** [P-fix10] One-shot каскад появления строк (после генерации). reduced-motion
+   *  → мгновенно. */
+  reveal?: boolean;
+  /** [P-fix10] Идёт STT и расшифровки ещё нет → ghost-строки (shimmer) вместо
+   *  пустоты, чтобы не казалось зависшим. */
+  generating?: boolean;
 }
 
 /** speaker_tag → label для бейджа. Confirmed-contact → display_name,
@@ -145,8 +151,19 @@ export function InteractiveTranscript({
   currentTime,
   onSeek,
   onIdentifySpeaker,
+  reveal = false,
+  generating = false,
 }: Props) {
   const { t } = useI18n();
+  // [P-fix10] reduced-motion → не вешаем reveal-класс (иначе строки залипли бы
+  // на opacity:0 если нет CSS-override). Текст всегда доступен.
+  const revealRows =
+    reveal &&
+    !(
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
   const labels = useMemo(() => buildLabelMap(speakers), [speakers]);
   const unconfirmed = useMemo(() => buildUnconfirmedSet(speakers), [speakers]);
   const segments: Segment[] | null = useMemo(() => {
@@ -189,6 +206,24 @@ export function InteractiveTranscript({
         </div>
       );
     }
+    // [P-fix10] Идёт STT — ghost-строки (shimmer) вместо пустоты.
+    if (generating) {
+      return (
+        <div
+          className="transcript"
+          aria-busy="true"
+          aria-label={t('callDetail.generatingTranscript')}
+        >
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="transcript-row transcript-row--ghost">
+              <div className="transcript-speaker" />
+              <div className="transcript-text" />
+              <div className="transcript-time" />
+            </div>
+          ))}
+        </div>
+      );
+    }
     return <Empty description={t('callDetail.emptyTranscript')} />;
   }
 
@@ -215,7 +250,9 @@ export function InteractiveTranscript({
           <div
             key={`${g.tag}-${idx}`}
             ref={isActive ? activeRowRef : undefined}
-            className="transcript-row"
+            className={
+              revealRows ? 'transcript-row transcript-row--streaming' : 'transcript-row'
+            }
             onClick={isClickable ? () => onSeek!(start) : undefined}
             style={{
               cursor: isClickable ? 'pointer' : 'default',
@@ -228,6 +265,10 @@ export function InteractiveTranscript({
               borderRadius: 'var(--radius-sm)',
               transition:
                 'background var(--duration-fast), border-color var(--duration-fast)',
+              // [P-fix10] Каскад: каждая строка появляется с задержкой (cap ~1.4s).
+              ...(revealRows
+                ? { animationDelay: `${Math.min(idx, 40) * 35}ms` }
+                : {}),
             }}
             role={isClickable ? 'button' : undefined}
             tabIndex={isClickable ? 0 : undefined}

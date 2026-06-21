@@ -47,6 +47,11 @@ pub const RECORDING_DURATION: &str = "recording:duration";
 pub const RECORDING_STATE: &str = "recording:state";
 pub const VOICE_MODEL_PROGRESS: &str = "voice-model:progress";
 pub const VOICE_MODEL_DONE: &str = "voice-model:done";
+/// [Bulk recap] Прогресс массового пересоздания пустых рекапов. Payload —
+/// `{ done, total, call_id }`. Settings progress-strip подписывается.
+pub const RECAP_BULK_PROGRESS: &str = "recap:bulk_progress";
+/// [Bulk recap] Финал массового регена. Payload — `{ regenerated, failed, cancelled }`.
+pub const RECAP_BULK_DONE: &str = "recap:bulk_done";
 
 // ──────────────────────────────────────────────────────────────
 // Payload types. Re-exported из event-bus, чтобы у frontend
@@ -209,6 +214,14 @@ impl<'a> EventBus<'a> {
 
     pub fn voice_model_done<T: Serialize + Clone>(&self, payload: &T) {
         self.emit(VOICE_MODEL_DONE, payload);
+    }
+
+    pub fn recap_bulk_progress<T: Serialize + Clone>(&self, payload: &T) {
+        self.emit(RECAP_BULK_PROGRESS, payload);
+    }
+
+    pub fn recap_bulk_done<T: Serialize + Clone>(&self, payload: &T) {
+        self.emit(RECAP_BULK_DONE, payload);
     }
 
     /// [S8] Notify все webview'ы что backend recording state поменялся.

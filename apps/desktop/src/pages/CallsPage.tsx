@@ -17,13 +17,14 @@ import {
   type Call,
   type CallProgressEvent,
 } from '../api/recording';
+import { listActiveCallIds } from '../api/calls';
 import { listCallSpeakers } from '../api/speakers';
 import { EngineChip } from '../components/EngineChip';
 import { List, type RowComponentProps } from 'react-window';
 import { CallRowSkeleton, Empty } from '../ui';
 import { bcp47, useI18n } from '../i18n';
 import { CallStateTag, ProgressRail } from '../components/call-state';
-import { PIPELINE_STEP_KEYS, type CallState } from '../types/callState';
+import { pipelineStepKey, type CallState } from '../types/callState';
 
 const VIRTUALIZATION_THRESHOLD = 200;
 const ROW_HEIGHT = 78;
@@ -143,6 +144,10 @@ export function CallsPage({ onOpen }: CallsPageProps) {
   const [speakerInitials, setSpeakerInitials] = useState<
     Map<string, string[]>
   >(new Map());
+  // [Processing status] call_id'ы активных фон-задач (regen / reprocess).
+  // status звонка остаётся 'ready' при regen — этот Set даёт «обрабатывается»
+  // индикатор на ready-строках. Источник: pipeline_tasks registry в backend.
+  const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
 
   const refresh = () => {
     listCalls()
@@ -152,45 +157,71 @@ export function CallsPage({ onOpen }: CallsPageProps) {
 
   useEffect(() => {
     refresh();
-    let unlistenFinished: UnlistenFn | undefined;
-    let unlistenProgress: UnlistenFn | undefined;
-    listen<PipelineFinishedEvent>('pipeline:finished', () => {
-      refresh();
-    })
-      .then((fn) => {
-        unlistenFinished = fn;
-      })
-      .catch((e: unknown) => {
-        console.warn('pipeline event listener:', e);
+    // [Processing status] restore активных задач после mount/возврата.
+    listActiveCallIds()
+      .then((ids) => setActiveIds(new Set(ids)))
+      .catch((e: unknown) => console.warn('listActiveCallIds:', e));
+
+    const removeActive = (callId: string) =>
+      setActiveIds((prev) => {
+        if (!prev.has(callId)) return prev;
+        const next = new Set(prev);
+        next.delete(callId);
+        return next;
       });
+
+    const unlisteners: UnlistenFn[] = [];
+    const track = (p: Promise<UnlistenFn>, label: string) => {
+      p.then((fn) => unlisteners.push(fn)).catch((e: unknown) =>
+        console.warn(`${label} listener:`, e),
+      );
+    };
+
+    // [Processing status] regen/reprocess стартовал → +1 на строке звонка.
+    track(
+      listen<{ call_id: string }>('pipeline:started', (e) => {
+        setActiveIds((prev) => new Set(prev).add(e.payload.call_id));
+      }),
+      'pipeline:started',
+    );
+    track(
+      listen<PipelineFinishedEvent>('pipeline:finished', (e) => {
+        removeActive(e.payload.call_id);
+        refresh();
+      }),
+      'pipeline:finished',
+    );
+    track(
+      listen<{ call_id: string }>('pipeline:cancelled', (e) => {
+        removeActive(e.payload.call_id);
+        refresh();
+      }),
+      'pipeline:cancelled',
+    );
     // [V6.3] Live per-step progress — обновляем only затронутый row
     // вместо полного refetch'а. DB-source-of-truth уже UPDATE'нут в pipeline
     // через set_call_progress; refresh() на каждый tick = overhead.
-    listen<CallProgressEvent>('call:progress', (e) => {
-      setCalls((prev) => {
-        if (!prev) return prev;
-        return prev.map((c) =>
-          c.id === e.payload.call_id
-            ? {
-                ...c,
-                pipeline_step: e.payload.step,
-                pipeline_pct: e.payload.pct,
-                pipeline_eta_sec: e.payload.eta_sec,
-                upload_bytes: e.payload.upload_bytes,
-              }
-            : c,
-        );
-      });
-    })
-      .then((fn) => {
-        unlistenProgress = fn;
-      })
-      .catch((e: unknown) => {
-        console.warn('call:progress listener:', e);
-      });
+    track(
+      listen<CallProgressEvent>('call:progress', (e) => {
+        setCalls((prev) => {
+          if (!prev) return prev;
+          return prev.map((c) =>
+            c.id === e.payload.call_id
+              ? {
+                  ...c,
+                  pipeline_step: e.payload.step,
+                  pipeline_pct: e.payload.pct,
+                  pipeline_eta_sec: e.payload.eta_sec,
+                  upload_bytes: e.payload.upload_bytes,
+                }
+              : c,
+          );
+        });
+      }),
+      'call:progress',
+    );
     return () => {
-      unlistenFinished?.();
-      unlistenProgress?.();
+      unlisteners.forEach((fn) => fn());
     };
   }, []);
 
@@ -351,7 +382,7 @@ export function CallsPage({ onOpen }: CallsPageProps) {
           rowComponent={VirtualCallRow}
           rowCount={filtered.length}
           rowHeight={ROW_HEIGHT}
-          rowProps={{ calls: filtered, onOpen, speakerInitials, locale, t }}
+          rowProps={{ calls: filtered, onOpen, speakerInitials, activeIds, locale, t }}
           defaultHeight={VIRTUAL_LIST_HEIGHT}
         />
       ) : (
@@ -385,6 +416,7 @@ export function CallsPage({ onOpen }: CallsPageProps) {
                       onOpen={onOpen}
                       hasBorder={idx > 0}
                       speakers={speakerInitials.get(c.id)}
+                      isActive={activeIds.has(c.id)}
                       locale={locale}
                       t={t}
                     />
@@ -408,15 +440,21 @@ interface CallRowProps {
   /** Initials of confirmed speakers (computed parent-side). Falls back
    *  to deterministic hash placeholder if missing. */
   speakers?: string[];
+  /** [Processing status] активна ли фон-задача regen/reprocess для звонка. */
+  isActive?: boolean;
   locale: string;
   t: TFn;
 }
 
-function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
+function CallRow({ call, onOpen, hasBorder, speakers, isActive, t }: CallRowProps) {
   const list = speakers && speakers.length > 0 ? speakers : inferSpeakers(call);
   const uiState = deriveCallState(call);
-  const showTag = uiState !== 'ready';
-  const showRail = uiState === 'uploading' || uiState === 'processing';
+  // [Processing status] regen звонка не меняет status (остаётся 'ready'), но
+  // фон-задача активна → показываем generic «обрабатывается» + indeterminate
+  // rail. Полный pipeline (status='processing') идёт штатным путём с шагом/ETA.
+  const busy = call.status === 'ready' && isActive === true;
+  const showTag = uiState !== 'ready' || busy;
+  const showRail = uiState === 'uploading' || uiState === 'processing' || busy;
   const title =
     call.title ?? t('calls.fallbackCallTitle', { short: call.id.slice(0, 8) });
 
@@ -426,7 +464,9 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
   // queued: «в очереди».
   // live: «идёт запись».
   // ready: пусто.
-  const secondary = renderSecondary(call, uiState, t);
+  const secondary = busy
+    ? secondaryText(t('calls.secondaryBusy'))
+    : renderSecondary(call, uiState, t);
 
   return (
     <div
@@ -495,7 +535,23 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
           >
             {title}
           </span>
-          {showTag && <CallStateTag state={uiState} />}
+          {showTag && (
+            <CallStateTag
+              state={busy ? 'processing' : uiState}
+              // [Fix] processing/uploading тег показывает ТОЧНЫЙ текущий шаг
+              // (тот же источник, что CallDetail PipelineStrip) — чтобы статус
+              // совпадал между списком и деталью. Раньше тег печатал generic
+              // callState.processing='распознаём', конфликтуя с шагом в строке.
+              // [Processing status] regen-busy → generic лейбл (реального шага нет).
+              labelOverride={
+                busy
+                  ? t('callState.busyGeneric')
+                  : uiState === 'processing' || uiState === 'uploading'
+                    ? t(pipelineStepKey(call.pipeline_step))
+                    : undefined
+              }
+            />
+          )}
           {!showTag && call.processing_via && (
             <EngineChip kind={call.processing_via} variant="inline" />
           )}
@@ -507,7 +563,7 @@ function CallRow({ call, onOpen, hasBorder, speakers, t }: CallRowProps) {
           <div style={{ marginTop: 6 }}>
             <ProgressRail
               indeterminate
-              ariaLabel={t(`callState.${uiState}`)}
+              ariaLabel={busy ? t('callState.busyGeneric') : t(`callState.${uiState}`)}
             />
           </div>
         )}
@@ -615,63 +671,32 @@ function renderSecondary(
     );
   }
 
-  // processing — текущий step label + ETA
+  // processing — шаг теперь в теге; подзаголовок несёт только ETA (без дубля).
   if (state === 'processing') {
-    const step = clampStep(call.pipeline_step ?? 3);
-    const stageKey = PIPELINE_STEP_KEYS[step - 1] ?? PIPELINE_STEP_KEYS[0];
     const eta = call.pipeline_eta_sec;
-    const text =
-      eta != null
-        ? `${t(stageKey!)} · ${t('calls.secondaryEta', { sec: eta })}`
-        : t(stageKey!);
-    return secondaryText(text);
+    return eta != null
+      ? secondaryText(t('calls.secondaryEta', { sec: eta }))
+      : null;
   }
 
-  // uploading — «Загружаем аудио» + опц. «X / Y МБ»
+  // uploading — шаг (= «Сохраняем аудио») в теге; подзаголовок — только размер.
   if (state === 'uploading') {
     const bytes = call.upload_bytes;
-    const label = t('calls.secondaryUploading');
     if (bytes != null && bytes > 0) {
       return (
         <div
-          className="call-row-secondary"
+          className="call-row-secondary mono"
           style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 12,
-            minWidth: 0,
-            fontFamily: 'var(--font-serif)',
-            fontStyle: 'italic',
-            fontSize: 13,
+            fontSize: 11,
             color: 'var(--text-muted)',
+            minWidth: 0,
           }}
         >
-          <span
-            style={{
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              flex: '1 1 auto',
-            }}
-            title={label}
-          >
-            {label}
-          </span>
-          <span
-            className="mono"
-            style={{
-              fontSize: 11,
-              flexShrink: 0,
-              color: 'var(--text-muted)',
-            }}
-          >
-            {formatMegabytes(bytes)}
-          </span>
+          {formatMegabytes(bytes)}
         </div>
       );
     }
-    return secondaryText(label);
+    return null;
   }
 
   // queued — «в очереди»
@@ -708,11 +733,6 @@ function secondaryText(text: string, color?: string): ReactNode {
   );
 }
 
-function clampStep(step: number): 1 | 2 | 3 | 4 | 5 {
-  const n = Math.min(Math.max(step | 0, 1), 5);
-  return n as 1 | 2 | 3 | 4 | 5;
-}
-
 function formatMegabytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   if (mb < 1) return `${(bytes / 1024).toFixed(0)} КБ`;
@@ -723,6 +743,7 @@ interface VirtualRowProps {
   calls: Call[];
   onOpen: (id: string) => void;
   speakerInitials: Map<string, string[]>;
+  activeIds: Set<string>;
   locale: string;
   t: TFn;
 }
@@ -733,6 +754,7 @@ function VirtualCallRow({
   calls,
   onOpen,
   speakerInitials,
+  activeIds,
   locale,
   t,
 }: RowComponentProps<VirtualRowProps>) {
@@ -744,6 +766,7 @@ function VirtualCallRow({
         onOpen={onOpen}
         hasBorder={index > 0}
         speakers={speakerInitials.get(c.id)}
+        isActive={activeIds.has(c.id)}
         locale={locale}
         t={t}
       />

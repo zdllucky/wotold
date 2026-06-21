@@ -270,6 +270,7 @@ mod tests {
             input: "Alice: hi\nBob: hello".into(),
             max_tokens: None,
             grammar: None,
+            json_schema: None,
         }
     }
 

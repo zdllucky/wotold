@@ -85,6 +85,7 @@ mod tests {
             summary_pipeline_mode: None,
             created_at: "2024-01-01T10:00:00+00:00".into(),
             updated_at: "2024-01-01T10:05:00+00:00".into(),
+            processing_via: None,
         }
     }
 
