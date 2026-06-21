@@ -182,7 +182,10 @@ pub struct CallSummaryV2 {
     pub title: String,
     pub summary: String,
     pub key_points: Vec<String>,
-    /// Markdown — type-specific structure (см. PRD §5.1 TYPE GUIDE).
+    /// [MoM cleanup] Deprecated — больше не запрашивается в промпте и не
+    /// рендерится в recap.md (модель эхо-копировала схему сюда → мусор).
+    /// serde-default чтобы старые/новые ответы без `mom` парсились в v2.
+    #[serde(default)]
     pub mom: String,
     /// "ru" | "en" | "kk" | "mixed". Дублируется в `calls.lang_detected`.
     pub language: String,

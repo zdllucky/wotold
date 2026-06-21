@@ -484,12 +484,11 @@ pub(crate) fn build_v2_system_prompt(
         .map(|s| format!("\n\n## Known participants\n{s}"))
         .unwrap_or_default();
     // [M14 T-04] Optional classification hint от лёгкого pre-pass.
-    // LLM не классифицирует заново, фокусируется на структуре + правильном
-    // type_specific_block. Cloud callers pass None (full reasoning).
+    // LLM не классифицирует заново. Cloud callers pass None (full reasoning).
     let type_hint = known_call_type
         .map(|t| {
             format!(
-                "\n\n## Classification hint (pre-determined)\nCall type already classified as `{}`. Set `call_type` to this value, use the matching TYPE GUIDE section, и populate `type_specific_block` соответственно.",
+                "\n\n## Classification hint (pre-determined)\nCall type already classified as `{}`. Set `call_type` to this value.",
                 t.as_str()
             )
         })
@@ -512,7 +511,7 @@ pub(crate) fn build_v2_system_prompt(
    - `proposal` — suggested но не accepted\n\
    - `idea` — raised, no clear action\n\
 5. Output ONLY ONE JSON object matching the schema. No prose, no markdown fences, no explanation.\n\
-6. NEVER use raw 'Speaker 0', 'Speaker 1', 'owner' tags inside `summary`/`key_points`/`mom`/`action_items.text`. Resolve to names via:\n\
+6. NEVER use raw 'Speaker 0', 'Speaker 1', 'owner' tags inside `summary`/`key_points`/`action_items.text`. Resolve to names via:\n\
    (a) Known participants block — exact name.\n\
    (b) Self-introduction in transcript.\n\
    (c) Generic role: 'клиент', 'представитель вендора', 'коллега'. NEVER 'Спикер 1'.\n\
@@ -551,26 +550,17 @@ pub(crate) fn build_v2_system_prompt(
     \"text\": string,                            // Нерешённый вопрос поднятый в звонке\n\
     \"raised_by\": string|null,\n\
     \"evidence\": {{ \"quote\": string|null, \"speaker\": string|null }}\n\
-  }}],\n\
-  \"mom\": string (Markdown — структура по call_type — см. TYPE GUIDE),\n\
-  \"type_specific_block\": object|null           // Per call_type — см. TYPE GUIDE\n\
+  }}]\n\
 }}\n\
 \n\
-## TYPE GUIDE\n\
+## PRIVACY (one_on_one)\n\
 \n\
-- **sales_discovery**: rep + prospect. MoM headers: ## Customer pain / ## Stakeholders / ## Budget signals / ## Next steps. type_specific_block: {{ \"pain_points\": string[], \"current_solution\": string|null, \"budget_signal\": string|null, \"decision_makers\": [{{\"name\":string,\"role\":string|null,\"stance\":\"champion\"|\"neutral\"|\"blocker\"|\"unknown\"}}], \"timeline_hint\": string|null }}\n\
-- **sales_demo**: rep walks product. MoM: ## Demo flow / ## Objections / ## Buying signals / ## Follow-up commitments. type_specific_block: {{ \"objections\": [{{\"raised\":string,\"resolved\":bool}}], \"buying_signals\": string[] }}\n\
-- **product_sync**: internal team. MoM: ## Progress / ## Blockers / ## Decisions / ## Next milestones. type_specific_block: {{ \"blockers\": string[], \"milestones\": [{{\"name\":string,\"target\":string}}] }}\n\
-- **standup**: short rotating updates. MoM: ## Yesterday / ## Today / ## Blockers. type_specific_block: {{ \"per_person\": [{{\"speaker\":string,\"yesterday\":string,\"today\":string,\"blockers\":string|null}}] }}\n\
-- **customer_interview**: user research. MoM: ## Job to be done / ## Current workflow / ## Pain quotes / ## Feature requests. type_specific_block: {{ \"jtbd\": string|null, \"pain_quotes\": [{{\"quote\":string,\"speaker\":string}}] }}\n\
-- **one_on_one** (PRIVACY-SENSITIVE): manager 1:1. MoM: ## Wins / ## Challenges / ## Feedback / ## Career. **PRIVACY:** do NOT include verbatim personal feedback в `evidence.quote` — paraphrase + evidence=null. action_items ТОЛЬКО work commitments. type_specific_block: {{ \"topics_discussed\": string[] (≤5), \"follow_ups_committed\": string[] }}\n\
-- **strategy_brainstorm**: open ideation. MoM: ## Ideas / ## Top picks / ## Open questions / ## Owners. type_specific_block: {{ \"ideas\": [{{\"text\":string,\"votes\":number|null}}] }}\n\
-- **status_update**: workstream reporting. MoM: ## Status by workstream / ## Risks / ## Asks. type_specific_block: {{ \"workstreams\": [{{\"name\":string,\"status\":\"green\"|\"yellow\"|\"red\",\"note\":string}}] }}\n\
-- **other**: doesn't fit. MoM: ## Контекст / ## Обсудили / ## Решения / ## Дальнейшие шаги. type_specific_block: null.\n\
+- Если call_type = one_on_one: НЕ включай дословный личный фидбэк в `evidence.quote` —\n\
+  перефразируй + evidence=null. action_items ТОЛЬКО рабочие commitments.\n\
 \n\
 ## LANGUAGE & FORMATTING\n\
 \n\
-- Detect dominant language of transcript. Output ALL string fields (title, summary, key_points, mom, action_items.text, decisions.text, open_questions.text) в этом языке.\n\
+- Detect dominant language of transcript. Output ALL string fields (title, summary, key_points, action_items.text, decisions.text, open_questions.text) в этом языке.\n\
 - `call_type` и `category` enum values остаются английскими (snake_case).\n\
 - Mixed ru/en → respond в dominant + English tech terms as-is.\n\
 \n\
@@ -716,10 +706,9 @@ fn render_recap_md_v2(
         out.push('\n');
     }
 
-    if !summary.mom.is_empty() {
-        out.push_str(summary.mom.trim());
-        out.push_str("\n\n");
-    }
+    // [MoM cleanup] `mom` НЕ рендерим: слабая локальная модель эхо-копировала
+    // сюда инструкции промпта (## Status by workstream + type_specific_block
+    // schema + raw JSON) → мусор в рекапе. Промпты больше не просят mom/tsb.
 
     if !action_inputs.is_empty() {
         out.push_str(&format!("## {}\n\n", labels.tasks));
@@ -1122,6 +1111,22 @@ mod tests {
         // render полностью пустого summary → blank (как старые звонки).
         let empty = empty_summary_v2("ru");
         assert!(recap_md_is_blank(&render_recap_md_v2(&empty, &[], &[])));
+    }
+
+    #[test]
+    fn render_recap_md_v2_does_not_render_mom() {
+        // [MoM cleanup] Даже если модель положила мусор в mom (эхо схемы) —
+        // он НЕ попадает в recap.md.
+        let mut s = empty_summary_v2("ru");
+        s.summary = "Краткое содержание.".into();
+        s.mom =
+            "## Status by workstream / ## Risks / ## Asks\n\n### type_specific_block schema\n{\"workstreams\":[]}"
+                .into();
+        let md = render_recap_md_v2(&s, &[], &[]);
+        assert!(md.contains("Краткое содержание."));
+        assert!(!md.contains("Status by workstream"));
+        assert!(!md.contains("type_specific_block"));
+        assert!(!md.contains("workstreams"));
     }
 
     #[test]

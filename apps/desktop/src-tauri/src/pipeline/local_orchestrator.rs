@@ -327,19 +327,16 @@ mod tests {
         let systems = mock.captured_systems();
         assert_eq!(systems.len(), 2);
         let main_prompt = &systems[1];
-        // Focused headers for standup.
+        // [MoM cleanup] Expert path определяется по slug + SPECIALIZED GUIDE,
+        // без MoM-заголовков / type_specific_block.
         assert!(
-            main_prompt.contains("## Yesterday"),
-            "expert main prompt missing standup headers: {}",
+            main_prompt.contains("`standup`"),
+            "expert main prompt missing standup slug: {}",
             &main_prompt[..200.min(main_prompt.len())]
         );
-        assert!(main_prompt.contains("## Today"));
-        // Other types' SPECIALIZED headers absent.
-        assert!(!main_prompt.contains("## Customer pain"));
-        assert!(!main_prompt.contains("## Demo flow"));
-        assert!(!main_prompt.contains("## Job to be done"));
-        // SPECIALIZED GUIDE marker present.
         assert!(main_prompt.contains("SPECIALIZED GUIDE"));
+        assert!(!main_prompt.contains("## Yesterday"));
+        assert!(!main_prompt.contains("type_specific_block"));
     }
 
     #[tokio::test]
