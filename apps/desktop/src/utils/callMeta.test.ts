@@ -196,6 +196,21 @@ describe('humanSpeakerLabel', () => {
     expect(humanSpeakerLabel('speaker 0')).toBe('Голос 1');
     expect(humanSpeakerLabel('SPEAKER 9')).toBe('Голос 10');
   });
+
+  test('локальный формат speaker:N → «Спикер N» (0-indexed, как у участников)', () => {
+    expect(humanSpeakerLabel('speaker:0')).toBe('Спикер 0');
+    expect(humanSpeakerLabel('speaker:1')).toBe('Спикер 1');
+    expect(humanSpeakerLabel('speaker:2')).toBe('Спикер 2');
+  });
+
+  test('speaker:unknown → «Спикер ?»', () => {
+    expect(humanSpeakerLabel('speaker:unknown')).toBe('Спикер ?');
+  });
+
+  test('speaker:owner и owner → «Я»', () => {
+    expect(humanSpeakerLabel('speaker:owner')).toBe('Я');
+    expect(humanSpeakerLabel('owner')).toBe('Я');
+  });
 });
 
 // ─── findSpeakerAtTime ─────────────────────────────────────────────

@@ -17,7 +17,7 @@ import {
   regenerateTitle,
   reprocessCall,
 } from '../api/calls';
-import { forceRestt, retryChunk } from '../api/recording';
+import { retryChunk } from '../api/recording';
 import { humanError } from '../api/errors';
 import { engineLabelHuman } from '../utils/engineLabel';
 import { Tabs } from '../ui';
@@ -42,6 +42,7 @@ import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
 import { EngineChip } from '../components/EngineChip';
+import { CallStateTag, ProgressRail } from '../components/call-state';
 import { useCallAudio } from '../hooks/useCallAudio';
 import { useCallDetail } from '../hooks/useCallDetail';
 import { useI18n } from '../i18n';
@@ -80,6 +81,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     setRecapElapsedSec,
     bgBusy,
     setBgBusy,
+    justGenerated,
     loading,
     error,
     setError,
@@ -95,7 +97,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [deleting, setDeleting] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [forceRestting, setForceRestting] = useState(false);
   // [Bug-fix #6] После bind speaker → contact подсказываем regenerate recap.
   // Memory-only flag — пере-показывается на следующий bind action в звонке.
   const [pendingRecapRegen, setPendingRecapRegen] = useState(false);
@@ -167,51 +168,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       await refetchAll();
     } finally {
       setReprocessing(false);
-    }
-  };
-
-  // [P14.1] Force re-STT — destructive. Дропает existing transcripts +
-  // recap артефакты и запускает полный re-recognition. Применяется когда
-  // existing transcripts содержат hallucinations (pre-P12 filter) либо
-  // [FOREIGN] теги — chunk_assembly skip-STT path не применяет filter
-  // post-hoc, нужен полный rerun.
-  const onForceRestt = async () => {
-    if (!call) return;
-    // Cloud engine не chunked → backend всё равно refuse'нёт, скрываем UI.
-    if (call.processing_via !== 'local') return;
-    const ok = await ask(t('callDetail.forceResttConfirmBody'), {
-      title: t('callDetail.forceResttConfirmTitle'),
-      kind: 'warning',
-      okLabel: t('callDetail.forceResttConfirmOk'),
-      cancelLabel: t('common.cancel'),
-    });
-    if (!ok) return;
-    setForceRestting(true);
-    setError(null);
-    // [P16.1] Snapshot pre-patch — revert на sync error.
-    const snapshotBefore = call;
-    setCall((prev) =>
-      prev
-        ? {
-            ...prev,
-            status: 'processing',
-            pipeline_step: 1,
-            pipeline_pct: 0,
-            pipeline_eta_sec: null,
-            upload_bytes: null,
-            recap_failed_reason: null,
-          }
-        : prev,
-    );
-    try {
-      await forceRestt(call.id);
-    } catch (e) {
-      setError(t('callDetail.forceResttFailed', { error: humanError(e) }));
-      // [P16.1] Immediate revert чтобы UI не залип в fake processing.
-      setCall(snapshotBefore);
-      await refetchAll();
-    } finally {
-      setForceRestting(false);
     }
   };
 
@@ -385,10 +341,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           deleting={deleting}
           recapElapsedSec={recapElapsedSec}
           hasFailedChunks={(chunks ?? []).some((c) => c.status === 'failed')}
-          onForceRestt={
-            call.processing_via === 'local' ? () => void onForceRestt() : undefined
-          }
-          forceRestting={forceRestting}
         />
 
         {/* Participants chips — same row после title */}
@@ -423,6 +375,28 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             }}
           />
         ))}
+
+      {/* [Processing status] Фон-regen (саммари/название) не меняет status —
+          звонок остаётся 'ready'. Показываем strip с indeterminate rail +
+          elapsed, чтобы пользователь видел «идёт обработка» (как глобальная
+          задача, переживающая навигацию). Полный pipeline (status='processing')
+          выше имеет свой ProcessingPanel/ReprocessBanner. */}
+      {bgBusy && call.status === 'ready' && (
+        <div
+          className="card"
+          style={{ marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 10 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <CallStateTag state="processing" labelOverride={t('callState.busyGeneric')} />
+            <span className="muted" style={{ fontSize: 13 }}>
+              {recapElapsedSec != null
+                ? t('callDetail.bgBusyStripElapsed', { sec: recapElapsedSec })
+                : t('callDetail.bgBusyStrip')}
+            </span>
+          </div>
+          <ProgressRail indeterminate ariaLabel={t('callState.busyGeneric')} />
+        </div>
+      )}
 
       {call.status === 'failed' && (
         <ErrorScreen
@@ -556,10 +530,17 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           />
           <MdPanel
             md={recap}
+            animate={justGenerated}
+            generating={call.status === 'processing' || bgBusy}
+            generatingLabel={
+              recapElapsedSec != null
+                ? `${t('callDetail.generatingRecap')} ${recapElapsedSec}s`
+                : t('callDetail.generatingRecap')
+            }
             emptyHint={t('callDetail.emptyRecap')}
             onRegenerate={() => void onRegenerateRecap()}
             regenerating={bgBusy}
-            regenerateDisabled={!transcript || reprocessing || forceRestting}
+            regenerateDisabled={!transcript || reprocessing}
             emptyBody={
               call.recap_failed_reason
                 ? t('callDetail.recapEmptyFailed', {
@@ -579,6 +560,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             fallbackMd={transcript}
             speakers={speakersLite}
             currentTime={audio.currentTime}
+            reveal={justGenerated}
+            generating={call.status === 'processing'}
             onSeek={(s) => {
               audio.seek(s);
               if (!audio.playing && audio.ready) audio.togglePlay();

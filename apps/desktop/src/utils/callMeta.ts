@@ -20,7 +20,14 @@ import type { CallSpeakerView } from '../api/speakers';
  *  Маппинг 1-based чтобы юзеру не казалось «нулевой голос». */
 export function humanSpeakerLabel(speakerTag: string): string {
   if (!speakerTag) return 'Голос';
-  if (speakerTag === 'owner') return 'Я';
+  if (speakerTag === 'owner' || speakerTag === 'speaker:owner') return 'Я';
+  // [P-fix] Локальный формат диаризации "speaker:N" / "speaker:unknown".
+  // Согласовано с чипами участников (ParticipantsRow speakerOrdinal):
+  // «Спикер N» (0-indexed), «Спикер ?» для overflow-кластера. Без этого
+  // транскрипт-строки показывали сырой тег → CSS uppercase → «SPEAKER:1».
+  if (speakerTag === 'speaker:unknown') return 'Спикер ?';
+  const mLocal = /^speaker:(\d+)$/.exec(speakerTag);
+  if (mLocal) return `Спикер ${mLocal[1]}`;
   // "Speaker N" (Soniox) → "Голос N+1"
   const m1 = /^Speaker\s+(\d+)$/i.exec(speakerTag);
   if (m1) {
@@ -46,7 +53,11 @@ export function humanSpeakerLabel(speakerTag: string): string {
  *  избегаем «peake»-truncation глитч на длинных строках. */
 export function shortSpeakerLabel(speakerTag: string): string {
   if (!speakerTag) return '·';
-  if (speakerTag === 'owner') return 'Я';
+  if (speakerTag === 'owner' || speakerTag === 'speaker:owner') return 'Я';
+  // [P-fix] Локальный формат "speaker:N" / "speaker:unknown" (см. humanSpeakerLabel).
+  if (speakerTag === 'speaker:unknown') return '?';
+  const mLocal = /^speaker:(\d+)$/.exec(speakerTag);
+  if (mLocal) return mLocal[1]!;
   const m1 = /^Speaker\s+(\d+)$/i.exec(speakerTag);
   if (m1) {
     const n = Number(m1[1]);

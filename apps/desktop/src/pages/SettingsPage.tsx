@@ -26,6 +26,7 @@ import {
   getSetting,
   setSetting,
   PREFERRED_LANGUAGES,
+  STT_LANGUAGES,
   SETTINGS_DEFAULTS,
   SETTINGS_KEYS,
   type CallDetectCooldown,
@@ -66,6 +67,9 @@ export function SettingsPage() {
   const [preferredLanguage, setPreferredLanguage] = useState<PreferredLanguage>(
     SETTINGS_DEFAULTS.PREFERRED_LANGUAGE,
   );
+  const [sttLang, setSttLang] = useState<PreferredLanguage>(
+    SETTINGS_DEFAULTS.STT_LANG,
+  );
   const [callDetectEnabled, setCallDetectEnabled] = useState<boolean>(
     SETTINGS_DEFAULTS.CALL_DETECT_ENABLED,
   );
@@ -81,14 +85,17 @@ export function SettingsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [lang, toggleHk, pauseHk, cdEnabled, cdCooldown] = await Promise.all([
-          getSetting(SETTINGS_KEYS.PREFERRED_LANGUAGE),
-          getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE),
-          getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE),
-          getSetting(SETTINGS_KEYS.CALL_DETECT_ENABLED),
-          getSetting(SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN),
-        ]);
+        const [lang, sttLangVal, toggleHk, pauseHk, cdEnabled, cdCooldown] =
+          await Promise.all([
+            getSetting(SETTINGS_KEYS.PREFERRED_LANGUAGE),
+            getSetting(SETTINGS_KEYS.STT_LANG),
+            getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE),
+            getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE),
+            getSetting(SETTINGS_KEYS.CALL_DETECT_ENABLED),
+            getSetting(SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN),
+          ]);
         if (lang) setPreferredLanguage(lang as PreferredLanguage);
+        if (sttLangVal) setSttLang(sttLangVal as PreferredLanguage);
         if (toggleHk) setToggleHotkey(toggleHk);
         if (pauseHk) setPauseHotkey(pauseHk);
         setCallDetectEnabled(cdEnabled === '1');
@@ -267,6 +274,24 @@ export function SettingsPage() {
             lede={t('settings.sectionRecordingSubtitle')}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 540 }}>
+              <div className="field">
+                <label className="field-label">{t('settings.sttLangLabel')}</label>
+                <Select<PreferredLanguage>
+                  value={sttLang}
+                  options={STT_LANGUAGES.map((l) => ({
+                    value: l.code,
+                    label: l.label,
+                  }))}
+                  onChange={(v) => {
+                    setSttLang(v);
+                    void persist(SETTINGS_KEYS.STT_LANG, v);
+                  }}
+                />
+                <span style={{ fontSize: 12, color: 'var(--subtle)', marginTop: 2 }}>
+                  {t('settings.sttLangHint')}
+                </span>
+              </div>
+
               <div className="field">
                 <label className="field-label">{t('settings.sttRecapLangLabel')}</label>
                 <Select<PreferredLanguage>

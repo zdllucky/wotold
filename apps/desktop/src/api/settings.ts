@@ -17,6 +17,9 @@ export const SETTINGS_KEYS = {
   RECORDING_CONSENT_AT: 'recording_consent_at',
   /** [B13] BCP47 язык override для LLM-output. 'auto' = язык STT detection. */
   PREFERRED_LANGUAGE: 'preferred_language',
+  /** [P-fix] BCP47 язык распознавания (STT). 'auto' = whisper auto-detect
+   *  (надёжный пин из трека с речью). Явный выбор форсит язык на все chunks. */
+  STT_LANG: 'stt_lang',
   /** [B16] Coachmarks показаны хотя бы раз — '1' = не показывать снова. */
   COACHMARKS_SEEN: 'coachmarks_seen',
   /** [B17] Atelier theme — 'light' | 'dark' | 'system'. */
@@ -92,15 +95,17 @@ export const SETTINGS_DEFAULTS = {
     ? 'https://wotold-proxy-staging.animereader.workers.dev'
     : 'https://wotold-proxy.animereader.workers.dev',
   PREFERRED_LANGUAGE: 'auto' as PreferredLanguage,
+  STT_LANG: 'auto' as PreferredLanguage,
   /** [V7] Default OFF — R2 паспорта: opt-in только. */
   AUTO_BIND_ENABLED: false,
   AUTO_BIND_THRESHOLD: '95' as AutoBindThreshold,
   /** [S1] Call-detect default OFF (R3 deviation opt-in). */
   CALL_DETECT_ENABLED: false,
   CALL_DETECT_COOLDOWN_MIN: '5' as CallDetectCooldown,
-  /** [M13 follow-up] Mic diarization — default ON per user request.
-   *  Полезно для multi-voice meeting через один микрофон. */
-  MIC_DIARIZATION_ENABLED: true,
+  /** [P-fix7] Mic diarization — default OFF. Mic = микрофон владельца = один
+   *  человек (M2.4); sortformer овершутит и дробит голос owner'а в «СПИКЕР ?».
+   *  Opt-in только для нескольких людей у одного микрофона. */
+  MIC_DIARIZATION_ENABLED: false,
   /** [M14 T-14] Summary v2 default ON. OFF — emergency disable, recap
    *  падает на legacy v1 markdown-only prompt. */
   SUMMARY_V2_ENABLED: true,
@@ -134,6 +139,16 @@ export const AUTO_BIND_THRESHOLDS: AutoBindThreshold[] = ['90', '95', '98'];
 export type PreferredLanguage = 'auto' | 'ru' | 'en' | 'kk' | string;
 export const PREFERRED_LANGUAGES: Array<{ code: PreferredLanguage; label: string }> = [
   { code: 'auto', label: 'Автоматически (как в звонке)' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'en', label: 'English' },
+  { code: 'kk', label: 'Қазақша' },
+];
+
+/** [P-fix] Языки для STT-селектора. 'auto' = whisper auto-detect (надёжный пин
+ *  из трека с речью). Явный выбор форсит язык распознавания на все chunks —
+ *  лекарство от mis-detect «en» на русском звонке ([FOREIGN] спам). */
+export const STT_LANGUAGES: Array<{ code: PreferredLanguage; label: string }> = [
+  { code: 'auto', label: 'Автоопределение' },
   { code: 'ru', label: 'Русский' },
   { code: 'en', label: 'English' },
   { code: 'kk', label: 'Қазақша' },

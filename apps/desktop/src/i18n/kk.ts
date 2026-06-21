@@ -156,6 +156,8 @@ export const kk: TranslationStrings = {
     secondaryUploading: 'Аудио жүктеп жатырмыз',
     secondaryQueued: 'Кезекте',
     secondaryEta: '~{sec} сек қалды',
+    // [Processing status] қоңыраудың фон-regen-і (status ready күйінде қалады).
+    secondaryBusy: 'өңделуде',
     tooltipRecording: 'Дәл қазір жазылым жүруде.',
     tooltipProcessing: 'Жазу аяқталды, STT арқылы транскрипт жасалуда.',
     tooltipReady: 'Дайын — transcript.md мен raw_stt.json бар.',
@@ -180,6 +182,11 @@ export const kk: TranslationStrings = {
     regenerating: 'Қайта жасаудамыз…',
     // [P1.3] Elapsed timer для local LLM regen — backend шлёт каждые 15s.
     regeneratingWithElapsed: 'Қайта жасаудамыз… {sec}s',
+    // [Processing status] фон-regen кезінде табтар үстіндегі strip.
+    bgBusyStrip: 'Қорытындыны қайта жасаудамыз…',
+    bgBusyStripElapsed: 'Қорытындыны қайта жасаудамыз… {sec}s',
+    generatingRecap: 'Қорытынды жасалуда…',
+    generatingTranscript: 'Сөйлеу танылуда…',
     regenerateNoTranscript: 'Регенерация үшін транскрипт жоқ',
     regenerateTitle: '↻ Атауын қайта жасау',
     regeneratingTitle: 'Атау қайта жасалуда…',
@@ -192,15 +199,6 @@ export const kk: TranslationStrings = {
     reprocessConfirmBody:
       'Қоңырауды қайта өңдеу керек пе?\n\nЖазба қайта танылады және қорытынды қайта жасалады. Ағымдағы транскрипт пен қорытынды жоғалады.',
     reprocessConfirmOk: 'Қайта іске қосу',
-    forceRestt: '⚠ Қайта тану',
-    forceRestting: 'Танып жатырмыз…',
-    forceResttHint:
-      'Ағымдағы транскриптті (галлюцинациялармен / [FOREIGN] белгілерімен) тастап, нөлден қайта тану',
-    forceResttConfirmTitle: 'Қайта тану керек пе?',
-    forceResttConfirmBody:
-      'Ағымдағы транскрипт пен қорытындыны жойып, тануды қайта іске қосу керек пе?\n\nЕгер жазба ескі тану нұсқасымен өңделсе және галлюцинациялар немесе [FOREIGN] белгілері бар болса пайдалы.',
-    forceResttConfirmOk: 'Қайта тану',
-    forceResttFailed: 'Тануды қайта іске қосу мүмкін болмады: {error}',
     deleteConfirmBody:
       '«{title}» қоңырауын жоясыз ба?\n\nБұл жазбаны, транскриптті, қорытындыны, тапсырмаларды және осы қоңыраудың дауыс үлгілерін біржола жояды.',
     deleteConfirmOk: 'Жою',
@@ -300,6 +298,7 @@ export const kk: TranslationStrings = {
     sampleStop: '◼ тоқтату',
     samplePlayAria: 'Үлгіні тыңдау',
     sampleStopAria: 'Үлгіні тоқтату',
+    sampleScrubAria: 'Үлгіні айналдыру',
     sampleUnavailable: 'Аудио үлгі қолжетімсіз',
     suggestion: 'Ұқсайды',
     confidence: 'Сенімділік',
@@ -494,6 +493,9 @@ export const kk: TranslationStrings = {
       'STT провайдері және қорытынды тілі. Auto Soniox пен Gladia арасында ақаулар кезінде ауысады.',
     sttProviderLabel: 'Провайдер',
     sttProviderAuto: 'Auto (Soniox → Gladia)',
+    sttLangLabel: 'Тану тілі (STT)',
+    sttLangHint:
+      "Тану үшін сөйлеу тілі. 'Автоанықтау' әдетте жарайды, бірақ тыныш микрофонда whisper тілді шатастыруы мүмкін — орыс қоңыраулары үшін тілді нақты таңдаған сенімдірек.",
     sttRecapLangLabel: 'Қорытынды мен тапсырмалардың тілі',
     sttRecapLangHint:
       "Қорытынды мен тапсырмаларды қай тілде жазу. 'Авто' = танылған сөйлеу тілі. STT-нің өзіне әсер етпейді.",
@@ -576,13 +578,13 @@ export const kk: TranslationStrings = {
     speculativeDecodingLabel: 'Жасанданды генерация (драфт-модель)',
     speculativeDecodingHint:
       '0.5B шағын модельді 7B Quality-мен қатар қолданады. 2-3× жылдамдау. «Quality» пресеті мен ~380МБ қосымша модельді жүктеу қажет.',
-    forceNumSpeakersLabel: 'Сөйлеуші саны мәжбүрлі',
+    forceNumSpeakersLabel: 'Сұхбаттасушылар саны (сізден басқа)',
     forceNumSpeakersHint:
-      'Келесі қайта өңдеуде қолданылады. Сұхбаттасушылардың нақты санын білсеңіз және автоматика қателессе қолданыңыз. Шектеу — 3 спикер.',
+      'Сіздің даусыңыз әрқашан бөлек («Мен»). Бұл — қашықтағы жақта НЕШЕ сұхбаттасушы бар. Авто-бөлу қателессе нақты санды қойып, қайта өңдеңіз. Шектеу — 3.',
     forceNumSpeakersOptions: {
       auto: 'Авто (ұсынылады)',
-      '2': '2 сөйлеуші',
-      '3': '3 сөйлеуші',
+      '2': '2 сұхбаттасушы',
+      '3': '3 сұхбаттасушы',
     },
     wipeBtn: 'Барлық деректерді жою',
     wipeBusy: 'Жоюдамыз…',
@@ -968,6 +970,8 @@ export const kk: TranslationStrings = {
     processing: 'танымалап жатырмыз',
     ready: 'дайын',
     error: 'қате',
+    // [Processing status] generic busy (regen — нақты қадам жоқ).
+    busyGeneric: 'өңдеудеміз',
     audioSaved: 'аудио сақталды',
     moreDetails: 'толығырақ →',
     errorFallback: 'танымалай алмадық',
