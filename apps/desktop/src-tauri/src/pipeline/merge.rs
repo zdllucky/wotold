@@ -1,6 +1,29 @@
+use std::collections::{HashMap, HashSet};
+
+use crate::local_engine::stt::is_hallucination;
 use crate::providers::transcription::{DiarizedTranscript, TranscriptSegment};
 
 pub const OWNER_TAG: &str = "owner";
+
+/// [P-fix] Минимум слов в сегменте, прежде чем пытаться схлопывать
+/// intra-segment repeat. Защищает легитимные короткие эмфазы
+/// («очень очень хорошо») от ложного схлопа.
+const MIN_WORDS_FOR_REPEAT_COLLAPSE: usize = 6;
+
+/// [P-fix2] Ключи «шумовых» bracket-тегов, которые whisper лепит на музыке/
+/// тишине/аплодисментах (`[Музыка] …`, `[Applause] …`). Whitelist — НЕ трогаем
+/// произвольные `[...]` (могут нести смысл). Сравнение по lowercase-substring.
+const NOISE_TAG_KEYWORDS: &[&str] = &[
+    "музык", "music", "musique", "musik", "muzyk", "applause", "аплодис", "смех",
+    "laughter", "шум", "noise", "silence", "тишина",
+];
+
+/// [P-fix5] Global loop-hallucination: длинная фраза (≥ LOOP_MIN_WORDS слов),
+/// повторяющаяся в ≥ LOOP_MIN_OCCURRENCES сегментах по ВСЕМУ треку — whisper
+/// loop (prompt-echo / зацикливание на тишине). Дропаем все вхождения. Порог по
+/// длине защищает легитимные короткие повторы («да», «угу», «понятно»).
+const LOOP_MIN_OCCURRENCES: usize = 4;
+const LOOP_MIN_WORDS: usize = 5;
 
 /// M2.4 паспорта: mic-дорожка традиционно привязана к owner. system-дорожка
 /// сохраняет лейблы спикеров от STT-провайдера. Оба сливаются в общий
@@ -80,6 +103,134 @@ pub fn merge_tracks(
     });
 
     combined
+}
+
+/// [P-fix] Единый chokepoint очистки merged-таймлайна от whisper-артефактов.
+/// Применяется в `stage_merge_artifacts` ПОСЛЕ `merge_tracks`, до записи
+/// `raw_stt.json` (поле `merged`, которое читает UI) + `transcript.md` + recap.
+/// Покрывает ВСЕ пути (chunked / full-file / cloud) одним местом — в т.ч.
+/// чинит переассемблируемые старые chunks без повторного STT.
+///
+/// Шаги:
+/// 0. global loop-pass — фраза, повторённая по всему треку (≥4×, ≥5 слов) →
+///    whisper-петля/prompt-echo, дропаем все вхождения.
+/// 1. intra-segment collapse — `phrase phrase phrase…` (≥3×) → одна фраза.
+/// 2. drop галлюцинаций (`is_hallucination`): `[FOREIGN]`, субтитр-credits.
+/// 3. collapse подряд идущих сегментов ОДНОГО спикера с идентичным
+///    нормализованным текстом (whisper repetition loops) — растягивая `end`.
+pub fn sanitize_merged(segments: Vec<TranscriptSegment>) -> Vec<TranscriptSegment> {
+    // 0. Pre-pass: найти global loop-фразы (повтор длинной фразы по всему треку).
+    let mut freq: HashMap<String, usize> = HashMap::new();
+    for seg in &segments {
+        let norm = normalize_text(&seg.text);
+        if norm.split_whitespace().count() >= LOOP_MIN_WORDS {
+            *freq.entry(norm).or_insert(0) += 1;
+        }
+    }
+    let loop_texts: HashSet<String> = freq
+        .into_iter()
+        .filter(|(_, c)| *c >= LOOP_MIN_OCCURRENCES)
+        .map(|(t, _)| t)
+        .collect();
+
+    let mut out: Vec<TranscriptSegment> = Vec::with_capacity(segments.len());
+    let mut dropped = 0usize;
+    let mut collapsed = 0usize;
+    for mut seg in segments {
+        // 1. strip ведущие noise-теги («[Музыка] текст» → «текст») + intra-segment
+        //    loop collapse. После может остаться чистый текст, мусор или "".
+        let cleaned = collapse_intra_repeats(&strip_leading_noise_tags(&seg.text));
+        if cleaned != seg.text.trim() {
+            collapsed += 1;
+        }
+        seg.text = cleaned;
+
+        // 2. drop галлюцинаций (включая опустевшие после strip) + global loop.
+        if is_hallucination(&seg.text)
+            || (!loop_texts.is_empty() && loop_texts.contains(&normalize_text(&seg.text)))
+        {
+            dropped += 1;
+            continue;
+        }
+
+        // 3. consecutive-duplicate collapse (тот же спикер, тот же текст).
+        if let Some(prev) = out.last_mut() {
+            if prev.speaker_tag == seg.speaker_tag
+                && normalize_text(&prev.text) == normalize_text(&seg.text)
+            {
+                if seg.end > prev.end {
+                    prev.end = seg.end;
+                }
+                collapsed += 1;
+                continue;
+            }
+        }
+        out.push(seg);
+    }
+    if dropped > 0 || collapsed > 0 {
+        log::info!("sanitize_merged: dropped {dropped} hallucinations, collapsed {collapsed} repeats → {} segments", out.len());
+    }
+    out
+}
+
+/// [P-fix2] Срезать ведущие «шумовые» bracket-теги (`[Музыка] …`, `[Applause] …`),
+/// оставляя реальный текст. Стрипает только теги из NOISE_TAG_KEYWORDS whitelist
+/// и не длиннее ~40 символов внутри скобок — произвольные `[...]` не трогаем.
+/// Работает в цикле: «[Музыка] [Applause] текст» → «текст». Standalone
+/// «[Музыка]» → "" (далее дропнется как пустой в is_hallucination).
+fn strip_leading_noise_tags(text: &str) -> String {
+    let mut s = text.trim_start();
+    while let Some(rest) = s.strip_prefix('[') {
+        let Some(close_rel) = rest.find(']') else {
+            break;
+        };
+        let inner = &rest[..close_rel];
+        if inner.chars().count() > 40 {
+            break;
+        }
+        let inner_low = inner.to_lowercase();
+        if NOISE_TAG_KEYWORDS.iter().any(|k| inner_low.contains(k)) {
+            s = rest[close_rel + 1..].trim_start();
+        } else {
+            break;
+        }
+    }
+    s.to_string()
+}
+
+/// Нормализация для сравнения текста: схлоп пробелов + lowercase.
+fn normalize_text(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// [P-fix] Свернуть текст-петлю «phrase phrase phrase …» в одну фразу.
+/// Консервативно: только если ВЕСЬ текст (по словам) — одна фраза, повторённая
+/// ≥3 раза подряд. Ниже `MIN_WORDS_FOR_REPEAT_COLLAPSE` слов не трогаем
+/// (защита легитимной короткой эмфазы). Возвращает trimmed-текст без изменений
+/// если петля не найдена.
+fn collapse_intra_repeats(text: &str) -> String {
+    let trimmed = text.trim();
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    if words.len() < MIN_WORDS_FOR_REPEAT_COLLAPSE {
+        return trimmed.to_string();
+    }
+    for plen in 1..=(words.len() / 3) {
+        if words.len() % plen != 0 {
+            continue;
+        }
+        let reps = words.len() / plen;
+        if reps < 3 {
+            continue;
+        }
+        let phrase = &words[0..plen];
+        if (0..reps).all(|i| &words[i * plen..(i + 1) * plen] == phrase) {
+            return phrase.join(" ");
+        }
+    }
+    trimmed.to_string()
 }
 
 /// Рендерит merged-таймлайн в Markdown с заголовками спикеров и таймкодами начала
@@ -309,5 +460,141 @@ mod tests {
         assert!(md.contains("**owner** [0:00]:\nhi there"));
         assert!(md.contains("**Speaker 0** [0:02]:\nhello back"));
         assert!(md.contains("**owner** [1:05]:\nlater"));
+    }
+
+    // ── sanitize_merged ─────────────────────────────────────────────────
+
+    #[test]
+    fn sanitize_drops_foreign_and_subtitle_credits() {
+        let segs = vec![
+            ts(0.0, 13.0, "Добрый день, ещё раз.", "speaker:1"),
+            ts(116.0, 126.0, "[FOREIGN]", "owner"),
+            ts(146.0, 156.0, "- [FOREIGN]", "owner"),
+            ts(
+                162.0,
+                170.0,
+                "[Редактор субтитров Н.Александрова] [Апалькова]",
+                "speaker:unknown",
+            ),
+            ts(200.0, 205.0, "Да, согласен.", "speaker:1"),
+        ];
+        let out = sanitize_merged(segs);
+        assert_eq!(out.len(), 2, "должны остаться только 2 легит-сегмента");
+        assert_eq!(out[0].text, "Добрый день, ещё раз.");
+        assert_eq!(out[1].text, "Да, согласен.");
+    }
+
+    #[test]
+    fn sanitize_collapses_consecutive_duplicates_same_speaker() {
+        let segs = vec![
+            ts(0.0, 2.0, "Угу.", "speaker:0"),
+            ts(2.0, 4.0, "угу.", "speaker:0"), // дубль (case/space-insensitive)
+            ts(4.0, 6.0, "  Угу.  ", "speaker:0"), // дубль
+            ts(6.0, 8.0, "Понятно.", "speaker:0"),
+        ];
+        let out = sanitize_merged(segs);
+        assert_eq!(out.len(), 2, "три подряд 'угу' → один");
+        assert_eq!(out[0].text, "Угу.");
+        // end растянулся до последнего дубля.
+        assert!((out[0].end - 6.0).abs() < 1e-9);
+        assert_eq!(out[1].text, "Понятно.");
+    }
+
+    #[test]
+    fn sanitize_keeps_same_text_from_different_speakers() {
+        // Один и тот же ответ от РАЗНЫХ спикеров — не дубль, оставляем оба.
+        let segs = vec![
+            ts(0.0, 1.0, "Да.", "speaker:0"),
+            ts(1.0, 2.0, "Да.", "speaker:1"),
+        ];
+        let out = sanitize_merged(segs);
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn sanitize_collapses_intra_segment_loop() {
+        // Реальная фраза, повторённая ≥3× внутри одного сегмента → одна.
+        let segs = vec![ts(
+            0.0,
+            10.0,
+            "так и есть так и есть так и есть",
+            "speaker:1",
+        )];
+        let out = sanitize_merged(segs);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "так и есть");
+    }
+
+    #[test]
+    fn sanitize_preserves_legit_short_emphasis() {
+        // Короткая легит-эмфаза (< MIN_WORDS_FOR_REPEAT_COLLAPSE) не трогается.
+        let segs = vec![ts(0.0, 2.0, "очень очень хорошо", "speaker:1")];
+        let out = sanitize_merged(segs);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "очень очень хорошо");
+    }
+
+    #[test]
+    fn sanitize_strips_leading_music_tag_keeps_text() {
+        let segs = vec![
+            // standalone music-тег → drop.
+            ts(0.0, 2.0, "[Музыка]", "speaker:0"),
+            // inline ведущий music-тег → срезается, текст остаётся.
+            ts(
+                2.0,
+                12.0,
+                "[Музыка] Может есть какие-то дополнительные точки.",
+                "speaker:1",
+            ),
+            // польский «inaudible music» → drop (substring muzyk).
+            ts(12.0, 14.0, "[niedosłyszalna muzyka]", "speaker:2"),
+        ];
+        let out = sanitize_merged(segs);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "Может есть какие-то дополнительные точки.");
+    }
+
+    #[test]
+    fn sanitize_drops_global_loop_phrase() {
+        // [P-fix5] prompt-echo: длинная фраза повторяется по всему треку
+        // (разные спикеры, не подряд) → дропается целиком.
+        let echo = "Что вы думаете о том что вы говорите на русском языке";
+        let mut segs = vec![ts(0.0, 6.0, echo, "owner")];
+        for i in 1..6 {
+            let sp = if i % 2 == 0 { "owner" } else { "speaker:unknown" };
+            segs.push(ts(i as f64 * 6.0, i as f64 * 6.0 + 6.0, echo, sp));
+        }
+        // вкрапим реальную речь между эхо.
+        segs.insert(2, ts(50.0, 55.0, "Это реальная реплика собеседника", "speaker:1"));
+        let out = sanitize_merged(segs);
+        assert!(
+            out.iter().all(|s| !s.text.contains("на русском языке")),
+            "все эхо-вхождения должны быть удалены"
+        );
+        assert!(out.iter().any(|s| s.text == "Это реальная реплика собеседника"));
+    }
+
+    #[test]
+    fn sanitize_keeps_short_filler_repeated_many_times() {
+        // Короткий филлер «да» ×10 → НЕ дропается (ниже LOOP_MIN_WORDS).
+        let segs: Vec<_> = (0..10)
+            .map(|i| ts(i as f64, i as f64 + 0.5, "Да.", "speaker:1"))
+            .collect();
+        let out = sanitize_merged(segs);
+        // consecutive-dedup схлопнет подряд-дубли в один, но не дропнет как loop.
+        assert!(!out.is_empty(), "короткий филлер не должен дропаться целиком");
+        assert!(out.iter().all(|s| s.text == "Да."));
+    }
+
+    #[test]
+    fn strip_leading_noise_tags_leaves_non_noise_brackets() {
+        // Не-шумовые скобки и обычный текст не трогаются.
+        assert_eq!(strip_leading_noise_tags("[1] пункт"), "[1] пункт");
+        assert_eq!(strip_leading_noise_tags("обычный текст"), "обычный текст");
+        // Несколько ведущих шумовых тегов подряд → все срезаются.
+        assert_eq!(
+            strip_leading_noise_tags("[Музыка] [Applause] реальный текст"),
+            "реальный текст"
+        );
     }
 }

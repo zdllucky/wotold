@@ -66,6 +66,8 @@
             "--no-prints",
             "--temperature",
             { "validator": "^[0-9]+(\\.[0-9]+)?$" },
+            "--max-context",
+            { "validator": "^[0-9]+$" },
             "--prompt",
             { "validator": "^[^\\r\\n]{0,1000}$" },
             "--vad",
