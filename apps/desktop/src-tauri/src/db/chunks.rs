@@ -646,7 +646,10 @@ mod tests {
             .is_empty());
         // Чужой звонок не тронут.
         assert_eq!(
-            list_chunks_by_call(&test_db.pool, "c2").await.unwrap().len(),
+            list_chunks_by_call(&test_db.pool, "c2")
+                .await
+                .unwrap()
+                .len(),
             1
         );
     }

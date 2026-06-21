@@ -398,9 +398,7 @@ pub(crate) fn is_hallucination(text: &str) -> bool {
     // [P-fix] Strip ведущие dialogue-маркеры ("- ", "– ", "— ", "•", "*")
     // которые whisper иногда добавляет к сегменту — без этого exact-match по
     // "[foreign]" промахивается на "- [FOREIGN]".
-    let stripped = trimmed
-        .trim_start_matches(['-', '–', '—', '•', '*'])
-        .trim();
+    let stripped = trimmed.trim_start_matches(['-', '–', '—', '•', '*']).trim();
     if stripped.is_empty() {
         return true;
     }

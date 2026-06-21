@@ -799,11 +799,13 @@ mod tests {
         // local-движок (summary_engine local-*) → "local" (важно для гейта
         // кнопки force-re-STT на фронте).
         let local = insert_recording(&db.pool, "managed").await.unwrap();
-        sqlx::query("UPDATE calls SET provider='local', summary_engine='local-qwen-3b' WHERE id=?1")
-            .bind(&local.id)
-            .execute(&db.pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "UPDATE calls SET provider='local', summary_engine='local-qwen-3b' WHERE id=?1",
+        )
+        .bind(&local.id)
+        .execute(&db.pool)
+        .await
+        .unwrap();
         let got = get_call(&db.pool, &local.id).await.unwrap().unwrap();
         assert_eq!(got.processing_via.as_deref(), Some("local"));
 

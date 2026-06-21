@@ -468,10 +468,9 @@ mod tests {
         let s9 = insert_speaker_row(&db.pool, &call.id, "speaker:9", None).await; // absent but confirmed
         confirm_call_speaker(&db.pool, &s9, &owner).await.unwrap();
 
-        let pruned =
-            prune_call_speakers_not_in(&db.pool, &call.id, &["speaker:0".to_string()])
-                .await
-                .unwrap();
+        let pruned = prune_call_speakers_not_in(&db.pool, &call.id, &["speaker:0".to_string()])
+            .await
+            .unwrap();
         assert_eq!(pruned, 1, "только speaker:3 (absent + unconfirmed)");
 
         let tags: Vec<String> = list_call_speakers(&db.pool, &call.id)
@@ -482,7 +481,10 @@ mod tests {
             .collect();
         assert!(tags.contains(&"owner".to_string()));
         assert!(tags.contains(&"speaker:0".to_string()));
-        assert!(tags.contains(&"speaker:9".to_string()), "confirmed сохраняется");
+        assert!(
+            tags.contains(&"speaker:9".to_string()),
+            "confirmed сохраняется"
+        );
         assert!(!tags.contains(&"speaker:3".to_string()), "stale удалён");
     }
 
