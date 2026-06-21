@@ -9,14 +9,18 @@
 // кнопка отключена.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MiniWave } from './Waveform';
+import { Waveform } from './Waveform';
 import type { Contact } from '../api/contacts';
 import type { CallSpeakerView } from '../api/speakers';
+import { decodeWavPeaksRange } from '../lib/audioPeaks';
 import { useI18n } from '../i18n';
 import { Select } from '../ui';
 import { humanSpeakerLabel, shortSpeakerLabel } from '../utils/callMeta';
 
 const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
+
+/** [P-fix8] Кол-во баров реальной скраб-дорожки сэмпла. */
+const SAMPLE_BAR_COUNT = 72;
 
 function initials(name: string): string {
   return (
@@ -126,6 +130,20 @@ export function SpeakerCard({
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
+  // [P-fix8] Реальная скраб-дорожка сэмпла: peaks диапазона + позиция playback.
+  const [samplePeaks, setSamplePeaks] = useState<number[] | null>(null);
+  const [pos, setPos] = useState(0);
+  const waveRef = useRef<HTMLDivElement | null>(null);
+  const draggingRef = useRef(false);
+  const reducedMotion =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false;
+  const waveSeed = speaker.id.charCodeAt(0) + idx * 11;
+  const sampleDur = sample ? Math.max(0.001, sample.end - sample.start) : 1;
+  const progressPct = sample
+    ? Math.max(0, Math.min(100, ((pos - sample.start) / sampleDur) * 100))
+    : 0;
 
   // Stop playback при размонтаже / смене sample.
   useEffect(() => {
@@ -143,11 +161,23 @@ export function SpeakerCard({
     const el = audioRef.current;
     if (!el || !sample) return;
     const onTime = () => {
+      // [P-fix6] Если playback оказался ДО окна сэмпла (seek не сел — гонка с
+      // загрузкой метаданных большого WAV → играем с 0 = «промах»), докручиваем
+      // на start. Сходится за один tick как только seek доступен.
+      if (el.currentTime < sample.start - 0.5) {
+        el.currentTime = sample.start;
+        setPos(sample.start);
+        return;
+      }
       if (el.currentTime >= sample.end) {
         el.pause();
         el.currentTime = sample.start;
+        setPos(sample.start);
         setPlaying(false);
+        return;
       }
+      // [P-fix8] Двигаем прогресс скраб-дорожки за позицией playback.
+      setPos(el.currentTime);
     };
     const onEnded = () => setPlaying(false);
     const onPause = () => setPlaying(false);
@@ -164,6 +194,84 @@ export function SpeakerCard({
     };
   }, [sample]);
 
+  // [P-fix8] Декодим реальные peaks участка сэмпла [start,end] (Web Audio).
+  // До готовности — seeded MiniWave-плейсхолдер (peaks=null). Сброс позиции
+  // на start при смене сэмпла.
+  useEffect(() => {
+    if (!sample?.src) {
+      setSamplePeaks(null);
+      return;
+    }
+    let cancelled = false;
+    setSamplePeaks(null);
+    setPos(sample.start);
+    decodeWavPeaksRange(sample.src, SAMPLE_BAR_COUNT, sample.start, sample.end)
+      .then((p) => {
+        if (!cancelled) setSamplePeaks(p);
+      })
+      .catch(() => {
+        if (!cancelled) setSamplePeaks(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sample?.src, sample?.start, sample?.end]);
+
+  // [P-fix8] Seek в окне сэмпла + (опц.) play. readiness-guard как в toggle.
+  const seekTo = (target: number, autoplay: boolean) => {
+    const el = audioRef.current;
+    if (!el || !sample) return;
+    const clamped = Math.max(sample.start, Math.min(sample.end - 0.05, target));
+    const apply = () => {
+      try {
+        el.currentTime = clamped;
+      } catch {
+        /* not seekable yet — watcher докрутит */
+      }
+      setPos(clamped);
+      if (autoplay && el.paused) void el.play().catch(() => {});
+    };
+    if (el.readyState >= 1) apply();
+    else {
+      el.addEventListener('loadedmetadata', apply, { once: true });
+      el.load();
+    }
+  };
+
+  const clientXToTime = (clientX: number): number => {
+    const lane = waveRef.current;
+    if (!lane || !sample) return sample?.start ?? 0;
+    const rect = lane.getBoundingClientRect();
+    const f = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+    return sample.start + Math.max(0, Math.min(1, f)) * (sample.end - sample.start);
+  };
+
+  const onScrubPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!sample) return;
+    draggingRef.current = true;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    seekTo(clientXToTime(e.clientX), true);
+  };
+  const onScrubPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current || !sample) return;
+    seekTo(clientXToTime(e.clientX), true);
+  };
+  const onScrubPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    draggingRef.current = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
+  const onScrubKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!sample) return;
+    const cur = audioRef.current?.currentTime ?? sample.start;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      seekTo(cur - 1, false);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      seekTo(cur + 1, false);
+    }
+  };
+
   const handleToggleSample = () => {
     const el = audioRef.current;
     if (!el || !sample) return;
@@ -172,17 +280,31 @@ export function SpeakerCard({
       el.currentTime = sample.start;
       return;
     }
-    // На случай если уже перемотали за пределы окна — вернуть в start.
-    if (
-      el.currentTime < sample.start ||
-      el.currentTime > sample.end - 0.05
-    ) {
-      el.currentTime = sample.start;
+    // [P-fix6] Seek + play только когда метаданные (duration) готовы — иначе
+    // currentTime=start игнорируется браузером (нельзя сикать без duration) и
+    // playback стартует с 0 → «промах»/«не туда». Для больших WAV (28МБ) на
+    // свежей модалке метаданные часто ещё не подгружены к моменту клика → это
+    // и есть «то не играет, то промахивается». Watcher (выше) дополнительно
+    // докрутит если seek всё же не сел.
+    const seekAndPlay = () => {
+      const target = Number.isFinite(el.duration)
+        ? Math.min(sample.start, Math.max(0, el.duration - 0.1))
+        : sample.start;
+      try {
+        el.currentTime = target;
+      } catch {
+        /* seek may throw if not seekable yet — watcher докрутит */
+      }
+      void el.play().catch(() => {
+        /* autoplay policy / file missing — silent fail, onPause очистит state */
+      });
+    };
+    if (el.readyState >= 1 /* HAVE_METADATA → duration известна, можно сикать */) {
+      seekAndPlay();
+    } else {
+      el.addEventListener('loadedmetadata', seekAndPlay, { once: true });
+      el.load();
     }
-    void el.play().catch(() => {
-      /* autoplay policy / file missing — silent fail, кнопка дальше будет
-         показывать ▶ так как onPause очистит state */
-    });
   };
 
   const sampleDurationSec = sample ? Math.max(1, Math.round(sample.end - sample.start)) : null;
@@ -256,14 +378,58 @@ export function SpeakerCard({
           >
             «{sample?.text ?? t('speakers.cardSampleFallback')}»
           </div>
-          <div style={{ height: 22, color }}>
-            <MiniWave
-              seed={speaker.id.charCodeAt(0) + idx * 11}
-              color="currentColor"
-              width={400}
-              height={22}
-              count={64}
-            />
+          {/* [P-fix8] Реальная скраб-дорожка сэмпла. Два слоя Waveform (dim +
+              clip-path прогресс) поверх реальных peaks участка; клик/драг =
+              перемотка в окне [start,end]. Паттерн как в AudioScrubber. */}
+          <div
+            ref={waveRef}
+            role="slider"
+            tabIndex={sample ? 0 : -1}
+            aria-label={t('speakers.sampleScrubAria')}
+            aria-valuemin={0}
+            aria-valuemax={sample ? Math.round(sampleDur) : 0}
+            aria-valuenow={sample ? Math.round(Math.max(0, pos - sample.start)) : 0}
+            aria-disabled={!sample}
+            onPointerDown={onScrubPointerDown}
+            onPointerMove={onScrubPointerMove}
+            onPointerUp={onScrubPointerUp}
+            onKeyDown={onScrubKeyDown}
+            style={{
+              position: 'relative',
+              height: 24,
+              color: 'var(--accent)',
+              cursor: sample ? 'pointer' : 'default',
+              touchAction: 'none',
+              outlineOffset: 2,
+            }}
+          >
+            <div style={{ position: 'absolute', inset: 0, opacity: 0.28 }}>
+              <Waveform
+                seed={waveSeed}
+                peaks={samplePeaks ?? undefined}
+                color="currentColor"
+                width={400}
+                height={24}
+                count={SAMPLE_BAR_COUNT}
+              />
+            </div>
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                clipPath: `inset(0 ${Math.max(0, 100 - progressPct)}% 0 0)`,
+                transition: reducedMotion ? undefined : 'clip-path 100ms linear',
+              }}
+            >
+              <Waveform
+                seed={waveSeed}
+                peaks={samplePeaks ?? undefined}
+                color="currentColor"
+                width={400}
+                height={24}
+                count={SAMPLE_BAR_COUNT}
+              />
+            </div>
           </div>
         </div>
         <button
