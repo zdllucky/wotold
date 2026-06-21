@@ -49,6 +49,33 @@ pub struct Call {
     pub summary_pipeline_mode: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// [P-fix3] Производное (не DB-колонка): движок обработки для UI —
+    /// `local` | `cloud_managed` | `cloud_byo` | null. Фронт использует его для
+    /// EngineChip + гейта кнопки «Распознать заново» (force-re-STT доступен
+    /// только для local). Вычисляется в `with_processing_via` после fetch;
+    /// `#[sqlx(default)]` чтобы query_as не требовал колонку.
+    #[sqlx(default)]
+    pub processing_via: Option<String>,
+}
+
+impl Call {
+    /// [P-fix3] Вычислить `processing_via` из имеющихся полей. Local-движок →
+    /// `local` (по summary_engine `local-*` или provider `local`); BYO-ключи →
+    /// `cloud_byo` (path_label `byo`); иначе облачный provider → `cloud_managed`.
+    pub fn with_processing_via(mut self) -> Self {
+        let eng = self.summary_engine.as_deref().unwrap_or("");
+        let prov = self.provider.as_deref().unwrap_or("");
+        self.processing_via = if eng.starts_with("local") || prov == "local" {
+            Some("local".to_string())
+        } else if self.path_label == "byo" {
+            Some("cloud_byo".to_string())
+        } else if !prov.is_empty() {
+            Some("cloud_managed".to_string())
+        } else {
+            None
+        };
+        self
+    }
 }
 
 /// Вставить запись о новой записи в статусе `recording`. path_label = managed|byo.
@@ -94,6 +121,7 @@ pub async fn insert_recording(pool: &SqlitePool, path_label: &str) -> Result<Cal
         summary_pipeline_mode: None,
         created_at: now.clone(),
         updated_at: now,
+        processing_via: None,
     })
 }
 
@@ -565,7 +593,7 @@ pub async fn get_call(pool: &SqlitePool, call_id: &str) -> Result<Option<Call>, 
     .bind(call_id)
     .fetch_optional(pool)
     .await?;
-    Ok(row)
+    Ok(row.map(Call::with_processing_via))
 }
 
 /// Все звонки от свежих к старым. FTS-поиск по транскриптам/рекапу
@@ -578,7 +606,7 @@ pub async fn list_calls(pool: &SqlitePool) -> Result<Vec<Call>, AppError> {
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows)
+    Ok(rows.into_iter().map(Call::with_processing_via).collect())
 }
 
 /// C5 (#41) cascade delete: удаляет calls row + связанные строки
@@ -763,6 +791,42 @@ mod tests {
     async fn get_call_returns_none_for_missing() {
         let db = fresh_db().await;
         assert!(get_call(&db.pool, "no-such-id").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn get_call_derives_processing_via() {
+        let db = fresh_db().await;
+        // local-движок (summary_engine local-*) → "local" (важно для гейта
+        // кнопки force-re-STT на фронте).
+        let local = insert_recording(&db.pool, "managed").await.unwrap();
+        sqlx::query("UPDATE calls SET provider='local', summary_engine='local-qwen-3b' WHERE id=?1")
+            .bind(&local.id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let got = get_call(&db.pool, &local.id).await.unwrap().unwrap();
+        assert_eq!(got.processing_via.as_deref(), Some("local"));
+
+        // BYO-ключи → "cloud_byo".
+        let byo = insert_recording(&db.pool, "byo").await.unwrap();
+        sqlx::query("UPDATE calls SET provider='soniox' WHERE id=?1")
+            .bind(&byo.id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let got = get_call(&db.pool, &byo.id).await.unwrap().unwrap();
+        assert_eq!(got.processing_via.as_deref(), Some("cloud_byo"));
+
+        // Облачный managed → "cloud_managed"; list_calls тоже деривит.
+        let cloud = insert_recording(&db.pool, "managed").await.unwrap();
+        sqlx::query("UPDATE calls SET provider='gladia' WHERE id=?1")
+            .bind(&cloud.id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        let list = list_calls(&db.pool).await.unwrap();
+        let row = list.iter().find(|c| c.id == cloud.id).unwrap();
+        assert_eq!(row.processing_via.as_deref(), Some("cloud_managed"));
     }
 
     #[tokio::test]
