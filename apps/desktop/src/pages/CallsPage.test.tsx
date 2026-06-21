@@ -1,0 +1,105 @@
+// [Processing status] Behavior test — ready-звонок с активной фон-задачей
+// (regen саммари/названия) показывает «обрабатывается» индикатор в списке,
+// хотя его status остаётся 'ready'. Источник активности — list_active_call_ids
+// (pipeline_tasks registry в backend). Без активной задачи — чисто, без строки.
+
+import { act, cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+  convertFileSrc: (p: string) => `asset://${p}`,
+}));
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => {
+    /* unlisten noop */
+  }),
+}));
+
+import { invoke } from '@tauri-apps/api/core';
+import type { Call } from '../api/recording';
+import { CallsPage } from './CallsPage';
+
+const mockInvoke = invoke as ReturnType<typeof vi.fn>;
+
+const READY_CALL: Call = {
+  id: 'call-busy-1',
+  title: 'Синхрон по проекту',
+  started_at: '2026-06-20T09:00:00Z',
+  ended_at: '2026-06-20T09:30:00Z',
+  duration_sec: 1800,
+  status: 'ready',
+  provider: null,
+  path_label: '',
+  lang_detected: 'ru',
+  failed_reason: null,
+  recap_failed_reason: null,
+  pipeline_step: null,
+  pipeline_pct: null,
+  pipeline_eta_sec: null,
+  upload_bytes: null,
+  paused_at: null,
+  paused_total_ms: 0,
+  processing_via: 'local',
+  call_type: null,
+  call_type_confidence: null,
+  summary_schema_version: 2,
+  summary_engine: 'local-qwen-3b',
+  summary_pipeline_mode: null,
+  created_at: '2026-06-20T09:00:00Z',
+  updated_at: '2026-06-20T09:31:00Z',
+};
+
+function routeInvoke(activeIds: string[]) {
+  mockInvoke.mockImplementation((cmd: string) => {
+    switch (cmd) {
+      case 'list_calls':
+        return Promise.resolve([READY_CALL]);
+      case 'list_active_call_ids':
+        return Promise.resolve(activeIds);
+      case 'list_call_speakers':
+        return Promise.resolve([]);
+      default:
+        return Promise.resolve(null);
+    }
+  });
+}
+
+async function flush() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe('CallsPage — processing status', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
+  test('ready call with active background task shows processing indicator', async () => {
+    routeInvoke([READY_CALL.id]);
+    render(<CallsPage onOpen={() => {}} />);
+    await flush();
+
+    // Заголовок звонка отрендерился.
+    expect(screen.getByText('Синхрон по проекту')).toBeTruthy();
+    // «обрабатывается» secondary — regen-busy строка (ru default).
+    expect(screen.getByText('обрабатывается')).toBeTruthy();
+  });
+
+  test('ready call without active task stays clean (no busy row)', async () => {
+    routeInvoke([]);
+    render(<CallsPage onOpen={() => {}} />);
+    await flush();
+
+    expect(screen.getByText('Синхрон по проекту')).toBeTruthy();
+    expect(screen.queryByText('обрабатывается')).toBeNull();
+  });
+});

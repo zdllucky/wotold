@@ -222,6 +222,14 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 // с whisper-cli defaults — удалили как no-op (см. --help).
                 "--temperature",
                 "0.0",
+                // [P-fix5] КРИТИЧНО: max-context 0 = не кондишенить на
+                // предыдущий декодированный текст. Без этого whisper на длинном
+                // файле с тишиной/шумом зацикливается (повторяет последнюю фразу
+                // / [шум] / эхо-промпт по всему треку, вытесняя реальную речь).
+                // Доказано на 392ea1cc: -mc 0 → 79 реальных реплик vs 0 без него.
+                // Initial `--prompt` (chunk-context) при этом продолжает работать.
+                "--max-context",
+                "0",
             ]);
 
         // [P15.2] VAD silence-trim — если silero-vad model скачана, добавляем
@@ -253,18 +261,20 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 "300",
             ]);
         }
-        // [M13.1.3a / P12.2] Context priming через `--prompt`.
-        // - opts.prompt существует (chunk N-1 tail) → используем как есть.
-        // - opts.prompt None AND lang=="ru" → fallback на default Russian
-        //   anchor («Это разговор на русском языке») — даёт language bias
-        //   модели и снижает шанс [FOREIGN] фактически на тишину.
-        // Sanitize (strip \r\n + 1000 char limit) обязателен.
+        // [M13.1.3a] Context priming через `--prompt` — ТОЛЬКО реальный
+        // chunk-context (tail предыдущего chunk'а при live chunked-записи).
+        //
+        // [P-fix5] Статический language-anchor («Это разговор на русском
+        // языке») УБРАН: на тишине/низкой уверенности whisper эхо-зацикливался
+        // на промпте (весь mic-трек → «что вы говорите на русском языке»),
+        // вытесняя реальную речь. Bias языка теперь обеспечивает явный пин
+        // (pick_pinned_lang / call_language), anchor не нужен. Без opts.prompt
+        // `--prompt` не передаётся вовсе. Sanitize обязателен (strip \r\n + 1000).
         let prompt_to_use: Option<String> = opts
             .prompt
             .as_deref()
             .map(sanitize_prompt)
-            .filter(|p| !p.is_empty())
-            .or_else(|| default_prompt_for_lang(&lang).map(|s| s.to_string()));
+            .filter(|p| !p.is_empty());
         if let Some(p) = prompt_to_use.as_deref() {
             sidecar = sidecar.args(["--prompt", p]);
         }
@@ -340,6 +350,13 @@ const HALLUCINATIONS_EXACT: &[&str] = &[
     "[音楽]",
     "[bgm]",
     "[♪音楽♪]",
+    // [P-fix2] Cyrillic noise tags — whisper выдаёт на музыке/тишине/аплодисментах
+    // (русская озвучка YouTube training). Latin-аналоги уже выше.
+    "[музыка]",
+    "[аплодисменты]",
+    "[смех]",
+    "[шум]",
+    "[тишина]",
 ];
 
 /// [P12.1] Substring patterns — lowercase substring match (case-insensitive
@@ -378,39 +395,41 @@ pub(crate) fn is_hallucination(text: &str) -> bool {
     if trimmed.is_empty() {
         return true;
     }
-    let lower = trimmed.to_lowercase();
+    // [P-fix] Strip ведущие dialogue-маркеры ("- ", "– ", "— ", "•", "*")
+    // которые whisper иногда добавляет к сегменту — без этого exact-match по
+    // "[foreign]" промахивается на "- [FOREIGN]".
+    let stripped = trimmed.trim_start_matches(['-', '–', '—', '•', '*']).trim();
+    if stripped.is_empty() {
+        return true;
+    }
+    let lower = stripped.to_lowercase();
     if HALLUCINATIONS_EXACT.contains(&lower.as_str()) {
         return true;
     }
     if HALLUCINATION_SUBSTRINGS.iter().any(|p| lower.contains(p)) {
         return true;
     }
+    // [P-fix] Сегмент, чей alnum-контент == "foreign" И содержит скобку
+    // (например "[FOREIGN]", "- [FOREIGN]", "[Foreign].") — language-confusion
+    // tag. Скобка обязательна чтобы не дропнуть легитимное слово "foreign".
+    let alnum: String = lower.chars().filter(|c| c.is_alphanumeric()).collect();
+    if alnum == "foreign" && stripped.contains('[') {
+        return true;
+    }
     // Bracket-only shape: текст начинается с '[' и заканчивается ']',
     // длина >20 chars (catch'ит длинные attribution патены). Короткие
     // bracket tags типа `[music]` пропускаются (уже в exact list если
     // hallucination).
-    if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.chars().count() > 20 {
+    if stripped.starts_with('[') && stripped.ends_with(']') && stripped.chars().count() > 20 {
         return true;
     }
     false
 }
 
-/// [P12.2] Default initial-prompt для anchoring whisper к корректному
-/// языку. Используется когда caller не передал `opts.prompt` (первый
-/// chunk или non-chunked path).
-///
-/// Whisper без prompt на маленькой записи / тишине часто детектит как
-/// английский → `[FOREIGN]` tag на русской речи. Короткий язык-specific
-/// anchor сильно снижает вероятность mis-detect.
-pub(crate) fn default_prompt_for_lang(lang: &str) -> Option<&'static str> {
-    match lang {
-        "ru" => Some("Это разговор на русском языке."),
-        "en" => Some("This is a conversation in English."),
-        "kk" => Some("Бұл қазақ тіліндегі әңгіме."),
-        // Для 'auto' и unknown — без prompt'а, whisper детектит как умеет.
-        _ => None,
-    }
-}
+// [P-fix5] `default_prompt_for_lang` УДАЛЁН: статический language-anchor
+// вызывал prompt-echo галлюцинации на тишине (whisper повторял промпт вместо
+// речи). Язык теперь пиним явно (pick_pinned_lang / call_language), anchor не
+// нужен. Context-priming оставлен только через реальный `opts.prompt`.
 
 /// 'auto' / '' → 'auto'. Иначе нормализуем lowercase, обрезаем по '-' до
 /// 2-5 alnum (соответствует capability validator `^[a-z]{2,5}$`).
@@ -809,6 +828,19 @@ mod tests {
     }
 
     #[test]
+    fn is_hallucination_filters_foreign_tag_with_dash_or_punct() {
+        // [P-fix] whisper иногда префиксует dialogue-dash или trailing-точку.
+        assert!(is_hallucination("- [FOREIGN]"));
+        assert!(is_hallucination("— [FOREIGN]"));
+        assert!(is_hallucination("[FOREIGN]."));
+        assert!(is_hallucination("- [foreign] "));
+        // Legit слово "foreign" без скобок — НЕ дропаем.
+        assert!(!is_hallucination("foreign policy was discussed"));
+        // Dialogue-dash перед реальной речью — НЕ дропаем.
+        assert!(!is_hallucination("- Добрый день, ещё раз."));
+    }
+
+    #[test]
     fn is_hallucination_filters_russian_subtitle_credits() {
         assert!(is_hallucination("[Редактор субтитров Н.Александрова]"));
         assert!(is_hallucination("[Апалькова]"));
@@ -829,6 +861,11 @@ mod tests {
         assert!(is_hallucination("[blank_audio]"));
         assert!(is_hallucination("(silence)"));
         assert!(is_hallucination("[music]"));
+        // [P-fix2] Cyrillic noise tags.
+        assert!(is_hallucination("[Музыка]"));
+        assert!(is_hallucination("[музыка]"));
+        assert!(is_hallucination("[Аплодисменты]"));
+        assert!(is_hallucination("[Смех]"));
     }
 
     #[test]
@@ -850,15 +887,6 @@ mod tests {
         assert!(!is_hallucination("Да, согласен."));
         // Edge: реальное слово которое случайно matches никаким substring.
         assert!(!is_hallucination("Александр сказал что согласен"));
-    }
-
-    #[test]
-    fn default_prompt_for_lang_returns_anchor_for_known_lang() {
-        assert!(default_prompt_for_lang("ru").is_some());
-        assert!(default_prompt_for_lang("en").is_some());
-        assert!(default_prompt_for_lang("kk").is_some());
-        assert!(default_prompt_for_lang("auto").is_none());
-        assert!(default_prompt_for_lang("xyz").is_none());
     }
 
     #[test]

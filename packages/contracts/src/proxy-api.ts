@@ -72,7 +72,9 @@ export type ProxyErrorCode =
   | 'bad_request'
   | 'provider_error'
   | 'staging_object_not_found'
-  | 'internal_error';
+  | 'internal_error'
+  /** /16 IP rate-limit (middleware/ip-rate-limit.ts) — 429 при превышении. */
+  | 'rate_limited';
 
 /** Header name for device-id (M9.2). */
 export const DEVICE_ID_HEADER = 'x-device-id';

@@ -169,6 +169,8 @@ const ruInternal = {
     secondaryUploading: 'Загружаем аудио',
     secondaryQueued: 'Ждёт очередь',
     secondaryEta: 'осталось ~{sec} сек',
+    // [Processing status] фон-regen звонка (status остаётся ready).
+    secondaryBusy: 'обрабатывается',
     tooltipRecording: 'Идёт запись прямо сейчас.',
     tooltipProcessing: 'Запись завершена, идёт транскрипция через STT.',
     tooltipReady: 'Готово — есть transcript.md и raw_stt.json.',
@@ -194,6 +196,11 @@ const ruInternal = {
     regenerating: 'Пересоздаём…',
     // [P1.3] Elapsed timer для local LLM regen — backend шлёт каждые 15s.
     regeneratingWithElapsed: 'Пересоздаём… {sec}s',
+    // [Processing status] strip над табами при фон-regen.
+    bgBusyStrip: 'Пересоздаём саммари…',
+    bgBusyStripElapsed: 'Пересоздаём саммари… {sec}s',
+    generatingRecap: 'Генерируется саммари…',
+    generatingTranscript: 'Распознаётся речь…',
     regenerateNoTranscript: 'Нет транскрипта для регенерации',
     // [M14 T-17] Title-only regen — отдельный lightweight LLM-call.
     regenerateTitle: '↻ Пересоздать название',
@@ -207,16 +214,6 @@ const ruInternal = {
     reprocessConfirmBody:
       'Перезапустить обработку звонка?\n\nЗапись будет заново распознана и пересоздана саммари. Текущая расшифровка и рекап перезапишутся.',
     reprocessConfirmOk: 'Перезапустить',
-    // [P14.1] Force re-STT — destructive action для дропа hallucinated transcripts.
-    forceRestt: '⚠ Распознать заново',
-    forceRestting: 'Распознаём…',
-    forceResttHint:
-      'Дропнуть текущую расшифровку (с галлюцинациями / [FOREIGN] метками) и распознать с нуля',
-    forceResttConfirmTitle: 'Распознать заново?',
-    forceResttConfirmBody:
-      'Удалить текущую расшифровку и саммари, запустить распознавание заново?\n\nПолезно если запись была обработана старой версией распознавания и содержит галлюцинации или [FOREIGN] метки.',
-    forceResttConfirmOk: 'Распознать заново',
-    forceResttFailed: 'Не удалось перезапустить распознавание: {error}',
     deleteConfirmBody:
       'Удалить звонок «{title}»?\n\nЭто навсегда удалит запись, расшифровку, саммари, задачи и образцы голоса этого звонка.',
     deleteConfirmOk: 'Удалить',
@@ -330,6 +327,7 @@ const ruInternal = {
     sampleStop: '◼ стоп',
     samplePlayAria: 'Послушать сэмпл',
     sampleStopAria: 'Остановить сэмпл',
+    sampleScrubAria: 'Перемотка сэмпла',
     sampleUnavailable: 'Аудиосэмпл недоступен',
     suggestion: 'Похоже на',
     confidence: 'Уверенность',
@@ -476,6 +474,17 @@ const ruInternal = {
     sectionRecording: 'Запись',
     sectionSpeakers: 'Спикеры',
     sectionLabs: 'Лаборатория',
+    sectionMaintenance: 'Обслуживание',
+    maintenanceTitle: 'Обслуживание данных.',
+    maintenanceLede:
+      'Звонки, обработанные раньше, могли сохранить пустой рекап. Здесь можно пересоздать саммари для всех таких звонков одним действием.',
+    bulkRecapStart: 'Пересоздать пустые саммари',
+    bulkRecapRunning: 'Обрабатываем…',
+    bulkRecapScanning: 'Ищем пустые рекапы…',
+    bulkRecapProgress: 'Пересоздаём {done} из {total}…',
+    bulkRecapStop: 'Остановить',
+    bulkRecapResult: 'Готово: {regenerated} пересоздано, {failed} с ошибкой.',
+    bulkRecapNoneEmpty: 'Пустых рекапов не найдено — всё на месте.',
     sectionPrivacy: 'Конфиденциальность',
     sectionProcessingSubtitle:
       'Где обрабатывать ваши звонки. Локально — бесплатно, без сети. Облако — быстрее, точнее.',
@@ -520,6 +529,9 @@ const ruInternal = {
       'Поставщик STT и язык вывода для рекапа. Auto переключается между Soniox и Gladia при сбоях.',
     sttProviderLabel: 'Провайдер',
     sttProviderAuto: 'Auto (Soniox → Gladia)',
+    sttLangLabel: 'Язык распознавания (STT)',
+    sttLangHint:
+      "Язык речи для распознавания. 'Автоопределение' обычно норм, но на тихом микрофоне whisper иногда путает язык — для русских звонков надёжнее выбрать «Русский».",
     sttRecapLangLabel: 'Язык рекапа и задач',
     sttRecapLangHint:
       "На каком языке писать рекап и задачи. 'Авто' = язык распознанной речи. Не влияет на сам STT.",
@@ -608,13 +620,13 @@ const ruInternal = {
     speculativeDecodingLabel: 'Ускорение генерации (черновая модель)',
     speculativeDecodingHint:
       'Использует малую модель 0.5B для draft-токенов параллельно с 7B Quality. 2-3× speedup. Требует preset «Quality» и скачивание дополнительной модели ~380MB.',
-    forceNumSpeakersLabel: 'Принудительное количество спикеров',
+    forceNumSpeakersLabel: 'Число собеседников (кроме вас)',
     forceNumSpeakersHint:
-      'Применяется к следующей переобработке. Используй если знаешь точное количество собеседников и автоматика ошибается. Лимит — 3 спикера.',
+      'Твой голос всегда отдельно («Я»). Это число — сколько СОБЕСЕДНИКОВ на удалённой стороне. Задай точное значение если авто-разделение промахивается, и переобработай. Лимит — 3.',
     forceNumSpeakersOptions: {
       auto: 'Авто (рекомендовано)',
-      '2': '2 спикера',
-      '3': '3 спикера',
+      '2': '2 собеседника',
+      '3': '3 собеседника',
     },
     wipeBtn: 'Удалить все данные',
     wipeBusy: 'Удаляем…',
@@ -1032,6 +1044,8 @@ const ruInternal = {
     processing: 'распознаём',
     ready: 'готов',
     error: 'ошибка',
+    // [Processing status] generic busy (regen — реального шага нет).
+    busyGeneric: 'обрабатываем',
     // CallErrorRow / PipelineStrip копи
     audioSaved: 'аудио сохранено',
     moreDetails: 'подробнее →',

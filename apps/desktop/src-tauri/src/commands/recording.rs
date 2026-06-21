@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use crate::{
     audio::macos::{self as audio_macos, OrchestratorChannels, RecordingSession},
     audio::permissions::{self, PermissionsStatus},
-    call_store::{ArtifactKind, CallStore},
+    call_store::CallStore,
     db::{self, Call},
     events::EventBus,
     local_engine::{
@@ -444,16 +444,18 @@ async fn prepare_chunked_setup(
         .await?
         .unwrap_or_else(|| "auto".to_string());
 
-    // [M13 follow-up] Mic diarization — Default ON. Тот же pattern что
-    // chunked_pipeline: explicit "0" / "false" = OFF, всё прочее (включая
-    // None) = ON.
-    let mic_off = matches!(
+    // [P-fix7] Mic diarization — Default OFF. Mic = микрофон владельца = один
+    // человек (M2.4). sortformer на нём овершутит и дробит единственный голос
+    // owner'а в speaker:unknown/N → речь владельца размазана по «СПИКЕР ?».
+    // Opt-in (explicit "1"/"true") только для редкого случая нескольких людей
+    // у одного микрофона.
+    let mic_on = matches!(
         db::get_setting(&state.db, SETTING_MIC_DIARIZATION)
             .await?
             .as_deref(),
-        Some("0") | Some("false")
+        Some("1") | Some("true")
     );
-    let mic_diarization = !mic_off;
+    let mic_diarization = mic_on;
     let mic_diarization_num_speakers = read_num_speakers_override(&state.db).await?;
 
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(256);
@@ -720,13 +722,14 @@ pub async fn retry_chunk(
     let stt_lang = db::get_setting(&state.db, "stt_lang")
         .await?
         .unwrap_or_else(|| "auto".to_string());
-    let mic_off = matches!(
+    // [P-fix7] Mic diarization default OFF (mic = владелец, см. start_recording).
+    let mic_on = matches!(
         db::get_setting(&state.db, SETTING_MIC_DIARIZATION)
             .await?
             .as_deref(),
-        Some("0") | Some("false")
+        Some("1") | Some("true")
     );
-    let mic_diarization = !mic_off;
+    let mic_diarization = mic_on;
     let mic_diarization_num_speakers = read_num_speakers_override(&state.db).await?;
 
     // 4. FSM gate failed → pending. После этого chunk_runner внутри сделает
@@ -854,98 +857,6 @@ async fn maybe_resume_pipeline_after_chunk(
     .await
 }
 
-/// [P14.1] Force re-STT — destructive operation. Дропает existing per-chunk
-/// transcripts + merged artifacts (transcript.md / raw_stt.json / recap.md) и
-/// сбрасывает chunks в pending. Затем spawn'ит full pipeline rerun через
-/// `PipelineRunner::spawn_reprocess` — chunked path запустит chunk_runner
-/// для каждого pending chunk заново, с применением свежих P12 filters
-/// (hallucination patterns + whisper anti-hallucination flags).
-///
-/// Используется когда existing transcripts содержат hallucinations
-/// созданные pre-P12.1 (`[Редактор субтитров...]`, `[FOREIGN]` теги) —
-/// chunk_assembly skip-STT path не применяет filter post-hoc, нужен
-/// полный re-recognition.
-///
-/// **Гарантии:**
-/// - Refuse если `engine != Local` (cloud не chunked).
-/// - Refuse если `status == 'recording'` (sidecar активен — нельзя дропать).
-/// - Idempotent через `spawn_reprocess` abort+respawn.
-#[tauri::command]
-pub async fn force_restt_call(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    call_id: String,
-) -> Result<(), AppError> {
-    // 1. Verify call exists.
-    let call = db::get_call(&state.db, &call_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
-
-    // 2. Refuse если активная запись — sidecar держит файлы.
-    if call.status == "recording" {
-        return Err(AppError::Other(
-            "force_restt_call: запись активна — сначала останови".into(),
-        ));
-    }
-
-    // 3. Engine check — chunked path только для Local.
-    let engine = db::get_setting(&state.db, SETTING_ACTIVE_ENGINE)
-        .await?
-        .as_deref()
-        .and_then(EngineKind::from_str);
-    if !matches!(engine, Some(EngineKind::Local)) {
-        return Err(AppError::Other(
-            "force_restt_call: требуется локальный движок (Cloud не chunked)".into(),
-        ));
-    }
-
-    // 4. Delete artifacts на диске. Ошибки игнорируем (best-effort) — если
-    //    файла нет, ничего страшного.
-    let call_dir = state.store.call_dir(&call_id);
-    for kind in [
-        ArtifactKind::Transcript,
-        ArtifactKind::RawStt,
-        ArtifactKind::Recap,
-    ] {
-        let p = state.store.artifact_path(&call_id, kind);
-        if let Err(e) = tokio::fs::remove_file(&p).await {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                log::warn!("force_restt_call: remove artifact {:?}: {e}", p);
-            }
-        }
-    }
-    // Per-chunk transcript JSON files (mic_transcript.json / system_transcript.json).
-    let chunks_dir = call_dir.join("chunks");
-    if let Ok(mut entries) = tokio::fs::read_dir(&chunks_dir).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            for fname in ["mic_transcript.json", "system_transcript.json"] {
-                let p = entry.path().join(fname);
-                if let Err(e) = tokio::fs::remove_file(&p).await {
-                    if e.kind() != std::io::ErrorKind::NotFound {
-                        log::warn!("force_restt_call: remove {:?}: {e}", p);
-                    }
-                }
-            }
-        }
-    }
-
-    // 5. Reset DB chunks state + clear failure reason.
-    let reset_count = db::chunks::reset_chunks_for_restt(&state.db, &call_id).await?;
-    log::info!(
-        "force_restt_call[{call_id}]: reset {reset_count} chunks → pending, \
-         engine=local, spawning reprocess"
-    );
-    db::set_recap_failed_reason(&state.db, &call_id, None).await?;
-
-    // 6. Spawn full pipeline rerun. spawn_reprocess идемпотентен — abort'ает
-    //    existing task для этого call_id.
-    PipelineRunner::spawn_reprocess(
-        state.db.clone(),
-        state.store.clone(),
-        state.device_id.clone(),
-        app,
-        state.pipeline_tasks.clone(),
-        call_id,
-    )
-    .await
-}
+// [P-fix4] `force_restt_call` удалён — слит в `reprocess_call` («Переобработать
+// целиком» теперь всегда делает re-STT через delete_chunks_for_call). Отдельная
+// destructive-кнопка «Распознать заново» убрана как дубль.

@@ -231,29 +231,24 @@ pub async fn list_chunks_by_call(
         .collect())
 }
 
-/// [P14.1] Reset всех chunks звонка для force re-STT.
+/// [P-fix4] Удалить все chunk-строки звонка — для полной переобработки
+/// «Переобработать целиком» (всегда заново из аудио, включая STT).
 ///
-/// Сбрасывает status → pending, обнуляет transcript_json +
-/// system_transcript_json + embeddings_json + end_ms. Используется когда
-/// existing transcripts содержат hallucinations (pre-P12.1 filter) — user
-/// явно запрашивает re-recognition через UI «Распознать заново».
+/// Удаление (а не reset→pending) важно: после него у звонка **0 chunks** →
+/// `ensure_all_chunks_done` проходит (Ok на пустом наборе) и
+/// `load_chunked_transcripts` возвращает None → pipeline идёт на **full-file
+/// STT** по полному root `mic.wav`/`system.wav`. Reset→pending халтил бы
+/// pipeline (`ensure_all_chunks_done` возвращает Err на pending).
 ///
-/// Возвращает количество затронутых rows.
-pub async fn reset_chunks_for_restt(pool: &SqlitePool, call_id: &str) -> Result<u64, AppError> {
-    let res = sqlx::query(
-        "UPDATE call_chunks
-         SET status = 'pending',
-             transcript_json = NULL,
-             system_transcript_json = NULL,
-             embeddings_json = NULL,
-             end_ms = NULL,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE call_id = ?1",
-    )
-    .bind(call_id)
-    .execute(pool)
-    .await
-    .map_err(AppError::from)?;
+/// Chunk-аудио на диске (`chunks/{idx}/*.wav`) НЕ трогается — root WAV уже
+/// склеен на всю длительность. Возвращает количество удалённых rows
+/// (0 для cloud / non-chunked — no-op).
+pub async fn delete_chunks_for_call(pool: &SqlitePool, call_id: &str) -> Result<u64, AppError> {
+    let res = sqlx::query("DELETE FROM call_chunks WHERE call_id = ?1")
+        .bind(call_id)
+        .execute(pool)
+        .await
+        .map_err(AppError::from)?;
     Ok(res.rows_affected())
 }
 
@@ -598,11 +593,12 @@ mod tests {
         assert!(err.to_string().contains("not in 'failed' status"));
     }
 
-    // [P14.1] reset_chunks_for_restt — все chunks → pending, transcripts NULL.
+    // [P-fix4] delete_chunks_for_call — полное удаление chunk-строк для re-STT.
     #[tokio::test]
-    async fn reset_chunks_for_restt_resets_all_state() {
+    async fn delete_chunks_for_call_removes_all_rows() {
         let test_db = fresh_db().await;
         insert_dummy_call(&test_db.pool, "c1").await;
+        insert_dummy_call(&test_db.pool, "c2").await;
         for idx in [0u32, 1, 2] {
             insert_chunk(
                 &test_db.pool,
@@ -618,7 +614,6 @@ mod tests {
                 .await
                 .unwrap();
         }
-        // 2 done + 1 failed (mixed state, как у user'а с hallucinations).
         mark_chunk_done(
             &test_db.pool,
             "c1",
@@ -630,44 +625,40 @@ mod tests {
         )
         .await
         .unwrap();
-        mark_chunk_done(
+        // Чужой звонок c2 — чтобы убедиться что delete не задевает его.
+        insert_chunk(
             &test_db.pool,
-            "c1",
-            1,
-            1_200_000,
-            r#"{"mic":2}"#,
-            None,
-            None,
+            "c2",
+            0,
+            0,
+            &PathBuf::from("/m"),
+            &PathBuf::from("/s"),
         )
         .await
         .unwrap();
-        mark_chunk_failed(&test_db.pool, "c1", 2, "test")
-            .await
-            .unwrap();
 
-        let n = reset_chunks_for_restt(&test_db.pool, "c1").await.unwrap();
+        let n = delete_chunks_for_call(&test_db.pool, "c1").await.unwrap();
         assert_eq!(n, 3);
-
-        let rows = list_chunks_by_call(&test_db.pool, "c1").await.unwrap();
-        assert_eq!(rows.len(), 3);
-        for r in &rows {
-            assert_eq!(r.status, "pending", "chunk {} status", r.chunk_idx);
-            assert!(
-                r.transcript_json.is_none(),
-                "chunk {} transcript",
-                r.chunk_idx
-            );
-            assert!(r.system_transcript_json.is_none());
-            assert!(r.embeddings_json.is_none());
-            assert!(r.end_ms.is_none());
-        }
+        // 0 chunks → full-file STT path.
+        assert!(list_chunks_by_call(&test_db.pool, "c1")
+            .await
+            .unwrap()
+            .is_empty());
+        // Чужой звонок не тронут.
+        assert_eq!(
+            list_chunks_by_call(&test_db.pool, "c2")
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
-    async fn reset_chunks_for_restt_noop_when_no_chunks() {
+    async fn delete_chunks_for_call_noop_when_no_chunks() {
         let test_db = fresh_db().await;
         insert_dummy_call(&test_db.pool, "c1").await;
-        let n = reset_chunks_for_restt(&test_db.pool, "c1").await.unwrap();
+        let n = delete_chunks_for_call(&test_db.pool, "c1").await.unwrap();
         assert_eq!(n, 0);
     }
 

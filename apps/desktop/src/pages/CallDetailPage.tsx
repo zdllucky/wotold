@@ -17,7 +17,7 @@ import {
   regenerateTitle,
   reprocessCall,
 } from '../api/calls';
-import { forceRestt, retryChunk } from '../api/recording';
+import { retryChunk } from '../api/recording';
 import { humanError } from '../api/errors';
 import { engineLabelHuman } from '../utils/engineLabel';
 import { Tabs } from '../ui';
@@ -42,6 +42,7 @@ import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
 import { EngineChip } from '../components/EngineChip';
+import { CallStateTag, ProgressRail } from '../components/call-state';
 import { useCallAudio } from '../hooks/useCallAudio';
 import { useCallDetail } from '../hooks/useCallDetail';
 import { useI18n } from '../i18n';
@@ -78,6 +79,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     systemSrc,
     recapElapsedSec,
     setRecapElapsedSec,
+    bgBusy,
+    setBgBusy,
+    justGenerated,
     loading,
     error,
     setError,
@@ -91,11 +95,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   const [confirmingTag, setConfirmingTag] = useState<string | null>(null);
 
   const [deleting, setDeleting] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
-  const [regeneratingTitle, setRegeneratingTitle] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [forceRestting, setForceRestting] = useState(false);
   // [Bug-fix #6] После bind speaker → contact подсказываем regenerate recap.
   // Memory-only flag — пере-показывается на следующий bind action в звонке.
   const [pendingRecapRegen, setPendingRecapRegen] = useState(false);
@@ -187,68 +188,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     }
   };
 
-  // [P14.1] Force re-STT — destructive. Дропает existing transcripts +
-  // recap артефакты и запускает полный re-recognition. Применяется когда
-  // existing transcripts содержат hallucinations (pre-P12 filter) либо
-  // [FOREIGN] теги — chunk_assembly skip-STT path не применяет filter
-  // post-hoc, нужен полный rerun.
-  const onForceRestt = async () => {
-    if (!call) return;
-    // Cloud engine не chunked → backend всё равно refuse'нёт, скрываем UI.
-    if (call.processing_via !== 'local') return;
-    const ok = await ask(t('callDetail.forceResttConfirmBody'), {
-      title: t('callDetail.forceResttConfirmTitle'),
-      kind: 'warning',
-      okLabel: t('callDetail.forceResttConfirmOk'),
-      cancelLabel: t('common.cancel'),
-    });
-    if (!ok) return;
-    setForceRestting(true);
-    setError(null);
-    // [P16.1] Snapshot pre-patch — revert на sync error.
-    const snapshotBefore = call;
-    setCall((prev) =>
-      prev
-        ? {
-            ...prev,
-            status: 'processing',
-            pipeline_step: 1,
-            pipeline_pct: 0,
-            pipeline_eta_sec: null,
-            upload_bytes: null,
-            recap_failed_reason: null,
-          }
-        : prev,
-    );
-    try {
-      await forceRestt(call.id);
-    } catch (e) {
-      setError(t('callDetail.forceResttFailed', { error: humanError(e) }));
-      // [P16.1] Immediate revert чтобы UI не залип в fake processing.
-      // [P16.1 review] Functional updater — capture latest state inside
-      // updater, не stale closure. Между snapshot capture и catch
-      // `call:progress` Tauri event мог обновить state — revert не должен
-      // discard concurrent updates. Берём только поля которые мы patched:
-      // status + pipeline_* — остальное (`prev` actual) keeps.
-      setCall((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: snapshotBefore.status,
-              pipeline_step: snapshotBefore.pipeline_step,
-              pipeline_pct: snapshotBefore.pipeline_pct,
-              pipeline_eta_sec: snapshotBefore.pipeline_eta_sec,
-              upload_bytes: snapshotBefore.upload_bytes,
-              recap_failed_reason: snapshotBefore.recap_failed_reason,
-            }
-          : prev,
-      );
-      await refetchAll();
-    } finally {
-      setForceRestting(false);
-    }
-  };
-
   // [V8] Cancel running reprocess. Backend abort'ает pipeline task и
   // восстанавливает status='ready' (если артефакты пережили) или
   // 'failed' (первичная отмена). pipeline:cancelled listener подтянет.
@@ -261,34 +200,30 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     }
   };
 
+  // [Global regen] Fire-and-forget: команда regenerate_recap регистрирует
+  // фон-задачу в pipeline_tasks и возвращается сразу. Результат подтянет
+  // pipeline:finished listener (refetchAll в useCallDetail) даже после возврата
+  // на страницу; busy-флаг (bgBusy) сбросит он же. Задача переживает навигацию
+  // и считается в бейдже у «Звонки».
   const onRegenerateRecap = async () => {
-    setRegenerating(true);
+    setBgBusy(true);
     setError(null);
-    // [P1.3] Сброс elapsed timer'а на старте — UI начинает с «Пересоздаём…»
-    // (без «… 0s») пока первый periodic event не придёт через 15s.
+    // [P1.3] Сброс elapsed timer'а на старте — UI начинает с «Пересоздаём…».
     setRecapElapsedSec(null);
-    // [Bug-fix] Optimistic clear stale recap_failed_reason — баннер исчезает
-    // сразу при клике, чтобы юзер не видел старую ошибку пока идёт новая
-    // попытка. Если новая попытка упадёт, refetchAll вернёт актуальный
-    // failed_reason (с свежим engine label).
-    // [P16.1] Snapshot pre-patch — revert sync на reject.
+    // [Bug-fix #6] Регенерация запущена — recap-regen suggestion больше не нужен.
+    setPendingRecapRegen(false);
+    // Optimistic clear stale recap_failed_reason; snapshot для revert на reject.
     const snapshotBefore = call;
     setCall((prev) => (prev ? { ...prev, recap_failed_reason: null } : prev));
     try {
       await regenerateRecap(callId);
-      // [M14 T-15] refetchAll вместо узкого recap+tasks. После legacy v1 →
-      // v2 миграции меняются и Call.summary_schema_version (нужно чтобы
-      // LegacyRecapBanner исчез), и decisions/open_questions (новые v2-блоки
-      // в Рекап табе), и call_type (CallTypeBadge в header).
-      await refetchAll();
-      // [Bug-fix #6] Регенерация прошла — recap-regen suggestion больше не нужен.
-      setPendingRecapRegen(false);
     } catch (e) {
+      // Reject = guard «уже обрабатывается» / spawn-ошибка → revert busy + state.
       setError(t('callDetail.regenerateFailed', { error: humanError(e) }));
-      // [P16.1] Revert recap_failed_reason clear — backend reject не
-      // должен показать UI что прошлая ошибка исчезла.
-      // [P16.1 review] Functional updater — restore только patched поле,
-      // не stomp concurrent state из `call:progress`.
+      // [P16.1 review] Functional updater — restore только patched поле
+      // (recap_failed_reason), не stomp concurrent state из `call:progress`.
+      // bgBusy-модель (regen = фон-задача): setBgBusy(false) на reject,
+      // на успехе bgBusy сбрасывает pipeline:finished listener.
       if (snapshotBefore) {
         setCall((prev) =>
           prev
@@ -296,25 +231,20 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             : prev,
         );
       }
-    } finally {
-      setRegenerating(false);
-      // [P1.3] Final reset — даже если событие пришло позже completion.
-      setRecapElapsedSec(null);
+      setBgBusy(false);
     }
   };
 
-  // [M14 T-17] Lightweight title-only regen. После success — refetchAll чтобы
-  // header показал новый title (Call object подтянет updated row).
+  // [M14 T-17 / Global regen] Title regen — тоже фон-задача. Новый title
+  // подтянется через refetchAll на pipeline:finished.
   const onRegenerateTitle = async () => {
-    setRegeneratingTitle(true);
+    setBgBusy(true);
     setError(null);
     try {
       await regenerateTitle(callId);
-      await refetchAll();
     } catch (e) {
       setError(t('callDetail.regenerateTitleFailed', { error: humanError(e) }));
-    } finally {
-      setRegeneratingTitle(false);
+      setBgBusy(false);
     }
   };
 
@@ -430,18 +360,14 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           onExport={() => void onExportMarkdown()}
           onDelete={onDelete}
           reprocessing={reprocessing}
-          regenerating={regenerating}
+          regenerating={bgBusy}
           regenerateDisabled={!transcript}
-          regeneratingTitle={regeneratingTitle}
+          regeneratingTitle={bgBusy}
           regenerateTitleDisabled={!transcript}
           exporting={exporting}
           deleting={deleting}
           recapElapsedSec={recapElapsedSec}
           hasFailedChunks={(chunks ?? []).some((c) => c.status === 'failed')}
-          onForceRestt={
-            call.processing_via === 'local' ? () => void onForceRestt() : undefined
-          }
-          forceRestting={forceRestting}
         />
 
         {/* Participants chips — same row после title */}
@@ -476,6 +402,28 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             }}
           />
         ))}
+
+      {/* [Processing status] Фон-regen (саммари/название) не меняет status —
+          звонок остаётся 'ready'. Показываем strip с indeterminate rail +
+          elapsed, чтобы пользователь видел «идёт обработка» (как глобальная
+          задача, переживающая навигацию). Полный pipeline (status='processing')
+          выше имеет свой ProcessingPanel/ReprocessBanner. */}
+      {bgBusy && call.status === 'ready' && (
+        <div
+          className="card"
+          style={{ marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 10 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <CallStateTag state="processing" labelOverride={t('callState.busyGeneric')} />
+            <span className="muted" style={{ fontSize: 13 }}>
+              {recapElapsedSec != null
+                ? t('callDetail.bgBusyStripElapsed', { sec: recapElapsedSec })
+                : t('callDetail.bgBusyStrip')}
+            </span>
+          </div>
+          <ProgressRail indeterminate ariaLabel={t('callState.busyGeneric')} />
+        </div>
+      )}
 
       {call.status === 'failed' && (
         <ErrorScreen
@@ -531,9 +479,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             type="button"
             className="btn btn--primary btn--sm"
             onClick={() => void onRegenerateRecap()}
-            disabled={regenerating}
+            disabled={bgBusy}
           >
-            {regenerating ? t('callDetail.regenerating') : t('callDetail.regenerateRecap')}
+            {bgBusy ? t('callDetail.regenerating') : t('callDetail.regenerateRecap')}
           </button>
         </div>
       )}
@@ -554,7 +502,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         recap !== null &&
         call.status !== 'processing' && (
           <LegacyRecapBanner
-            busy={regenerating}
+            busy={bgBusy}
             onUpgrade={() => void onRegenerateRecap()}
           />
         )}
@@ -567,7 +515,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         recap !== null &&
         call.status !== 'processing' && (
           <RecapRegenSuggestionStrip
-            busy={regenerating}
+            busy={bgBusy}
             onRegenerate={() => void onRegenerateRecap()}
             onDismiss={() => setPendingRecapRegen(false)}
           />
@@ -609,10 +557,17 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           />
           <MdPanel
             md={recap}
+            animate={justGenerated}
+            generating={call.status === 'processing' || bgBusy}
+            generatingLabel={
+              recapElapsedSec != null
+                ? `${t('callDetail.generatingRecap')} ${recapElapsedSec}s`
+                : t('callDetail.generatingRecap')
+            }
             emptyHint={t('callDetail.emptyRecap')}
             onRegenerate={() => void onRegenerateRecap()}
-            regenerating={regenerating}
-            regenerateDisabled={!transcript || reprocessing || forceRestting}
+            regenerating={bgBusy}
+            regenerateDisabled={!transcript || reprocessing}
             emptyBody={
               call.recap_failed_reason
                 ? t('callDetail.recapEmptyFailed', {
@@ -632,6 +587,8 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             fallbackMd={transcript}
             speakers={speakersLite}
             currentTime={audio.currentTime}
+            reveal={justGenerated}
+            generating={call.status === 'processing'}
             onSeek={(s) => {
               audio.seek(s);
               if (!audio.playing && audio.ready) audio.togglePlay();

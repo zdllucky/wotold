@@ -25,6 +25,7 @@ use tauri::AppHandle;
 
 use crate::embeddings::{self, StubEmbedder};
 use crate::events::{ChunkDoneEvent, EventBus};
+use crate::local_engine::stt::is_hallucination;
 use crate::pipeline::clusters::extract_clusters;
 use crate::providers::transcription::{
     DiarizedTranscript, TranscriptSegment, TranscriptionError, TranscriptionOpts,
@@ -274,17 +275,16 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
     )
     .await?;
 
-    // [P12.3] Сохранить detected language на call row после успешного
+    // [P12.3 + P-fix] Сохранить detected language на call row после успешного
     // chunk'а. Используется на последующих chunks как override 'auto'
-    // (см. effective_lang logic выше) — предотвращает hallucination
-    // [FOREIGN] tag когда каждый chunk детектит язык независимо и
-    // иногда ошибается.
-    if let Some(detected) = mic_transcript
-        .lang_detected
-        .as_deref()
-        .filter(|s| !s.is_empty())
-    {
-        if let Err(e) = db::set_call_meta(pool, &call_id, Some(detected), "local").await {
+    // (см. effective_lang logic выше) — предотвращает [FOREIGN] спам.
+    //
+    // [P-fix] Раньше пин брался безусловно из mic-трека. Тихий mic (owner
+    // молчит) часто mis-детектит «en» → форсил «en» на весь звонок → русская
+    // речь шла как [FOREIGN]. Теперь берём язык из трека с бóльшим объёмом
+    // речи и только если он уверенный (≥ порога слов).
+    if let Some(detected) = pick_pinned_lang(&mic_transcript, sys_transcript.as_ref()) {
+        if let Err(e) = db::set_call_meta(pool, &call_id, Some(&detected), "local").await {
             log::warn!("chunk {call_id}/{chunk_idx}: set_call_meta(lang={detected}) failed: {e}");
         }
     }
@@ -357,6 +357,39 @@ fn extract_tail_words(transcript: &DiarizedTranscript, max_words: usize) -> Stri
 
 fn translate_transcription_error(e: TranscriptionError) -> AppError {
     AppError::Other(format!("chunk transcription failed: {e}"))
+}
+
+/// [P-fix] Минимум «реальных» слов в chunk'е, чтобы доверять его language
+/// detection для per-call pinning. Короткий/тихий chunk не должен пинить язык.
+pub(crate) const MIN_WORDS_FOR_LANG_PIN: usize = 8;
+
+/// [P-fix] Число слов в треке, исключая сегменты-галлюцинации ([FOREIGN] и пр.)
+/// — это «реальный» объём речи, по которому судим об уверенности lang-detect.
+pub(crate) fn real_word_count(t: &DiarizedTranscript) -> usize {
+    t.segments
+        .iter()
+        .filter(|s| !is_hallucination(&s.text))
+        .map(|s| s.text.split_whitespace().count())
+        .sum()
+}
+
+/// [P-fix] Выбрать язык для per-call pinning из трека с бóльшим объёмом речи.
+/// Возвращает `None` если самый «речевой» трек ниже порога уверенности —
+/// тогда пин откладывается до более содержательного chunk'а (а не отравляется
+/// тихим mic-треком, который whisper часто детектит как «en»).
+pub(crate) fn pick_pinned_lang(
+    mic: &DiarizedTranscript,
+    sys: Option<&DiarizedTranscript>,
+) -> Option<String> {
+    let mic_words = real_word_count(mic);
+    let sys_words = sys.map(real_word_count).unwrap_or(0);
+    let (lang, words) = if sys_words > mic_words {
+        (sys.and_then(|t| t.lang_detected.clone()), sys_words)
+    } else {
+        (mic.lang_detected.clone(), mic_words)
+    };
+    let lang = lang.filter(|s| !s.is_empty())?;
+    (words >= MIN_WORDS_FOR_LANG_PIN).then_some(lang)
 }
 
 #[cfg(test)]
@@ -632,5 +665,61 @@ mod tests {
         assert!(format!("{err}").contains("not in 'pending'"));
         // Provider НЕ должен был быть вызван если FSM gate fail'нулся first.
         assert!(!provider.called.load(Ordering::Relaxed));
+    }
+
+    fn track(lang: &str, segs: Vec<(&str, &str)>) -> DiarizedTranscript {
+        DiarizedTranscript {
+            version: 1,
+            lang_detected: Some(lang.into()),
+            duration_sec: 10.0,
+            provider: "local".into(),
+            segments: segs
+                .into_iter()
+                .enumerate()
+                .map(|(i, (text, tag))| TranscriptSegment {
+                    start: i as f64,
+                    end: i as f64 + 1.0,
+                    text: text.into(),
+                    speaker_tag: tag.into(),
+                    confidence: None,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn pick_pinned_lang_prefers_busier_track() {
+        // [P-fix] mic тихий/«en» (только [FOREIGN]) + sys русский с 10 словами
+        // → pin берётся из sys = «ru», не из mic.
+        let mic = track("en", vec![("[FOREIGN]", "owner")]);
+        let sys = track(
+            "ru",
+            vec![(
+                "раз два три четыре пять шесть семь восемь девять десять",
+                "speaker:0",
+            )],
+        );
+        assert_eq!(pick_pinned_lang(&mic, Some(&sys)).as_deref(), Some("ru"));
+    }
+
+    #[test]
+    fn pick_pinned_lang_none_below_threshold() {
+        // mic = 0 реальных слов ([FOREIGN] исключён), sys = 1 слово < порога → None.
+        let mic = track("en", vec![("[FOREIGN]", "owner")]);
+        let sys = track("ru", vec![("да", "speaker:0")]);
+        assert_eq!(pick_pinned_lang(&mic, Some(&sys)), None);
+    }
+
+    #[test]
+    fn pick_pinned_lang_uses_mic_when_busier() {
+        let mic = track(
+            "ru",
+            vec![(
+                "это длинная реплика владельца на десять слов ровно вот",
+                "owner",
+            )],
+        );
+        let sys = track("en", vec![("ok", "speaker:0")]);
+        assert_eq!(pick_pinned_lang(&mic, Some(&sys)).as_deref(), Some("ru"));
     }
 }

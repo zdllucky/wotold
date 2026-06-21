@@ -162,6 +162,7 @@ pub(crate) async fn evaluate_summary(
         input,
         max_tokens: Some(G_EVAL_MAX_TOKENS),
         grammar: None,
+        json_schema: None,
     };
     let json_value = provider
         .generate(request)

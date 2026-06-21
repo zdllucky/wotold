@@ -105,6 +105,7 @@ pub(crate) async fn refine_action_items(
         input: payload_str,
         max_tokens: Some(POST_PASS_MAX_TOKENS),
         grammar: None,
+        json_schema: None,
     };
     let llm_result = gbnf::generate_with_grammar_fallback(provider, request).await;
     let refined_json = match llm_result {
