@@ -338,6 +338,8 @@ mod tests {
 
     /// Расширенный helper: дополнительно сериализованный
     /// `HashMap<String, Vec<f32>>` для per-chunk embeddings_json (M13.2.1).
+    /// [CI] test-helper зеркалит production insert-сигнатуру (8 полей) —
+    /// `too_many_arguments` неприменим к тестовому fixture'у.
     #[allow(clippy::too_many_arguments)]
     async fn add_done_chunk_full(
         pool: &SqlitePool,

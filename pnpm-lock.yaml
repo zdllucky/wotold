@@ -4518,7 +4518,7 @@ snapshots:
       std-env: 3.10.0
       test-exclude: 7.0.2
       tinyrainbow: 1.2.0
-      vitest: 2.1.9(@types/node@22.19.19)(@vitest/ui@2.1.9)(jsdom@25.0.1)
+      vitest: 2.1.9(@types/node@22.19.19)(@vitest/ui@2.1.9)(jsdom@29.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -4565,7 +4565,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.16
       tinyrainbow: 1.2.0
-      vitest: 2.1.9(@types/node@22.19.19)(@vitest/ui@2.1.9)(jsdom@25.0.1)
+      vitest: 2.1.9(@types/node@22.19.19)(@vitest/ui@2.1.9)(jsdom@29.1.1)
 
   '@vitest/utils@2.1.9':
     dependencies:

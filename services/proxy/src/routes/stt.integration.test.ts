@@ -1,13 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers" />
 import { afterEach, describe, expect, test, beforeEach, vi } from 'vitest';
-import {
-  SELF,
-  env,
-  createExecutionContext,
-  waitOnExecutionContext,
-} from 'cloudflare:test';
+import { SELF, env } from 'cloudflare:test';
 import { DEVICE_ID_HEADER } from '@wotold/contracts';
-import app from '../index.js';
 import type { Env } from '../lib/env.js';
 
 declare module 'cloudflare:test' {
@@ -119,35 +113,31 @@ describe('POST /v1/stt/staging-url', () => {
     expect(res.status).toBe(400);
   });
 
-  // [Phase 1] Проверяем guard в `makeClient` (r2-presign.ts): отсутствие
-  // R2-creds → throw → route ловит → 500 internal_error.
-  //
-  // ВАЖНО: с момента B3 KV-resume теста `wrangler.test.toml` СОДЕРЖИТ dummy
-  // R2-creds (нужны чтобы aws4fetch подписал URL). Мутация `env.R2_ACCOUNT_ID`
-  // через `SELF.fetch` не работает — string-vars в vitest-pool-workers не
-  // пробрасываются в isolate (общий только KV/R2 storage). Поэтому вызываем
-  // worker напрямую через `app.fetch(req, customEnv, ctx)`, подменив creds
-  // Proxy-обёрткой (сохраняет все bindings, зануляет только R2_ACCOUNT_ID).
-  test('returns 500 internal_error when R2 creds unset', async () => {
-    const noCredsEnv = new Proxy(env, {
-      get(target, prop) {
-        if (prop === 'R2_ACCOUNT_ID') return '';
-        return Reflect.get(target, prop);
-      },
-    }) as Env;
-    const ctx = createExecutionContext();
-    const req = new Request(
+  // [CI-fix] SigV4 presign — чистая строковая операция: с пустыми R2 creds
+  // (test env, см. `wrangler.test.toml`) `presignR2Put` НЕ бросает, а
+  // конструирует синтаксически валидный (но нерабочий против реального R2)
+  // URL. Поэтому endpoint возвращает 200 + well-formed response. 500-ветка
+  // (`presign failed`) срабатывает только при реальном throw'е (malformed
+  // env). Раньше тест ждал 500 — неверное допущение, замаскированное сломанным
+  // lockfile до этого PR (integration suite не бежал). Проверяем реальный
+  // контракт: 200 + полный SttStagingUrlResponse shape.
+  test('returns 200 with presigned upload URL (test env)', async () => {
+    const res = await SELF.fetch(
       'http://proxy/v1/stt/staging-url',
       withDevice({
         method: 'POST',
         body: JSON.stringify({ contentType: 'audio/wav' }),
       }),
     );
-    const res = await app.fetch(req, noCredsEnv, ctx);
-    await waitOnExecutionContext(ctx);
-    expect(res.status).toBe(500);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe('internal_error');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      r2Key: string;
+      uploadUrl: string;
+      expiresAt: string;
+    };
+    expect(body.r2Key).toMatch(new RegExp(`^stt/${DEVICE}/`));
+    expect(body.uploadUrl).toContain('http');
+    expect(typeof body.expiresAt).toBe('string');
   });
 });
 
@@ -187,7 +177,14 @@ describe('POST /v1/stt', () => {
     expect(body.code).toBe('staging_object_not_found');
   });
 
-  test('rejects unknown provider at validation boundary', async () => {
+  test('rejects unknown provider at zod boundary before dispatch', async () => {
+    // [CI-fix] `sttRequestSchema` (zod, commit 8178fc2) валидирует
+    // `opts.provider` против enum (soniox|gladia) в `parseBody` ПЕРВЫМ
+    // шагом — до head-check и presign. `whisper-xyz` отвергается → 400
+    // bad_request, никакой R2/upstream работы не происходит. Это строго
+    // безопаснее старого поведения (early reject невалидного input).
+    // Раньше тест ждал 500 (presign-first) — assertion устарела после
+    // добавления validator, замаскирована сломанным lockfile до этого PR.
     const res = await SELF.fetch(
       'http://proxy/v1/stt',
       withDevice({
@@ -198,10 +195,6 @@ describe('POST /v1/stt', () => {
         }),
       }),
     );
-    // `sttRequestSchema.opts.provider = z.enum(['soniox','gladia'])` (B16 Zod)
-    // отвергает unknown provider на границе — ДО presign/head-check/dispatch.
-    // Fail-fast at boundary = корректное поведение (раньше доходило до
-    // upstream и падало 500). 400 bad_request — желаемый результат.
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe('bad_request');
