@@ -164,7 +164,24 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
       // [P16.1] Immediate revert optimistic patch — UI status вернётся в
       // failed без задержки. refetchAll ниже подтянет свежий failed_reason
       // (backend P16.2 теперь пишет failed_reason на chunks gate reject).
-      setCall(snapshotBefore);
+      // [P16.1 review] Functional updater — capture latest state inside
+      // updater, не stale closure. Между snapshot capture и catch
+      // `call:progress` Tauri event мог обновить state — revert не должен
+      // discard concurrent updates. Берём только поля которые мы patched:
+      // status + pipeline_* — остальное (`prev` actual) keeps.
+      setCall((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: snapshotBefore.status,
+              pipeline_step: snapshotBefore.pipeline_step,
+              pipeline_pct: snapshotBefore.pipeline_pct,
+              pipeline_eta_sec: snapshotBefore.pipeline_eta_sec,
+              upload_bytes: snapshotBefore.upload_bytes,
+              recap_failed_reason: snapshotBefore.recap_failed_reason,
+            }
+          : prev,
+      );
       await refetchAll();
     } finally {
       setReprocessing(false);
@@ -203,7 +220,17 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     } catch (e) {
       // Reject = guard «уже обрабатывается» / spawn-ошибка → revert busy + state.
       setError(t('callDetail.regenerateFailed', { error: humanError(e) }));
-      if (snapshotBefore) setCall(snapshotBefore);
+      // [P16.1 review] Functional updater — restore только patched поле
+      // (recap_failed_reason), не stomp concurrent state из `call:progress`.
+      // bgBusy-модель (regen = фон-задача): setBgBusy(false) на reject,
+      // на успехе bgBusy сбрасывает pipeline:finished listener.
+      if (snapshotBefore) {
+        setCall((prev) =>
+          prev
+            ? { ...prev, recap_failed_reason: snapshotBefore.recap_failed_reason }
+            : prev,
+        );
+      }
       setBgBusy(false);
     }
   };
