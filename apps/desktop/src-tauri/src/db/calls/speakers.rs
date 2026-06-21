@@ -144,6 +144,37 @@ pub async fn ensure_call_speakers_present(
     Ok(())
 }
 
+/// [P-fix9] Удалить устаревшие анонимные строки call_speakers, которых больше
+/// нет в текущей расшифровке. Реконсиляция при reprocess: после re-STT набор
+/// speaker-тегов меняется, а add-only `ensure_call_speakers_present` оставлял
+/// фантомные теги (например speaker:3 от прошлого mic-diar-ON прогона) → UI
+/// показывал спикера без сэмпла, кнопка плеера мертва.
+///
+/// Сохраняем `owner` и **confirmed** строки (не теряем подтверждённые юзером
+/// привязки). Удаляем только `confirmed=0` теги, отсутствующие в `present_tags`.
+/// Пустой `present_tags` → удалить все non-owner unconfirmed (solo-звонок).
+/// Возвращает число удалённых строк.
+pub async fn prune_call_speakers_not_in(
+    pool: &SqlitePool,
+    call_id: &str,
+    present_tags: &[String],
+) -> Result<u64, AppError> {
+    let mut sql = String::from(
+        "DELETE FROM call_speakers \
+         WHERE call_id = ? AND speaker_tag != 'owner' AND confirmed = 0",
+    );
+    if !present_tags.is_empty() {
+        let placeholders = vec!["?"; present_tags.len()].join(",");
+        sql.push_str(&format!(" AND speaker_tag NOT IN ({placeholders})"));
+    }
+    let mut q = sqlx::query(&sql).bind(call_id);
+    for t in present_tags {
+        q = q.bind(t);
+    }
+    let res = q.execute(pool).await.map_err(AppError::from)?;
+    Ok(res.rows_affected())
+}
+
 /// M3.7 паспорта: mic-дорожка по определению принадлежит владельцу устройства,
 /// никакой биометрии не требуется. Pipeline вызывает этот метод после
 /// merge_tracks чтобы сразу записать speaker_tag="owner" confirmed=1 с
@@ -422,6 +453,60 @@ mod tests {
         .await
         .unwrap();
         id
+    }
+
+    #[tokio::test]
+    async fn prune_removes_absent_unconfirmed_keeps_owner_and_confirmed() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let owner = insert_contact_row(&db.pool, "Me").await;
+        auto_bind_owner_speaker(&db.pool, &call.id, &owner, "owner")
+            .await
+            .unwrap();
+        insert_speaker_row(&db.pool, &call.id, "speaker:0", None).await; // present
+        insert_speaker_row(&db.pool, &call.id, "speaker:3", None).await; // stale → prune
+        let s9 = insert_speaker_row(&db.pool, &call.id, "speaker:9", None).await; // absent but confirmed
+        confirm_call_speaker(&db.pool, &s9, &owner).await.unwrap();
+
+        let pruned =
+            prune_call_speakers_not_in(&db.pool, &call.id, &["speaker:0".to_string()])
+                .await
+                .unwrap();
+        assert_eq!(pruned, 1, "только speaker:3 (absent + unconfirmed)");
+
+        let tags: Vec<String> = list_call_speakers(&db.pool, &call.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| s.speaker_tag)
+            .collect();
+        assert!(tags.contains(&"owner".to_string()));
+        assert!(tags.contains(&"speaker:0".to_string()));
+        assert!(tags.contains(&"speaker:9".to_string()), "confirmed сохраняется");
+        assert!(!tags.contains(&"speaker:3".to_string()), "stale удалён");
+    }
+
+    #[tokio::test]
+    async fn prune_empty_present_removes_all_unconfirmed_nonowner() {
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let owner = insert_contact_row(&db.pool, "Me").await;
+        auto_bind_owner_speaker(&db.pool, &call.id, &owner, "owner")
+            .await
+            .unwrap();
+        insert_speaker_row(&db.pool, &call.id, "speaker:0", None).await;
+        insert_speaker_row(&db.pool, &call.id, "speaker:1", None).await;
+        let n = prune_call_speakers_not_in(&db.pool, &call.id, &[])
+            .await
+            .unwrap();
+        assert_eq!(n, 2);
+        let tags: Vec<String> = list_call_speakers(&db.pool, &call.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| s.speaker_tag)
+            .collect();
+        assert_eq!(tags, vec!["owner".to_string()]);
     }
 
     #[tokio::test]

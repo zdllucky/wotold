@@ -110,9 +110,25 @@ pub async fn is_call_processing(
     Ok(state.pipeline_tasks.lock().await.contains_key(&call_id))
 }
 
-/// Перезапустить полный pipeline (STT + recap) для существующего звонка.
-/// Применяется к failed | ready | processing звонкам — берёт mic.wav/system.wav
-/// с диска и прогоняет заново.
+/// [Processing status] call_id'ы всех активных фон-задач (reprocess / regen).
+/// CallsPage показывает «обрабатывается» индикатор на этих строках (даже если
+/// status='ready' — regen статус не меняет).
+#[tauri::command]
+pub async fn list_active_call_ids(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
+    Ok(state.pipeline_tasks.lock().await.keys().cloned().collect())
+}
+
+/// Перезапустить полный pipeline (STT + recap) для существующего звонка —
+/// «Переобработать целиком». Применяется к failed | ready | processing.
+///
+/// [P-fix4] «Целиком» = ВСЕГДА заново из аудио, включая STT. Для local
+/// chunked-звонков удаляем кэш per-chunk транскриптов → 0 chunks →
+/// `load_chunked_transcripts` None → full-file STT по полному root WAV
+/// (re-recognition). Раньше local-reprocess реассемблил старый кэш (STT не
+/// трогал) — отсюда понадобилась отдельная «Распознать заново»; теперь дубль
+/// не нужен. Cloud / non-chunked: 0 chunks → delete no-op → full-file STT как
+/// и было. Артефакты на диске НЕ удаляем — старый транскрипт виден до
+/// перезаписи (V8 ReprocessBanner + Cancel восстанавливает 'ready').
 ///
 /// [V8] Spawn'им как stop_recording — invoke возвращается сразу, фронт
 /// идёт оптимистично рендерить reprocess banner и подтягивает state через
@@ -125,6 +141,13 @@ pub async fn reprocess_call(
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<(), AppError> {
+    // [P-fix4] Сбросить chunked-кэш → форсим re-STT. Чистим recap-fail reason.
+    let deleted = db::chunks::delete_chunks_for_call(&state.db, &call_id).await?;
+    if deleted > 0 {
+        log::info!("reprocess_call[{call_id}]: deleted {deleted} chunks → full-file re-STT");
+    }
+    db::set_recap_failed_reason(&state.db, &call_id, None).await?;
+
     PipelineRunner::spawn_reprocess(
         state.db.clone(),
         state.store.clone(),
