@@ -126,7 +126,7 @@ pub(crate) mod local_orchestrator;
 // форсят v2-форму через llama `--json-schema-file` (вместо generic json.gbnf).
 pub(crate) mod llm_schemas;
 
-pub use merge::{merge_tracks, render_transcript_md};
+pub use merge::{merge_tracks, render_transcript_md, sanitize_merged};
 pub use settings::PipelineSettings;
 pub use stage::Stage;
 
@@ -211,6 +211,27 @@ pub(crate) async fn ensure_all_chunks_done(
         )));
     }
     Ok(())
+}
+
+/// [P-fix4] Язык звонка для пина обоих треков в auto-режиме full-file STT.
+/// Звонок одноязычный; язык берём по треку с речью. **System-трек —
+/// приоритетный якорь**: собеседник обычно говорит чётко с начала, тогда как
+/// owner-mic часто молчит первые минуты → ненадёжный per-track detect (даёт
+/// «en» → [FOREIGN] на русской речи). Fallback на mic если system почти пуст.
+/// `None` если оба ниже порога речи — тогда пин не делаем.
+fn call_language(mic: &DiarizedTranscript, sys: &DiarizedTranscript) -> Option<String> {
+    use crate::pipeline::chunk_runner::{real_word_count, MIN_WORDS_FOR_LANG_PIN};
+    if real_word_count(sys) >= MIN_WORDS_FOR_LANG_PIN {
+        if let Some(l) = sys.lang_detected.as_deref().filter(|s| !s.is_empty()) {
+            return Some(l.to_string());
+        }
+    }
+    if real_word_count(mic) >= MIN_WORDS_FOR_LANG_PIN {
+        if let Some(l) = mic.lang_detected.as_deref().filter(|s| !s.is_empty()) {
+            return Some(l.to_string());
+        }
+    }
+    None
 }
 
 /// mic и system параллельно, сливает таймлайн, сохраняет `raw_stt.json` и
@@ -912,7 +933,7 @@ async fn run_local_inner(
                 diarization: true,
                 prompt: None,
             };
-            run_stage(
+            let (mut mic, mut sys) = run_stage(
                 pool,
                 Some(app),
                 &ctx.call_id,
@@ -931,7 +952,44 @@ async fn run_local_inner(
                     Ok::<_, AppError>((mic, sys))
                 },
             )
-            .await?
+            .await?;
+
+            // [P-fix4] Auto-режим: пин языка звонка на ОБА трека. STT детектит
+            // язык на каждом треке независимо; тихий старт mic (владелец слушает)
+            // → mis-detect «en» → русская речь уходит в [FOREIGN]. Звонок
+            // одноязычный — определяем язык по треку с речью (system как якорь:
+            // собеседник обычно говорит чётко с начала) и перезапускаем трек,
+            // чей детект отличается. explicit stt_lang сюда не попадает.
+            if s.stt_lang == "auto" {
+                if let Some(call_lang) = call_language(&mic, &sys) {
+                    let pinned = TranscriptionOpts {
+                        lang: call_lang.clone(),
+                        diarization: true,
+                        prompt: None,
+                    };
+                    if mic.lang_detected.as_deref() != Some(call_lang.as_str()) {
+                        if let Ok(re) = mic_stt.transcribe(&ctx.mic_path, pinned.clone()).await {
+                            log::info!(
+                                "call {}: re-STT mic pinned lang={call_lang} (was {:?})",
+                                ctx.call_id,
+                                mic.lang_detected
+                            );
+                            mic = re;
+                        }
+                    }
+                    if sys.lang_detected.as_deref() != Some(call_lang.as_str()) {
+                        if let Ok(re) = sys_stt.transcribe(&ctx.system_path, pinned).await {
+                            log::info!(
+                                "call {}: re-STT system pinned lang={call_lang} (was {:?})",
+                                ctx.call_id,
+                                sys.lang_detected
+                            );
+                            sys = re;
+                        }
+                    }
+                }
+            }
+            (mic, sys)
         }
     };
 
@@ -971,13 +1029,17 @@ async fn run_local_inner(
     //    extract_clusters; cross-track reflection (owner отражается в system)
     //    не обрабатывается без global reclustering — это limitation
     //    non-chunked path, acceptable т.к. чанкед = default.
-    let mic_off = matches!(
+    // [P-fix7] mic-диаризация по умолчанию ВЫКЛ. Mic = микрофон владельца =
+    // один человек (M2.4); sortformer на нём овершутит, дробя единственный
+    // голос owner'а в speaker:unknown/N → owner размазан по «СПИКЕР ?».
+    // Opt-in только для нескольких людей у одного микрофона (Labs).
+    let mic_on = matches!(
         db::get_setting(pool, "mic_diarization_enabled")
             .await?
             .as_deref(),
-        Some("0") | Some("false")
+        Some("1") | Some("true")
     );
-    let mic_diarization = !mic_off;
+    let mic_diarization = mic_on;
     let mic_t = if mic_diarization {
         let mic_diarized = diarize_mic_track(
             &ctx.app_data_dir,
@@ -1424,7 +1486,10 @@ async fn stage_merge_artifacts(
 ) -> Result<Vec<TranscriptSegment>, AppError> {
     tokio::fs::create_dir_all(call_dir).await?;
 
-    let merged = merge_tracks(mic, system);
+    // [P-fix] sanitize_merged — единый chokepoint очистки от whisper-галлюцинаций
+    // ([FOREIGN], субтитр-credits) + repetition loops. Покрывает chunked /
+    // full-file / cloud + переассемблируемые старые chunks (без re-STT).
+    let merged = sanitize_merged(merge_tracks(mic, system));
 
     // M2.5: raw_stt.json держим чтобы перегенерировать рекап без повторной оплаты STT.
     let raw = json!({
@@ -1525,6 +1590,15 @@ async fn ensure_anonymous_speakers_present(
         }
     }
     let tags_vec: Vec<String> = seen_tags.into_iter().collect();
+    // [P-fix9] Реконсиляция (не add-only): сначала вычищаем устаревшие
+    // анонимные теги, которых больше нет в merged (фантомы от прошлых прогонов,
+    // например speaker:3 от mic-diar-ON). Делаем ВСЕГДА, в т.ч. при пустом
+    // tags_vec (solo-звонок) — независимо от cluster-пайплайна (он non-fatal).
+    match db::prune_call_speakers_not_in(pool, call_id, &tags_vec).await {
+        Ok(n) if n > 0 => log::info!("reconcile call_speakers {call_id}: pruned {n} stale tags"),
+        Ok(_) => {}
+        Err(e) => log::warn!("prune_call_speakers_not_in {call_id} failed: {e}"),
+    }
     if tags_vec.is_empty() {
         return;
     }
@@ -1800,6 +1874,60 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
+    }
+
+    // ============================================================
+    // [P-fix4] call_language — пин языка звонка на оба трека (auto)
+    // ============================================================
+
+    fn lang_track(lang: Option<&str>, segs: Vec<&str>) -> DiarizedTranscript {
+        DiarizedTranscript {
+            version: 1,
+            lang_detected: lang.map(String::from),
+            duration_sec: 10.0,
+            provider: "local-whisper".into(),
+            segments: segs
+                .into_iter()
+                .enumerate()
+                .map(|(i, t)| crate::providers::transcription::TranscriptSegment {
+                    start: i as f64,
+                    end: i as f64 + 1.0,
+                    text: t.into(),
+                    speaker_tag: "speaker:0".into(),
+                    confidence: None,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn call_language_prefers_system_anchor() {
+        // mic mis-detect «en» только из [FOREIGN] (0 реальных слов),
+        // system — русский с речью → язык звонка = ru.
+        let mic = lang_track(Some("en"), vec!["[FOREIGN]", "[FOREIGN]"]);
+        let sys = lang_track(
+            Some("ru"),
+            vec!["добрый день коллеги мы начинаем обсуждение по проекту сегодня"],
+        );
+        assert_eq!(call_language(&mic, &sys).as_deref(), Some("ru"));
+    }
+
+    #[test]
+    fn call_language_falls_back_to_mic_when_system_empty() {
+        // system пустой → якорь mic.
+        let mic = lang_track(
+            Some("ru"),
+            vec!["это длинная реплика владельца на много слов подряд вот так вот"],
+        );
+        let sys = lang_track(None, vec![]);
+        assert_eq!(call_language(&mic, &sys).as_deref(), Some("ru"));
+    }
+
+    #[test]
+    fn call_language_none_when_both_below_threshold() {
+        let mic = lang_track(Some("en"), vec!["да"]);
+        let sys = lang_track(Some("ru"), vec!["угу"]);
+        assert_eq!(call_language(&mic, &sys), None);
     }
 
     #[tokio::test]
