@@ -694,7 +694,10 @@ mod tests {
         let mic = track("en", vec![("[FOREIGN]", "owner")]);
         let sys = track(
             "ru",
-            vec![("раз два три четыре пять шесть семь восемь девять десять", "speaker:0")],
+            vec![(
+                "раз два три четыре пять шесть семь восемь девять десять",
+                "speaker:0",
+            )],
         );
         assert_eq!(pick_pinned_lang(&mic, Some(&sys)).as_deref(), Some("ru"));
     }
@@ -711,7 +714,10 @@ mod tests {
     fn pick_pinned_lang_uses_mic_when_busier() {
         let mic = track(
             "ru",
-            vec![("это длинная реплика владельца на десять слов ровно вот", "owner")],
+            vec![(
+                "это длинная реплика владельца на десять слов ровно вот",
+                "owner",
+            )],
         );
         let sys = track("en", vec![("ok", "speaker:0")]);
         assert_eq!(pick_pinned_lang(&mic, Some(&sys)).as_deref(), Some("ru"));

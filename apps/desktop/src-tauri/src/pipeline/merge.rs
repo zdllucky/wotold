@@ -14,8 +14,19 @@ const MIN_WORDS_FOR_REPEAT_COLLAPSE: usize = 6;
 /// тишине/аплодисментах (`[Музыка] …`, `[Applause] …`). Whitelist — НЕ трогаем
 /// произвольные `[...]` (могут нести смысл). Сравнение по lowercase-substring.
 const NOISE_TAG_KEYWORDS: &[&str] = &[
-    "музык", "music", "musique", "musik", "muzyk", "applause", "аплодис", "смех",
-    "laughter", "шум", "noise", "silence", "тишина",
+    "музык",
+    "music",
+    "musique",
+    "musik",
+    "muzyk",
+    "applause",
+    "аплодис",
+    "смех",
+    "laughter",
+    "шум",
+    "noise",
+    "silence",
+    "тишина",
 ];
 
 /// [P-fix5] Global loop-hallucination: длинная фраза (≥ LOOP_MIN_WORDS слов),
@@ -561,17 +572,26 @@ mod tests {
         let echo = "Что вы думаете о том что вы говорите на русском языке";
         let mut segs = vec![ts(0.0, 6.0, echo, "owner")];
         for i in 1..6 {
-            let sp = if i % 2 == 0 { "owner" } else { "speaker:unknown" };
+            let sp = if i % 2 == 0 {
+                "owner"
+            } else {
+                "speaker:unknown"
+            };
             segs.push(ts(i as f64 * 6.0, i as f64 * 6.0 + 6.0, echo, sp));
         }
         // вкрапим реальную речь между эхо.
-        segs.insert(2, ts(50.0, 55.0, "Это реальная реплика собеседника", "speaker:1"));
+        segs.insert(
+            2,
+            ts(50.0, 55.0, "Это реальная реплика собеседника", "speaker:1"),
+        );
         let out = sanitize_merged(segs);
         assert!(
             out.iter().all(|s| !s.text.contains("на русском языке")),
             "все эхо-вхождения должны быть удалены"
         );
-        assert!(out.iter().any(|s| s.text == "Это реальная реплика собеседника"));
+        assert!(out
+            .iter()
+            .any(|s| s.text == "Это реальная реплика собеседника"));
     }
 
     #[test]
@@ -582,7 +602,10 @@ mod tests {
             .collect();
         let out = sanitize_merged(segs);
         // consecutive-dedup схлопнет подряд-дубли в один, но не дропнет как loop.
-        assert!(!out.is_empty(), "короткий филлер не должен дропаться целиком");
+        assert!(
+            !out.is_empty(),
+            "короткий филлер не должен дропаться целиком"
+        );
         assert!(out.iter().all(|s| s.text == "Да."));
     }
 

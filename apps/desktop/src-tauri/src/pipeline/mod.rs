@@ -1889,13 +1889,15 @@ mod tests {
             segments: segs
                 .into_iter()
                 .enumerate()
-                .map(|(i, t)| crate::providers::transcription::TranscriptSegment {
-                    start: i as f64,
-                    end: i as f64 + 1.0,
-                    text: t.into(),
-                    speaker_tag: "speaker:0".into(),
-                    confidence: None,
-                })
+                .map(
+                    |(i, t)| crate::providers::transcription::TranscriptSegment {
+                        start: i as f64,
+                        end: i as f64 + 1.0,
+                        text: t.into(),
+                        speaker_tag: "speaker:0".into(),
+                        confidence: None,
+                    },
+                )
                 .collect(),
         }
     }
