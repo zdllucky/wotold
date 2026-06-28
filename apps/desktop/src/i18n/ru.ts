@@ -47,6 +47,7 @@ const ruInternal = {
     facetStatus: 'Статус',
     facetRecap: 'Рекап',
     facetPeriod: 'Период',
+    facetPerson: 'Участник',
     statusReady: 'Готово',
     statusProcessing: 'Обработка',
     statusError: 'Ошибка',
@@ -1084,6 +1085,8 @@ const ruInternal = {
     // while a recording is active (or paused).
     stripRecording: 'Идёт запись',
     stripPaused: 'Пауза · записано',
+    // [B18.7b] 10-мин чанк-индикатор в RecStrip (R11: offline, не live-анализ).
+    segment: 'сегмент · {n}',
     pauseAction: 'Поставить на паузу',
     resumeAction: 'Продолжить запись',
     stopAction: 'Остановить запись',

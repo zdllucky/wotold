@@ -55,8 +55,8 @@ interface FacetDef {
   values: { v: string; label: string }[];
 }
 
-function facetDefs(t: TFn): FacetDef[] {
-  return [
+function facetDefs(t: TFn, persons: string[]): FacetDef[] {
+  const defs: FacetDef[] = [
     {
       key: 'status',
       label: t('inbox.facetStatus'),
@@ -86,6 +86,17 @@ function facetDefs(t: TFn): FacetDef[] {
       ],
     },
   ];
+  // [B18.7b] Person facet — values are confirmed-contact display names across
+  // ready calls (dynamic; only shown once at least one confirmed contact exists).
+  if (persons.length > 0) {
+    defs.push({
+      key: 'person',
+      label: t('inbox.facetPerson'),
+      icon: 'users',
+      values: persons.map((n) => ({ v: n, label: n })),
+    });
+  }
+  return defs;
 }
 
 // StatusCell / AvatarGroup / statusColor moved to ./inboxBits (shared with
@@ -496,6 +507,8 @@ export function InboxView({ onOpen }: InboxViewProps) {
   const [facets, setFacets] = useState<Facets>(FACETS_EMPTY);
   const [view, setView] = useState<InboxViewMode>('list');
   const [speakerInitials, setSpeakerInitials] = useState<Map<string, string[]>>(new Map());
+  // [B18.7b] Confirmed-contact display names per call → powers the person facet.
+  const [callPersons, setCallPersons] = useState<Map<string, string[]>>(new Map());
   const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
 
   const refresh = () => {
@@ -576,24 +589,38 @@ export function InboxView({ onOpen }: InboxViewProps) {
       const ready = calls.filter((c) => c.status === 'ready');
       const results = await Promise.allSettled(ready.map((c) => listCallSpeakers(c.id)));
       const next = new Map<string, string[]>();
+      const persons = new Map<string, string[]>();
       results.forEach((r, i) => {
         if (r.status !== 'fulfilled') return;
         const callId = ready[i]!.id;
         const out: string[] = [];
+        const names: string[] = [];
         for (const s of r.value) {
-          if (s.confirmed && s.contact_display_name) out.push(initials(s.contact_display_name));
+          if (s.confirmed && s.contact_display_name) {
+            out.push(initials(s.contact_display_name));
+            names.push(s.contact_display_name);
+          }
         }
         next.set(callId, out);
+        if (names.length > 0) persons.set(callId, names);
       });
       setSpeakerInitials(next);
+      setCallPersons(persons);
     })();
   }, [calls]);
 
-  const defs = useMemo(() => facetDefs(t), [t]);
+  // [B18.7b] Distinct confirmed-contact names → person facet values.
+  const allPersons = useMemo(() => {
+    const set = new Set<string>();
+    callPersons.forEach((names) => names.forEach((n) => set.add(n)));
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [callPersons]);
+
+  const defs = useMemo(() => facetDefs(t, allPersons), [t, allPersons]);
 
   const filtered = useMemo(
-    () => (calls ?? []).filter((c) => matchesFacets(c, facets, text.trim())),
-    [calls, facets, text],
+    () => (calls ?? []).filter((c) => matchesFacets(c, facets, text.trim(), callPersons)),
+    [calls, facets, text, callPersons],
   );
 
   const pluralForms: [string, string, string] = [
