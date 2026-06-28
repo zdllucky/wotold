@@ -1,12 +1,8 @@
-// [B17] ContactsPage — exact match per docs/design/atelier-v2/_reference/atelier-2.jsx §8.
-//
-// Two-column layout:
-//   - Left 320px: title + "+" btn--quiet, search input, alphabet-grouped list
-//     (А — М / Н — Я). Items: 30×30 sp-avatar + serif 15 name + muted role.
-//     Active row: background var(--bg-2).
-//   - Right (flex): "Контакт" small-caps + 76×76 avatar + display 38 name +
-//     subtitle role; 3-stat row; 2-col contact fields grid; voice samples
-//     table.
+// [B18.4] ContactsPage — Wotold v2 two-pane reskin (port of wk-extra.jsx
+// ContactsView). Left flat .lrow search-list + right .doc detail (avatar / name
+// / voice-confirm / identifier chips / recent calls / voice samples). CRUD +
+// stats logic preserved 1-to-1 from the Atelier version; alphabet grouping
+// dropped for the v2 flat list.
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { humanError } from '../api/errors';
@@ -20,10 +16,11 @@ import {
   type Contact,
   type ContactInput,
 } from '../api/contacts';
-import { listCalls } from '../api/recording';
+import { listCalls, type Call } from '../api/recording';
 import { listCallSpeakers } from '../api/speakers';
-import { Badge, Empty, Skeleton } from '../ui';
-import { useI18n } from '../i18n';
+import { Empty, Skeleton } from '../ui';
+import { Icon, type IconName } from '../ui/Icon';
+import { bcp47, useI18n } from '../i18n';
 import { ContactForm } from './ContactForm';
 import { VoiceSamplesSection } from './VoiceSamplesSection';
 
@@ -32,9 +29,13 @@ interface ContactStats {
   totalSec: number;
 }
 
-const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
+const SP_COLORS = ['var(--sp1)', 'var(--sp2)', 'var(--sp3)', 'var(--sp4)', 'var(--sp5)'];
 
-type Mode = { kind: 'view'; contactId: string } | { kind: 'add' } | { kind: 'edit'; contactId: string } | { kind: 'empty' };
+type Mode =
+  | { kind: 'view'; contactId: string }
+  | { kind: 'add' }
+  | { kind: 'edit'; contactId: string }
+  | { kind: 'empty' };
 
 function initials(name: string): string {
   return (
@@ -51,33 +52,38 @@ function avatarColor(idx: number): string {
   return SP_COLORS[idx % SP_COLORS.length]!;
 }
 
-function alphabetBucket(name: string): 'a-m' | 'n-z' | 'other' {
-  const ch = name.trim().charAt(0).toUpperCase();
-  if (!ch) return 'other';
-  // Cyrillic А..М (U+0410..U+041C) — split point.
-  if (ch >= 'А' && ch <= 'М') return 'a-m';
-  if (ch >= 'Н' && ch <= 'Я') return 'n-z';
-  // Latin fallback
-  if (ch >= 'A' && ch <= 'M') return 'a-m';
-  if (ch >= 'N' && ch <= 'Z') return 'n-z';
-  return 'other';
+const ID_ICON: Record<string, IconName> = {
+  phone: 'phone',
+  email: 'external',
+  telegram: 'send',
+  whatsapp: 'link',
+  signal: 'shield',
+  slack: 'link',
+};
+
+function statusColor(status: string): string {
+  if (status === 'ready') return 'var(--ok)';
+  if (status === 'failed') return 'var(--danger)';
+  return 'var(--accent)';
 }
 
-export function ContactsPage() {
+interface ContactsPageProps {
+  onOpenCall?: (callId: string) => void;
+}
+
+export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
   const { t } = useI18n();
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'empty' });
   const [search, setSearch] = useState('');
-  const [statsByContact, setStatsByContact] = useState<Map<string, ContactStats>>(
-    new Map(),
-  );
+  const [statsByContact, setStatsByContact] = useState<Map<string, ContactStats>>(new Map());
+  const [callsByContact, setCallsByContact] = useState<Map<string, Call[]>>(new Map());
 
   const refresh = () => {
     listContacts()
       .then((cs) => {
         setContacts(cs);
-        // Auto-select first contact if нет active mode.
         setMode((prev) => {
           if (prev.kind === 'empty' && cs.length > 0) {
             return { kind: 'view', contactId: cs[0]!.id };
@@ -90,17 +96,16 @@ export function ContactsPage() {
 
   useEffect(refresh, []);
 
-  // [B17] Aggregate stats: count calls + sum duration per confirmed contact.
-  // Heavy (N+1) на первом mount, кэшируется до full reload.
+  // Aggregate stats + recent calls per confirmed contact. Heavy (N+1) on first
+  // mount, cached until reload.
   useEffect(() => {
     if (!contacts || contacts.length === 0) return;
     void (async () => {
       try {
         const calls = await listCalls();
-        const speakerLists = await Promise.allSettled(
-          calls.map((c) => listCallSpeakers(c.id)),
-        );
+        const speakerLists = await Promise.allSettled(calls.map((c) => listCallSpeakers(c.id)));
         const stats = new Map<string, ContactStats>();
+        const byContact = new Map<string, Call[]>();
         speakerLists.forEach((r, i) => {
           if (r.status !== 'fulfilled') return;
           const call = calls[i]!;
@@ -108,18 +113,19 @@ export function ContactsPage() {
           for (const s of r.value) {
             if (s.confirmed && s.contact_id && !seen.has(s.contact_id)) {
               seen.add(s.contact_id);
-              const prev = stats.get(s.contact_id) ?? {
-                callCount: 0,
-                totalSec: 0,
-              };
+              const prev = stats.get(s.contact_id) ?? { callCount: 0, totalSec: 0 };
               stats.set(s.contact_id, {
                 callCount: prev.callCount + 1,
                 totalSec: prev.totalSec + (call.duration_sec ?? 0),
               });
+              const list = byContact.get(s.contact_id) ?? [];
+              list.push(call);
+              byContact.set(s.contact_id, list);
             }
           }
         });
         setStatsByContact(stats);
+        setCallsByContact(byContact);
       } catch (e) {
         console.warn('contact stats aggregate failed', e);
       }
@@ -130,8 +136,7 @@ export function ContactsPage() {
     try {
       const created = await createContact(input);
       setError(null);
-      const fresh = await listContacts();
-      setContacts(fresh);
+      setContacts(await listContacts());
       setMode({ kind: 'view', contactId: created.id });
     } catch (e) {
       setError(humanError(e));
@@ -142,8 +147,7 @@ export function ContactsPage() {
     try {
       await updateContact(id, input);
       setError(null);
-      const fresh = await listContacts();
-      setContacts(fresh);
+      setContacts(await listContacts());
       setMode({ kind: 'view', contactId: id });
     } catch (e) {
       setError(humanError(e));
@@ -163,11 +167,7 @@ export function ContactsPage() {
       setError(null);
       const fresh = await listContacts();
       setContacts(fresh);
-      setMode(
-        fresh.length > 0
-          ? { kind: 'view', contactId: fresh[0]!.id }
-          : { kind: 'empty' },
-      );
+      setMode(fresh.length > 0 ? { kind: 'view', contactId: fresh[0]!.id } : { kind: 'empty' });
     } catch (e) {
       setError(humanError(e));
     }
@@ -177,68 +177,36 @@ export function ContactsPage() {
     if (!contacts) return [];
     const q = search.trim().toLowerCase();
     if (!q) return contacts;
-    return contacts.filter((c) => {
-      const hay = [
-        c.display_name,
-        c.org ?? '',
-        c.role ?? '',
-        c.notes ?? '',
-        ...c.identifiers.map((i) => i.value),
-      ]
+    return contacts.filter((c) =>
+      [c.display_name, c.org ?? '', c.role ?? '', c.notes ?? '', ...c.identifiers.map((i) => i.value)]
         .join(' ')
-        .toLowerCase();
-      return hay.includes(q);
-    });
+        .toLowerCase()
+        .includes(q),
+    );
   }, [contacts, search]);
-
-  const groups = useMemo(() => {
-    const am: Contact[] = [];
-    const nz: Contact[] = [];
-    const other: Contact[] = [];
-    for (const c of filtered) {
-      const bucket = alphabetBucket(c.display_name);
-      if (bucket === 'a-m') am.push(c);
-      else if (bucket === 'n-z') nz.push(c);
-      else other.push(c);
-    }
-    return { am, nz, other };
-  }, [filtered]);
 
   if (error && !contacts) {
     return (
-      <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+      <p role="alert" style={{ color: 'var(--danger)', fontFamily: 'var(--font)' }}>
         {error}
       </p>
     );
   }
   if (!contacts) {
-    // [V8.1] Skeleton mimics contact-list rows: avatar + name + meta.
     return (
       <section aria-busy="true">
-        <div className="display" style={{ marginBottom: 18 }}>
-          <Skeleton width="9ch" height="2rem" />
-        </div>
+        <Skeleton width="9ch" height="2rem" style={{ marginBottom: 18 }} />
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {Array.from({ length: 6 }, (_, i) => (
             <li
               key={i}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '40px 1fr auto',
-                gap: 14,
-                padding: '12px 0',
-                borderTop:
-                  i === 0 ? 'none' : '1px solid var(--line-soft)',
-                alignItems: 'center',
-                pointerEvents: 'none',
-              }}
+              style={{ display: 'grid', gridTemplateColumns: '32px 1fr', gap: 12, padding: '11px 0' }}
             >
               <Skeleton width="32px" height="32px" radius="50%" />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <Skeleton width="12rem" height="1em" />
                 <Skeleton width="8rem" height="0.75em" />
               </div>
-              <Skeleton width="3rem" height="0.8em" />
             </li>
           ))}
         </ul>
@@ -253,453 +221,309 @@ export function ContactsPage() {
   const activeId = activeContact?.id ?? null;
 
   return (
-    <section
-      style={{
-        margin: '-34px -44px',
-        display: 'flex',
-        height: 'calc(100vh - 0px)',
-        // Override .app-main padding to span edge-to-edge.
-      }}
-    >
+    <div style={{ margin: '-34px -44px', display: 'flex', height: 'calc(100vh - 0px)' }}>
       {/* ── List ── */}
       <div
         style={{
-          width: 320,
-          borderRight: '1px solid var(--line-soft)',
-          padding: '32px 24px',
-          overflowY: 'auto',
+          width: 300,
+          borderRight: '1px solid var(--border)',
+          display: 'flex',
+          flexDirection: 'column',
           flexShrink: 0,
+          paddingTop: 26,
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            justifyContent: 'space-between',
-            marginBottom: 18,
-          }}
-        >
-          <div className="title" style={{ fontSize: 24 }}>
-            {t('contacts.title')}
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 10px' }}>
+          <Icon name="users" size={17} style={{ color: 'var(--text-3)' }} />
+          <span style={{ fontWeight: 650 }}>{t('contacts.title')}</span>
+          <span className="chip" data-size="sm">
+            {contacts.length}
+          </span>
+          <div style={{ flex: 1 }} />
           <button
             type="button"
-            className={`btn btn--quiet${mode.kind === 'add' ? '' : ''}`}
+            className="btn btn--primary"
+            data-size="sm"
             onClick={() => setMode({ kind: 'add' })}
             aria-label={t('contacts.addAria')}
-            style={{ padding: 0, fontSize: 18, lineHeight: 1 }}
           >
-            +
+            <Icon name="plus" size={14} />
+            {t('common.add')}
           </button>
         </div>
-        <input
-          className="input"
-          type="search"
-          placeholder={t('contacts.searchPlaceholder')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ marginBottom: 20, fontSize: 14 }}
-        />
+        <div style={{ padding: '0 12px 8px' }}>
+          <div className="input" style={{ height: 32 }}>
+            <Icon name="search" size={15} className="iico" />
+            <input
+              type="search"
+              placeholder={t('contacts.searchPlaceholder')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label={t('contacts.searchPlaceholder')}
+            />
+          </div>
+        </div>
 
-        {contacts.length === 0 ? (
-          <Empty
-            title={t('contacts.emptyTitle')}
-            description={t('contacts.emptyAddFirst')}
-          />
-        ) : filtered.length === 0 ? (
-          <Empty
-            title={t('contacts.notFoundTitle')}
-            description={t('contacts.notFoundBody', { query: search.trim() })}
-          />
-        ) : (
-          <>
-            <ContactGroup
-              label={t('contacts.sectionAm')}
-              items={groups.am}
-              activeId={activeId}
-              onSelect={(id) => setMode({ kind: 'view', contactId: id })}
-            />
-            <ContactGroup
-              label={t('contacts.sectionNz')}
-              items={groups.nz}
-              activeId={activeId}
-              onSelect={(id) => setMode({ kind: 'view', contactId: id })}
-            />
-            {groups.other.length > 0 && (
-              <ContactGroup
-                label={t('contacts.sectionOther')}
-                items={groups.other}
-                activeId={activeId}
-                onSelect={(id) => setMode({ kind: 'view', contactId: id })}
-              />
-            )}
-          </>
-        )}
+        <div className="scroll" style={{ flex: 1, minHeight: 0, padding: 6 }}>
+          {filtered.length === 0 ? (
+            <div className="u-faint" style={{ padding: 16, fontSize: 13, textAlign: 'center' }}>
+              {contacts.length === 0 ? t('contacts.emptyTitle') : t('contacts.notFoundTitle')}
+            </div>
+          ) : (
+            filtered.map((c, i) => {
+              const primaryId = c.identifiers[0]?.value;
+              const secondary = c.role ?? c.org ?? primaryId ?? (c.is_owner ? t('contacts.owner') : t('contacts.roleNone'));
+              const noVoice = String(c.attributes['consent_voice'] ?? '') !== 'true' && !c.is_owner;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="lrow"
+                  onClick={() => setMode({ kind: 'view', contactId: c.id })}
+                  style={c.id === activeId ? { background: 'var(--active)' } : undefined}
+                >
+                  <span
+                    className="avatar"
+                    style={{
+                      background: c.is_owner ? SP_COLORS[0] : avatarColor(i),
+                      width: 32,
+                      height: 32,
+                      fontSize: 12,
+                      flex: '0 0 auto',
+                    }}
+                  >
+                    {initials(c.display_name)}
+                  </span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="u-trunc" style={{ fontWeight: 550 }}>
+                      {c.display_name}
+                    </div>
+                    <div className="u-faint u-trunc" style={{ fontSize: 11.5 }}>
+                      {secondary}
+                    </div>
+                  </div>
+                  {noVoice && (
+                    <span className="dot" style={{ background: 'var(--warn)' }} aria-hidden />
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
 
-      {/* ── Detail / Add / Edit pane ── */}
-      <div
-        style={{
-          flex: 1,
-          padding: '32px 44px',
-          overflowY: 'auto',
-          background: 'var(--paper)',
-        }}
-      >
+      {/* ── Detail / Add / Edit ── */}
+      <div className="scroll" style={{ flex: 1, minWidth: 0, padding: '32px 44px' }}>
         {error && (
-          <p
-            role="alert"
-            style={{
-              color: 'var(--signal)',
-              fontFamily: 'var(--font-sans)',
-              marginBottom: 14,
-            }}
-          >
+          <p role="alert" style={{ color: 'var(--danger)', marginBottom: 14, fontFamily: 'var(--font)' }}>
             {error}
           </p>
         )}
 
         {mode.kind === 'add' && (
-          <>
-            <div className="small-caps" style={{ marginBottom: 12 }}>
-              {t('contacts.newContact')}
-            </div>
-            <h1 className="display" style={{ fontSize: 38, marginBottom: 20 }}>
+          <div style={{ maxWidth: 640 }}>
+            <h1 className="doc-title" style={{ fontSize: 22, marginBottom: 18 }}>
               {t('contacts.addTitle')}
             </h1>
-            <div style={{ maxWidth: 640 }}>
-              <ContactForm
-                submitLabel={t('contacts.submitCreate')}
-                onSubmit={handleCreate}
-                onCancel={() =>
-                  setMode(
-                    contacts.length > 0
-                      ? { kind: 'view', contactId: contacts[0]!.id }
-                      : { kind: 'empty' },
-                  )
-                }
-              />
-            </div>
-          </>
+            <ContactForm
+              submitLabel={t('contacts.submitCreate')}
+              onSubmit={handleCreate}
+              onCancel={() =>
+                setMode(contacts.length > 0 ? { kind: 'view', contactId: contacts[0]!.id } : { kind: 'empty' })
+              }
+            />
+          </div>
         )}
 
         {mode.kind === 'edit' && activeContact && (
-          <>
-            <div className="small-caps" style={{ marginBottom: 12 }}>
-              {t('contacts.editEyebrow')}
-            </div>
-            <h1 className="display" style={{ fontSize: 38, marginBottom: 20 }}>
+          <div style={{ maxWidth: 640 }}>
+            <h1 className="doc-title" style={{ fontSize: 22, marginBottom: 18 }}>
               {activeContact.display_name}
             </h1>
-            <div style={{ maxWidth: 640 }}>
-              <ContactForm
-                submitLabel={t('contacts.submitSave')}
-                initial={activeContact}
-                onSubmit={(input) => handleUpdate(activeContact.id, input)}
-                onCancel={() =>
-                  setMode({ kind: 'view', contactId: activeContact.id })
-                }
-              />
-            </div>
-          </>
+            <ContactForm
+              submitLabel={t('contacts.submitSave')}
+              initial={activeContact}
+              onSubmit={(input) => handleUpdate(activeContact.id, input)}
+              onCancel={() => setMode({ kind: 'view', contactId: activeContact.id })}
+            />
+          </div>
         )}
 
         {mode.kind === 'view' && activeContact && (
           <ContactView
             contact={activeContact}
-            colorIdx={
-              contacts.findIndex((c) => c.id === activeContact.id) % SP_COLORS.length
-            }
+            colorIdx={contacts.findIndex((c) => c.id === activeContact.id) % SP_COLORS.length}
             stats={statsByContact.get(activeContact.id) ?? null}
+            recentCalls={callsByContact.get(activeContact.id) ?? []}
             onEdit={() => setMode({ kind: 'edit', contactId: activeContact.id })}
             onDelete={() => void handleDelete(activeContact)}
+            onOpenCall={onOpenCall}
           />
         )}
 
         {mode.kind === 'empty' && contacts.length === 0 && (
-          <Empty
-            title={t('contacts.emptyTitle')}
-            description={t('contacts.emptyAddCue')}
-          />
+          <Empty title={t('contacts.emptyTitle')} description={t('contacts.emptyAddCue')} />
         )}
       </div>
-    </section>
+    </div>
   );
 }
 
-// ── List group ── -----------------------------------------------------------
-
-interface ContactGroupProps {
-  label: string;
-  items: Contact[];
-  activeId: string | null;
-  onSelect: (id: string) => void;
-}
-
-function ContactGroup({ label, items, activeId, onSelect }: ContactGroupProps) {
-  const { t } = useI18n();
-  if (items.length === 0) return null;
-  return (
-    <>
-      <div
-        className="small-caps"
-        style={{ marginBottom: 10, marginTop: 12 }}
-      >
-        {label}
-      </div>
-      {items.map((c, i) => {
-        const isActive = c.id === activeId;
-        return (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => onSelect(c.id)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '10px 8px',
-              width: '100%',
-              border: 'none',
-              background: isActive ? 'var(--bg-2)' : 'transparent',
-              borderRadius: 6,
-              textAlign: 'left',
-              marginBottom: 2,
-              cursor: 'pointer',
-              color: 'inherit',
-            }}
-          >
-            <span
-              className="sp-avatar"
-              style={{
-                background: c.is_owner ? SP_COLORS[0] : avatarColor(i),
-                width: 30,
-                height: 30,
-                fontSize: 11,
-              }}
-            >
-              {initials(c.display_name)}
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontFamily: 'var(--font-serif)',
-                  fontSize: 15,
-                  color: 'var(--ink)',
-                  letterSpacing: '-0.01em',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {c.display_name}
-              </div>
-              <div
-                className="muted"
-                style={{
-                  fontSize: 11,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {c.role ?? c.org ?? (c.is_owner ? t('contacts.owner') : t('contacts.roleNone'))}
-              </div>
-            </div>
-          </button>
-        );
-      })}
-    </>
-  );
-}
-
-// ── Detail view ── ----------------------------------------------------------
+// ── Detail view ──
 
 interface ContactViewProps {
   contact: Contact;
   colorIdx: number;
   stats: ContactStats | null;
+  recentCalls: Call[];
   onEdit: () => void;
   onDelete: () => void;
+  onOpenCall?: (callId: string) => void;
 }
 
 function ContactView({
   contact,
   colorIdx,
   stats,
+  recentCalls,
   onEdit,
   onDelete,
+  onOpenCall,
 }: ContactViewProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const color = contact.is_owner ? SP_COLORS[0] : SP_COLORS[colorIdx % SP_COLORS.length];
   const consentVoice = String(contact.attributes['consent_voice'] ?? '') === 'true';
-  return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <div className="small-caps">{t('contacts.contactEyebrow')}</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onEdit}>
-            {t('common.edit')}
-          </button>
-          {!contact.is_owner && (
-            <button
-              type="button"
-              className="btn btn--ghost btn--sm"
-              onClick={onDelete}
-              style={{ color: 'var(--signal)' }}
-            >
-              {t('common.delete')}
-            </button>
-          )}
-        </div>
-      </div>
+  const recent = [...recentCalls]
+    .sort((a, b) => +new Date(b.started_at) - +new Date(a.started_at))
+    .slice(0, 5);
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 22,
-          marginBottom: 28,
-        }}
-      >
+  return (
+    <div style={{ maxWidth: 720 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 18 }}>
         <span
-          className="sp-avatar"
-          style={{
-            background: color,
-            width: 76,
-            height: 76,
-            fontSize: 22,
-          }}
+          className="avatar"
+          style={{ background: color, width: 56, height: 56, fontSize: 20, flex: '0 0 auto' }}
         >
           {initials(contact.display_name)}
         </span>
-        <div style={{ minWidth: 0 }}>
-          <div
-            className="display"
-            style={{ fontSize: 38, marginBottom: 6, lineHeight: 1.05 }}
-          >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 className="doc-title" style={{ fontSize: 22 }}>
             {contact.display_name}
-          </div>
-          <div
-            className="subtitle"
-            style={{ fontSize: 15, fontStyle: 'normal' }}
-          >
-            {contact.role ?? contact.org ?? (contact.is_owner ? t('contacts.sourceOwnerLabel') : t('contacts.roleNone'))}
-            {contact.org && contact.role && ` · ${contact.org}`}
+          </h1>
+          <div className="u-muted" style={{ fontSize: 13 }}>
+            {contact.role ?? contact.org ?? (contact.is_owner ? t('contacts.owner') : t('contacts.roleNone'))}
+            {contact.org && contact.role ? ` · ${contact.org}` : ''}
           </div>
         </div>
-        {contact.is_owner && <Badge tone="accent">{t('contacts.owner')}</Badge>}
+        {consentVoice ? (
+          <span className="chip chip--ok">
+            <Icon name="check" size={11} />
+            {t('contacts.voiceConfirmed')}
+          </span>
+        ) : null}
+        <button type="button" className="btn btn--ghost" data-size="sm" onClick={onEdit}>
+          <Icon name="edit" size={14} />
+          {t('common.edit')}
+        </button>
+        {!contact.is_owner && (
+          <button
+            type="button"
+            className="btn btn--danger-ghost"
+            data-size="sm"
+            onClick={onDelete}
+          >
+            <Icon name="trash" size={14} />
+            {t('common.delete')}
+          </button>
+        )}
       </div>
 
-      <div style={{ display: 'flex', gap: 18, marginBottom: 32 }}>
-        <div className="stat" style={{ padding: '0 24px 0 0' }}>
-          <span className="stat-value">{stats?.callCount ?? 0}</span>
-          <span className="stat-label">{t('contacts.statCalls')}</span>
+      {/* Identifier chips */}
+      {contact.identifiers.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+          {contact.identifiers.map((id) => (
+            <span key={id.id} className="chip chip--line" data-selectable="">
+              <Icon name={ID_ICON[id.kind] ?? 'link'} size={11} />
+              {id.value}
+            </span>
+          ))}
         </div>
-        <div className="stat">
-          <span className="stat-value">
-            {formatRecordedDuration(stats?.totalSec ?? 0, t)}
-          </span>
-          <span className="stat-label">{t('contacts.statRecorded')}</span>
-        </div>
-        <div className="stat">
-          <span className="stat-value">
-            {consentVoice ? (
-              <span style={{ color: 'var(--accent)' }}>{t('contacts.voiceOptIn')}</span>
-            ) : (
-              t('contacts.voiceOff')
-            )}
-          </span>
-          <span className="stat-label">{t('contacts.statVoiceSamples')}</span>
-        </div>
+      )}
+
+      {/* Stats */}
+      <div style={{ display: 'flex', gap: 24, marginBottom: 24 }}>
+        <Stat value={String(stats?.callCount ?? 0)} label={t('contacts.statCalls')} />
+        <Stat value={formatRecordedDuration(stats?.totalSec ?? 0, t)} label={t('contacts.statRecorded')} />
       </div>
 
-      {(contact.identifiers.length > 0 ||
-        Object.keys(contact.attributes).filter((k) => k !== 'consent_voice')
-          .length > 0) && (
-        <div style={{ marginBottom: 28 }}>
-          <div className="small-caps" style={{ marginBottom: 14 }}>
-            {t('contacts.contactsBlock')}
+      {/* Recent calls */}
+      {recent.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div className="rrail-sec" style={{ marginTop: 0 }}>
+            {t('contacts.recentCalls')}
           </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '14px 32px',
-            }}
-          >
-            {contact.identifiers.map((id) => (
-              <div key={id.id}>
-                <div className="small-caps" style={{ marginBottom: 2 }}>
-                  {id.kind}
-                </div>
-                <div
-                  style={{
-                    fontFamily: 'var(--font-serif)',
-                    fontSize: 15,
-                    color: 'var(--ink)',
-                  }}
-                >
-                  {id.value}
-                </div>
-              </div>
-            ))}
-            {Object.entries(contact.attributes)
-              .filter(([k]) => k !== 'consent_voice')
-              .map(([k, v]) => (
-                <div key={k}>
-                  <div className="small-caps" style={{ marginBottom: 2 }}>
-                    {k}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: 'var(--font-serif)',
-                      fontSize: 15,
-                      color: 'var(--ink)',
-                    }}
-                  >
-                    {String(v)}
-                  </div>
-                </div>
-              ))}
-          </div>
+          {recent.map((call) => (
+            <button
+              key={call.id}
+              type="button"
+              className="lrow"
+              onClick={() => onOpenCall?.(call.id)}
+              disabled={!onOpenCall}
+              style={{ cursor: onOpenCall ? 'pointer' : 'default' }}
+            >
+              <span className="dot" style={{ background: statusColor(call.status), flex: '0 0 auto' }} aria-hidden />
+              <span className="u-trunc" style={{ flex: 1, minWidth: 0 }}>
+                {call.title ?? call.id.slice(0, 8)}
+              </span>
+              <span className="u-faint mono" style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                {fmtDay(call.started_at, locale)}
+              </span>
+            </button>
+          ))}
         </div>
       )}
 
       {contact.notes && (
-        <div style={{ marginBottom: 28 }}>
-          <div className="small-caps" style={{ marginBottom: 10 }}>
+        <div style={{ margin: '20px 0' }}>
+          <div className="rrail-sec" style={{ marginTop: 0 }}>
             {t('contacts.notes')}
           </div>
-          <p
-            style={{
-              fontFamily: 'var(--font-serif)',
-              fontStyle: 'italic',
-              fontSize: 15,
-              color: 'var(--ink-2)',
-              lineHeight: 1.55,
-              margin: 0,
-            }}
-          >
+          <p data-selectable="" style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.55, margin: 0 }}>
             {contact.notes}
           </p>
         </div>
       )}
 
+      <div className="rrail-sec">{t('contacts.statVoiceSamples')}</div>
       <VoiceSamplesSection contactId={contact.id} alwaysShow={consentVoice} />
     </div>
   );
 }
 
+function Stat({ value, label }: { value: ReactNode; label: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: 28, fontWeight: 600 }}>{value}</span>
+      <span className="u-faint" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 type TFn = ReturnType<typeof useI18n>['t'];
+
+function fmtDay(iso: string, locale: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(bcp47(locale as Parameters<typeof bcp47>[0]), {
+      day: 'numeric',
+      month: 'short',
+    });
+  } catch {
+    return iso;
+  }
+}
 
 function formatRecordedDuration(sec: number, t: TFn): ReactNode {
   if (sec === 0) return t('contacts.durationZero');
@@ -710,14 +534,14 @@ function formatRecordedDuration(sec: number, t: TFn): ReactNode {
     return (
       <>
         {h}
-        <span style={{ fontSize: 18, marginLeft: 4 }}>{t('contacts.durationH')}</span>
+        <span style={{ fontSize: 16, marginLeft: 4 }}>{t('contacts.durationH')}</span>
       </>
     );
   }
   return (
     <>
       {h}
-      <span style={{ fontSize: 18, marginLeft: 4 }}>{t('contacts.durationHM', { m })}</span>
+      <span style={{ fontSize: 16, marginLeft: 4 }}>{t('contacts.durationHM', { m })}</span>
     </>
   );
 }

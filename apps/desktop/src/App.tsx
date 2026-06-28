@@ -451,7 +451,7 @@ function AppShell() {
             }}
           />
         )}
-        {view === 'contacts' && <ContactsPage />}
+        {view === 'contacts' && <ContactsPage onOpenCall={onOpenCall} />}
         {view === 'settings' && <SettingsPage />}
         {view === 'ds' && IS_DEV && <DesignSystemPage />}
       </main>
