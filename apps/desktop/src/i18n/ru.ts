@@ -31,6 +31,15 @@ const ruInternal = {
     designSystem: 'Дизайн-система',
   },
 
+  // [B18.1c] ⌘K command palette.
+  palette: {
+    placeholder: 'Перейти к звонку или команда…',
+    commands: 'Команды',
+    calls: 'Звонки',
+    empty: 'Ничего не найдено',
+    allCalls: 'Все звонки',
+  },
+
   // ── Common buttons / labels / states ────────────────────────────────────
   common: {
     save: 'Сохранить',
