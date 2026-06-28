@@ -5,7 +5,8 @@
 // <Icon/>. Логика записи/навигации — в App.tsx; здесь только presentation.
 
 import { Icon } from '../ui/Icon';
-import { IconBtn, NavItem } from '../ui';
+import { IconBtn, Kbd, NavItem } from '../ui';
+import { StatusCell } from '../pages/inboxBits';
 import { formatElapsed } from '../recording/RecordingContext';
 import type { Call } from '../api/recording';
 import { useI18n } from '../i18n';
@@ -35,6 +36,11 @@ interface RailProps extends RailHandlers {
   busy: boolean;
   pipelineCount: number;
   recent: Call[];
+  /** Total calls / contacts — shown as nav count badges. */
+  callsCount: number;
+  contactsCount: number;
+  /** Currently-open call id (view==='call') — highlights its recent row. */
+  activeCallId: string | null;
   isDev: boolean;
   resolvedTheme: 'light' | 'dark';
 }
@@ -94,6 +100,9 @@ export function Sidebar(props: RailProps) {
     busy,
     pipelineCount,
     recent,
+    callsCount,
+    contactsCount,
+    activeCallId,
     isDev,
     resolvedTheme,
     onRecord,
@@ -108,6 +117,25 @@ export function Sidebar(props: RailProps) {
   const recording = recKind !== 'idle';
   const paused = recKind === 'paused';
   const recentTop = recent.slice(0, 5);
+  const onInbox = view === 'inbox' || view === 'call';
+
+  // Inbox meta: live processing badge when calls are in the pipeline, else the
+  // total call count (prototype shows a count badge on each primary nav row).
+  const inboxMeta =
+    pipelineCount > 0 ? (
+      <span
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        title={t('nav.processingTitle', {
+          n: pipelineCount,
+          plural: pipelineCount === 1 ? t('nav.callsPluralOne') : t('nav.callsPluralMany'),
+        })}
+      >
+        <span className="dot dot--pulse" style={{ background: 'var(--accent)' }} aria-hidden />
+        {pipelineCount}
+      </span>
+    ) : callsCount > 0 ? (
+      callsCount
+    ) : undefined;
 
   return (
     <aside className="rail" aria-label={t('nav.main')}>
@@ -188,38 +216,25 @@ export function Sidebar(props: RailProps) {
           <span style={{ flex: 1, textAlign: 'left', fontSize: 13 }}>
             {t('palette.commands')}
           </span>
-          <kbd className="kbd">⌘K</kbd>
+          <Kbd>⌘K</Kbd>
         </button>
       </div>
 
       <nav className="scroll" style={{ flex: 1, minHeight: 0, padding: 10 }}>
-        <button
-          className="navitem"
-          data-active={view === 'inbox' || view === 'call' ? 'true' : undefined}
+        <NavItem
+          icon="inbox"
+          label={t('nav.calls')}
+          active={onInbox}
+          current={onInbox}
+          meta={inboxMeta}
           onClick={() => onNav('inbox')}
-        >
-          <span className="nav-ico">
-            <Icon name="inbox" size={16} />
-          </span>
-          <span className="nav-label">{t('nav.calls')}</span>
-          {pipelineCount > 0 && (
-            <span
-              className="nav-meta"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-              title={t('nav.processingTitle', {
-                n: pipelineCount,
-                plural: pipelineCount === 1 ? t('nav.callsPluralOne') : t('nav.callsPluralMany'),
-              })}
-            >
-              <span className="dot dot--pulse" style={{ background: 'var(--accent)' }} aria-hidden />
-              {pipelineCount}
-            </span>
-          )}
-        </button>
+        />
         <NavItem
           icon="users"
           label={t('nav.contacts')}
           active={view === 'contacts'}
+          current={view === 'contacts'}
+          meta={contactsCount > 0 ? contactsCount : undefined}
           onClick={() => onNav('contacts')}
         />
 
@@ -227,39 +242,40 @@ export function Sidebar(props: RailProps) {
           <>
             <div style={{ height: 8 }} />
             <div className="sec-label">{t('rail.recent')}</div>
-            {recentTop.map((c) => (
-              <button
-                key={c.id}
-                className="navitem"
-                onClick={() => onOpenCall(c.id)}
-                title={c.title ?? c.id.slice(0, 8)}
-              >
-                <span className="nav-ico">
-                  <Icon name="doc" size={15} />
-                </span>
-                <span className="nav-label">
-                  {c.title ?? c.id.slice(0, 8)}
-                </span>
-                <span className="nav-meta">{fmtDur(c.duration_sec)}</span>
-              </button>
-            ))}
+            {recentTop.map((c) => {
+              const label = c.title ?? c.id.slice(0, 8);
+              const openHere = view === 'call' && activeCallId === c.id;
+              return (
+                <NavItem
+                  key={c.id}
+                  label={label}
+                  title={label}
+                  active={openHere}
+                  current={openHere}
+                  leading={
+                    <span className="nav-ico">
+                      <StatusCell call={c} />
+                    </span>
+                  }
+                  meta={fmtDur(c.duration_sec)}
+                  onClick={() => onOpenCall(c.id)}
+                />
+              );
+            })}
           </>
         )}
       </nav>
 
       <div style={{ borderTop: '1px solid var(--border)', padding: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button
-            className="navitem"
-            data-active={view === 'settings' ? 'true' : undefined}
-            onClick={() => onNav('settings')}
+          <NavItem
+            icon="settings"
+            label={t('nav.settings')}
+            active={view === 'settings'}
+            current={view === 'settings'}
             style={{ flex: 1 }}
-          >
-            <span className="nav-ico">
-              <Icon name="settings" size={16} />
-            </span>
-            <span className="nav-label">{t('nav.settings')}</span>
-          </button>
+            onClick={() => onNav('settings')}
+          />
           {isDev && (
             <IconBtn
               icon="code"
