@@ -418,7 +418,9 @@ function AppShell() {
       {collapsed ? <MiniRail {...railProps} /> : <Sidebar {...railProps} />}
 
       <main className="app-main">
-        <RecStrip activeEngine={activeEngine} />
+        {/* [B18.1b] RecStrip renders a fixed footer dock (.composer-dock) when
+            recording — its position in the tree is irrelevant. */}
+        <RecStrip activeEngine={activeEngine} collapsed={collapsed} />
         <SuggestBanner />
         <UpdateBanner />
         {localError && (
