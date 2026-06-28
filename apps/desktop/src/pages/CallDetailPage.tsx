@@ -31,13 +31,13 @@ import {
   LegacyRecapBanner,
   MdPanel,
   OpenQuestionsBlock,
-  ParticipantsRow,
   PrivacyDisclaimer,
   ProcessingPanel,
   RecapRegenSuggestionStrip,
   ReprocessBanner,
   TasksPanel,
 } from '../components/call-detail';
+import { CallRail } from '../components/call-detail/CallRail';
 import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
@@ -46,7 +46,7 @@ import { CallStateTag, ProgressRail } from '../components/call-state';
 import { useCallAudio } from '../hooks/useCallAudio';
 import { useCallDetail } from '../hooks/useCallDetail';
 import { useI18n } from '../i18n';
-import { SpeakersSection, extractSamples } from './SpeakersSection';
+import { extractSamples } from './SpeakersSection';
 import {
   findSpeakerAtTime,
   formatHeaderMeta,
@@ -54,7 +54,8 @@ import {
   simpleDateTitle,
 } from '../utils/callMeta';
 
-type Tab = 'recap' | 'transcript' | 'tasks' | 'speakers';
+// [B18.3a] v2 IA: 2 tabs. Tasks fold into Recap; speakers move to CallRail.
+type Tab = 'recap' | 'transcript';
 
 interface CallDetailPageProps {
   callId: string;
@@ -310,13 +311,18 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     // получает marginTop: auto и прижимается к низу .app-main scroll viewport.
     // Без этого при коротком контенте (например пустой recap) sticky bottom
     // не активируется, scrubber висит в середине экрана.
-    <section
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100%',
-      }}
-    >
+    // [B18.3a] Two-column: doc-column (flex 1, scrubber sticks bottom) + CallRail.
+    <div style={{ display: 'flex', minHeight: '100%', gap: 0 }}>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: '100%',
+          paddingRight: 28,
+        }}
+      >
       <button
         type="button"
         className="btn btn--quiet"
@@ -370,13 +376,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           hasFailedChunks={(chunks ?? []).some((c) => c.status === 'failed')}
         />
 
-        {/* Participants chips — same row после title */}
-        {speakersLite.length > 0 && (
-          <ParticipantsRow
-            speakers={speakersLite}
-            onConfirmAnonymous={(s) => setConfirmingTag(s.speaker_tag)}
-          />
-        )}
+        {/* [B18.3a] Participants moved to the right rail (CallRail). */}
       </header>
 
       {/* [V8] Если есть прежние артефакты (recap или transcript) → это
@@ -523,7 +523,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
         <Tabs.List>
-          {(['recap', 'transcript', 'tasks', 'speakers'] as Tab[]).map((tabId) => (
+          {(['transcript', 'recap'] as Tab[]).map((tabId) => (
             <Tabs.Trigger key={tabId} value={tabId}>
               {tabLabel(tabId, t)}
             </Tabs.Trigger>
@@ -580,6 +580,15 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
                     : t('callDetail.recapEmptyIdle')
             }
           />
+          {/* [B18.3a] Tasks folded into Recap (was a separate tab). */}
+          <TasksPanel
+            tasks={tasks ?? []}
+            contacts={contacts}
+            onJumpToTranscript={(ms) => {
+              setTab('transcript');
+              audio.seek(ms / 1000);
+            }}
+          />
         </Tabs.Panel>
         <Tabs.Panel value="transcript">
           <InteractiveTranscript
@@ -594,26 +603,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
               if (!audio.playing && audio.ready) audio.togglePlay();
             }}
             onIdentifySpeaker={(tag) => setConfirmingTag(tag)}
-          />
-        </Tabs.Panel>
-        <Tabs.Panel value="tasks">
-          <TasksPanel
-            tasks={tasks ?? []}
-            contacts={contacts}
-            onJumpToTranscript={(ms) => {
-              setTab('transcript');
-              audio.seek(ms / 1000);
-            }}
-          />
-        </Tabs.Panel>
-        <Tabs.Panel value="speakers">
-          <SpeakersSection
-            callId={callId}
-            onSpeakersChanged={() => {
-              void refetchSpeakersAndContacts();
-              // [Bug-fix #6] Имена участников могли измениться — предложить regen.
-              setPendingRecapRegen(true);
-            }}
           />
         </Tabs.Panel>
       </Tabs>
@@ -633,6 +622,15 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           currentSpeaker ? () => setTab('transcript') : undefined
         }
       />
+      </div>
+
+      <CallRail
+        call={call}
+        speakers={speakersLite}
+        onIdentify={(tag) => setConfirmingTag(tag)}
+        onExport={() => void onExportMarkdown()}
+        exporting={exporting}
+      />
 
       {confirmingSpeaker && (
         <SpeakerConfirmModal
@@ -647,7 +645,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           }}
         />
       )}
-    </section>
+    </div>
   );
 }
 
@@ -659,10 +657,6 @@ function tabLabel(tab: Tab, t: TFn): string {
       return t('callDetail.tabRecap');
     case 'transcript':
       return t('callDetail.tabTranscript');
-    case 'tasks':
-      return t('callDetail.tabTasks');
-    case 'speakers':
-      return t('callDetail.tabSpeakers');
   }
 }
 
