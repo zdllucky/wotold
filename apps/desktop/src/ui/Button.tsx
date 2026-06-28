@@ -3,7 +3,7 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'soft' | 'danger' | 'record';
+type Variant = 'primary' | 'secondary' | 'default' | 'ghost' | 'soft' | 'danger' | 'record';
 type Size = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
@@ -23,6 +23,8 @@ function variantClass(v: Variant): string {
   switch (v) {
     case 'primary':
       return 'btn--primary';
+    case 'default':
+      return 'btn--default';
     case 'ghost':
     case 'secondary':
       return 'btn--ghost';
