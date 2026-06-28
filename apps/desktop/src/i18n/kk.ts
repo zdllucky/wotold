@@ -61,6 +61,16 @@ export const kk: TranslationStrings = {
     viewMonth: 'Ай',
     comingSoon: 'Жақында',
     todayBtn: 'Бүгін',
+    filter: 'Сүзгі',
+    recordShort: 'Жазу',
+    colName: 'Атауы',
+    colParticipants: 'Қатысушылар',
+    colDuration: 'Ұзақт.',
+    colDate: 'Күні',
+    rowActions: 'Әрекеттер',
+    rowOpen: 'Ашу',
+    rowReprocess: 'Қайта өңдеу',
+    rowExport: 'Экспорт…',
   },
 
   common: {

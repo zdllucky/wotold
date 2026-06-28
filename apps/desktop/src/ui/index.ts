@@ -27,3 +27,5 @@ export { SettingRow } from './SettingRow';
 export { OptionCard, QualityDots } from './OptionCard';
 export { Modal } from './Modal';
 export { Dropdown, MenuItem, MenuLabel, MenuSep } from './Menu';
+// [B18.9] Shared per-screen header bar (.view-head).
+export { ViewHead } from './ViewHead';

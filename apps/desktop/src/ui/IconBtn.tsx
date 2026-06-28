@@ -13,6 +13,9 @@ interface IconBtnProps {
   onClick?: () => void;
   disabled?: boolean;
   title?: string;
+  /** For dropdown/menu triggers — sets aria-haspopup="menu" + aria-expanded. */
+  hasPopup?: boolean;
+  expanded?: boolean;
 }
 
 export function IconBtn({
@@ -26,6 +29,8 @@ export function IconBtn({
   onClick,
   disabled,
   title,
+  hasPopup,
+  expanded,
 }: IconBtnProps) {
   const s = iconSize ?? (size === 'sm' ? 15 : size === 'lg' ? 18 : 16);
   const className =
@@ -38,6 +43,8 @@ export function IconBtn({
       data-active={active ? 'true' : undefined}
       data-tip={tip}
       aria-label={label}
+      aria-haspopup={hasPopup ? 'menu' : undefined}
+      aria-expanded={hasPopup ? expanded ?? false : undefined}
       title={title}
       disabled={disabled}
       onClick={onClick}

@@ -15,7 +15,8 @@ describe('Button', () => {
   });
 
   // [B17] Atelier v2 — variant/size mapped to .btn--primary / .btn--lg.
-  test('applies variant + size classes', () => {
+  // wk.css sizes via [data-size]; 'md' default omits the attr.
+  test('applies variant class + data-size', () => {
     render(
       <Button variant="primary" size="lg">
         Save
@@ -23,7 +24,7 @@ describe('Button', () => {
     );
     const btn = screen.getByRole('button');
     expect(btn.className).toContain('btn--primary');
-    expect(btn.className).toContain('btn--lg');
+    expect(btn.getAttribute('data-size')).toBe('lg');
   });
 
   // [B17] `pill` prop is a legacy no-op — Atelier buttons всегда radius-sm.

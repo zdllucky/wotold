@@ -68,15 +68,29 @@ interface MenuItemProps {
   end?: ReactNode;
   danger?: boolean;
   active?: boolean;
+  disabled?: boolean;
+  title?: string;
   onClick?: () => void;
 }
 
-export function MenuItem({ icon, children, end, danger, active, onClick }: MenuItemProps) {
+export function MenuItem({
+  icon,
+  children,
+  end,
+  danger,
+  active,
+  disabled,
+  title,
+  onClick,
+}: MenuItemProps) {
   return (
     <button
       type="button"
       className={'menu-item' + (danger ? ' menu-item--danger' : '')}
       data-active={active ? 'true' : undefined}
+      disabled={disabled}
+      title={title}
+      style={disabled ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
       onClick={onClick}
     >
       {icon && (

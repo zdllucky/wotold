@@ -1,12 +1,15 @@
-// [B18.2a] InboxView — Wotold v2 unified call list. Replaces interim CallsPage
-// at the `inbox` route. Header = Icon + title + count + OmniBar (text + facet
-// tokens) + ViewSwitcher; body = month-grouped v2 rows + virtualization.
+// [B18.2a / B18.9] InboxView — Wotold v2 unified call list. Replaces interim
+// CallsPage at the `inbox` route. Header = shared <ViewHead> (icon + title +
+// count) carrying the OmniBar + FacetButton + icon-only ViewSwitcher + record
+// action; the list view is the v2 database `.tbl` table (month-grouped via
+// `.tbl-group`). Cards/week/month views are unchanged.
 //
 // Data/pipeline layer ported 1-to-1 from CallsPage (live pipeline events,
-// speaker-initials aggregation, deriveCallState). Cards/week/month views,
-// person facet and the row ⋯-menu land in B18.2b.
+// speaker-initials aggregation, deriveCallState). The list view renders the
+// table directly (react-window virtualization dropped — the prototype `.tbl`
+// has a sticky head + group headers that don't fit a flat virtual list).
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { humanError } from '../api/errors';
@@ -17,28 +20,30 @@ import {
 } from '../api/recording';
 import { listActiveCallIds } from '../api/calls';
 import { listCallSpeakers } from '../api/speakers';
-import { EngineChip } from '../components/EngineChip';
-import { List, type RowComponentProps } from 'react-window';
-import { CallRowSkeleton, Empty, Segmented, type SegOption } from '../ui';
+import {
+  Button,
+  CallRowSkeleton,
+  Dot,
+  Dropdown,
+  Empty,
+  IconBtn,
+  MenuItem,
+  MenuLabel,
+  MenuSep,
+  Segmented,
+  ViewHead,
+  type SegOption,
+} from '../ui';
 import { Icon, type IconName } from '../ui/Icon';
+import { formatElapsed } from '../recording/RecordingContext';
 import { useI18n, type TranslationKey } from '../i18n';
-import { CallStateTag, ProgressRail } from '../components/call-state';
-import { pipelineStepKey, type CallState } from '../types/callState';
-import { AvatarGroup, StatusCell } from './inboxBits';
+import { TableRow } from './inboxBits';
 import { InboxCards, InboxMonth, InboxWeek } from './InboxCalendarViews';
 import {
   FACETS_EMPTY,
-  ROW_HEIGHT,
-  VIRTUALIZATION_THRESHOLD,
-  VIRTUAL_LIST_HEIGHT,
-  callHasRecap,
   declinePlural,
-  deriveCallState,
   facetCount,
-  formatDuration,
-  formatMegabytes,
   groupByMonth,
-  inferSpeakers,
   initials,
   matchesFacets,
   toggleFacet,
@@ -99,8 +104,8 @@ function facetDefs(t: TFn, persons: string[]): FacetDef[] {
   return defs;
 }
 
-// StatusCell / AvatarGroup / statusColor moved to ./inboxBits (shared with
-// the calendar views). CallState is still used by renderSecondary below.
+// StatusCell / AvatarGroup / the `.trow` TableRow live in ./inboxBits (shared
+// with the calendar views and the list table below).
 
 // ── Omni-bar (text + facet tokens + suggestions) ──
 
@@ -270,6 +275,73 @@ function OmniBar({ facets, setFacets, text, setText, defs, t }: OmniBarProps) {
   );
 }
 
+// ── Facet button (dropdown checkboxes — same facet defs as the omni-bar) ──
+
+interface FacetButtonProps {
+  facets: Facets;
+  setFacets: (next: Facets) => void;
+  defs: FacetDef[];
+  t: TFn;
+}
+
+function FacetButton({ facets, setFacets, defs, t }: FacetButtonProps) {
+  const count = facetCount(facets);
+  return (
+    <Dropdown
+      width={232}
+      trigger={({ toggle }) => (
+        <button
+          type="button"
+          className="btn btn--default"
+          onClick={toggle}
+          style={
+            count > 0 ? { borderColor: 'var(--accent)', color: 'var(--accent-text)' } : undefined
+          }
+        >
+          <Icon name="filter" size={14} />
+          {t('inbox.filter')}
+          {count > 0 ? ` · ${count}` : ''}
+        </button>
+      )}
+    >
+      {defs.map((def, i) => (
+        <div key={def.key}>
+          {i > 0 && <MenuSep />}
+          <MenuLabel>{def.label}</MenuLabel>
+          {def.values.map((val) => {
+            const on = (facets[def.key] as string[]).includes(val.v);
+            return (
+              <button
+                key={val.v}
+                type="button"
+                className="menu-item"
+                data-active={on ? 'true' : undefined}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFacets(toggleFacet(facets, def.key, val.v));
+                }}
+              >
+                <span className="chk" data-done={on ? 'true' : undefined} style={{ width: 15, height: 15 }}>
+                  <Icon name="check" size={11} />
+                </span>
+                <span style={{ flex: 1 }}>{val.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ))}
+      {count > 0 && (
+        <>
+          <MenuSep />
+          <MenuItem icon="x" onClick={() => setFacets({ ...FACETS_EMPTY })}>
+            {t('inbox.clearAll')}
+          </MenuItem>
+        </>
+      )}
+    </Dropdown>
+  );
+}
+
 // ── View switcher (icon segmented) ──
 
 const VIEW_DEFS: [InboxViewMode, IconName, TranslationKey][] = [
@@ -298,187 +370,9 @@ function ViewSwitcher({
       options={options}
       value={view}
       onChange={setView}
+      iconOnly
       ariaLabel={t('inbox.viewLabel')}
     />
-  );
-}
-
-// ── Secondary row (state-dependent) ──
-
-function secondaryText(text: string, color?: string): ReactNode {
-  return (
-    <div
-      className="u-trunc"
-      title={text}
-      style={{ fontSize: 12, color: color ?? 'var(--text-3)', minWidth: 0 }}
-    >
-      {text}
-    </div>
-  );
-}
-
-function renderSecondary(call: Call, state: CallState, t: TFn): ReactNode {
-  if (state === 'ready') return null;
-  if (state === 'error') {
-    const raw = call.failed_reason?.trim() ?? '';
-    const shortMsg = raw.split(/[—.\n]/)[0]?.trim() || t('callState.errorFallback');
-    return (
-      <div
-        className="u-trunc"
-        title={raw || shortMsg}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, fontSize: 12 }}
-      >
-        <span className="u-trunc" style={{ color: 'var(--text-3)' }}>
-          {shortMsg} · {t('callState.audioSaved')}
-        </span>
-        <span className="mono" style={{ fontSize: 11, color: 'var(--accent-text)', flexShrink: 0 }}>
-          {t('callState.moreDetails')}
-        </span>
-      </div>
-    );
-  }
-  if (state === 'processing') {
-    const eta = call.pipeline_eta_sec;
-    return eta != null ? secondaryText(t('calls.secondaryEta', { sec: eta })) : null;
-  }
-  if (state === 'uploading') {
-    const bytes = call.upload_bytes;
-    if (bytes != null && bytes > 0) {
-      return secondaryText(formatMegabytes(bytes));
-    }
-    return null;
-  }
-  if (state === 'queued') return secondaryText(t('calls.secondaryQueued'));
-  if (state === 'live') return secondaryText(t('calls.secondaryLive'), 'var(--danger)');
-  return null;
-}
-
-// ── Call row ──
-
-interface CallRowProps {
-  call: Call;
-  onOpen: (id: string) => void;
-  hasBorder: boolean;
-  speakers?: string[];
-  isActive?: boolean;
-  t: TFn;
-}
-
-function CallRow({ call, onOpen, hasBorder, speakers, isActive, t }: CallRowProps) {
-  const list = speakers && speakers.length > 0 ? speakers : inferSpeakers(call);
-  const uiState = deriveCallState(call);
-  const busy = call.status === 'ready' && isActive === true;
-  const showTag = uiState !== 'ready' || busy;
-  const showRail = uiState === 'uploading' || uiState === 'processing' || busy;
-  const title = call.title ?? t('calls.fallbackCallTitle', { short: call.id.slice(0, 8) });
-  const secondary = busy ? secondaryText(t('calls.secondaryBusy')) : renderSecondary(call, uiState, t);
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpen(call.id)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpen(call.id);
-        }
-      }}
-      className="lrow"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '14px minmax(0, 1fr) auto auto',
-        gap: 12,
-        padding: '11px 8px',
-        width: '100%',
-        borderRadius: 'var(--r-sm)',
-        borderTop: hasBorder ? '1px solid var(--border)' : 'none',
-        alignItems: 'center',
-        textAlign: 'left',
-        cursor: 'pointer',
-      }}
-    >
-      <span style={{ display: 'inline-flex', justifyContent: 'center', paddingTop: 2 }}>
-        <StatusCell call={call} busy={busy} />
-      </span>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <span
-            className="u-trunc"
-            title={title}
-            style={{ fontWeight: 550, fontSize: 13.5, flex: '0 1 auto', minWidth: 0 }}
-          >
-            {title}
-          </span>
-          {callHasRecap(call) && !showTag && (
-            <Icon name="sparkle" size={13} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
-          )}
-          {showTag && (
-            <CallStateTag
-              state={busy ? 'processing' : uiState}
-              labelOverride={
-                busy
-                  ? t('callState.busyGeneric')
-                  : uiState === 'processing' || uiState === 'uploading'
-                    ? t(pipelineStepKey(call.pipeline_step))
-                    : undefined
-              }
-            />
-          )}
-          {!showTag && call.processing_via && (
-            <EngineChip kind={call.processing_via} variant="inline" />
-          )}
-        </div>
-        {secondary && <div style={{ marginTop: 3, minWidth: 0 }}>{secondary}</div>}
-        {showRail && (
-          <div style={{ marginTop: 6 }}>
-            <ProgressRail
-              indeterminate
-              ariaLabel={busy ? t('callState.busyGeneric') : t(`callState.${uiState}`)}
-            />
-          </div>
-        )}
-      </div>
-      <AvatarGroup list={list} />
-      <div
-        className="mono u-faint"
-        style={{ fontSize: 12, textAlign: 'right', letterSpacing: '0.02em', minWidth: 52 }}
-      >
-        {formatDuration(call.duration_sec)}
-      </div>
-    </div>
-  );
-}
-
-interface VirtualRowProps {
-  calls: Call[];
-  onOpen: (id: string) => void;
-  speakerInitials: Map<string, string[]>;
-  activeIds: Set<string>;
-  t: TFn;
-}
-
-function VirtualCallRow({
-  index,
-  style,
-  calls,
-  onOpen,
-  speakerInitials,
-  activeIds,
-  t,
-}: RowComponentProps<VirtualRowProps>) {
-  const c = calls[index]!;
-  return (
-    <div style={style}>
-      <CallRow
-        call={c}
-        onOpen={onOpen}
-        hasBorder={index > 0}
-        speakers={speakerInitials.get(c.id)}
-        isActive={activeIds.has(c.id)}
-        t={t}
-      />
-    </div>
   );
 }
 
@@ -492,9 +386,26 @@ interface PipelineFinishedEvent {
 
 interface InboxViewProps {
   onOpen: (callId: string) => void;
+  /**
+   * Optional record-action wiring for the header bar (App-level). When
+   * `onRecord` is omitted the record control is not rendered at all — the
+   * InboxView remains usable standalone (and in tests) without recording.
+   */
+  onRecord?: () => void;
+  recording?: boolean;
+  paused?: boolean;
+  elapsed?: number;
+  onPause?: () => void;
 }
 
-export function InboxView({ onOpen }: InboxViewProps) {
+export function InboxView({
+  onOpen,
+  onRecord,
+  recording = false,
+  paused = false,
+  elapsed = 0,
+  onPause,
+}: InboxViewProps) {
   const { locale, t } = useI18n();
   const [calls, setCalls] = useState<Call[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -627,99 +538,158 @@ export function InboxView({ onOpen }: InboxViewProps) {
 
   return (
     <section>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-          marginBottom: 22,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <Icon name="inbox" size={20} style={{ color: 'var(--text-2)' }} />
-          <span style={{ fontSize: 18, fontWeight: 650 }}>{t('nav.calls')}</span>
-          {calls && (
-            <span className="chip" data-size="sm">
-              {nActive > 0 ? `${filtered.length} / ${calls.length}` : calls.length}
-            </span>
-          )}
+      <ViewHead icon="inbox" title={t('nav.calls')} count={calls?.length} countTone="line">
+        <div
+          style={{
+            display: 'flex',
+            gap: 6,
+            flex: '1 1 auto',
+            maxWidth: 480,
+            marginLeft: 10,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <OmniBar
+              facets={facets}
+              setFacets={setFacets}
+              text={text}
+              setText={setText}
+              defs={defs}
+              t={t}
+            />
+          </div>
+          <FacetButton facets={facets} setFacets={setFacets} defs={defs} t={t} />
         </div>
-        <OmniBar
-          facets={facets}
-          setFacets={setFacets}
-          text={text}
-          setText={setText}
-          defs={defs}
-          t={t}
-        />
         <ViewSwitcher view={view} setView={setView} t={t} />
-      </div>
-
-      {error ? (
-        <p role="alert" style={{ color: 'var(--danger)', fontFamily: 'var(--font)' }}>
-          {error}
-        </p>
-      ) : !calls ? (
-        <ul style={{ listStyle: 'none', padding: 0 }} aria-busy="true">
-          {Array.from({ length: 5 }, (_, i) => (
-            <li key={i}>
-              <CallRowSkeleton />
-            </li>
-          ))}
-        </ul>
-      ) : view === 'cards' ? (
-        <InboxCards calls={filtered} onOpen={onOpen} speakerInitials={speakerInitials} locale={locale} t={t} />
-      ) : view === 'week' ? (
-        <InboxWeek calls={filtered} onOpen={onOpen} speakerInitials={speakerInitials} locale={locale} t={t} />
-      ) : view === 'month' ? (
-        <InboxMonth calls={filtered} onOpen={onOpen} speakerInitials={speakerInitials} locale={locale} t={t} />
-      ) : calls.length === 0 ? (
-        <Empty title={t('calls.emptyTitle')} description={t('calls.emptyBody')} />
-      ) : filtered.length === 0 ? (
-        <Empty title={t('calls.notFoundTitle')} description={t('calls.notFoundBody')} />
-      ) : filtered.length >= VIRTUALIZATION_THRESHOLD ? (
-        <List
-          rowComponent={VirtualCallRow}
-          rowCount={filtered.length}
-          rowHeight={ROW_HEIGHT}
-          rowProps={{ calls: filtered, onOpen, speakerInitials, activeIds, t }}
-          defaultHeight={VIRTUAL_LIST_HEIGHT}
-        />
-      ) : (
-        groupByMonth(filtered, locale).map((g) => (
-          <div key={g.label} style={{ marginBottom: 28 }}>
-            <div className="sec-label" style={{ marginBottom: 4 }}>
-              {g.label}
-            </div>
-            {g.calls.map((c, idx) => (
-              <CallRow
-                key={c.id}
-                call={c}
-                onOpen={onOpen}
-                hasBorder={idx > 0}
-                speakers={speakerInitials.get(c.id)}
-                isActive={activeIds.has(c.id)}
-                t={t}
+        <div style={{ flex: 1 }} />
+        {onRecord &&
+          (recording ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <IconBtn
+                icon={paused ? 'play' : 'pause'}
+                label={paused ? t('recording.resumeAction') : t('recording.pauseAction')}
+                onClick={onPause}
               />
+              <button
+                type="button"
+                className="btn btn--danger"
+                onClick={onRecord}
+                style={{ gap: 8 }}
+              >
+                <Dot color="currentColor" pulse={!paused} />
+                <span className="mono" style={{ fontWeight: 600 }}>
+                  {formatElapsed(elapsed)}
+                </span>
+                <Icon name="stop" size={14} />
+              </button>
+            </div>
+          ) : (
+            <Button variant="primary" leading={<Icon name="mic" size={16} />} onClick={onRecord}>
+              {t('inbox.recordShort')}
+            </Button>
+          ))}
+      </ViewHead>
+
+      {/* Body — the `.tbl` table is flush (its head/rows self-pad via wk.css);
+          the calendar views pad themselves; the skeleton / error / footer get
+          their own `.pad` so only the table touches the bar edges. */}
+      <div className="scroll" style={{ flex: '1 1 auto', minHeight: 0 }}>
+        {error ? (
+          <p
+            role="alert"
+            className="pad"
+            style={{ color: 'var(--danger)', fontFamily: 'var(--font)' }}
+          >
+            {error}
+          </p>
+        ) : !calls ? (
+          <ul className="pad" style={{ listStyle: 'none' }} aria-busy="true">
+            {Array.from({ length: 5 }, (_, i) => (
+              <li key={i}>
+                <CallRowSkeleton />
+              </li>
+            ))}
+          </ul>
+        ) : view === 'cards' ? (
+          <InboxCards
+            calls={filtered}
+            onOpen={onOpen}
+            speakerInitials={speakerInitials}
+            locale={locale}
+            t={t}
+          />
+        ) : view === 'week' ? (
+          <InboxWeek
+            calls={filtered}
+            onOpen={onOpen}
+            speakerInitials={speakerInitials}
+            locale={locale}
+            t={t}
+          />
+        ) : view === 'month' ? (
+          <InboxMonth
+            calls={filtered}
+            onOpen={onOpen}
+            speakerInitials={speakerInitials}
+            locale={locale}
+            t={t}
+          />
+        ) : calls.length === 0 ? (
+          <Empty title={t('calls.emptyTitle')} description={t('calls.emptyBody')} />
+        ) : filtered.length === 0 ? (
+          <Empty title={t('calls.notFoundTitle')} description={t('calls.notFoundBody')} />
+        ) : (
+          <div className="tbl">
+            <div className="tbl-head">
+              <span />
+              <span>{t('inbox.colName')}</span>
+              <span>{t('inbox.colParticipants')}</span>
+              <span className="th-sort">
+                {t('inbox.colDuration')}
+                <Icon name="sort" size={11} />
+              </span>
+              <span className="th-sort">
+                {t('inbox.colDate')}
+                <Icon name="sort" size={11} />
+              </span>
+              <span />
+            </div>
+            {groupByMonth(filtered, locale).map((g) => (
+              <div key={g.label}>
+                <div className="tbl-group">{g.label}</div>
+                {g.calls.map((c) => (
+                  <TableRow
+                    key={c.id}
+                    call={c}
+                    onOpen={onOpen}
+                    speakers={speakerInitials.get(c.id)}
+                    isActive={activeIds.has(c.id)}
+                    locale={locale}
+                    t={t}
+                  />
+                ))}
+              </div>
             ))}
           </div>
-        ))
-      )}
-      {calls && calls.length > 0 && (
-        <div className="small-caps" style={{ marginTop: 8, color: 'var(--text-faint)' }}>
-          {nActive > 0
-            ? t('calls.filteredOf', {
-                filtered: filtered.length,
-                total: calls.length,
-                plural: declinePlural(calls.length, pluralForms),
-              })
-            : t('calls.countOf', {
-                n: calls.length,
-                plural: declinePlural(calls.length, pluralForms),
-              })}
-        </div>
-      )}
+        )}
+        {calls && calls.length > 0 && (
+          <div
+            className="small-caps"
+            style={{ padding: '8px var(--s4) var(--s4)', color: 'var(--text-faint)' }}
+          >
+            {nActive > 0
+              ? t('calls.filteredOf', {
+                  filtered: filtered.length,
+                  total: calls.length,
+                  plural: declinePlural(calls.length, pluralForms),
+                })
+              : t('calls.countOf', {
+                  n: calls.length,
+                  plural: declinePlural(calls.length, pluralForms),
+                })}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
