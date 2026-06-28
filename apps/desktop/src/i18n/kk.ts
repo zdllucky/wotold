@@ -435,6 +435,8 @@ export const kk: TranslationStrings = {
     statCalls: 'Қоңыраулар',
     statRecorded: 'Жазылған',
     statVoiceSamples: 'Дауыс үлгілері',
+    recentCalls: 'Соңғы қоңыраулар',
+    voiceConfirmed: 'Дауыс расталды',
     voiceOptIn: 'opt-in',
     voiceOff: '—',
     contactsBlock: 'Контактілер',

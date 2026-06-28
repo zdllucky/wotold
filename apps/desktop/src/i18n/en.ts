@@ -436,6 +436,8 @@ export const en: TranslationStrings = {
     statCalls: 'Calls',
     statRecorded: 'Recorded',
     statVoiceSamples: 'Voice samples',
+    recentCalls: 'Recent calls',
+    voiceConfirmed: 'Voice confirmed',
     voiceOptIn: 'opt-in',
     voiceOff: '—',
     contactsBlock: 'Contacts',

@@ -470,6 +470,8 @@ const ruInternal = {
     statCalls: 'Звонков',
     statRecorded: 'Записано',
     statVoiceSamples: 'Голосовые семплы',
+    recentCalls: 'Недавние звонки',
+    voiceConfirmed: 'Голос подтверждён',
     voiceOptIn: 'opt-in',
     voiceOff: '—',
     contactsBlock: 'Контакты',
