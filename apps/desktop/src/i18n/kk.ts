@@ -36,6 +36,31 @@ export const kk: TranslationStrings = {
     allCalls: 'Барлық қоңыраулар',
   },
 
+  // [B18.2a] Inbox — omni-bar, facets, view switcher.
+  inbox: {
+    searchPlaceholder: 'Іздеу немесе сүзгі…',
+    clearAll: 'Тазалау',
+    facetStatus: 'Күй',
+    facetRecap: 'Рекап',
+    facetPeriod: 'Кезең',
+    statusReady: 'Дайын',
+    statusProcessing: 'Өңдеу',
+    statusError: 'Қате',
+    recapYes: 'Рекаппен',
+    recapNo: 'Рекапсыз',
+    periodToday: 'Бүгін',
+    periodWeek: 'Осы апта',
+    quickFilters: 'Жылдам сүзгілер',
+    addFilter: 'Сүзгі қосу',
+    searchInTitles: '«{q}» атауларда іздеу',
+    viewLabel: 'Көрініс',
+    viewList: 'Тізім',
+    viewCards: 'Карточкалар',
+    viewWeek: 'Апта',
+    viewMonth: 'Ай',
+    comingSoon: 'Жақында',
+  },
+
   common: {
     save: 'Сақтау',
     cancel: 'Болдырмау',

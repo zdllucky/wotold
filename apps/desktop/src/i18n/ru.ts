@@ -40,6 +40,31 @@ const ruInternal = {
     allCalls: 'Все звонки',
   },
 
+  // [B18.2a] Inbox — omni-bar, facets, view switcher.
+  inbox: {
+    searchPlaceholder: 'Поиск или фильтр…',
+    clearAll: 'Сбросить',
+    facetStatus: 'Статус',
+    facetRecap: 'Рекап',
+    facetPeriod: 'Период',
+    statusReady: 'Готово',
+    statusProcessing: 'Обработка',
+    statusError: 'Ошибка',
+    recapYes: 'С рекапом',
+    recapNo: 'Без рекапа',
+    periodToday: 'Сегодня',
+    periodWeek: 'Эта неделя',
+    quickFilters: 'Быстрые фильтры',
+    addFilter: 'Добавить фильтр',
+    searchInTitles: 'Искать «{q}» в названиях',
+    viewLabel: 'Представление',
+    viewList: 'Список',
+    viewCards: 'Карточки',
+    viewWeek: 'Неделя',
+    viewMonth: 'Месяц',
+    comingSoon: 'Скоро',
+  },
+
   // ── Common buttons / labels / states ────────────────────────────────────
   common: {
     save: 'Сохранить',
