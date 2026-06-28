@@ -359,11 +359,11 @@
 
 ### B18.1 · App shell + IA (складной rail, dock, palette)
 
-- [ ] `App.tsx`: `.app-rail` (tabs) → **Sidebar (256px) + MiniRail (56px)** пара, складывание `⌘\`, resize 216–380px + localStorage, авто-collapse <198px.
-- [ ] Recording: `RecStrip` → **RecDock** (footer-anchored) + **RecWidget** (floating, drag, pip-minimize) ✅решено: берём исполнение из прототипа (суть flow та же), **логика записи/паузы/стопа/событий Rust сохраняется 1-в-1**.
-- [ ] **Command palette (⌘K)** — `components/CommandPalette.tsx`: поиск звонков + действия (record/inbox/contacts/settings), ↑↓/Enter/Esc, focus-trap.
-- [ ] **Home удаляется полностью** ✅решено (главная не нужна): default-экран = Inbox. `HomePage.tsx` удалить; consent-gate (C1/R2), updater-баннер, hotkey-hints переехать в shell/Inbox. First-run consent — в shell перед первой записью.
-- [ ] Recent-calls list в rail (`StatusCell` + `fmtDur`).
+- [x] **B18.1a** `App.tsx`: `.app-rail` → **Sidebar (256px) + MiniRail (56px)**, `⌘\` collapse, resize 216–380px + localStorage, авто-collapse <198px (`components/AppSidebar.tsx`).
+- [x] **B18.1b** Recording: `RecStrip` → **RecDock** (footer `.composer-dock`, fixed, offset на rail) с audio-reactive RecEq + pip-minimize → floating widget. _RecFloat (отдельное окно) pill-polish отложен — функционален + перекрашен shim'ом._ Логика записи/паузы/стопа/Rust-событий 1-в-1.
+- [x] **B18.1c** **Command palette (⌘K)** — `components/CommandPalette.tsx`: действия (record/inbox/contacts/settings) + поиск звонков, ↑↓/Enter/Esc, focus-trap; ⌘K-строка в Sidebar + command-иконка в MiniRail.
+- [x] **B18.1a** **Home удалена полностью**: default = Inbox (interim CallsPage). consent-gate (C1/R2) + hotkeys (⌘⇧R/⌘⇧P) + updater подняты в App-level; `HomePage.tsx` + test удалены.
+- [x] **B18.1a** Recent-calls list в rail (Sidebar, `listCalls` + refetch на `pipeline:finished`).
 
 ### B18.2 · Inbox (замена Home + Calls)
 

@@ -19,6 +19,8 @@ interface RailHandlers {
   onPause: () => void;
   onNav: (v: RailView) => void;
   onOpenCall: (id: string) => void;
+  /** Open the ⌘K command palette. */
+  onSearch: () => void;
   onCollapse: () => void;
   onExpand: () => void;
   onToggleTheme: () => void;
@@ -97,6 +99,7 @@ export function Sidebar(props: RailProps) {
     onPause,
     onNav,
     onOpenCall,
+    onSearch,
     onCollapse,
     onToggleTheme,
     onResizeStart,
@@ -168,6 +171,25 @@ export function Sidebar(props: RailProps) {
             {t('rail.record')}
           </button>
         )}
+      </div>
+
+      <div style={{ padding: '0 10px 8px' }}>
+        <button
+          className="input"
+          onClick={onSearch}
+          style={{
+            cursor: 'pointer',
+            height: 30,
+            color: 'var(--text-faint)',
+            borderColor: 'var(--border-2)',
+          }}
+        >
+          <Icon name="command" size={15} className="iico" />
+          <span style={{ flex: 1, textAlign: 'left', fontSize: 13 }}>
+            {t('palette.commands')}
+          </span>
+          <kbd className="kbd">⌘K</kbd>
+        </button>
       </div>
 
       <nav className="scroll" style={{ flex: 1, minHeight: 0, padding: 10 }}>
@@ -279,6 +301,7 @@ export function MiniRail(props: RailProps) {
     onRecord,
     onPause,
     onNav,
+    onSearch,
     onExpand,
     onToggleTheme,
     onResizeStart,
@@ -330,6 +353,14 @@ export function MiniRail(props: RailProps) {
           <Icon name="mic" size={19} />
         </button>
       )}
+      <button
+        className="iconbtn"
+        aria-label={t('palette.commands')}
+        title={`${t('palette.commands')} ⌘K`}
+        onClick={onSearch}
+      >
+        <Icon name="command" size={18} />
+      </button>
       <div className="minirail-sep" />
       <button
         className="iconbtn"

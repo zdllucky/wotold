@@ -15,6 +15,7 @@ import { humanError } from './api/errors';
 import { localEngineGetActiveEngine } from './api/local-engine';
 import type { EngineKind } from './components/EngineChip';
 import { Sidebar, MiniRail, type RailView } from './components/AppSidebar';
+import { CommandPalette } from './components/CommandPalette';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useFocusTrap } from './hooks/useFocusTrap';
 import { I18nProvider, useI18n } from './i18n';
@@ -74,6 +75,7 @@ function AppShell() {
   // [B18.1a] collapsible rail state.
   const [collapsed, setCollapsed] = useState(false);
   const [railW, setRailW] = useState<number>(readSavedRailW);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // [B18.1a] recording consent (lifted from HomePage). C1/R2: persisted once on
   // first «Записать звонок».
@@ -291,6 +293,12 @@ function AppShell() {
   // Global hotkeys: toggle (⌘⇧R), pause (⌘⇧P), collapse rail (⌘\).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // ⌘K palette — opens from anywhere (no input guard).
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
         e.preventDefault();
         setCollapsed((c) => !c);
@@ -403,6 +411,7 @@ function AppShell() {
     onPause: onPauseToggle,
     onNav,
     onOpenCall,
+    onSearch: () => setPaletteOpen(true),
     onCollapse: () => setCollapsed(true),
     onExpand: () => setCollapsed(false),
     onToggleTheme,
@@ -486,6 +495,25 @@ function AppShell() {
             </div>
           </div>
         </div>
+      )}
+
+      {paletteOpen && (
+        <CommandPalette
+          onClose={() => setPaletteOpen(false)}
+          onNav={(v) => {
+            onNav(v);
+            setPaletteOpen(false);
+          }}
+          onOpenCall={(id) => {
+            onOpenCall(id);
+            setPaletteOpen(false);
+          }}
+          onRecord={() => {
+            onRecordToggle();
+            setPaletteOpen(false);
+          }}
+          recent={recent}
+        />
       )}
 
       <Coachmarks />

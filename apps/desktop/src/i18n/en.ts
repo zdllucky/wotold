@@ -27,6 +27,15 @@ export const en: TranslationStrings = {
     designSystem: 'Design system',
   },
 
+  // [B18.1c] ⌘K command palette.
+  palette: {
+    placeholder: 'Jump to a call or run a command…',
+    commands: 'Commands',
+    calls: 'Calls',
+    empty: 'Nothing found',
+    allCalls: 'All calls',
+  },
+
   common: {
     save: 'Save',
     cancel: 'Cancel',

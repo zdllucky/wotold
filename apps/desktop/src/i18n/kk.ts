@@ -27,6 +27,15 @@ export const kk: TranslationStrings = {
     designSystem: 'Дизайн-жүйе',
   },
 
+  // [B18.1c] ⌘K command palette.
+  palette: {
+    placeholder: 'Қоңырауға өту немесе команда…',
+    commands: 'Командалар',
+    calls: 'Қоңыраулар',
+    empty: 'Ештеңе табылмады',
+    allCalls: 'Барлық қоңыраулар',
+  },
+
   common: {
     save: 'Сақтау',
     cancel: 'Болдырмау',
