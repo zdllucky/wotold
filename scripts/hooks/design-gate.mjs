@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // PostToolUse hook для Write/Edit.
-// [B17] Wotold Atelier v2 design gate enforcement:
+// [B18.6] Wotold v2 (uikit) design gate enforcement:
 //
 //   - На .tsx / .ts / .css правках предупреждает (НЕ блокирует) если в diff
 //     встречаются:
@@ -9,8 +9,9 @@
 //       * legacy --color-* токены — должны быть мигрированы на новый набор
 //         (var(--bg), var(--ink), var(--accent), ...)
 //
-//   - Whitelist: handoff source files (tokens.css, wotold.css, legacy-tokens.css,
-//     docs/design/atelier-v2/**) — там сырые значения легитимны.
+//   - Whitelist: token/component source files (tokens.css, wk.css,
+//     components.css, fonts.css, docs/design/wotold-v2/**) — там сырые
+//     значения легитимны.
 //
 // Не блокируем — предупреждение в stderr. Гейт «жёсткий» уровень — на code-review.
 //
@@ -42,12 +43,10 @@ process.stdin.on('end', () => {
   // Whitelist — handoff source + token files.
   const WHITELIST = [
     /\/styles\/tokens\.css$/,
-    /\/styles\/wotold\.css$/,
     /\/styles\/wk\.css$/,
-    /\/styles\/legacy-tokens\.css$/,
+    /\/styles\/components\.css$/,
     /\/styles\/fonts\.css$/,
     /\/docs\/design\/wotold-v2\//,
-    /\/docs\/design\/atelier-v2\//,
     /\.claude\//,
   ];
   if (WHITELIST.some((re) => re.test(path))) process.exit(0);
@@ -80,8 +79,8 @@ process.stdin.on('end', () => {
     findings.push(
       `[design-gate] Legacy токены: ${[...new Set(legacyMatches)].slice(0, 5).join(', ')}\n` +
         `[design-gate] → канон Wotold v2 (uikit): --bg, --text, --accent, --danger, --border, --text-3 и т.д.\n` +
-        `[design-gate] Atelier-имена (--ink/--line/--signal/...) допустимы через legacy-tokens.css shim до B18.6.\n` +
-        `[design-gate] см. docs/design/wotold-v2/ + styles/legacy-tokens.css mapping.`,
+        `[design-gate] Atelier-имена (--ink/--line/--signal/...) удалены в B18.6 — мигрируй на uikit-токены.\n` +
+        `[design-gate] см. docs/design/wotold-v2/ + styles/tokens.css.`,
     );
   }
 

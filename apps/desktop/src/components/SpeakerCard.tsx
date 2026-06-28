@@ -347,7 +347,7 @@ export function SpeakerCard({
             height: 56,
             borderRadius: '50%',
             background: color,
-            color: 'var(--paper)',
+            color: 'var(--panel)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

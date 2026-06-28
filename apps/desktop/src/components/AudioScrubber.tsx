@@ -65,7 +65,7 @@ export function AudioScrubber({
       {/* Pill */}
       <div
         style={{
-          background: 'var(--paper)',
+          background: 'var(--panel)',
           border: '1px solid var(--border)',
           borderRadius: 999,
           padding: '8px 14px 8px 8px',
@@ -86,7 +86,7 @@ export function AudioScrubber({
             height: 32,
             borderRadius: '50%',
             background: 'var(--text)',
-            color: 'var(--paper)',
+            color: 'var(--panel)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -95,7 +95,7 @@ export function AudioScrubber({
             cursor: audio.ready ? 'pointer' : 'not-allowed',
             opacity: audio.ready ? 1 : 0.4,
             flexShrink: 0,
-            transition: 'transform var(--duration-fast) var(--ease-out-expo)',
+            transition: 'transform var(--fast) cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
           {audio.playing ? '❚❚' : '▶'}
@@ -255,7 +255,7 @@ function SpeakerChip({
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         maxWidth: '100%',
-        transition: 'color var(--duration-fast)',
+        transition: 'color var(--fast)',
       }}
       onMouseEnter={(e) => {
         if (onClick) e.currentTarget.style.color = 'var(--accent)';

@@ -13,7 +13,7 @@
   background: linear-gradient(
     90deg,
     var(--sunken) 0%,
-    color-mix(in oklch, var(--sunken) 60%, var(--surface)) 50%,
+    color-mix(in oklch, var(--sunken) 60%, var(--panel)) 50%,
     var(--sunken) 100%
   );
   background-size: 200% 100%;

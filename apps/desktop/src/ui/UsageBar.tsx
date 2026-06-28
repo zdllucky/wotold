@@ -132,7 +132,7 @@ export function UsageBar({ label, used, limit, format }: UsageBarProps) {
             borderRadius: 'var(--r-pill)',
             transition: reducedMotion
               ? 'none'
-              : 'width var(--duration-normal) var(--ease-out-expo), background var(--duration-normal) var(--ease-out-expo)',
+              : 'width var(--base) cubic-bezier(0.16, 1, 0.3, 1), background var(--base) cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         />
       </div>

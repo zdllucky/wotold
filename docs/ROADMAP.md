@@ -394,11 +394,13 @@
 
 ### B18.6 · DS page + cleanup + QA
 
-- [ ] `DesignSystemPage` переписать под wk-uikit — единый источник всех примитивов / токенов (зеркало `wk-designsystem.jsx`).
-- [ ] `src/ui/*` примитивы → thin-wrappers над новыми классами: Btn / IconBtn / Chip / MetricChip / Input / Select / Switch / Segmented / Modal / Panel / Avatar / Dot / Kbd / Wave / Progress / Tabs / Dropdown / NavItem.
-- [ ] Удалить legacy-shim, старые atelier-классы, неиспользуемый CSS (`pages.css`/устаревшие).
-- [ ] Тесты RTL: обновить под новый DOM (role/label-queries, не классы). Сохранить green core-flow тесты (consent / hotkey / pipeline-sync).
-- [ ] **⚠️ Manual visual QA**: light/dark × (1 или 3 акцента) × (cozy/compact) на всех экранах. A11y: focus-trap (palette / modal / widget), keyboard-nav, ARIA, `prefers-reduced-motion`.
+- [x] **B18.6c** `DesignSystemPage` переписан под wk-uikit (12-секционный showroom, theme-only head, 0 legacy).
+- [x] **B18.6c** `src/ui/*` thin-wrappers: Switch / Segmented / IconBtn / Dot / Wave / Kbd / NavItem / Panel / Avatar(+Group) / Chip / SettingRow / OptionCard(+QualityDots) / Modal / Menu (Dropdown/MenuItem/MenuLabel/MenuSep). Существующие (Button/Select/Tabs/Field/Badge/Pill/StatusDot/Skeleton/Empty/Icon/UsageBar) — без изменений.
+- [x] **B18.6a/b/d** Legacy-shim удалён: `wotold.css` → `components.css` (port, B18.6b), `legacy-tokens.css` удалён (B18.6d), все legacy-токены вычищены (paper/surface/duration/ease/shadow/sp/text-*/tracking-* → uikit). `pages.css` не существовал.
+- [x] **B18.6c/d** Тесты RTL зелёные (402, + smoke ui/wrappers.test.tsx; core-flow consent/hotkey/pipeline-sync сохранены).
+- [ ] **⚠️ Manual visual QA → human follow-up** (агент не может скриншотить native app): light/dark на всех экранах (Inbox/CallDetail/Contacts/Settings·9/Onboarding/DS/recording dock+RecFloat/modals), один графит-акцент, cozy. Проверить: пропавшие стили / FOUC / undefined-var fallback / serif-остатки. A11y: focus-trap, keyboard-nav, ARIA, prefers-reduced-motion.
+
+> **B18 (Wotold v2 редизайн) — done** (кроме ручного visual QA выше). Канон: `wk.css` (примитивы) + `components.css` (app-классы) + `tokens.css`. Atelier shim (`wotold.css`/`legacy-tokens.css`) удалён.
 
 ### Контракты / backend (S2) — параллельно, по мере scope
 

@@ -69,7 +69,7 @@ docs/                 Паспорт и сопутствующие докуме�
 
 ## Design Gate (Wotold v2, [B18] — ОБЯЗАТЕЛЬНО до любой UI работы)
 
-> Идёт миграция Atelier v2 → **Wotold v2** (ROADMAP §B18). Канон — [`docs/design/wotold-v2/`](docs/design/wotold-v2/README.md); Atelier v2 — legacy (до B18.6). Источник истины = прототип `~/Downloads/Wotold v2/` (`uikit.css` + `wk-*.jsx`); инвентарь — `scratchpad/v2-analysis.md`.
+> **Wotold v2 (uikit) — действующий дизайн** (миграция Atelier→v2 завершена в B18.6; shim `wotold.css`/`legacy-tokens.css` удалён). Канон — [`docs/design/wotold-v2/`](docs/design/wotold-v2/README.md) + код: `wk.css` (примитивы) / `components.css` (app-классы) / `tokens.css`. Источник истины = прототип `~/Downloads/Wotold v2/` (`uikit.css` + `wk-*.jsx`).
 
 Перед **любой** правкой `.tsx`/`.css`/`*.module.css`, или инлайн-стилей, **до** Plan/Implement:
 
@@ -90,8 +90,8 @@ docs/                 Паспорт и сопутствующие докуме�
 **Правила (см. design-gate skill для полного списка):**
 
 - Все цвета/spacing/radius/shadow → `var(--*)` из [`apps/desktop/src/styles/tokens.css`](apps/desktop/src/styles/tokens.css). Запрещены сырые hex/oklch в `.tsx`/любом `.css` кроме handoff sources.
-- Компонентные классы из [`apps/desktop/src/styles/wk.css`](apps/desktop/src/styles/wk.css) (uikit, канон): `.btn`(+`--primary/--default/--ghost/--soft/--danger`), `.iconbtn`, `.chip`, `.avatar`, `.dot`, `.kbd`, `.input`, `.field`, `.seg`, `.switch`, `.tabs`/`.tab`, `.navitem`, `.rail`/`.minirail`, `.menu`, `.overlay`/`.modal`, `.palette`, `.tbl`/`.trow`, `.turn`, `.doc`, `.rrail`, `.composer-dock`, `.rec-widget`, `.wave`, `.optioncard`, `.setting-row`. Иконки — `<Icon name=… />` из [`src/ui/Icon.tsx`](apps/desktop/src/ui/Icon.tsx) (line 1.5px, без emoji). Atelier-классы `wotold.css` — legacy, удаляются в B18.6.
-- `var(--danger)` (красный) — **только** запись и destructive actions. Все остальные акценты — `var(--accent)` (моно-графит `ink`). Старый `--signal` → `--danger` (через legacy-tokens shim).
+- Компонентные классы из [`apps/desktop/src/styles/wk.css`](apps/desktop/src/styles/wk.css) (uikit, канон): `.btn`(+`--primary/--default/--ghost/--soft/--danger`), `.iconbtn`, `.chip`, `.avatar`, `.dot`, `.kbd`, `.input`, `.field`, `.seg`, `.switch`, `.tabs`/`.tab`, `.navitem`, `.rail`/`.minirail`, `.menu`, `.overlay`/`.modal`, `.palette`, `.tbl`/`.trow`, `.turn`, `.doc`, `.rrail`, `.composer-dock`, `.rec-widget`, `.wave`, `.optioncard`, `.setting-row`. App-специфичные компонентные классы (transcript/pipeline/stat-tag/rec-float/banners/modal-frame и пр.) — в [`apps/desktop/src/styles/components.css`](apps/desktop/src/styles/components.css) (порт Atelier, token-clean). React-обёртки над классами — `src/ui/*` (Switch/Segmented/IconBtn/Dot/Wave/Kbd/NavItem/Panel/Avatar/Chip/SettingRow/OptionCard/Modal/Menu + Button/Select/Tabs/Field/Badge/…). Иконки — `<Icon name=… />` из [`src/ui/Icon.tsx`](apps/desktop/src/ui/Icon.tsx) (line 1.5px, без emoji).
+- `var(--danger)` (красный) — **только** запись и destructive actions. Все остальные акценты — `var(--accent)` (моно-графит `ink`). Legacy Atelier-токены (`--signal`/`--ink`/`--line`/…) удалены — используй uikit-набор напрямую.
 - Шрифты: **Hanken Grotesk** (UI / текст / транскрипт), **IBM Plex Mono** (timestamps / IDs / код). Serif выпилен.
 - Любая новая страница / модал / форма должна работать корректно в **light + dark** (акцент один — графит, picker убран в B18.5). Density фикс `cozy`.
 - Логика сохраняется 1-в-1 (хоткеи, consent gates, useEffect, API). Меняется только JSX + className.

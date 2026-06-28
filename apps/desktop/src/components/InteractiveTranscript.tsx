@@ -67,7 +67,7 @@ function hashTag(tag: string): number {
 }
 
 function colorVarFor(tag: string): string {
-  if (tag === OWNER_TAG) return 'var(--sp-1)';
+  if (tag === OWNER_TAG) return 'var(--sp1)';
   const idx = (hashTag(tag) % 4) + 2; // 2..5
   return `var(--sp-${idx})`;
 }
@@ -264,7 +264,7 @@ export function InteractiveTranscript({
               marginLeft: -12,
               borderRadius: 'var(--r-xs)',
               transition:
-                'background var(--duration-fast), border-color var(--duration-fast)',
+                'background var(--fast), border-color var(--fast)',
               // [P-fix10] Каскад: каждая строка появляется с задержкой (cap ~1.4s).
               ...(revealRows
                 ? { animationDelay: `${Math.min(idx, 40) * 35}ms` }

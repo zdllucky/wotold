@@ -103,10 +103,10 @@ export function HeaderActions({
             top: 'calc(100% + 6px)',
             right: 0,
             zIndex: 30,
-            background: 'var(--paper)',
+            background: 'var(--panel)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--r-sm)',
-            boxShadow: 'var(--shadow-2)',
+            boxShadow: 'var(--shadow)',
             padding: 4,
             minWidth: 180,
           }}
