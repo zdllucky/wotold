@@ -86,7 +86,10 @@ export function DesignSystemPage() {
   const [settingToggle, setSettingToggle] = useState(true);
 
   return (
-    <>
+    // [B18.9-fix] Shared shell: bleed past .app-main 34/44 padding + fill the
+    // viewport so the .view-head pins flush and the .scroll body scrolls below
+    // — same pattern as Inbox/Contacts/Settings.
+    <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
       <div className="view-head">
         <Icon name="code" size={17} style={{ color: 'var(--text-3)' }} />
         <span style={{ fontWeight: 650 }}>Дизайн-система</span>
@@ -519,6 +522,6 @@ export function DesignSystemPage() {
           </DsSection>
         </div>
       </div>
-    </>
+    </div>
   );
 }
