@@ -129,15 +129,15 @@ button:disabled,
 
 .markdown h1 {
   font-family: var(--font);
-  font-size: var(--text-2xl);
+  font-size: 1.6rem;
   font-weight: 500;
   margin: 0 0 12px;
-  letter-spacing: var(--tracking-tight);
+  letter-spacing: -0.025em;
 }
 
 .markdown h2 {
   font-family: var(--font);
-  font-size: var(--text-lg);
+  font-size: 1.05rem;
   font-weight: 500;
   margin: 20px 0 8px;
 }
@@ -147,7 +147,7 @@ button:disabled,
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--tracking-caps);
+  letter-spacing: 0.13em;
   color: var(--text-3);
   margin: 18px 0 8px;
 }
@@ -238,7 +238,7 @@ button:disabled,
     position: sticky;
     top: 0;
     z-index: 5;
-    background: var(--paper);
+    background: var(--panel);
   }
   .app-main {
     height: auto;

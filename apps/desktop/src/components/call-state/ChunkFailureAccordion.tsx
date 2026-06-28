@@ -148,7 +148,7 @@ export function ChunkFailureAccordion({
                 alignItems: 'center',
                 gap: 12,
                 padding: '6px 10px',
-                background: 'var(--paper)',
+                background: 'var(--panel)',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--r-xs)',
               }}

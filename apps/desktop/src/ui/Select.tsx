@@ -311,7 +311,7 @@ export function Select<V extends string = string>({
     padding: '10px 36px 10px 12px',
     fontFamily: 'var(--font)',
     fontSize: 14,
-    background: 'var(--surface)',
+    background: 'var(--panel)',
     color: 'var(--text)',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
@@ -319,7 +319,7 @@ export function Select<V extends string = string>({
     position: 'relative',
     outline: 'none',
     letterSpacing: '-0.005em',
-    transition: 'border-color var(--duration-fast)',
+    transition: 'border-color var(--fast)',
     ...style,
   };
 
@@ -375,10 +375,10 @@ export function Select<V extends string = string>({
             left: 0,
             right: 0,
             zIndex: 30,
-            background: 'var(--paper)',
+            background: 'var(--panel)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--r-sm)',
-            boxShadow: 'var(--shadow-2)',
+            boxShadow: 'var(--shadow)',
             padding: 4,
             maxHeight: 340,
             overflowY: 'auto',
@@ -393,7 +393,7 @@ export function Select<V extends string = string>({
                 marginBottom: 4,
                 position: 'sticky',
                 top: 0,
-                background: 'var(--paper)',
+                background: 'var(--panel)',
               }}
             >
               <input
@@ -412,7 +412,7 @@ export function Select<V extends string = string>({
                   padding: '6px 10px',
                   border: '1px solid var(--border-2)',
                   borderRadius: 'var(--r-xs)',
-                  background: 'var(--surface)',
+                  background: 'var(--panel)',
                   color: 'var(--text)',
                   fontFamily: 'var(--font)',
                   fontSize: 13,
@@ -468,7 +468,7 @@ export function Select<V extends string = string>({
                   fontFamily: 'var(--font)',
                   letterSpacing: '-0.005em',
                   fontWeight: isSelected ? 600 : 500,
-                  transition: 'background var(--duration-fast)',
+                  transition: 'background var(--fast)',
                 }}
               >
                 {/* Accent stripe for selected — column 1. */}
@@ -549,7 +549,7 @@ function Caret({ open }: { open: boolean }) {
         right: 12,
         top: '50%',
         transform: `translateY(-50%) rotate(${open ? 180 : 0}deg)`,
-        transition: 'transform var(--duration-fast) var(--ease-out-expo)',
+        transition: 'transform var(--fast) cubic-bezier(0.16, 1, 0.3, 1)',
         color: 'var(--text-3)',
         pointerEvents: 'none',
       }}

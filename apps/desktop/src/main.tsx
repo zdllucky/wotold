@@ -5,13 +5,10 @@ import { App } from './App';
 import { RecordingWidgetApp } from './recording/RecordingWidgetApp';
 import './styles/fonts.css';
 import './styles/tokens.css';
-// [B18.0] legacy-tokens shim — Atelier-имена → uikit (удалить в B18.6d, остался
-// только для DesignSystemPage до B18.6c).
-import './styles/legacy-tokens.css';
 import './styles/global.css';
-// [B18.0] Wotold v2 component-слой (uikit) — примитивы.
+// Wotold v2 (uikit) component layer: wk.css = primitives, components.css =
+// app-specific component classes (ported from the now-deleted Atelier shim).
 import './styles/wk.css';
-// [B18.6b] App component-классы (uikit) — порт wotold.css used-классов.
 import './styles/components.css';
 import './ui/ui.css';
 

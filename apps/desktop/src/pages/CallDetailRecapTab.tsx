@@ -275,7 +275,7 @@ export function TaskRow({
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'var(--paper)',
+          color: 'var(--panel)',
           fontSize: 10,
           flexShrink: 0,
           position: 'relative',
