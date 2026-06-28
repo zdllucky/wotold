@@ -1,17 +1,18 @@
 // [M12.5] Settings → «Движок распознавания».
 //
-// Atelier v2 alignment block см. PR описание / chat. Использует только
-// existing tokens + классы (.field, .field-label, .dot, .btn, .activity-strip).
+// Wotold v2 (uikit) alignment block см. PR описание / chat (B18.5c). Использует
+// только uikit-токены + классы (.field, .optioncard, .set-table, .panel, .wave,
+// .chip, .dot, .btn, .iconbtn). Иконки — <Icon/>.
 //
 // Логика секции:
-//   - Engine picker (Local / Cloud / BYO) — radiogroup. Atomic swap через
-//     localEngineSetActiveEngine. Меняет следующую запись, не трогает
-//     существующие (PRD §M12.6.6).
-//   - Hardware probe banner — `.activity-strip`-style на первом mount'е
-//     если recommendation != null и не совпадает с текущим preset'ом.
-//   - При выбранном Local — preset picker (Light / Balanced / Quality)
-//     с .dot--{success|accent|muted} статусом моделей.
-//   - «Освободить место» — list-modal со статусом и кнопками удаления.
+//   - Engine picker (Local / Cloud / BYO) — radiogroup из .optioncard-кнопок
+//     (role="radio"). Atomic swap через localEngineSetActiveEngine. Меняет
+//     следующую запись, не трогает существующие (PRD §M12.6.6).
+//   - Hardware probe banner — accent-soft .panel на первом mount'е если
+//     recommendation != null и не совпадает с текущим preset'ом.
+//   - При выбранном Local — preset picker (Light / Balanced / Quality) на
+//     .optioncard со статус-.dot (ok/accent-pulse/faint) для моделей.
+//   - «Освободить место» — .set-table со статусом и кнопками удаления.
 //
 // События `model:progress`/`model:done` слушаются глобально для всех id;
 // при completion → refresh status.
@@ -29,6 +30,7 @@ import type {
 
 import { DeleteModelConfirm } from '../components/DeleteModelConfirm';
 import { RediscoveryChip } from '../components/RediscoveryChip';
+import { Icon, Skeleton } from '../ui';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import {
   localEngineGetActiveEngine,
@@ -89,12 +91,15 @@ function formatLastUsed(iso: string): string {
   return d.toLocaleDateString();
 }
 
-function dotClassForStatus(status: ModelStatus | null, progress: ModelProgress | null): string {
-  if (progress) return 'dot--accent dot--pulse';
-  if (!status) return 'dot--muted';
-  if (status.state === 'present') return 'dot--success';
-  if (status.state === 'corrupted') return 'dot--warning';
-  return 'dot--muted';
+function dotStyleForStatus(
+  status: ModelStatus | null,
+  progress: ModelProgress | null,
+): { background: string; pulse: boolean } {
+  if (progress) return { background: 'var(--accent)', pulse: true };
+  if (!status) return { background: 'var(--text-faint)', pulse: false };
+  if (status.state === 'present') return { background: 'var(--ok)', pulse: false };
+  if (status.state === 'corrupted') return { background: 'var(--warn)', pulse: false };
+  return { background: 'var(--text-faint)', pulse: false };
 }
 
 export function LocalEngineSection() {
@@ -366,39 +371,51 @@ export function LocalEngineSection() {
       )}
 
       {error && (
-        <p
-          role="alert"
-          style={{
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-sans)',
-            margin: 0,
-          }}
-        >
+        <p role="alert" style={{ color: 'var(--danger)', margin: 0 }}>
           {error}
         </p>
       )}
 
       {hwLoading && (
         <div
-          className="activity-strip"
+          className="panel"
           role="status"
           aria-label={t('localEngine.probeSkeleton.measuring')}
-          style={{ flexDirection: 'column', gap: 10, alignItems: 'stretch' }}
+          style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 16px', maxWidth: 560 }}
         >
-          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+          <p style={{ fontSize: 12, margin: 0, color: 'var(--text-2)' }}>
             {t('localEngine.probeSkeleton.measuring')}
           </p>
-          <div className="probe-skeleton-row" style={{ width: '75%' }} />
-          <div className="probe-skeleton-row" style={{ width: '55%' }} />
-          <div className="probe-skeleton-row" style={{ width: '40%' }} />
+          <Skeleton width="75%" height="12px" />
+          <Skeleton width="55%" height="12px" />
+          <Skeleton width="40%" height="12px" />
         </div>
       )}
 
       {showHwBanner && hw && hw.recommendation && (
-        <div className="activity-strip" role="status">
-          <div>
-            <div className="small-caps">{t('localEngine.hwBannerTitle')}</div>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: 14, color: 'var(--ink-2)' }}>
+        <div
+          className="panel"
+          role="status"
+          style={{
+            background: 'var(--accent-soft)',
+            borderColor: 'transparent',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '12px 16px',
+            maxWidth: 560,
+          }}
+        >
+          <span className="wave" style={{ color: 'var(--accent)' }} aria-hidden>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <i key={i} style={{ animationDelay: i * 0.1 + 's' }} />
+            ))}
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="set-eyebrow" style={{ marginBottom: 4 }}>
+              {t('localEngine.hwBannerTitle')}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
               {t('localEngine.hwBannerBody', {
                 preset: t(`localEngine.preset.${hw.recommendation}`),
                 cpu: hw.cpu_model,
@@ -408,7 +425,8 @@ export function LocalEngineSection() {
           </div>
           <button
             type="button"
-            className="btn btn--primary btn--sm"
+            className="btn btn--primary"
+            data-size="sm"
             onClick={() => {
               if (hw.recommendation) void onPresetChange(hw.recommendation);
               setBannerDismissed(true);
@@ -418,7 +436,8 @@ export function LocalEngineSection() {
           </button>
           <button
             type="button"
-            className="btn btn--quiet btn--sm"
+            className="btn btn--ghost"
+            data-size="sm"
             onClick={() => setBannerDismissed(true)}
           >
             {t('localEngine.hwBannerDismiss')}
@@ -439,48 +458,33 @@ export function LocalEngineSection() {
             {(['cloud_managed', 'local'] as EngineKind[]).map((k) => {
               const active = engine === k;
               return (
-                <label
+                <button
                   key={k}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 12,
-                    padding: 12,
-                    borderRadius: 'var(--radius-card, 8px)',
-                    border: active ? '1.5px solid var(--accent)' : '1px solid var(--line-soft)',
-                    background: active ? 'var(--accent-soft)' : 'transparent',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font-sans)',
-                  }}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className="optioncard"
+                  data-active={active ? 'true' : undefined}
+                  onClick={() => void onEngineChange(k)}
                 >
-                  <input
-                    type="radio"
-                    name="local-engine-kind"
-                    checked={active}
-                    onChange={() => void onEngineChange(k)}
-                    style={{ marginTop: 4 }}
-                  />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 500, color: 'var(--ink)', marginBottom: 4 }}>
-                      {t(`localEngine.engine.${k}.title`)}
-                    </div>
-                    <div style={{ fontSize: 13, color: 'var(--subtle)', lineHeight: 1.5 }}>
-                      {t(`localEngine.engine.${k}.body`)}
-                    </div>
-                    <div
-                      className="mono"
-                      style={{ fontSize: 11, color: 'var(--subtle)', marginTop: 6 }}
-                    >
-                      {t(`localEngine.engine.${k}.quality`)}
-                    </div>
-                  </div>
-                  {active && (
-                    <span className="badge badge--active" style={{ alignSelf: 'center', flexShrink: 0 }}>
-                      <span className="dot" style={{ background: 'var(--success)', width: 5, height: 5 }} aria-hidden />
-                      {t('localEngine.engine.active')}
+                  <span className="optioncard-ico" aria-hidden>
+                    <Icon name={k === 'local' ? 'cpu' : 'cloud'} size={16} />
+                  </span>
+                  <span className="optioncard-main">
+                    <span className="optioncard-head">
+                      <b>{t(`localEngine.engine.${k}.title`)}</b>
+                      {active && (
+                        <span className="chip chip--accent" data-size="sm">
+                          {t('localEngine.engine.active')}
+                        </span>
+                      )}
                     </span>
-                  )}
-                </label>
+                    <span className="optioncard-sub">{t(`localEngine.engine.${k}.body`)}</span>
+                    <span className="optioncard-meta mono">
+                      {t(`localEngine.engine.${k}.quality`)}
+                    </span>
+                  </span>
+                </button>
               );
             })}
           </div>
@@ -495,13 +499,12 @@ export function LocalEngineSection() {
 
       {!hwLoading && engine === 'local' && hw && (
         <div
-          className="subtle"
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 10,
             fontSize: 12,
-            fontFamily: 'var(--font-sans)',
+            color: 'var(--text-3)',
           }}
         >
           <span>
@@ -518,7 +521,8 @@ export function LocalEngineSection() {
           </span>
           <button
             type="button"
-            className="btn btn--quiet btn--sm"
+            className="btn btn--ghost"
+            data-size="sm"
             onClick={async () => {
               try {
                 const next = await localEngineHwProbe(true);
@@ -556,43 +560,36 @@ export function LocalEngineSection() {
               const totalSize =
                 (whisperStatus?.bytes_total ?? 0) + (llmStatus?.bytes_total ?? 0);
               const isRecommended = hw?.recommendation === p;
+              const dot = anyDownloading
+                ? { background: 'var(--accent)', pulse: true }
+                : allPresent
+                  ? { background: 'var(--ok)', pulse: false }
+                  : { background: 'var(--text-faint)', pulse: false };
               return (
-                <label
+                <button
                   key={p}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: 12,
-                    borderRadius: 'var(--radius-card, 8px)',
-                    border: active ? '1.5px solid var(--accent)' : '1px solid var(--line-soft)',
-                    background: active ? 'var(--accent-soft)' : 'transparent',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font-sans)',
-                  }}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className="optioncard"
+                  data-active={active ? 'true' : undefined}
+                  onClick={() => void onPresetChange(p)}
                 >
-                  <input
-                    type="radio"
-                    name="local-engine-preset"
-                    checked={active}
-                    onChange={() => void onPresetChange(p)}
-                  />
-                  <span
-                    className={`dot ${allPresent ? 'dot--success' : anyDownloading ? 'dot--accent dot--pulse' : 'dot--muted'}`}
-                    aria-hidden
-                  />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 500, color: 'var(--ink)' }}>
-                        {t(`localEngine.preset.${p}`)}
-                      </span>
+                  <span className="optioncard-main">
+                    <span className="optioncard-head">
+                      <span
+                        className={'dot' + (dot.pulse ? ' dot--pulse' : '')}
+                        style={{ background: dot.background }}
+                        aria-hidden
+                      />
+                      <b>{t(`localEngine.preset.${p}`)}</b>
                       {isRecommended && (
-                        <span className="badge badge--recommend">
+                        <span className="chip chip--accent" data-size="sm">
                           {t('localEngine.presetRecommend')}
                         </span>
                       )}
-                    </div>
-                    <div className="mono" style={{ fontSize: 11, color: 'var(--subtle)', marginTop: 2 }}>
+                    </span>
+                    <span className="optioncard-meta mono">
                       {t(`localEngine.presetMeta.${p}`)}{' · '}
                       {totalSize > 0 ? formatGB(totalSize) : '—'}{' · '}
                       {allPresent
@@ -600,92 +597,72 @@ export function LocalEngineSection() {
                         : anyDownloading
                           ? t('localEngine.statusDownloading')
                           : t('localEngine.statusAbsent')}
-                    </div>
-                  </div>
-                </label>
+                    </span>
+                  </span>
+                </button>
               );
             })}
           </div>
 
-          <div style={{ marginTop: 6 }}>
-            <span className="subtle" style={{ fontSize: 12 }}>
-              {t('localEngine.installedFootprint', { size: formatGB(totalInstalledBytes) })}
-            </span>
-          </div>
+          <p className="set-hint">
+            {t('localEngine.installedFootprint', { size: formatGB(totalInstalledBytes) })}
+          </p>
         </div>
       )}
 
       {!hwLoading && engine === 'local' && storageRows.length > 0 && (
         <div className="field">
-          <div
-            className="field-label small-caps"
-            id="local-engine-storage-title"
-            style={{ marginBottom: 10 }}
-          >
+          <div className="set-eyebrow" id="local-engine-storage-title">
             {t('localEngine.storageTitle')}
           </div>
-          <p
-            className="subtle"
-            style={{ margin: 0, marginBottom: 12, fontSize: 12, fontFamily: 'var(--font-sans)' }}
-          >
+          <p className="set-hint" style={{ marginTop: 0, marginBottom: 12 }}>
             {t('localEngine.storageLede')}
           </p>
           {/* [M12.4.4-bis] Таблица inline: name · size · last_used · active badge · × */}
-          <div role="table" style={{ display: 'flex', flexDirection: 'column' }}>
-            <div
-              role="row"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 70px 90px 100px 28px',
-                gap: 10,
-                padding: '6px 0',
-                borderBottom: '1px solid var(--line-soft)',
-              }}
-            >
-              <span className="small-caps">{t('localEngine.colName')}</span>
-              <span className="small-caps">{t('localEngine.colSize')}</span>
-              <span className="small-caps">{t('localEngine.colLastUsed')}</span>
-              <span className="small-caps">{t('localEngine.colState')}</span>
-              <span />
+          <div className="set-table" role="table">
+            <div className="set-trow set-thead" role="row">
+              <span role="columnheader" style={{ flex: '1 1 auto', minWidth: 0 }}>
+                {t('localEngine.colName')}
+              </span>
+              <span role="columnheader" style={{ flex: '0 0 64px' }}>
+                {t('localEngine.colSize')}
+              </span>
+              <span role="columnheader" style={{ flex: '0 0 84px' }}>
+                {t('localEngine.colLastUsed')}
+              </span>
+              <span role="columnheader" style={{ flex: '0 0 96px' }}>
+                {t('localEngine.colState')}
+              </span>
+              <span role="columnheader" style={{ flex: '0 0 28px' }} />
             </div>
             {storageRows.map((row) => {
               const progress = progresses[row.id];
               const status = row.status;
+              const dot = dotStyleForStatus(status, progress ?? null);
               return (
-                <div
-                  key={row.id}
-                  role="row"
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 70px 90px 100px 28px',
-                    gap: 10,
-                    padding: '10px 0',
-                    borderBottom: '1px solid var(--line-soft)',
-                    alignItems: 'center',
-                    fontFamily: 'var(--font-sans)',
-                    fontSize: 13,
-                  }}
-                >
-                  <div style={{ color: 'var(--ink)' }}>{modelLabel(row.id, t)}</div>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--subtle)' }}>
+                <div key={row.id} className="set-trow" role="row">
+                  <div style={{ flex: '1 1 auto', minWidth: 0, color: 'var(--text)' }}>
+                    {modelLabel(row.id, t)}
+                  </div>
+                  <span className="mono" style={{ flex: '0 0 64px', color: 'var(--text-3)' }}>
                     {formatGB(row.size_bytes)}
                   </span>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--subtle)' }}>
+                  <span className="mono" style={{ flex: '0 0 84px', color: 'var(--text-3)' }}>
                     {row.last_used_at ? formatLastUsed(row.last_used_at) : '—'}
                   </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ flex: '0 0 96px', display: 'flex', alignItems: 'center', gap: 6 }}>
                     {row.is_active && status.state === 'present' ? (
-                      <span className="badge badge--active">
-                        <span className="dot" style={{ background: 'var(--success)', width: 5, height: 5 }} aria-hidden />
+                      <span className="chip chip--accent" data-size="sm">
                         {t('localEngine.statusActive')}
                       </span>
                     ) : (
                       <>
                         <span
-                          className={`dot ${dotClassForStatus(status, progress ?? null)}`}
+                          className={'dot' + (dot.pulse ? ' dot--pulse' : '')}
+                          style={{ background: dot.background }}
                           aria-hidden
                         />
-                        <span style={{ fontSize: 11, color: 'var(--subtle)' }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
                           {status.state === 'present'
                             ? t('localEngine.statusInstalled')
                             : progress
@@ -697,41 +674,41 @@ export function LocalEngineSection() {
                       </>
                     )}
                   </div>
-                  {status.state === 'present' ? (
-                    <button
-                      type="button"
-                      className="btn btn--quiet btn--sm"
-                      aria-label={t('localEngine.deleteAria', { name: modelLabel(row.id, t) })}
-                      title={t('localEngine.delete')}
-                      onClick={() =>
-                        void onDeleteFromStorage(row.id, row.is_active, () => {
-                          void refreshStorage();
-                          void refreshStatuses([row.id]);
-                        })
-                      }
-                    >
-                      ×
-                    </button>
-                  ) : !progress ? (
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--sm"
-                      aria-label={t('localEngine.downloadAria', { name: modelLabel(row.id, t) })}
-                      title={t('localEngine.download')}
-                      onClick={() => void onDownload(row.id)}
-                    >
-                      ↓
-                    </button>
-                  ) : (
-                    <span />
-                  )}
+                  <div style={{ flex: '0 0 28px' }}>
+                    {status.state === 'present' ? (
+                      <button
+                        type="button"
+                        className="iconbtn"
+                        data-size="sm"
+                        aria-label={t('localEngine.deleteAria', { name: modelLabel(row.id, t) })}
+                        title={t('localEngine.delete')}
+                        onClick={() =>
+                          void onDeleteFromStorage(row.id, row.is_active, () => {
+                            void refreshStorage();
+                            void refreshStatuses([row.id]);
+                          })
+                        }
+                      >
+                        <Icon name="trash" size={14} />
+                      </button>
+                    ) : !progress ? (
+                      <button
+                        type="button"
+                        className="iconbtn"
+                        data-size="sm"
+                        aria-label={t('localEngine.downloadAria', { name: modelLabel(row.id, t) })}
+                        title={t('localEngine.download')}
+                        onClick={() => void onDownload(row.id)}
+                      >
+                        <Icon name="download" size={14} />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               );
             })}
           </div>
-          <p className="subtle" style={{ fontSize: 11, marginTop: 12 }}>
-            {t('localEngine.storageFootnote')}
-          </p>
+          <p className="set-hint">{t('localEngine.storageFootnote')}</p>
         </div>
       )}
     </div>

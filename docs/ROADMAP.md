@@ -390,7 +390,7 @@
 - [x] **B18.5a** `SettingsPage` shell → rail `.navitem`+иконки, `.set-*` headers, **Row-primitive**. Логика / SETTINGS_KEYS / i18n 1-в-1.
 - [x] **B18.5a** Appearance: theme → **Segmented** (sun/moon/system); **accent-picker удалён** (моно-графит); language Select. Без density-контрола (фикс cozy).
 - [x] **B18.5b** Permissions: 3 dense `.setting-row` + `.chip`. Recording: Select / HotkeyCapture / **Switch** (5a). Speakers/VoiceModel: `.panel` + **Switch** (auto-bind / mic-diariz). Labs: 2 **Switch** + Select.
-- [ ] **B18.5c** Processing/LocalEngine: **OptionCard** engine×2 + preset×3 (quality-dots), models **Table**, hw-probe activity-strip + recompute, BYO-keys в `<details>`. Account: state-machine restyle. Maintenance: Row + Wave. Privacy: **HTML Modal** (native `ask()` заменяется).
+- [x] **B18.5c** Processing/LocalEngine: **OptionCard** engine×2 + preset×3 (token-dots), storage **`.set-table`** (+columnheader a11y), hw-probe `.panel`+`.wave` + reprobe. Account: 4-state restyle (Card→`.panel`, Badge→`.chip`). Maintenance: `.panel`+`.wave`. Privacy: новый `ConfirmModal` (v2 `.overlay`/`.modal` + `useFocusTrap`) вместо native `ask()`.
 
 ### B18.6 · DS page + cleanup + QA
 

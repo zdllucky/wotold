@@ -13,7 +13,7 @@ import {
   type OidcProvider,
 } from '../api/auth';
 import { bcp47, useI18n } from '../i18n';
-import { Badge, Button, Card, InputField, Skeleton } from '../ui';
+import { Button, InputField, Skeleton } from '../ui';
 
 interface AuthDeepLinkPayload {
   path: string;
@@ -181,10 +181,8 @@ export function AccountSection() {
   return (
     <div>
       <p
-        className="muted"
         style={{
-          fontFamily: 'var(--font-serif)',
-          fontStyle: 'italic',
+          color: 'var(--text-2)',
           fontSize: 14,
           marginTop: 0,
           marginBottom: 14,
@@ -196,8 +194,7 @@ export function AccountSection() {
         <p
           role="alert"
           style={{
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-sans)',
+            color: 'var(--danger)',
             marginBottom: 12,
           }}
         >
@@ -249,7 +246,7 @@ function SignedInView({
 }) {
   const { t } = useI18n();
   return (
-    <Card variant="sunken">
+    <div className="panel" style={{ padding: 18 }}>
       <div
         style={{
           display: 'flex',
@@ -262,26 +259,25 @@ function SignedInView({
         <div style={{ minWidth: 0 }}>
           <p
             style={{
-              fontFamily: 'var(--font-serif)',
-              fontSize: 18,
-              color: 'var(--ink)',
+              fontWeight: 600,
+              fontSize: 16,
+              color: 'var(--text)',
               margin: 0,
             }}
           >
             {identity.displayName ?? identity.email ?? identity.id}
           </p>
           {identity.email && identity.displayName && (
-            <p
-              className="muted"
-              style={{ margin: '2px 0 0', fontSize: 13 }}
-            >
+            <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-2)' }}>
               {identity.email}
             </p>
           )}
         </div>
-        <Badge tone="success">{identity.provider}</Badge>
+        <span className="chip chip--accent" data-size="sm">
+          {identity.provider}
+        </span>
       </div>
-      <p className="small-caps" style={{ marginBottom: 14 }}>
+      <p className="set-eyebrow" style={{ marginBottom: 14 }}>
         {t('account.sessionUntil', { date: formatDate(expiresAt, locale) })}
       </p>
       <div style={{ display: 'flex', gap: 8 }}>
@@ -289,7 +285,7 @@ function SignedInView({
           {t('account.signOut')}
         </Button>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -312,26 +308,29 @@ function PendingPasteView({
 }) {
   const { t } = useI18n();
   return (
-    <Card variant="sunken">
+    <div className="panel" style={{ padding: 18 }}>
       <p
         style={{
-          fontFamily: 'var(--font-serif)',
-          fontSize: 15,
+          color: 'var(--text-2)',
+          fontSize: 14,
           margin: '0 0 8px',
         }}
       >
-        <strong style={{ fontWeight: 500 }}>{t('account.step1')}</strong> {t('account.step1Body')}{' '}
-        <Badge tone="accent">{provider}</Badge>
+        <strong style={{ fontWeight: 600, color: 'var(--text)' }}>{t('account.step1')}</strong>{' '}
+        {t('account.step1Body')}{' '}
+        <span className="chip chip--accent" data-size="sm">
+          {provider}
+        </span>
         {t('account.step1Body2')}
       </p>
       <p
         style={{
-          fontFamily: 'var(--font-serif)',
-          fontSize: 15,
+          color: 'var(--text-2)',
+          fontSize: 14,
           margin: '0 0 12px',
         }}
       >
-        <strong style={{ fontWeight: 500 }}>{t('account.step2')}</strong>{' '}
+        <strong style={{ fontWeight: 600, color: 'var(--text)' }}>{t('account.step2')}</strong>{' '}
         {t('account.step2Body')}
       </p>
       <InputField
@@ -357,10 +356,8 @@ function PendingPasteView({
         </Button>
       </div>
       <p
-        className="muted"
         style={{
-          fontStyle: 'italic',
-          fontFamily: 'var(--font-serif)',
+          color: 'var(--text-2)',
           fontSize: 13,
           marginTop: 14,
           marginBottom: 4,
@@ -369,12 +366,12 @@ function PendingPasteView({
         {t('account.deepLinkHint')} (<code className="mono">wotold://</code>).
       </p>
       <p
-        className="subtle mono"
-        style={{ fontSize: 11, margin: 0, wordBreak: 'break-all' }}
+        className="mono"
+        style={{ color: 'var(--text-3)', fontSize: 11, margin: 0, wordBreak: 'break-all' }}
       >
         {authorizeUrl}
       </p>
-    </Card>
+    </div>
   );
 }
 
@@ -387,11 +384,11 @@ function SignedOutView({
 }) {
   const { t } = useI18n();
   return (
-    <Card variant="sunken">
+    <div className="panel" style={{ padding: 18 }}>
       <p
         style={{
-          fontFamily: 'var(--font-serif)',
-          fontSize: 15,
+          color: 'var(--text-2)',
+          fontSize: 14,
           margin: '0 0 12px',
         }}
       >
@@ -408,14 +405,14 @@ function SignedOutView({
           >
             {p.label}
             {p.disabled && (
-              <Badge tone="neutral" style={{ marginLeft: '0.4rem' }}>
+              <span className="chip chip--line" data-size="sm" style={{ marginLeft: '0.4rem' }}>
                 {t('account.soon')}
-              </Badge>
+              </span>
             )}
           </Button>
         ))}
       </div>
-    </Card>
+    </div>
   );
 }
 
