@@ -1,6 +1,6 @@
-// [B17] Onboarding — exact match per docs/design/atelier-v2/_reference/atelier.jsx §1.
+// [B17][B18.7a] Onboarding — Wotold v2 uikit (.overlay/.modal idiom).
 //
-// Centred 540px column poверх .modal-backdrop:
+// Centred 540px column в .overlay → .modal:
 //   - .eyebrow "Шаг 0N из 03 · {step.label}"
 //   - .display 2-line headline
 //   - .subtitle lede
@@ -174,14 +174,15 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   };
 
   return (
-    <div
-      ref={rootRef}
-      className="modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="onboarding-title"
-    >
-      <div style={{ width: 540, maxWidth: '90vw', padding: '40px 4px' }}>
+    <div className="overlay">
+      <div
+        ref={rootRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        style={{ width: 540, maxWidth: '90vw', padding: '40px 4px' }}
+      >
         <div className="eyebrow" style={{ marginBottom: 14 }}>
           {t('onboarding.stepLabel', { step, total: stepTotal, label: STEP_LABEL[step] })}
         </div>

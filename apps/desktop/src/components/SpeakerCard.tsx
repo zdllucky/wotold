@@ -17,7 +17,7 @@ import { useI18n } from '../i18n';
 import { Select } from '../ui';
 import { humanSpeakerLabel, shortSpeakerLabel } from '../utils/callMeta';
 
-const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
+import { SP_COLORS } from '../pages/CallDetailUtils';
 
 /** [P-fix8] Кол-во баров реальной скраб-дорожки сэмпла. */
 const SAMPLE_BAR_COUNT = 72;
@@ -310,7 +310,7 @@ export function SpeakerCard({
   const sampleDurationSec = sample ? Math.max(1, Math.round(sample.end - sample.start)) : null;
 
   return (
-    <div className="index-card" style={{ position: 'relative', maxWidth: 720 }}>
+    <div className="panel" style={{ position: 'relative', maxWidth: 720, padding: '36px 40px' }}>
       <div
         style={{
           display: 'flex',

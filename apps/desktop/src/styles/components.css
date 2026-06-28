@@ -253,33 +253,8 @@
   border-radius: 2px;
   transition: width var(--base) cubic-bezier(0.16, 1, 0.3, 1);
 }
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: var(--bg);
-  background: radial-gradient(ellipse at center, var(--bg) 0%, var(--sunken) 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-.index-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: 36px 40px;
-  box-shadow: var(--shadow-lg);
-  position: relative;
-  width: 560px;
-  max-width: 90vw;
-}
-.index-card::before {
-  content: "";
-  position: absolute;
-  top: 14px; left: 14px; right: 14px;
-  height: 1px;
-  background: var(--accent-soft);
-}
+/* [B18.7a] .modal-backdrop / .index-card removed — all modals migrated to the
+   v2 .overlay/.modal idiom (wk.css). */
 .dot--accent  { background: var(--accent); }
 .dot--signal  { background: var(--danger); }
 .dot--success { background: var(--ok); }
@@ -855,7 +830,7 @@
   opacity: 1;
 }
 :root[data-theme='dark'] .rec-float {
-  background: var(--bg-1, #1a1a1a);
+  background: var(--panel);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.4),
     0 4px 12px rgba(0, 0, 0, 0.35);

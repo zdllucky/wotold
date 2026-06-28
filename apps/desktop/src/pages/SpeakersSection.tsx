@@ -24,8 +24,8 @@ import {
 } from '../components/SpeakerCard';
 import { useI18n } from '../i18n';
 import { humanSpeakerLabel } from '../utils/callMeta';
+import { SP_COLORS } from './CallDetailUtils';
 
-const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
 const OWNER_TAG = 'owner';
 
 function initials(name: string): string {

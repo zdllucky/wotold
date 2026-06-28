@@ -2,7 +2,8 @@
 // где «Звонки», «Контакты», «Настройки». Не блокирует UI — modal с dim,
 // dismiss через клик/ESC. Стоит на ONBOARDING_DONE=1 + COACHMARKS_SEEN!=1.
 //
-// [B17] Atelier v2 — .modal-backdrop + .index-card per docs/design/atelier-v2.
+// [B18.7a] Wotold v2 (uikit) — .overlay + .modal per docs/design/wotold-v2.
+// role/aria + focus-trap ref живут на внутреннем .modal (a11y fix).
 // Эмодзи в заголовках убраны (handoff: text carries enough signal).
 
 import { useEffect, useRef, useState } from 'react';
@@ -86,96 +87,100 @@ export function Coachmarks() {
   const isLast = step === STEPS.length - 1;
 
   return (
-    <div
-      ref={ref}
-      className="modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="coach-title"
-    >
-      <div className="index-card">
-        <div className="small-caps" style={{ marginBottom: 10 }}>
-          {t('coachmarks.stepOf', { step: current.eyebrow, total: STEPS.length })}
-        </div>
-        <h3
-          id="coach-title"
-          className="title"
-          style={{ fontSize: 28, marginBottom: 14 }}
-        >
-          {current.title}
-        </h3>
-        <p
-          style={{
-            fontFamily: 'var(--font)',
-            fontSize: 17,
-            lineHeight: 1.55,
-            color: 'var(--text-2)',
-            marginBottom: 28,
-          }}
-        >
-          {current.body}
-        </p>
-
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            paddingTop: 20,
-            borderTop: '1px solid var(--border-2)',
-          }}
-        >
-          <button
-            type="button"
-            className="btn btn--quiet"
-            onClick={() => void dismiss()}
+    <div className="overlay">
+      <div
+        ref={ref}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="coach-title"
+      >
+        <div className="modal-body">
+          <div className="small-caps" style={{ marginBottom: 10 }}>
+            {t('coachmarks.stepOf', {
+              step: current.eyebrow,
+              total: STEPS.length,
+            })}
+          </div>
+          <h3
+            id="coach-title"
+            className="title"
+            style={{ fontSize: 28, marginBottom: 14 }}
           >
-            {t('common.skip')}
-          </button>
-          {step > 0 && (
-            <button
-              type="button"
-              className="btn btn--ghost"
-              onClick={() => setStep(step - 1)}
-            >
-              {t('common.back')}
-            </button>
-          )}
-          {!isLast ? (
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() => setStep(step + 1)}
-            >
-              {t('common.next')}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() => void dismiss()}
-            >
-              {t('common.gotIt')}
-            </button>
-          )}
+            {current.title}
+          </h3>
+          <p
+            style={{
+              fontFamily: 'var(--font)',
+              fontSize: 17,
+              lineHeight: 1.55,
+              color: 'var(--text-2)',
+              marginBottom: 28,
+            }}
+          >
+            {current.body}
+          </p>
+
           <div
             style={{
-              marginLeft: 'auto',
               display: 'flex',
-              gap: 6,
+              alignItems: 'center',
+              gap: 10,
+              paddingTop: 20,
+              borderTop: '1px solid var(--border-2)',
             }}
-            aria-label={t('coachmarks.progressAria')}
           >
-            {STEPS.map((_, i) => (
-              <span
-                key={i}
-                className="dot"
-                style={{
-                  background:
-                    i <= step ? 'var(--accent)' : 'var(--border)',
-                }}
-              />
-            ))}
+            <button
+              type="button"
+              className="btn btn--quiet"
+              onClick={() => void dismiss()}
+            >
+              {t('common.skip')}
+            </button>
+            {step > 0 && (
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() => setStep(step - 1)}
+              >
+                {t('common.back')}
+              </button>
+            )}
+            {!isLast ? (
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => setStep(step + 1)}
+              >
+                {t('common.next')}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => void dismiss()}
+              >
+                {t('common.gotIt')}
+              </button>
+            )}
+            <div
+              style={{
+                marginLeft: 'auto',
+                display: 'flex',
+                gap: 6,
+              }}
+              aria-label={t('coachmarks.progressAria')}
+            >
+              {STEPS.map((_, i) => (
+                <span
+                  key={i}
+                  className="dot"
+                  style={{
+                    background: i <= step ? 'var(--accent)' : 'var(--border)',
+                  }}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>

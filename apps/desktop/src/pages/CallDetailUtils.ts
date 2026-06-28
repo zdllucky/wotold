@@ -1,6 +1,10 @@
-// [B17] Shared utilities for CallDetailPage tabs (transcript / recap / tasks).
+// Shared utilities for CallDetailPage tabs (transcript / recap / tasks).
 
-export const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
+// Canonical speaker-avatar palette — Wotold v2 theme-aware tokens (light/dark
+// values in tokens.css). Single source of truth: all speaker/contact avatars
+// import this so the same speaker is the same colour on every screen. Used only
+// in DOM inline-style backgrounds (no canvas), so CSS vars resolve correctly.
+export const SP_COLORS = ['var(--sp1)', 'var(--sp2)', 'var(--sp3)', 'var(--sp4)', 'var(--sp5)'];
 
 export function initials(name: string): string {
   return (

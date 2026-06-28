@@ -9,8 +9,8 @@
 import type { CallSpeakerView } from '../../api/speakers';
 import { useI18n } from '../../i18n';
 import { pluralParticipants } from '../../utils/callMeta';
+import { SP_COLORS } from '../../pages/CallDetailUtils';
 
-const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
 /** Совпадает с backend `crate::pipeline::merge::OWNER_TAG`. */
 const OWNER_TAG = 'owner';
 

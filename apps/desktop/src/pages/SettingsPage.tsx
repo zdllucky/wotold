@@ -1,4 +1,4 @@
-// [B17] SettingsPage — exact match per docs/design/atelier-v2/_reference/atelier-2.jsx §9.
+// SettingsPage — Wotold v2 (uikit) settings shell + 9 sections (B18.5).
 //
 // Inner 220px rail (Настройки nav) + flex content with per-section layout:
 //   - Eyebrow "Настройки · {section.label}"

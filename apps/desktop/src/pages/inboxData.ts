@@ -10,14 +10,8 @@ export const VIRTUALIZATION_THRESHOLD = 200;
 export const ROW_HEIGHT = 72;
 export const VIRTUAL_LIST_HEIGHT = 600;
 
-// Speaker thread colors per --sp1..5.
-export const SP_COLORS = [
-  'var(--sp1)',
-  'var(--sp2)',
-  'var(--sp3)',
-  'var(--sp4)',
-  'var(--sp5)',
-];
+// Speaker thread colors — canonical Wotold v2 token palette (--sp1..5).
+export { SP_COLORS } from './CallDetailUtils';
 
 export function declinePlural(n: number, forms: [string, string, string]): string {
   const abs = Math.abs(n) % 100;

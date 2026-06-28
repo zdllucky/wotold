@@ -457,25 +457,28 @@ function AppShell() {
       </main>
 
       {showConsent && (
-        <div
-          ref={consentRef}
-          className="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="consent-title"
-        >
-          <div className="index-card">
-            <div className="eyebrow" style={{ marginBottom: 10 }}>
-              {t('home.consentEyebrow')}
+        <div className="overlay">
+          <div
+            ref={consentRef}
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="consent-title"
+            style={{ width: 460 }}
+          >
+            <div className="modal-body" style={{ paddingBottom: 4 }}>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>
+                {t('home.consentEyebrow')}
+              </div>
+              <h3 id="consent-title" className="title" style={{ marginBottom: 14 }}>
+                {t('home.consentTitle')}
+              </h3>
+              <p style={{ fontSize: 16, lineHeight: 1.55 }}>{t('home.consentBody')}</p>
+              <p className="u-muted" style={{ marginTop: 8 }}>
+                {t('home.consentSubnote')}
+              </p>
             </div>
-            <h3 id="consent-title" className="title" style={{ marginBottom: 14 }}>
-              {t('home.consentTitle')}
-            </h3>
-            <p style={{ fontSize: 16, lineHeight: 1.55 }}>{t('home.consentBody')}</p>
-            <p className="u-muted" style={{ marginTop: 8 }}>
-              {t('home.consentSubnote')}
-            </p>
-            <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+            <div className="modal-foot">
               <button
                 type="button"
                 className="btn btn--ghost"
