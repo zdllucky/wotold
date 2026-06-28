@@ -34,6 +34,7 @@ import {
 } from '../api/settings';
 import { useI18n } from '../i18n';
 import { Select, Skeleton } from '../ui';
+import { Icon, type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
 import { AccountSection } from './AccountSection';
@@ -59,6 +60,19 @@ interface SectionMeta {
   label: string;
   hidden?: boolean;
 }
+
+// [B18.5a] v2 rail icon per section.
+const SECTION_ICONS: Record<SectionId, IconName> = {
+  appearance: 'sun',
+  account: 'user',
+  processing: 'cpu',
+  permissions: 'lock',
+  recording: 'mic',
+  speakers: 'users',
+  labs: 'bolt',
+  maintenance: 'refresh',
+  privacy: 'shield',
+};
 
 export function SettingsPage() {
   const { t } = useI18n();
@@ -184,36 +198,39 @@ export function SettingsPage() {
         minHeight: '100%',
       }}
     >
-      {/* Inner settings rail */}
+      {/* [B18.5a] v2 inner settings rail */}
       <div
         style={{
-          width: 220,
-          padding: '32px 22px',
-          borderRight: '1px solid var(--line-soft)',
+          width: 250,
+          padding: '26px 10px 10px',
+          borderRight: '1px solid var(--border)',
           flexShrink: 0,
         }}
       >
-        <div className="small-caps" style={{ marginBottom: 14 }}>
+        <div className="sec-label" style={{ padding: '0 8px', marginBottom: 8 }}>
           {t('settings.title')}
         </div>
         {NAV.filter((s) => !s.hidden).map((s) => (
           <button
             key={s.id}
             type="button"
-            className={`nav-item${section === s.id ? ' nav-item--active' : ''}`}
+            className="navitem"
+            data-active={section === s.id ? 'true' : undefined}
             onClick={() => setSection(s.id)}
             aria-current={section === s.id ? 'page' : undefined}
-            style={{ fontSize: 14 }}
           >
-            {s.label}
+            <span className="nav-ico">
+              <Icon name={SECTION_ICONS[s.id]} size={16} />
+            </span>
+            <span className="nav-label">{s.label}</span>
           </button>
         ))}
         {savedTick > 0 && (
           <div
             role="status"
             aria-live="polite"
-            className="small-caps"
-            style={{ marginTop: 18, color: 'var(--success)', fontSize: 11 }}
+            className="set-saved"
+            style={{ marginTop: 18, padding: '0 8px' }}
           >
             {t('settings.saved')}
           </div>
@@ -382,27 +399,22 @@ export function SettingsPage() {
                   <label className="field-label">
                     {t('settings.callDetectLabel')}
                   </label>
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 12,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={callDetectEnabled}
-                      onChange={(e) => {
-                        const v = e.target.checked;
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={callDetectEnabled}
+                      aria-label={t('settings.callDetectCheckboxLabel')}
+                      className="switch"
+                      data-on={callDetectEnabled ? 'true' : undefined}
+                      onClick={() => {
+                        const v = !callDetectEnabled;
                         setCallDetectEnabled(v);
                         void persist(
                           SETTINGS_KEYS.CALL_DETECT_ENABLED,
                           v ? '1' : '0',
                         );
-                        // [S2] Поднять/потушить probe сразу же — не ждать
-                        // следующего рестарта. cooldown в минутах из текущего
-                        // значения селектора.
+                        // [S2] Поднять/потушить probe сразу же.
                         if (v) {
                           void invoke('enable_call_detect', {
                             cooldownMin: Number.parseInt(callDetectCooldown, 10),
@@ -415,19 +427,12 @@ export function SettingsPage() {
                           });
                         }
                       }}
-                      style={{ marginTop: 4 }}
+                      style={{ marginTop: 2, flex: '0 0 auto' }}
                     />
-                    <span
-                      style={{
-                        fontFamily: 'var(--font-serif)',
-                        fontSize: 14,
-                        color: 'var(--ink-2)',
-                        lineHeight: 1.5,
-                      }}
-                    >
+                    <span style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.5 }}>
                       {t('settings.callDetectCheckboxLabel')}
                     </span>
-                  </label>
+                  </div>
                   <span
                     style={{
                       fontSize: 12,
@@ -526,10 +531,10 @@ interface SectionShellProps {
 function SectionShell({ title, lede, children }: SectionShellProps) {
   return (
     <>
-      <div className="display" style={{ fontSize: 40, marginBottom: 10, marginTop: 0 }}>
+      <div className="set-display" style={{ marginBottom: 10, marginTop: 0 }}>
         {title}
       </div>
-      <p className="subtitle" style={{ maxWidth: 560, marginBottom: 32 }}>
+      <p className="set-lead" style={{ maxWidth: 560, marginBottom: 32 }}>
         {lede}
       </p>
       {children}

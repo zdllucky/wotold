@@ -1,57 +1,35 @@
-// [B17] Appearance section — theme + accent + interface language picker.
-// Тема/акцент через useTheme(), язык — через useI18n() с persist в
-// SETTINGS_KEYS.UI_LOCALE.
+// [B18.5a] Appearance — theme (Segmented) + interface language. Accent picker
+// removed: Wotold v2 is mono-graphite (B18.0 decision); accent is fixed `ink`.
 
 import { Select } from '../ui';
+import { Icon } from '../ui/Icon';
 import { SUPPORTED_LOCALES, useI18n, type Locale } from '../i18n';
-import { useTheme, type Accent, type Theme } from '../theme/useTheme';
+import { useTheme, type Theme } from '../theme/useTheme';
 
 export function AppearanceSection() {
-  const { theme, setTheme, accent, setAccent } = useTheme();
+  const { theme, setTheme } = useTheme();
   const { locale, setLocale, t } = useI18n();
 
-  const themeOptions: Array<{ id: Theme; label: string }> = [
-    { id: 'light', label: t('settings.themeLight') },
-    { id: 'dark', label: t('settings.themeDark') },
+  const themeOptions: Array<{ id: Theme; label: string; icon?: 'sun' | 'moon' }> = [
+    { id: 'light', label: t('settings.themeLight'), icon: 'sun' },
+    { id: 'dark', label: t('settings.themeDark'), icon: 'moon' },
     { id: 'system', label: t('settings.themeSystem') },
-  ];
-
-  const accentOptions: Array<{ id: Accent; label: string }> = [
-    { id: 'bordeaux', label: t('settings.accentBordeaux') },
-    { id: 'persian', label: t('settings.accentPersian') },
-    { id: 'ink', label: t('settings.accentInk') },
   ];
 
   return (
     <div>
       <div className="field" style={{ marginBottom: 24 }}>
         <label className="field-label">{t('settings.fieldTheme')}</label>
-        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+        <div className="seg" role="tablist" aria-label={t('settings.fieldTheme')} style={{ marginTop: 8 }}>
           {themeOptions.map((opt) => (
             <button
               key={opt.id}
               type="button"
-              className={`btn ${theme === opt.id ? 'btn--primary' : 'btn--ghost'}`}
+              data-active={theme === opt.id ? 'true' : undefined}
+              aria-selected={theme === opt.id}
               onClick={() => setTheme(opt.id)}
-              aria-pressed={theme === opt.id}
             >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="field" style={{ marginBottom: 24 }}>
-        <label className="field-label">{t('settings.fieldAccent')}</label>
-        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-          {accentOptions.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              className={`btn ${accent === opt.id ? 'btn--primary' : 'btn--ghost'}`}
-              onClick={() => setAccent(opt.id)}
-              aria-pressed={accent === opt.id}
-            >
+              {opt.icon && <Icon name={opt.icon} size={14} />}
               {opt.label}
             </button>
           ))}
@@ -68,7 +46,7 @@ export function AppearanceSection() {
           }))}
           onChange={(v) => setLocale(v)}
         />
-        <span style={{ fontSize: 12, color: 'var(--subtle)', marginTop: 6 }}>
+        <span style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
           {t('settings.languageHint')}
         </span>
       </div>
