@@ -36,6 +36,31 @@ export const en: TranslationStrings = {
     allCalls: 'All calls',
   },
 
+  // [B18.2a] Inbox — omni-bar, facets, view switcher.
+  inbox: {
+    searchPlaceholder: 'Search or filter…',
+    clearAll: 'Clear',
+    facetStatus: 'Status',
+    facetRecap: 'Recap',
+    facetPeriod: 'Period',
+    statusReady: 'Ready',
+    statusProcessing: 'Processing',
+    statusError: 'Error',
+    recapYes: 'With recap',
+    recapNo: 'No recap',
+    periodToday: 'Today',
+    periodWeek: 'This week',
+    quickFilters: 'Quick filters',
+    addFilter: 'Add filter',
+    searchInTitles: 'Search “{q}” in titles',
+    viewLabel: 'View',
+    viewList: 'List',
+    viewCards: 'Cards',
+    viewWeek: 'Week',
+    viewMonth: 'Month',
+    comingSoon: 'Coming soon',
+  },
+
   common: {
     save: 'Save',
     cancel: 'Cancel',

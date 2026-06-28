@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { CallDetailPage } from './pages/CallDetailPage';
-import { CallsPage } from './pages/CallsPage';
+import { InboxView } from './pages/InboxView';
 import { Coachmarks } from './pages/Coachmarks';
 import { ContactsPage } from './pages/ContactsPage';
 import { DesignSystemPage } from './pages/DesignSystemPage';
@@ -441,7 +441,7 @@ function AppShell() {
           </p>
         )}
 
-        {view === 'inbox' && <CallsPage onOpen={onOpenCall} />}
+        {view === 'inbox' && <InboxView onOpen={onOpenCall} />}
         {view === 'call' && detailCallId && (
           <CallDetailPage
             callId={detailCallId}
