@@ -66,7 +66,7 @@ export function AudioScrubber({
       <div
         style={{
           background: 'var(--paper)',
-          border: '1px solid var(--line)',
+          border: '1px solid var(--border)',
           borderRadius: 999,
           padding: '8px 14px 8px 8px',
           display: 'flex',
@@ -85,7 +85,7 @@ export function AudioScrubber({
             width: 32,
             height: 32,
             borderRadius: '50%',
-            background: 'var(--ink)',
+            background: 'var(--text)',
             color: 'var(--paper)',
             display: 'flex',
             alignItems: 'center',
@@ -104,7 +104,7 @@ export function AudioScrubber({
           className="mono"
           style={{
             fontSize: 11,
-            color: 'var(--muted)',
+            color: 'var(--text-3)',
             flexShrink: 0,
             minWidth: 50,
           }}
@@ -188,7 +188,7 @@ export function AudioScrubber({
           className="mono"
           style={{
             fontSize: 11,
-            color: 'var(--muted)',
+            color: 'var(--text-3)',
             flexShrink: 0,
             minWidth: 50,
             textAlign: 'right',
@@ -217,7 +217,7 @@ function SpeakerChip({
       <span
         className="muted"
         style={{
-          fontFamily: 'var(--font-serif)',
+          fontFamily: 'var(--font)',
           fontStyle: 'italic',
           fontSize: 12,
         }}
@@ -247,8 +247,8 @@ function SpeakerChip({
         border: 'none',
         fontSize: 12,
         fontWeight: 500,
-        color: 'var(--ink)',
-        fontFamily: 'var(--font-sans)',
+        color: 'var(--text)',
+        fontFamily: 'var(--font)',
         letterSpacing: '-0.005em',
         cursor: onClick ? 'pointer' : 'default',
         whiteSpace: 'nowrap',
@@ -261,7 +261,7 @@ function SpeakerChip({
         if (onClick) e.currentTarget.style.color = 'var(--accent)';
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.color = 'var(--ink)';
+        e.currentTarget.style.color = 'var(--text)';
       }}
     >
       <span

@@ -12,9 +12,9 @@
   display: block;
   background: linear-gradient(
     90deg,
-    var(--bg-2) 0%,
-    color-mix(in oklch, var(--bg-2) 60%, var(--surface)) 50%,
-    var(--bg-2) 100%
+    var(--sunken) 0%,
+    color-mix(in oklch, var(--sunken) 60%, var(--surface)) 50%,
+    var(--sunken) 100%
   );
   background-size: 200% 100%;
   animation: ds-skeleton-shimmer 1.4s ease-in-out infinite;
@@ -37,6 +37,6 @@
 @media (prefers-reduced-motion: reduce) {
   .ds-skeleton {
     animation: none;
-    background: var(--bg-2);
+    background: var(--sunken);
   }
 }

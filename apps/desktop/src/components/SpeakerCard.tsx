@@ -336,8 +336,8 @@ export function SpeakerCard({
           alignItems: 'center',
           gap: 22,
           padding: '16px 0',
-          borderTop: '1px solid var(--line-soft)',
-          borderBottom: '1px solid var(--line-soft)',
+          borderTop: '1px solid var(--border-2)',
+          borderBottom: '1px solid var(--border-2)',
           marginBottom: 22,
         }}
       >
@@ -351,7 +351,7 @@ export function SpeakerCard({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--mono)',
             fontWeight: 600,
             fontSize: 16,
             letterSpacing: '0.04em',
@@ -364,11 +364,11 @@ export function SpeakerCard({
           <div
             data-selectable
             style={{
-              fontFamily: 'var(--font-serif)',
+              fontFamily: 'var(--font)',
               fontStyle: 'italic',
               fontSize: 16,
               marginBottom: 8,
-              color: 'var(--ink)',
+              color: 'var(--text)',
               letterSpacing: '-0.01em',
               display: '-webkit-box',
               WebkitLineClamp: 2,
@@ -487,10 +487,10 @@ export function SpeakerCard({
             <div style={{ flex: 1, minWidth: 200 }}>
               <div
                 style={{
-                  fontFamily: 'var(--font-serif)',
+                  fontFamily: 'var(--font)',
                   fontSize: 17,
                   letterSpacing: '-0.01em',
-                  color: 'var(--ink)',
+                  color: 'var(--text)',
                 }}
               >
                 {suggestionName}
@@ -565,7 +565,7 @@ export function SpeakerCard({
         <div
           style={{
             padding: 14,
-            background: 'var(--bg-2)',
+            background: 'var(--sunken)',
             borderRadius: 8,
             marginBottom: 18,
           }}
@@ -590,7 +590,7 @@ export function SpeakerCard({
               alignItems: 'flex-start',
               gap: 8,
               fontSize: 13,
-              color: 'var(--ink-2)',
+              color: 'var(--text-2)',
               marginBottom: 10,
             }}
           >
@@ -627,7 +627,7 @@ export function SpeakerCard({
         style={{
           display: 'flex',
           gap: 10,
-          borderTop: '1px solid var(--line-soft)',
+          borderTop: '1px solid var(--border-2)',
           paddingTop: 18,
           flexWrap: 'wrap',
         }}

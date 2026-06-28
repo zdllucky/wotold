@@ -14,7 +14,7 @@ export function DSCard({
     <div
       style={{
         background: 'var(--paper)',
-        border: '1px solid var(--line)',
+        border: '1px solid var(--border)',
         borderRadius: 12,
         padding: '24px 28px',
         ...style,
@@ -44,7 +44,7 @@ export function DSSectionTitle({ eyebrow, title, subtitle }: DSSectionTitleProps
         <div
           className="muted"
           style={{
-            fontFamily: 'var(--font-serif)',
+            fontFamily: 'var(--font)',
             fontStyle: 'italic',
             fontSize: 14,
             maxWidth: 540,
@@ -80,12 +80,12 @@ export function ColorSwatch({ token, hex, fgVar, sub }: ColorSwatchProps) {
           height: 72,
           borderRadius: 8,
           background: `var(--${token})`,
-          border: '1px solid var(--line)',
+          border: '1px solid var(--border)',
           display: 'flex',
           alignItems: 'flex-end',
           padding: '8px 10px',
-          color: fgVar ? 'var(--ink)' : '#FFFFFF',
-          fontFamily: 'var(--font-mono)',
+          color: fgVar ? 'var(--text)' : '#FFFFFF',
+          fontFamily: 'var(--mono)',
           fontSize: 10.5,
           letterSpacing: '0.04em',
         }}
@@ -96,7 +96,7 @@ export function ColorSwatch({ token, hex, fgVar, sub }: ColorSwatchProps) {
         className="mono"
         style={{
           fontSize: 11,
-          color: 'var(--ink)',
+          color: 'var(--text)',
           letterSpacing: '0.02em',
         }}
       >
@@ -144,7 +144,7 @@ export function TypeRow({
         gap: 28,
         alignItems: 'baseline',
         paddingBottom: 16,
-        borderBottom: '1px solid var(--line-soft)',
+        borderBottom: '1px solid var(--border-2)',
       }}
     >
       <div>
@@ -162,7 +162,7 @@ export function TypeRow({
           fontWeight: w,
           letterSpacing: ls,
           lineHeight: lh,
-          color: 'var(--ink)',
+          color: 'var(--text)',
           fontStyle: italic ? 'italic' : 'normal',
           textTransform: upper ? 'uppercase' : 'none',
         }}

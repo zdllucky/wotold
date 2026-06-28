@@ -98,12 +98,12 @@ export function HotkeyCapture({
         style={{
           minWidth: 100,
           padding: '6px 12px',
-          background: capturing ? 'var(--accent-soft)' : 'var(--bg-2)',
-          color: capturing ? 'var(--accent)' : 'var(--ink)',
+          background: capturing ? 'var(--accent-soft)' : 'var(--sunken)',
+          color: capturing ? 'var(--accent)' : 'var(--text)',
           border: `1px solid ${
-            capturing ? 'var(--accent)' : 'var(--line)'
+            capturing ? 'var(--accent)' : 'var(--border)'
           }`,
-          borderRadius: 'var(--radius-md)',
+          borderRadius: 'var(--r-sm)',
           fontSize: 14,
           textAlign: 'center',
           fontVariantNumeric: 'tabular-nums',
@@ -127,7 +127,7 @@ export function HotkeyCapture({
           role="alert"
           style={{
             fontSize: 12,
-            color: 'var(--signal)',
+            color: 'var(--danger)',
             fontStyle: 'italic',
           }}
         >

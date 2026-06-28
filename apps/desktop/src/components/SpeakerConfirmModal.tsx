@@ -108,12 +108,12 @@ export function SpeakerConfirmModal({
           <p
             role="alert"
             style={{
-              color: 'var(--signal)',
-              fontFamily: 'var(--font-sans)',
+              color: 'var(--danger)',
+              fontFamily: 'var(--font)',
               marginBottom: 12,
               background: 'var(--paper)',
               padding: '8px 14px',
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 'var(--r-xs)',
             }}
           >
             {error}

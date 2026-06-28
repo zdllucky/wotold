@@ -209,9 +209,9 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               display: 'flex',
               flexDirection: 'column',
               gap: 10,
-              fontFamily: 'var(--font-serif)',
+              fontFamily: 'var(--font)',
               fontSize: 17,
-              color: 'var(--ink-2)',
+              color: 'var(--text-2)',
             }}
           >
             <li>{t('onboarding.feature1')}</li>
@@ -293,7 +293,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               className="muted"
               style={{
                 marginTop: 18,
-                fontFamily: 'var(--font-serif)',
+                fontFamily: 'var(--font)',
                 fontStyle: 'italic',
                 fontSize: 14,
                 lineHeight: 1.55,
@@ -309,8 +309,8 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
           <p
             role="alert"
             style={{
-              color: 'var(--signal)',
-              fontFamily: 'var(--font-sans)',
+              color: 'var(--danger)',
+              fontFamily: 'var(--font)',
               marginBottom: 16,
             }}
           >
@@ -323,7 +323,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
             display: 'flex',
             alignItems: 'center',
             gap: 16,
-            borderTop: '1px solid var(--line-soft)',
+            borderTop: '1px solid var(--border-2)',
             paddingTop: 24,
           }}
         >
@@ -371,7 +371,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
                 key={i}
                 className="dot"
                 style={{
-                  background: i <= step ? 'var(--accent)' : 'var(--line)',
+                  background: i <= step ? 'var(--accent)' : 'var(--border)',
                   opacity: 1,
                 }}
               />

@@ -101,17 +101,17 @@ export function ParticipantsRow({ speakers, onConfirmAnonymous }: ParticipantsRo
             title={t('participants.anonymousHint')}
             style={{
               background: 'transparent',
-              border: '1px dashed var(--line-soft)',
+              border: '1px dashed var(--border-2)',
               cursor: onConfirmAnonymous ? 'pointer' : 'default',
-              color: 'var(--subtle)',
+              color: 'var(--text-faint)',
               fontStyle: 'italic',
             }}
           >
             <span
               className="sp-avatar"
               style={{
-                background: 'var(--bg-2)',
-                color: 'var(--subtle)',
+                background: 'var(--sunken)',
+                color: 'var(--text-faint)',
               }}
             >
               ?
@@ -133,7 +133,7 @@ export function ParticipantsRow({ speakers, onConfirmAnonymous }: ParticipantsRo
             fontSize: 11,
             fontStyle: 'italic',
             marginLeft: 6,
-            color: 'var(--subtle)',
+            color: 'var(--text-faint)',
           }}
           title={t('participants.tooManyHint')}
         >

@@ -137,7 +137,7 @@ export function ContactForm({
             flexDirection: 'column',
             gap: 4,
             fontSize: 14,
-            color: 'var(--ink)',
+            color: 'var(--text)',
           }}
         >
           <strong style={{ fontWeight: 500 }}>
@@ -230,7 +230,7 @@ export function ContactForm({
           gap: 10,
           marginTop: 18,
           paddingTop: 14,
-          borderTop: '1px solid var(--line-soft)',
+          borderTop: '1px solid var(--border-2)',
         }}
       >
         <button type="button" className="btn btn--ghost" onClick={onCancel}>
@@ -279,7 +279,7 @@ function RowGroup<T>({ title, emptyHint, items, onAdd, renderItem }: RowGroupPro
           className="muted"
           style={{
             fontStyle: 'italic',
-            fontFamily: 'var(--font-serif)',
+            fontFamily: 'var(--font)',
             fontSize: 14,
             margin: 0,
           }}

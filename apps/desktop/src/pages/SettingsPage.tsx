@@ -246,8 +246,8 @@ export function SettingsPage() {
           <p
             role="alert"
             style={{
-              color: 'var(--signal)',
-              fontFamily: 'var(--font-sans)',
+              color: 'var(--danger)',
+              fontFamily: 'var(--font)',
               marginBottom: 14,
             }}
           >
@@ -304,7 +304,7 @@ export function SettingsPage() {
                     void persist(SETTINGS_KEYS.STT_LANG, v);
                   }}
                 />
-                <span style={{ fontSize: 12, color: 'var(--subtle)', marginTop: 2 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 2 }}>
                   {t('settings.sttLangHint')}
                 </span>
               </div>
@@ -322,7 +322,7 @@ export function SettingsPage() {
                     void persist(SETTINGS_KEYS.PREFERRED_LANGUAGE, v);
                   }}
                 />
-                <span style={{ fontSize: 12, color: 'var(--subtle)', marginTop: 2 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 2 }}>
                   {t('settings.sttRecapLangHint')}
                 </span>
               </div>
@@ -332,7 +332,7 @@ export function SettingsPage() {
                 style={{
                   marginTop: 8,
                   paddingTop: 18,
-                  borderTop: '1px solid var(--line-soft)',
+                  borderTop: '1px solid var(--border-2)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 18,
@@ -353,7 +353,7 @@ export function SettingsPage() {
                   <span
                     style={{
                       fontSize: 12,
-                      color: 'var(--subtle)',
+                      color: 'var(--text-faint)',
                       marginTop: 6,
                     }}
                   >
@@ -375,7 +375,7 @@ export function SettingsPage() {
                   <span
                     style={{
                       fontSize: 12,
-                      color: 'var(--subtle)',
+                      color: 'var(--text-faint)',
                       marginTop: 6,
                     }}
                   >
@@ -389,7 +389,7 @@ export function SettingsPage() {
                 style={{
                   marginTop: 8,
                   paddingTop: 18,
-                  borderTop: '1px solid var(--line-soft)',
+                  borderTop: '1px solid var(--border-2)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 18,
@@ -436,7 +436,7 @@ export function SettingsPage() {
                   <span
                     style={{
                       fontSize: 12,
-                      color: 'var(--subtle)',
+                      color: 'var(--text-faint)',
                       marginTop: 6,
                       fontStyle: 'italic',
                     }}
@@ -475,7 +475,7 @@ export function SettingsPage() {
                     <span
                       style={{
                         fontSize: 12,
-                        color: 'var(--subtle)',
+                        color: 'var(--text-faint)',
                         marginTop: 2,
                       }}
                     >

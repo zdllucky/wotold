@@ -28,11 +28,11 @@ function pickTone(pct: number): Tone {
 function fillColor(tone: Tone): string {
   switch (tone) {
     case 'danger':
-      return 'var(--signal)';
+      return 'var(--danger)';
     case 'warning':
-      return 'var(--warning)';
+      return 'var(--warn)';
     case 'ok':
-      return 'var(--success)';
+      return 'var(--ok)';
   }
 }
 
@@ -40,8 +40,8 @@ const trackStyle: CSSProperties = {
   position: 'relative',
   width: '100%',
   height: 6,
-  background: 'var(--bg-2)',
-  borderRadius: 'var(--radius-pill)',
+  background: 'var(--sunken)',
+  borderRadius: 'var(--r-pill)',
   overflow: 'hidden',
 };
 
@@ -86,7 +86,7 @@ export function UsageBar({ label, used, limit, format }: UsageBarProps) {
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
-        fontFamily: 'var(--font-sans)',
+        fontFamily: 'var(--font)',
       }}
     >
       <div
@@ -98,11 +98,11 @@ export function UsageBar({ label, used, limit, format }: UsageBarProps) {
           fontSize: 13,
         }}
       >
-        <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{label}</span>
+        <span style={{ color: 'var(--text)', fontWeight: 500 }}>{label}</span>
         <span
           style={{
-            color: 'var(--muted)',
-            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-3)',
+            fontFamily: 'var(--mono)',
             fontSize: 12,
           }}
         >
@@ -111,7 +111,7 @@ export function UsageBar({ label, used, limit, format }: UsageBarProps) {
           ) : (
             <>
               {fmt(used)} / {fmt(safeLimit)}{' '}
-              <span style={{ color: 'var(--subtle)', fontSize: 11 }}>({pct}%)</span>
+              <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>({pct}%)</span>
             </>
           )}
         </span>
@@ -129,7 +129,7 @@ export function UsageBar({ label, used, limit, format }: UsageBarProps) {
             height: '100%',
             width: `${pct}%`,
             background: fillColor(tone),
-            borderRadius: 'var(--radius-pill)',
+            borderRadius: 'var(--r-pill)',
             transition: reducedMotion
               ? 'none'
               : 'width var(--duration-normal) var(--ease-out-expo), background var(--duration-normal) var(--ease-out-expo)',
