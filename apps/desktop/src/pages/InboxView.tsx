@@ -19,7 +19,7 @@ import { listActiveCallIds } from '../api/calls';
 import { listCallSpeakers } from '../api/speakers';
 import { EngineChip } from '../components/EngineChip';
 import { List, type RowComponentProps } from 'react-window';
-import { CallRowSkeleton, Empty } from '../ui';
+import { CallRowSkeleton, Empty, Segmented, type SegOption } from '../ui';
 import { Icon, type IconName } from '../ui/Icon';
 import { useI18n, type TranslationKey } from '../i18n';
 import { CallStateTag, ProgressRail } from '../components/call-state';
@@ -288,23 +288,18 @@ function ViewSwitcher({
   setView: (v: InboxViewMode) => void;
   t: TFn;
 }) {
+  const options: SegOption<InboxViewMode>[] = VIEW_DEFS.map(([v, icon, key]) => ({
+    value: v,
+    label: t(key),
+    icon,
+  }));
   return (
-    <div className="seg" role="tablist" aria-label={t('inbox.viewLabel')}>
-      {VIEW_DEFS.map(([v, ic, key]) => (
-        <button
-          key={v}
-          type="button"
-          title={t(key)}
-          aria-label={t(key)}
-          aria-selected={view === v}
-          data-active={view === v ? 'true' : undefined}
-          onClick={() => setView(v)}
-          style={{ padding: '0 9px' }}
-        >
-          <Icon name={ic} size={15} />
-        </button>
-      ))}
-    </div>
+    <Segmented<InboxViewMode>
+      options={options}
+      value={view}
+      onChange={setView}
+      ariaLabel={t('inbox.viewLabel')}
+    />
   );
 }
 

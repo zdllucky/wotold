@@ -7,5 +7,5 @@ interface KbdProps {
 }
 
 export function Kbd({ children }: KbdProps) {
-  return <span className="kbd">{children}</span>;
+  return <kbd className="kbd">{children}</kbd>;
 }

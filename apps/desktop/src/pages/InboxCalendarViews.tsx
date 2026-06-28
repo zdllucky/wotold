@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react';
 import { bcp47, useI18n } from '../i18n';
 import type { Call } from '../api/recording';
-import { Empty } from '../ui';
+import { Empty, IconBtn } from '../ui';
 import { Icon } from '../ui/Icon';
 import { callHasRecap, deriveCallState, formatDuration, inferSpeakers } from './inboxData';
 import { AvatarGroup, StatusCell, statusColor } from './inboxBits';
@@ -85,15 +85,11 @@ function CalHeader({
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-      <button className="iconbtn" data-size="sm" aria-label="‹" onClick={onPrev}>
-        <Icon name="chevronLeft" size={16} />
-      </button>
+      <IconBtn icon="chevronLeft" label="‹" size="sm" iconSize={16} onClick={onPrev} />
       <span className="mono" style={{ fontWeight: 650, fontSize: 15 }}>
         {label}
       </span>
-      <button className="iconbtn" data-size="sm" aria-label="›" onClick={onNext}>
-        <Icon name="chevronRight" size={16} />
-      </button>
+      <IconBtn icon="chevronRight" label="›" size="sm" iconSize={16} onClick={onNext} />
       <div style={{ flex: 1 }} />
       <button className="btn btn--default" data-size="sm" onClick={onToday}>
         <Icon name="calendar" size={14} />

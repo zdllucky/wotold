@@ -1,8 +1,7 @@
 // [B18.5a] Appearance — theme (Segmented) + interface language. Accent picker
 // removed: Wotold v2 is mono-graphite (B18.0 decision); accent is fixed `ink`.
 
-import { Select } from '../ui';
-import { Icon } from '../ui/Icon';
+import { Segmented, Select, type SegOption } from '../ui';
 import { SUPPORTED_LOCALES, useI18n, type Locale } from '../i18n';
 import { useTheme, type Theme } from '../theme/useTheme';
 
@@ -10,30 +9,23 @@ export function AppearanceSection() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, t } = useI18n();
 
-  const themeOptions: Array<{ id: Theme; label: string; icon?: 'sun' | 'moon' }> = [
-    { id: 'light', label: t('settings.themeLight'), icon: 'sun' },
-    { id: 'dark', label: t('settings.themeDark'), icon: 'moon' },
-    { id: 'system', label: t('settings.themeSystem') },
+  const themeOptions: SegOption<Theme>[] = [
+    { value: 'light', label: t('settings.themeLight'), icon: 'sun' },
+    { value: 'dark', label: t('settings.themeDark'), icon: 'moon' },
+    { value: 'system', label: t('settings.themeSystem') },
   ];
 
   return (
     <div>
       <div className="field" style={{ marginBottom: 24 }}>
         <label className="field-label">{t('settings.fieldTheme')}</label>
-        <div className="seg" role="tablist" aria-label={t('settings.fieldTheme')} style={{ marginTop: 8 }}>
-          {themeOptions.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              data-active={theme === opt.id ? 'true' : undefined}
-              aria-selected={theme === opt.id}
-              onClick={() => setTheme(opt.id)}
-            >
-              {opt.icon && <Icon name={opt.icon} size={14} />}
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <Segmented<Theme>
+          options={themeOptions}
+          value={theme}
+          onChange={setTheme}
+          ariaLabel={t('settings.fieldTheme')}
+          style={{ marginTop: 8 }}
+        />
       </div>
 
       <div className="field" style={{ maxWidth: 320 }}>

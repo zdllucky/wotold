@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Icon, type IconName } from '../ui/Icon';
+import { Kbd } from '../ui';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { bcp47, useI18n } from '../i18n';
 import type { Call } from '../api/recording';
@@ -135,7 +136,7 @@ export function CommandPalette({
             onKeyDown={onKeyDown}
             aria-label={t('palette.placeholder')}
           />
-          <kbd className="kbd">esc</kbd>
+          <Kbd>esc</Kbd>
         </div>
         <div className="palette-list scroll">
           {filteredActions.length > 0 && (
@@ -158,7 +159,7 @@ export function CommandPalette({
                 {it.label}
                 {it.kbd && (
                   <span className="mi-end">
-                    <kbd className="kbd">{it.kbd}</kbd>
+                    <Kbd>{it.kbd}</Kbd>
                   </span>
                 )}
               </button>

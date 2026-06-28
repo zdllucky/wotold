@@ -1,5 +1,6 @@
 // [B18.6c] Wotold v2 uikit — segmented control (.seg from wk.css).
 
+import type { CSSProperties } from 'react';
 import { Icon, type IconName } from './Icon';
 
 export interface SegOption<V extends string> {
@@ -14,6 +15,8 @@ interface SegmentedProps<V extends string> {
   onChange: (v: V) => void;
   size?: 'sm';
   ariaLabel?: string;
+  style?: CSSProperties;
+  className?: string;
 }
 
 export function Segmented<V extends string>({
@@ -22,9 +25,17 @@ export function Segmented<V extends string>({
   onChange,
   size,
   ariaLabel,
+  style,
+  className,
 }: SegmentedProps<V>) {
   return (
-    <div className="seg" data-size={size} role="tablist" aria-label={ariaLabel}>
+    <div
+      className={className ? `seg ${className}` : 'seg'}
+      data-size={size}
+      role="tablist"
+      aria-label={ariaLabel}
+      style={style}
+    >
       {options.map((o) => (
         <button
           key={o.value}

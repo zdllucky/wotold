@@ -20,7 +20,7 @@ import {
 } from '../api/settings';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
-import { Select } from '../ui';
+import { Select, SettingRow, Switch } from '../ui';
 
 interface ToggleRowProps {
   label: string;
@@ -29,25 +29,16 @@ interface ToggleRowProps {
   onToggle: (next: boolean) => void;
 }
 
-// [B18.5b] v2 toggle row — label/hint left, `.switch` (role=switch) right.
+// [B18.7c] v2 toggle row — thin wrapper around SettingRow + Switch wrappers.
 function ToggleRow({ label, hint, checked, onToggle }: ToggleRowProps) {
   return (
-    <div className="setting-row">
-      <div className="setting-row-text">
-        <div className="setting-row-label">{label}</div>
-        <div className="set-hint">{hint}</div>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        className="switch"
-        data-on={checked ? 'true' : undefined}
-        onClick={() => onToggle(!checked)}
-        style={{ marginTop: 2 }}
-      />
-    </div>
+    <SettingRow
+      label={label}
+      hint={hint}
+      control={
+        <Switch checked={checked} onChange={onToggle} label={label} style={{ marginTop: 2 }} />
+      }
+    />
   );
 }
 
