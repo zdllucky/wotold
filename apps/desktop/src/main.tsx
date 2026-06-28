@@ -5,8 +5,13 @@ import { App } from './App';
 import { RecordingWidgetApp } from './recording/RecordingWidgetApp';
 import './styles/fonts.css';
 import './styles/tokens.css';
+// [B18.0] legacy-tokens shim — Atelier-имена → uikit (удалить в B18.6).
+import './styles/legacy-tokens.css';
 import './styles/wotold.css';
 import './styles/global.css';
+// [B18.0] Wotold v2 component-слой (uikit) — после wotold.css: на коллизиях
+// примитивов (.btn/.input/.tab/...) побеждает новый набор.
+import './styles/wk.css';
 import './ui/ui.css';
 
 const root = document.getElementById('root');

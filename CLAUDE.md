@@ -67,16 +67,18 @@ docs/                 Паспорт и сопутствующие докуме�
 - **Прокси не видит контент**: только метрики по device-id, аудио через R2, не через память воркера (M9.6, R8)
 - **MCP read-only**: контент звонков — недоверенные данные, защита от инъекций инструкций (M8.3, M8.4)
 
-## Design Gate (Atelier v2, [B17] — ОБЯЗАТЕЛЬНО до любой UI работы)
+## Design Gate (Wotold v2, [B18] — ОБЯЗАТЕЛЬНО до любой UI работы)
+
+> Идёт миграция Atelier v2 → **Wotold v2** (ROADMAP §B18). Канон — [`docs/design/wotold-v2/`](docs/design/wotold-v2/README.md); Atelier v2 — legacy (до B18.6). Источник истины = прототип `~/Downloads/Wotold v2/` (`uikit.css` + `wk-*.jsx`); инвентарь — `scratchpad/v2-analysis.md`.
 
 Перед **любой** правкой `.tsx`/`.css`/`*.module.css`, или инлайн-стилей, **до** Plan/Implement:
 
-1. Прочесть [`docs/design/atelier-v2/README.md`](docs/design/atelier-v2/README.md) и соответствующую секцию [`docs/design/atelier-v2/MIGRATION.md`](docs/design/atelier-v2/MIGRATION.md).
+1. Прочесть [`docs/design/wotold-v2/README.md`](docs/design/wotold-v2/README.md) (канон) и сверить экран с прототипом `~/Downloads/Wotold v2/wk-*.jsx` / `uikit.css`.
 2. Запустить `/design-gate <surface>` или прочесть [`.claude/skills/design-gate/SKILL.md`](.claude/skills/design-gate/SKILL.md).
 3. В чате выдать alignment-блок:
    ```text
    [design-gate] Surface: <page/component>
-   Reference: docs/design/atelier-v2/<file>:<section>
+   Reference: docs/design/wotold-v2/ + ~/Downloads/Wotold v2/<wk-file>|uikit.css
    Tokens used: <list>
    Classes used: <list>
    New tokens needed: <none | list>
@@ -88,10 +90,10 @@ docs/                 Паспорт и сопутствующие докуме�
 **Правила (см. design-gate skill для полного списка):**
 
 - Все цвета/spacing/radius/shadow → `var(--*)` из [`apps/desktop/src/styles/tokens.css`](apps/desktop/src/styles/tokens.css). Запрещены сырые hex/oklch в `.tsx`/любом `.css` кроме handoff sources.
-- Компонентные классы из [`apps/desktop/src/styles/wotold.css`](apps/desktop/src/styles/wotold.css): `.btn`, `.card`, `.tabs`, `.transcript-row`, `.field`, `.input`, `.sp`, `.rec-btn`, `.stat`, `.nav-item`, `.app-rail`, `.app-shell`, `.app-main`, `.tab`, `.modal-backdrop`, `.index-card`, `.dot`, `.conf`, `.empty`, `.divider`, `.wave-lane`.
-- `var(--signal)` (красный) — **только** запись и destructive actions. Все остальные акценты — `var(--accent)` (bordeaux / persian / ink, ортогонально к light/dark).
-- Шрифты: Source Serif 4 (display/title/subtitle/transcript), DM Sans (UI/labels), JetBrains Mono (timestamps/IDs).
-- Любая новая страница / модал / форма должна работать корректно во всех 6 комбинациях theme×accent.
+- Компонентные классы из [`apps/desktop/src/styles/wk.css`](apps/desktop/src/styles/wk.css) (uikit, канон): `.btn`(+`--primary/--default/--ghost/--soft/--danger`), `.iconbtn`, `.chip`, `.avatar`, `.dot`, `.kbd`, `.input`, `.field`, `.seg`, `.switch`, `.tabs`/`.tab`, `.navitem`, `.rail`/`.minirail`, `.menu`, `.overlay`/`.modal`, `.palette`, `.tbl`/`.trow`, `.turn`, `.doc`, `.rrail`, `.composer-dock`, `.rec-widget`, `.wave`, `.optioncard`, `.setting-row`. Иконки — `<Icon name=… />` из [`src/ui/Icon.tsx`](apps/desktop/src/ui/Icon.tsx) (line 1.5px, без emoji). Atelier-классы `wotold.css` — legacy, удаляются в B18.6.
+- `var(--danger)` (красный) — **только** запись и destructive actions. Все остальные акценты — `var(--accent)` (моно-графит `ink`). Старый `--signal` → `--danger` (через legacy-tokens shim).
+- Шрифты: **Hanken Grotesk** (UI / текст / транскрипт), **IBM Plex Mono** (timestamps / IDs / код). Serif выпилен.
+- Любая новая страница / модал / форма должна работать корректно в **light + dark** (акцент один — графит, picker убран в B18.5). Density фикс `cozy`.
 - Логика сохраняется 1-в-1 (хоткеи, consent gates, useEffect, API). Меняется только JSX + className.
 
 **Enforcement:**

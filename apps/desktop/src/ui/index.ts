@@ -10,3 +10,5 @@ export { Tabs } from './Tabs';
 export { Skeleton, CallRowSkeleton } from './Skeleton';
 export { Toolbar } from './Toolbar';
 export { UsageBar } from './UsageBar';
+// [B18.0] Wotold v2 line-icon set (port of uikit-icons.jsx).
+export { Icon, type IconName } from './Icon';
