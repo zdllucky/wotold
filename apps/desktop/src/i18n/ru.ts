@@ -359,6 +359,10 @@ const ruInternal = {
 
   // ── Recap tab (dossier) ─────────────────────────────────────────────────
   recap: {
+    modeRich: 'Оформленный',
+    modeMd: 'Markdown',
+    copyMd: 'Копировать .md',
+    copied: 'Скопировано',
     summary: 'Резюме',
     summaryAlt: 'Саммари',
     keyPoints: 'Ключевые моменты',

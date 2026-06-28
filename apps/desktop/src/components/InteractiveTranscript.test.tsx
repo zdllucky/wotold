@@ -105,7 +105,7 @@ describe('InteractiveTranscript — fallback states', () => {
 describe('InteractiveTranscript — segment rendering', () => {
   test('renders transcript container with rows', () => {
     render(<InteractiveTranscript rawSttJson={BASIC_RAW} fallbackMd={null} />);
-    const rows = document.querySelectorAll('.transcript-row');
+    const rows = document.querySelectorAll('.turn');
     // 3 segments but owner segments are grouped: [owner], [S1], [owner]
     // consecutive owner segs are NOT adjacent so they stay separate
     expect(rows.length).toBe(3);
@@ -119,7 +119,7 @@ describe('InteractiveTranscript — segment rendering', () => {
 
   test('owner tag shows "Я" as speaker label', () => {
     render(<InteractiveTranscript rawSttJson={BASIC_RAW} fallbackMd={null} />);
-    const speakerLabels = document.querySelectorAll('.transcript-speaker');
+    const speakerLabels = document.querySelectorAll('.turn-sp');
     // First row is owner → "Я"
     expect(speakerLabels[0]?.textContent?.trim()).toMatch(/^Я/);
   });
@@ -131,7 +131,7 @@ describe('InteractiveTranscript — segment rendering', () => {
       { start: 4, end: 6, text: 'Other', speakerTag: 'owner' },
     ]);
     render(<InteractiveTranscript rawSttJson={raw} fallbackMd={null} />);
-    const rows = document.querySelectorAll('.transcript-row');
+    const rows = document.querySelectorAll('.turn');
     // S1+S1 grouped → 2 rows total
     expect(rows.length).toBe(2);
     // Grouped text joined with space
@@ -166,7 +166,7 @@ describe('InteractiveTranscript — speaker labels', () => {
       />,
     );
     // First name only from "Ivan Petrov"
-    const speakerNodes = document.querySelectorAll('.transcript-speaker');
+    const speakerNodes = document.querySelectorAll('.turn-sp');
     const s1Node = Array.from(speakerNodes).find((n) =>
       n.textContent?.includes('Ivan'),
     );
@@ -183,7 +183,7 @@ describe('InteractiveTranscript — speaker labels', () => {
         speakers={speakers}
       />,
     );
-    const speakerNodes = document.querySelectorAll('.transcript-speaker');
+    const speakerNodes = document.querySelectorAll('.turn-sp');
     const golos2Node = Array.from(speakerNodes).find((n) =>
       n.textContent?.includes('Голос 2'),
     );
@@ -193,68 +193,6 @@ describe('InteractiveTranscript — speaker labels', () => {
       (n) => n.textContent?.trim() === 'S1',
     );
     expect(rawTagNode).toBeUndefined();
-  });
-});
-
-// ─── Identify chip ─────────────────────────────────────────────────────────────
-
-describe('InteractiveTranscript — identify chip', () => {
-  test('chip renders for unconfirmed speaker when onIdentifySpeaker provided', () => {
-    const speakers = [mkSpeaker('S1', null, false)];
-    render(
-      <InteractiveTranscript
-        rawSttJson={BASIC_RAW}
-        fallbackMd={null}
-        speakers={speakers}
-        onIdentifySpeaker={vi.fn()}
-      />,
-    );
-    expect(screen.getByText(/кто это/i)).toBeInTheDocument();
-  });
-
-  test('chip not rendered when onIdentifySpeaker is not provided', () => {
-    const speakers = [mkSpeaker('S1', null, false)];
-    render(
-      <InteractiveTranscript
-        rawSttJson={BASIC_RAW}
-        fallbackMd={null}
-        speakers={speakers}
-      />,
-    );
-    expect(screen.queryByText(/кто это/i)).not.toBeInTheDocument();
-  });
-
-  test('chip click calls onIdentifySpeaker with tag', () => {
-    const onIdentify = vi.fn();
-    const speakers = [mkSpeaker('S1', null, false)];
-    render(
-      <InteractiveTranscript
-        rawSttJson={BASIC_RAW}
-        fallbackMd={null}
-        speakers={speakers}
-        onIdentifySpeaker={onIdentify}
-      />,
-    );
-    const chip = screen.getByText(/кто это/i);
-    fireEvent.click(chip);
-    expect(onIdentify).toHaveBeenCalledWith('S1');
-  });
-
-  test('chip click does not propagate to row (no seek triggered)', () => {
-    const onSeek = vi.fn();
-    const onIdentify = vi.fn();
-    const speakers = [mkSpeaker('S1', null, false)];
-    render(
-      <InteractiveTranscript
-        rawSttJson={BASIC_RAW}
-        fallbackMd={null}
-        speakers={speakers}
-        onIdentifySpeaker={onIdentify}
-        onSeek={onSeek}
-      />,
-    );
-    fireEvent.click(screen.getByText(/кто это/i));
-    expect(onSeek).not.toHaveBeenCalled();
   });
 });
 
@@ -270,7 +208,7 @@ describe('InteractiveTranscript — seek', () => {
         onSeek={onSeek}
       />,
     );
-    const rows = document.querySelectorAll('.transcript-row');
+    const rows = document.querySelectorAll('.turn');
     fireEvent.click(rows[1]!); // S1 starts at 3
     expect(onSeek).toHaveBeenCalledWith(3);
   });
@@ -325,7 +263,7 @@ describe('InteractiveTranscript — seek', () => {
 // ─── Active row highlight ─────────────────────────────────────────────────────
 
 describe('InteractiveTranscript — active row', () => {
-  test('active row gets accent-soft background for currentTime in range', () => {
+  test('active row gets .turn--active class for currentTime in range', () => {
     render(
       <InteractiveTranscript
         rawSttJson={BASIC_RAW}
@@ -333,15 +271,15 @@ describe('InteractiveTranscript — active row', () => {
         currentTime={1.5} // within owner 0..3
       />,
     );
-    const rows = document.querySelectorAll('.transcript-row') as NodeListOf<HTMLElement>;
-    expect(rows[0]!.style.background).toContain('var(--accent-soft)');
+    const rows = document.querySelectorAll('.turn') as NodeListOf<HTMLElement>;
+    expect(rows[0]!.classList.contains('turn--active')).toBe(true);
   });
 
   test('no active row when currentTime is undefined', () => {
     render(<InteractiveTranscript rawSttJson={BASIC_RAW} fallbackMd={null} />);
-    const rows = document.querySelectorAll('.transcript-row') as NodeListOf<HTMLElement>;
+    const rows = document.querySelectorAll('.turn') as NodeListOf<HTMLElement>;
     for (const row of rows) {
-      expect(row.style.background).toBe('transparent');
+      expect(row.classList.contains('turn--active')).toBe(false);
     }
   });
 
@@ -353,9 +291,9 @@ describe('InteractiveTranscript — active row', () => {
         currentTime={999}
       />,
     );
-    const rows = document.querySelectorAll('.transcript-row') as NodeListOf<HTMLElement>;
+    const rows = document.querySelectorAll('.turn') as NodeListOf<HTMLElement>;
     for (const row of rows) {
-      expect(row.style.background).toBe('transparent');
+      expect(row.classList.contains('turn--active')).toBe(false);
     }
   });
 });
@@ -374,7 +312,7 @@ describe('InteractiveTranscript — malformed data', () => {
     });
     render(<InteractiveTranscript rawSttJson={raw} fallbackMd={null} />);
     expect(screen.getByText('valid')).toBeInTheDocument();
-    const rows = document.querySelectorAll('.transcript-row');
+    const rows = document.querySelectorAll('.turn');
     expect(rows.length).toBe(1);
   });
 

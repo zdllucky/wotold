@@ -331,6 +331,10 @@ export const en: TranslationStrings = {
   },
 
   recap: {
+    modeRich: 'Rich',
+    modeMd: 'Markdown',
+    copyMd: 'Copy .md',
+    copied: 'Copied',
     summary: 'Summary',
     summaryAlt: 'Recap',
     keyPoints: 'Key points',

@@ -331,6 +331,10 @@ export const kk: TranslationStrings = {
   },
 
   recap: {
+    modeRich: 'Безендірілген',
+    modeMd: 'Markdown',
+    copyMd: '.md көшіру',
+    copied: 'Көшірілді',
     summary: 'Қорытынды',
     summaryAlt: 'Қорытынды',
     keyPoints: 'Негізгі сәттер',

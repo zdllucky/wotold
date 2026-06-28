@@ -955,11 +955,11 @@ html.recording-widget .rec-float {
   margin: 0 0 20px;
   padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 10px);
+  border-radius: var(--r-lg);
   background: var(--panel);
 }
 .v2-block-title {
-  font-family: var(--font-serif, var(--font));
+  font-family: var(--font);
   font-size: 16px;
   margin: 0 0 12px;
   font-weight: 500;
@@ -977,7 +977,7 @@ html.recording-widget .rec-float {
   align-items: start;
   gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--line-soft, var(--border));
+  border-bottom: 1px solid var(--border);
 }
 .decision-row:last-child,
 .open-question-row:last-child {
@@ -1042,9 +1042,9 @@ html.recording-widget .rec-float {
   right: 0;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--r-md);
   padding: 12px 14px;
-  box-shadow: var(--shadow-1, 0 4px 14px rgba(0, 0, 0, 0.08));
+  box-shadow: var(--shadow-lg);
   min-width: 260px;
   max-width: 360px;
 }
@@ -1055,7 +1055,7 @@ html.recording-widget .rec-float {
   font-style: italic;
   font-size: 13px;
   color: var(--text);
-  font-family: var(--font-serif, var(--font));
+  font-family: var(--font);
 }
 .evidence-popover .evidence-meta {
   display: flex;
@@ -1086,7 +1086,7 @@ html.recording-widget .rec-float {
 .privacy-disclaimer {
   margin: 0 0 16px;
   padding: 12px 16px;
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--r-md);
   background: var(--warn-soft);
   border-left: 3px solid var(--warn);
   color: var(--text);
