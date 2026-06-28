@@ -400,6 +400,12 @@
 - [x] **B18.6c/d** Тесты RTL зелёные (402, + smoke ui/wrappers.test.tsx; core-flow consent/hotkey/pipeline-sync сохранены).
 - [ ] **⚠️ Manual visual QA → human follow-up** (агент не может скриншотить native app): light/dark на всех экранах (Inbox/CallDetail/Contacts/Settings·9/Onboarding/DS/recording dock+RecFloat/modals), один графит-акцент, cozy. Проверить: пропавшие стили / FOUC / undefined-var fallback / serif-остатки. A11y: focus-trap, keyboard-nav, ARIA, prefers-reduced-motion.
 
+### B18.7–B18.9 · Консистентность редизайна (audit + navbar)
+
+- [x] **B18.7** Автономный consistency-аудит (claims vs реальность vs прототип) + закрытие расхождений: адаптация обёрток по приложению.
+- [x] **B18.8** Левый rail (`AppSidebar`) выровнен под `wk-app.jsx`: единый `NavItem`, count-meta Inbox/Contacts, recent-rows со `StatusCell`, `aria-current`.
+- [x] **B18.9** **Единый `.view-head` навбар на всех 5 экранах** + Inbox Список → `.tbl`. Новый `ui/ViewHead`; Inbox header (Omni + Фильтр-Dropdown + icon-only ViewSwitcher + in-header record control) и таблица (tbl-head/tbl-group/trow, th-sort, StatusCell+AvatarGroup+row-menu); CallDetail breadcrumb-bar + kebab (disabled/title восстановлены, aria-haspopup); Contacts/Settings view-head; DS icon grid→code. `Button` → `data-size` (фикс size-регрессии после удаления `wotold.css`); `Segmented.iconOnly`, `Menu.MenuItem` disabled/title, `IconBtn` hasPopup/expanded. Логика/i18n 1-в-1. Тесты 417 ✓.
+
 > **B18 (Wotold v2 редизайн) — done** (кроме ручного visual QA выше). Канон: `wk.css` (примитивы) + `components.css` (app-классы) + `tokens.css`. Atelier shim (`wotold.css`/`legacy-tokens.css`) удалён.
 
 ### Контракты / backend (S2) — параллельно, по мере scope
