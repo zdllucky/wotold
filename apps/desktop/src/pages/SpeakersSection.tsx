@@ -240,7 +240,7 @@ export function SpeakersSection({
       {error && (
         <p
           role="alert"
-          style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}
+          style={{ color: 'var(--danger)', fontFamily: 'var(--font)' }}
         >
           {error}
         </p>
@@ -287,7 +287,7 @@ export function SpeakersSection({
           <div className="small-caps" style={{ marginBottom: 14 }}>
             {t('speakers.confirmedTitle', { n: mergedConfirmed.length })}
             {mergedConfirmed.length !== confirmed.length && (
-              <span style={{ color: 'var(--muted)', textTransform: 'none', marginLeft: 8 }}>
+              <span style={{ color: 'var(--text-3)', textTransform: 'none', marginLeft: 8 }}>
                 {t('speakers.mergedVoices', { n: confirmed.length })}
               </span>
             )}
@@ -305,7 +305,7 @@ export function SpeakersSection({
                     gap: 14,
                     alignItems: 'center',
                     padding: '10px 0',
-                    borderBottom: '1px dotted var(--line-soft)',
+                    borderBottom: '1px dotted var(--border-2)',
                   }}
                 >
                   <span
@@ -318,9 +318,9 @@ export function SpeakersSection({
                     <div
                       data-selectable
                       style={{
-                        fontFamily: 'var(--font-serif)',
+                        fontFamily: 'var(--font)',
                         fontSize: 16,
-                        color: 'var(--ink)',
+                        color: 'var(--text)',
                       }}
                     >
                       {first.contact_display_name}

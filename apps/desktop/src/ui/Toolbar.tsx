@@ -28,8 +28,8 @@ export function Toolbar({
         top: 0,
         zIndex: 5,
         background: 'var(--bg)',
-        paddingTop: 'var(--space-2)',
-        paddingBottom: 'var(--space-3)',
+        paddingTop: 'var(--s2)',
+        paddingBottom: 'var(--s3)',
       }
     : {};
   return (

@@ -29,11 +29,11 @@ export function ErrorScreen({
       <div className="card" style={{ marginBottom: 18 }}>
         <p
           style={{
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--mono)',
             fontSize: 10,
             textTransform: 'uppercase',
             letterSpacing: '0.1em',
-            color: 'var(--signal)',
+            color: 'var(--danger)',
             marginBottom: 8,
           }}
         >
@@ -41,7 +41,7 @@ export function ErrorScreen({
         </p>
         <h2
           style={{
-            fontFamily: 'var(--font-serif)',
+            fontFamily: 'var(--font)',
             fontSize: 22,
             margin: '0 0 8px',
             letterSpacing: '-0.01em',
@@ -49,7 +49,7 @@ export function ErrorScreen({
         >
           {t('failure.brokenRecording.title')}
         </h2>
-        <p className="muted" style={{ fontFamily: 'var(--font-serif)', fontSize: 14, marginBottom: 18 }}>
+        <p className="muted" style={{ fontFamily: 'var(--font)', fontSize: 14, marginBottom: 18 }}>
           {t('failure.brokenRecording.body')}
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -65,7 +65,7 @@ export function ErrorScreen({
           >
             {reprocessing ? t('callDetail.retrying') : t('failure.brokenRecording.retryCloud')}
           </button>
-          <button type="button" className="btn btn--quiet btn--sm" style={{ color: 'var(--signal)' }}>
+          <button type="button" className="btn btn--quiet btn--sm" style={{ color: 'var(--danger)' }}>
             {t('failure.brokenRecording.delete')}
           </button>
         </div>
@@ -78,9 +78,9 @@ export function ErrorScreen({
               style={{
                 display: 'block',
                 padding: '8px 10px',
-                background: 'var(--bg-2)',
-                borderRadius: 'var(--radius-sm)',
-                fontFamily: 'var(--font-mono)',
+                background: 'var(--sunken)',
+                borderRadius: 'var(--r-xs)',
+                fontFamily: 'var(--mono)',
                 fontSize: 11,
                 wordBreak: 'break-all',
               }}
@@ -112,7 +112,7 @@ export function ErrorScreen({
       <CallStateTag state="error" />
       <h2
         style={{
-          fontFamily: 'var(--font-serif)',
+          fontFamily: 'var(--font)',
           fontSize: 22,
           margin: '12px 0 4px',
           letterSpacing: '-0.01em',
@@ -122,7 +122,7 @@ export function ErrorScreen({
       </h2>
       <p
         style={{
-          fontFamily: 'var(--font-serif)',
+          fontFamily: 'var(--font)',
           fontSize: 15,
           margin: '0 0 12px',
           color: 'var(--text)',
@@ -133,7 +133,7 @@ export function ErrorScreen({
       <p
         className="muted"
         style={{
-          fontFamily: 'var(--font-serif)',
+          fontFamily: 'var(--font)',
           fontStyle: 'italic',
           fontSize: 14,
           margin: '0 0 16px',

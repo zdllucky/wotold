@@ -16,13 +16,13 @@ function colorFor(tone: Tone): string {
     case 'accent':
       return 'var(--accent)';
     case 'success':
-      return 'var(--success)';
+      return 'var(--ok)';
     case 'warning':
-      return 'var(--warning)';
+      return 'var(--warn)';
     case 'danger':
-      return 'var(--signal)';
+      return 'var(--danger)';
     case 'neutral':
-      return 'var(--subtle)';
+      return 'var(--text-faint)';
   }
 }
 

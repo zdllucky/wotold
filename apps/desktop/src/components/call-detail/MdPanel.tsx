@@ -69,10 +69,10 @@ export function MdPanel({
         >
           <span
             style={{
-              fontFamily: 'var(--font-serif)',
+              fontFamily: 'var(--font)',
               fontStyle: 'italic',
               fontSize: 17,
-              color: 'var(--muted)',
+              color: 'var(--text-3)',
             }}
           >
             {generatingLabel ?? emptyHint}

@@ -18,8 +18,8 @@ describe('Badge/Pill/StatusDot/Empty', () => {
   test('Badge defaults to neutral tone', () => {
     render(<Badge>label</Badge>);
     const el = screen.getByText('label');
-    // neutral tone uses --bg-2 background.
-    expect(el.getAttribute('style') ?? '').toMatch(/bg-2|var\(--bg-2\)/);
+    // neutral tone uses --sunken background (v2 uikit).
+    expect(el.getAttribute('style') ?? '').toMatch(/var\(--sunken\)/);
   });
 
   test('Pill renders content', () => {

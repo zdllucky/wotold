@@ -6,7 +6,7 @@
 
 ::selection {
   background: var(--accent-soft);
-  color: var(--ink);
+  color: var(--text);
 }
 
 /* [Native UX] Tauri webview ≠ браузер.
@@ -121,14 +121,14 @@ button:disabled,
 .markdown,
 .markdown p,
 .markdown li {
-  font-family: var(--font-serif);
+  font-family: var(--font);
   font-size: 17px;
   line-height: 1.6;
-  color: var(--ink);
+  color: var(--text);
 }
 
 .markdown h1 {
-  font-family: var(--font-serif);
+  font-family: var(--font);
   font-size: var(--text-2xl);
   font-weight: 500;
   margin: 0 0 12px;
@@ -136,19 +136,19 @@ button:disabled,
 }
 
 .markdown h2 {
-  font-family: var(--font-serif);
+  font-family: var(--font);
   font-size: var(--text-lg);
   font-weight: 500;
   margin: 20px 0 8px;
 }
 
 .markdown h3 {
-  font-family: var(--font-sans);
+  font-family: var(--font);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: var(--tracking-caps);
-  color: var(--muted);
+  color: var(--text-3);
   margin: 18px 0 8px;
 }
 
@@ -167,18 +167,18 @@ button:disabled,
 }
 
 .markdown code {
-  font-family: var(--font-mono);
+  font-family: var(--mono);
   font-size: 0.88em;
-  background: var(--bg-2);
+  background: var(--sunken);
   padding: 0.08rem 4px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-xs);
 }
 
 .markdown pre {
-  font-family: var(--font-mono);
-  background: var(--bg-2);
+  font-family: var(--mono);
+  background: var(--sunken);
   padding: 14px;
-  border-radius: var(--radius-md);
+  border-radius: var(--r-sm);
   overflow-x: auto;
   font-size: 13px;
   line-height: 1.5;
@@ -190,7 +190,7 @@ button:disabled,
 
 .markdown em {
   font-style: italic;
-  color: var(--muted);
+  color: var(--text-3);
 }
 
 .markdown a {
@@ -231,7 +231,7 @@ button:disabled,
     flex-direction: row;
     flex-wrap: wrap;
     border-right: none;
-    border-bottom: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--border-2);
     padding: 12px 16px;
     overflow: visible;
     overscroll-behavior: auto;

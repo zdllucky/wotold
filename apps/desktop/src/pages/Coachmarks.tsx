@@ -106,10 +106,10 @@ export function Coachmarks() {
         </h3>
         <p
           style={{
-            fontFamily: 'var(--font-serif)',
+            fontFamily: 'var(--font)',
             fontSize: 17,
             lineHeight: 1.55,
-            color: 'var(--ink-2)',
+            color: 'var(--text-2)',
             marginBottom: 28,
           }}
         >
@@ -122,7 +122,7 @@ export function Coachmarks() {
             alignItems: 'center',
             gap: 10,
             paddingTop: 20,
-            borderTop: '1px solid var(--line-soft)',
+            borderTop: '1px solid var(--border-2)',
           }}
         >
           <button
@@ -172,7 +172,7 @@ export function Coachmarks() {
                 className="dot"
                 style={{
                   background:
-                    i <= step ? 'var(--accent)' : 'var(--line)',
+                    i <= step ? 'var(--accent)' : 'var(--border)',
                 }}
               />
             ))}

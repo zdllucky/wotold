@@ -52,9 +52,9 @@ export function TasksPanel({ tasks, contacts, onJumpToTranscript }: TasksPanelPr
               gridTemplateColumns: '24px 1fr auto',
               gap: 14,
               padding: '12px 0',
-              borderTop: i === 0 ? 'none' : '1px solid var(--line-soft)',
+              borderTop: i === 0 ? 'none' : '1px solid var(--border-2)',
               alignItems: 'baseline',
-              color: task.done ? 'var(--muted)' : 'var(--ink)',
+              color: task.done ? 'var(--text-3)' : 'var(--text)',
               textDecoration: task.done ? 'line-through' : 'none',
             }}
           >
@@ -70,12 +70,12 @@ export function TasksPanel({ tasks, contacts, onJumpToTranscript }: TasksPanelPr
             </span>
             <span
               style={{
-                fontFamily: 'var(--font-serif)',
+                fontFamily: 'var(--font)',
                 fontSize: 16,
               }}
             >
               {/* [M14 T-11] Category emoji prefix — ✅/💡/📝. */}
-              <span style={{ fontFamily: 'var(--font-sans)' }}>{categoryEmoji(task.category)}</span>
+              <span style={{ fontFamily: 'var(--font)' }}>{categoryEmoji(task.category)}</span>
               {task.text}
               {owner && (
                 <span className="muted" style={{ fontSize: 13, marginLeft: 8 }}>
@@ -115,7 +115,7 @@ export function TasksPanel({ tasks, contacts, onJumpToTranscript }: TasksPanelPr
               className="small-caps"
               style={{
                 fontSize: 10,
-                color: task.done ? 'var(--success)' : 'var(--muted)',
+                color: task.done ? 'var(--ok)' : 'var(--text-3)',
               }}
             >
               {task.done ? t('callDetail.taskStatusDone') : t('callDetail.taskStatusOpen')}

@@ -212,8 +212,8 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
         <p
           role="alert"
           style={{
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-sans)',
+            color: 'var(--danger)',
+            fontFamily: 'var(--font)',
             marginBottom: 12,
           }}
         >
@@ -247,7 +247,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
                   gridTemplateColumns: '1fr auto auto',
                   gap: 12,
                   padding: '10px 0',
-                  borderTop: '1px solid var(--line-soft)',
+                  borderTop: '1px solid var(--border-2)',
                   alignItems: 'center',
                 }}
               >
@@ -261,7 +261,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
                 >
                   <span
                     className="mono"
-                    style={{ fontSize: 12, color: 'var(--ink)' }}
+                    style={{ fontSize: 12, color: 'var(--text)' }}
                   >
                     {formatCreatedAt(s.created_at, locale)}
                   </span>

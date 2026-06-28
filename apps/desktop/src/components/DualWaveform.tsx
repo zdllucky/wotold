@@ -19,7 +19,7 @@ interface DualWaveformProps {
   gap?: number;
   /** Amplification multiplier на per-channel bars. */
   amp?: number;
-  /** Subtle center line color (default var(--line-soft)). */
+  /** Subtle center line color (default var(--border-2)). */
   centerColor?: string;
 }
 
@@ -29,7 +29,7 @@ export function DualWaveform({
   height = 220,
   gap = 2.5,
   amp = 2.6,
-  centerColor = 'var(--line-soft)',
+  centerColor = 'var(--border-2)',
 }: DualWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,10 +86,10 @@ function render(
   // Resolve CSS vars через canvas.parentElement computed style.
   const parent = canvas.parentElement;
   const css = parent ? window.getComputedStyle(parent) : null;
-  // Set tempvars on parent to read --ink and --accent via parent's resolved
-  // values. Если css не доступен — fallback дефолты.
-  const inkColor = css?.getPropertyValue('--ink')?.trim() || '#14151A';
-  const accentColor = css?.getPropertyValue('--accent')?.trim() || '#7E1F2A';
+  // Read --text and --accent via parent's resolved values (canvas needs
+  // literal colors). Если css не доступен — v2 fallback дефолты (graphite).
+  const inkColor = css?.getPropertyValue('--text')?.trim() || '#1A1B23';
+  const accentColor = css?.getPropertyValue('--accent')?.trim() || '#3C3D49';
   const lineColor =
     css?.getPropertyValue(centerColorVar.replace('var(', '').replace(')', '').trim())?.trim() ||
     '#ECEAE3';

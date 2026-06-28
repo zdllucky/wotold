@@ -300,7 +300,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   if (loading) return <CallDetailSkeleton onBack={onBack} />;
   if (error)
     return (
-      <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+      <p role="alert" style={{ color: 'var(--danger)', fontFamily: 'var(--font)' }}>
         {error}
       </p>
     );
@@ -439,10 +439,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           className="card"
           style={{
             marginBottom: 18,
-            borderColor: 'var(--warning)',
+            borderColor: 'var(--warn)',
           }}
         >
-          <div className="small-caps" style={{ color: 'var(--warning)', marginBottom: 6 }}>
+          <div className="small-caps" style={{ color: 'var(--warn)', marginBottom: 6 }}>
             {t('callDetail.recapFailBadge')}
             {/* [Bug-fix] Engine label — показывает какой движок обслуживал
                 последнюю (упавшую) попытку. Помогает понять stale-cloud-error
@@ -464,7 +464,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           </div>
           <p
             style={{
-              fontFamily: 'var(--font-serif)',
+              fontFamily: 'var(--font)',
               fontSize: 16,
               margin: '0 0 14px',
             }}

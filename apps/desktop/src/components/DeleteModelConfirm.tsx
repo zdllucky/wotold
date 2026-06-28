@@ -37,13 +37,13 @@ export function DeleteModelConfirm({
       >
         <p
           className="muted"
-          style={{ fontFamily: 'var(--font-mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}
+          style={{ fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}
         >
           {modelRole}
         </p>
         <h2
           id="delete-model-confirm-title"
-          style={{ fontFamily: 'var(--font-serif)', fontSize: 18, marginBottom: 8 }}
+          style={{ fontFamily: 'var(--font)', fontSize: 18, marginBottom: 8 }}
         >
           {t('localEngine.storageConfirm.title')}
         </h2>
@@ -60,7 +60,7 @@ export function DeleteModelConfirm({
           <Button
             variant="primary"
             size="sm"
-            style={{ background: 'var(--signal)' }}
+            style={{ background: 'var(--danger)' }}
             onClick={onConfirm}
           >
             {t('localEngine.storageConfirm.confirm')}

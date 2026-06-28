@@ -132,7 +132,7 @@ export function ChunkProgressStrip({
             className="muted"
             style={{
               fontSize: 12,
-              fontFamily: 'var(--font-sans)',
+              fontFamily: 'var(--font)',
               margin: '0 0 10px',
             }}
           >
@@ -171,7 +171,7 @@ export function ChunkProgressStrip({
                           style={{
                             fontSize: 11,
                             padding: '2px 8px',
-                            fontFamily: 'var(--font-sans)',
+                            fontFamily: 'var(--font)',
                           }}
                           disabled={isRetrying}
                           onClick={() => {

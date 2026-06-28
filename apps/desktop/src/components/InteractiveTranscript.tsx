@@ -262,7 +262,7 @@ export function InteractiveTranscript({
                 : '3px solid transparent',
               paddingLeft: 9,
               marginLeft: -12,
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 'var(--r-xs)',
               transition:
                 'background var(--duration-fast), border-color var(--duration-fast)',
               // [P-fix10] Каскад: каждая строка появляется с задержкой (cap ~1.4s).

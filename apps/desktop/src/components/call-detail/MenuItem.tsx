@@ -27,15 +27,15 @@ export function MenuItem({ children, onClick, disabled, danger, title }: MenuIte
         padding: '8px 12px',
         border: 'none',
         background: 'transparent',
-        color: danger ? 'var(--signal)' : 'var(--ink)',
+        color: danger ? 'var(--danger)' : 'var(--text)',
         fontSize: 13.5,
-        fontFamily: 'var(--font-sans)',
+        fontFamily: 'var(--font)',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
-        borderRadius: 'var(--radius-sm)',
+        borderRadius: 'var(--r-xs)',
       }}
       onMouseEnter={(e) => {
-        if (!disabled) e.currentTarget.style.background = 'var(--bg-2)';
+        if (!disabled) e.currentTarget.style.background = 'var(--sunken)';
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.background = 'transparent';
