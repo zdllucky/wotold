@@ -63,6 +63,7 @@ const ruInternal = {
     viewWeek: 'Неделя',
     viewMonth: 'Месяц',
     comingSoon: 'Скоро',
+    todayBtn: 'Сегодня',
   },
 
   // ── Common buttons / labels / states ────────────────────────────────────

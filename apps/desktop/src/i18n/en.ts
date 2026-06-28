@@ -59,6 +59,7 @@ export const en: TranslationStrings = {
     viewWeek: 'Week',
     viewMonth: 'Month',
     comingSoon: 'Coming soon',
+    todayBtn: 'Today',
   },
 
   common: {
