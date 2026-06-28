@@ -78,22 +78,25 @@ export function deriveCallState(call: Call): CallState {
   return 'processing';
 }
 
-// ── Facets (B18.2a: status / recap / period; person deferred to B18.2b) ──
+// ── Facets (status / recap / period / person — B18.7b) ──
 
 export type StatusFacet = 'ready' | 'processing' | 'error';
 export type RecapFacet = 'yes' | 'no';
 export type PeriodFacet = 'today' | 'week';
+/** Person facet values are confirmed-contact display names (dynamic). */
+export type PersonFacet = string;
 
 export interface Facets {
   status: StatusFacet[];
   recap: RecapFacet[];
   period: PeriodFacet[];
+  person: PersonFacet[];
 }
 
-export const FACETS_EMPTY: Facets = { status: [], recap: [], period: [] };
+export const FACETS_EMPTY: Facets = { status: [], recap: [], period: [], person: [] };
 
 export function facetCount(f: Facets): number {
-  return f.status.length + f.recap.length + f.period.length;
+  return f.status.length + f.recap.length + f.period.length + f.person.length;
 }
 
 export function toggleFacet(f: Facets, k: keyof Facets, v: string): Facets {
@@ -123,10 +126,19 @@ function withinPeriod(c: Call, periods: PeriodFacet[]): boolean {
   return false;
 }
 
-export function matchesFacets(c: Call, f: Facets, text: string): boolean {
+export function matchesFacets(
+  c: Call,
+  f: Facets,
+  text: string,
+  callPersons?: ReadonlyMap<string, string[]>,
+): boolean {
   if (f.status.length && !f.status.includes(callStatusFacet(c))) return false;
   if (f.recap.length && !f.recap.includes(callHasRecap(c) ? 'yes' : 'no')) return false;
   if (f.period.length && !withinPeriod(c, f.period)) return false;
+  if (f.person.length) {
+    const people = callPersons?.get(c.id);
+    if (!people || !f.person.some((p) => people.includes(p))) return false;
+  }
   if (text && !matchesQuery(c, text)) return false;
   return true;
 }

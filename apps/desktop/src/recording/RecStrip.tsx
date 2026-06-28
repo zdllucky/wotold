@@ -133,6 +133,11 @@ export function RecStrip({ activeEngine, collapsed = false }: RecStripProps = {}
         <span className="mono" style={{ fontSize: 16, fontWeight: 600 }}>
           {formatElapsed(rec.elapsedSec)}
         </span>
+        {!isPaused && (
+          <span className="mono" style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+            {t('recording.segment', { n: Math.floor(rec.elapsedSec / 600) + 1 })}
+          </span>
+        )}
         <RecEq paused={isPaused} levels={levels} />
         {title && (
           <span className="u-muted u-trunc" style={{ fontSize: 12, maxWidth: 220 }}>
