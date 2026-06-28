@@ -18,6 +18,15 @@ export const en: TranslationStrings = {
     brandFooter: 'Local · macOS',
   },
 
+  // [B18.1a] Wotold v2 shell rail.
+  rail: {
+    record: 'Record call',
+    recent: 'Recent',
+    collapse: 'Collapse',
+    expand: 'Expand panel',
+    designSystem: 'Design system',
+  },
+
   common: {
     save: 'Save',
     cancel: 'Cancel',

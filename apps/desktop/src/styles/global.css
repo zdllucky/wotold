@@ -100,6 +100,23 @@ button:disabled,
   -webkit-app-region: no-drag;
 }
 
+/* [B18.1a] Wotold v2 shell rail — macOS traffic-light reserve + drag-region.
+ * `.app >` specificity beats wk.css `.minirail { padding }` regardless of
+ * stylesheet import order. */
+.app > .rail,
+.app > .minirail {
+  padding-top: 26px;
+  -webkit-app-region: drag;
+}
+.app > .rail button,
+.app > .rail a,
+.app > .rail input,
+.app > .rail .rail-resize,
+.app > .minirail button,
+.app > .minirail .rail-resize {
+  -webkit-app-region: no-drag;
+}
+
 /* Markdown — recap и transcript-fallback. Serif first-class. */
 .markdown,
 .markdown p,
