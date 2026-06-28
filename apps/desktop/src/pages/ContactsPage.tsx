@@ -19,7 +19,7 @@ import {
 import { listCalls, type Call } from '../api/recording';
 import { listCallSpeakers } from '../api/speakers';
 import { SP_COLORS } from './CallDetailUtils';
-import { Empty, Skeleton } from '../ui';
+import { Button, Empty, Skeleton, ViewHead } from '../ui';
 import { Icon, type IconName } from '../ui/Icon';
 import { bcp47, useI18n } from '../i18n';
 import { ContactForm } from './ContactForm';
@@ -220,37 +220,9 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
   const activeId = activeContact?.id ?? null;
 
   return (
-    <div style={{ margin: '-34px -44px', display: 'flex', height: 'calc(100vh - 0px)' }}>
-      {/* ── List ── */}
-      <div
-        style={{
-          width: 300,
-          borderRight: '1px solid var(--border)',
-          display: 'flex',
-          flexDirection: 'column',
-          flexShrink: 0,
-          paddingTop: 26,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 10px' }}>
-          <Icon name="users" size={17} style={{ color: 'var(--text-3)' }} />
-          <span style={{ fontWeight: 650 }}>{t('contacts.title')}</span>
-          <span className="chip" data-size="sm">
-            {contacts.length}
-          </span>
-          <div style={{ flex: 1 }} />
-          <button
-            type="button"
-            className="btn btn--primary"
-            data-size="sm"
-            onClick={() => setMode({ kind: 'add' })}
-            aria-label={t('contacts.addAria')}
-          >
-            <Icon name="plus" size={14} />
-            {t('common.add')}
-          </button>
-        </div>
-        <div style={{ padding: '0 12px 8px' }}>
+    <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
+      <ViewHead icon="users" title={t('contacts.title')} count={contacts.length} countTone="line">
+        <div style={{ flex: '1 1 auto', maxWidth: 300, marginLeft: 'var(--s2)' }}>
           <div className="input" style={{ height: 32 }}>
             <Icon name="search" size={15} className="iico" />
             <input
@@ -262,8 +234,33 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
             />
           </div>
         </div>
+        <div style={{ flex: 1 }} />
+        <Button
+          variant="primary"
+          size="sm"
+          leading={<Icon name="plus" size={14} />}
+          onClick={() => setMode({ kind: 'add' })}
+          aria-label={t('contacts.addAria')}
+        >
+          {t('common.add')}
+        </Button>
+      </ViewHead>
 
-        <div className="scroll" style={{ flex: 1, minHeight: 0, padding: 6 }}>
+      <div className="view-body">
+        {/* ── List ── */}
+        <aside
+          className="rrail"
+          style={{
+            width: 300,
+            borderLeft: 'none',
+            borderRight: '1px solid var(--border)',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0,
+            minHeight: 0,
+          }}
+        >
+          <div className="scroll" style={{ flex: 1, minHeight: 0, padding: 6 }}>
           {filtered.length === 0 ? (
             <div className="u-faint" style={{ padding: 16, fontSize: 13, textAlign: 'center' }}>
               {contacts.length === 0 ? t('contacts.emptyTitle') : t('contacts.notFoundTitle')}
@@ -308,11 +305,11 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
               );
             })
           )}
-        </div>
-      </div>
+          </div>
+        </aside>
 
-      {/* ── Detail / Add / Edit ── */}
-      <div className="scroll" style={{ flex: 1, minWidth: 0, padding: '32px 44px' }}>
+        {/* ── Detail / Add / Edit ── */}
+        <div className="scroll" style={{ flex: 1, minWidth: 0, padding: '32px 44px' }}>
         {error && (
           <p role="alert" style={{ color: 'var(--danger)', marginBottom: 14, fontFamily: 'var(--font)' }}>
             {error}
@@ -363,6 +360,7 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
         {mode.kind === 'empty' && contacts.length === 0 && (
           <Empty title={t('contacts.emptyTitle')} description={t('contacts.emptyAddCue')} />
         )}
+        </div>
       </div>
     </div>
   );

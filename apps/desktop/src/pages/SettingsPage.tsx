@@ -32,7 +32,7 @@ import {
   type PreferredLanguage,
 } from '../api/settings';
 import { useI18n } from '../i18n';
-import { NavItem, Select, Skeleton, Switch } from '../ui';
+import { Icon, NavItem, Select, Skeleton, Switch } from '../ui';
 import { type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -191,52 +191,53 @@ export function SettingsPage() {
   const activeMeta = NAV.find((s) => s.id === section) ?? NAV[0]!;
 
   return (
+    // [B18.9] Shared shell: full-width .view-head (48px) over a flex .view-body.
+    // Bleed past .app-main 34/44 padding and fill the viewport so the header bar
+    // spans edge-to-edge and the 2-pane body fills below.
     <div
-      style={{
-        margin: '-34px -44px',
-        display: 'flex',
-        minHeight: '100%',
-      }}
+      className="main"
+      style={{ margin: '-34px -44px', height: '100vh' }}
     >
-      {/* [B18.5a] v2 inner settings rail */}
-      <div
-        style={{
-          width: 250,
-          padding: '26px 10px 10px',
-          borderRight: '1px solid var(--border)',
-          flexShrink: 0,
-        }}
-      >
-        <div className="sec-label" style={{ padding: '0 8px', marginBottom: 8 }}>
-          {t('settings.title')}
-        </div>
-        {NAV.filter((s) => !s.hidden).map((s) => (
-          <NavItem
-            key={s.id}
-            icon={SECTION_ICONS[s.id]}
-            label={s.label}
-            active={section === s.id}
-            current={section === s.id}
-            onClick={() => setSection(s.id)}
-          />
-        ))}
-        {savedTick > 0 && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="set-saved"
-            style={{ marginTop: 18, padding: '0 8px' }}
-          >
-            {t('settings.saved')}
-          </div>
-        )}
+      {/* [B18.9] Breadcrumb view-head per prototype: Настройки › {section} + saved. */}
+      <div className="view-head">
+        <Icon name="settings" size={17} style={{ color: 'var(--text-3)' }} />
+        <span className="u-faint" style={{ fontSize: 'var(--t-13)' }}>{t('settings.title')}</span>
+        <Icon name="chevronRight" size={13} style={{ color: 'var(--text-faint)' }} />
+        <span style={{ fontWeight: 600 }}>{activeMeta.label}</span>
+        <span
+          className="set-saved"
+          role="status"
+          aria-live="polite"
+          style={{ marginLeft: 10, opacity: savedTick > 0 ? 1 : 0 }}
+        >
+          {t('settings.saved')}
+        </span>
       </div>
-
-      {/* Content */}
-      <div style={{ flex: 1, padding: '32px 44px', overflowY: 'auto' }}>
-        <div className="small-caps" style={{ marginBottom: 8 }}>
-          {t('settings.breadcrumb', { section: activeMeta.label })}
+      <div className="view-body">
+        {/* [B18.5a] v2 inner settings rail */}
+        <div
+          style={{
+            width: 250,
+            padding: '26px 10px 10px',
+            borderRight: '1px solid var(--border)',
+            flexShrink: 0,
+            overflowY: 'auto',
+          }}
+        >
+          {NAV.filter((s) => !s.hidden).map((s) => (
+            <NavItem
+              key={s.id}
+              icon={SECTION_ICONS[s.id]}
+              label={s.label}
+              active={section === s.id}
+              current={section === s.id}
+              onClick={() => setSection(s.id)}
+            />
+          ))}
         </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, padding: '32px 44px', overflowY: 'auto' }}>
         {error && (
           <p
             role="alert"
@@ -507,6 +508,7 @@ export function SettingsPage() {
             <DeleteAllDataSection />
           </SectionShell>
         )}
+        </div>
       </div>
     </div>
   );

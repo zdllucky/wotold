@@ -61,6 +61,16 @@ export const en: TranslationStrings = {
     viewMonth: 'Month',
     comingSoon: 'Coming soon',
     todayBtn: 'Today',
+    filter: 'Filter',
+    recordShort: 'Record',
+    colName: 'Title',
+    colParticipants: 'Participants',
+    colDuration: 'Dur.',
+    colDate: 'Date',
+    rowActions: 'Actions',
+    rowOpen: 'Open',
+    rowReprocess: 'Reprocess',
+    rowExport: 'Export…',
   },
 
   common: {

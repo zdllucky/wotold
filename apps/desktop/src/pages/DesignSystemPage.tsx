@@ -88,7 +88,7 @@ export function DesignSystemPage() {
   return (
     <>
       <div className="view-head">
-        <Icon name="grid" size={17} style={{ color: 'var(--text-3)' }} />
+        <Icon name="code" size={17} style={{ color: 'var(--text-3)' }} />
         <span style={{ fontWeight: 650 }}>Дизайн-система</span>
         <Chip size="sm" tone="accent">
           debug

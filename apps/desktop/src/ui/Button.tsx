@@ -34,17 +34,6 @@ function variantClass(v: Variant): string {
   }
 }
 
-function sizeClass(s: Size): string {
-  switch (s) {
-    case 'sm':
-      return 'btn--sm';
-    case 'lg':
-      return 'btn--lg';
-    case 'md':
-      return '';
-  }
-}
-
 export function Button({
   variant = 'secondary',
   size = 'md',
@@ -60,12 +49,7 @@ export function Button({
   ...rest
 }: ButtonProps) {
   void _pill;
-  const classes = [
-    'btn',
-    variantClass(variant),
-    sizeClass(size),
-    className ?? '',
-  ]
+  const classes = ['btn', variantClass(variant), className ?? '']
     .filter(Boolean)
     .join(' ');
   const blockStyle = block ? { width: '100%', justifyContent: 'center' as const } : undefined;
@@ -73,7 +57,10 @@ export function Button({
     <button
       type={type}
       className={classes}
+      // wk.css sizes via [data-size]; 'md' is the default (no attr).
+      data-size={size === 'md' ? undefined : size}
       data-busy={busy ? 'true' : undefined}
+      data-block={block ? 'true' : undefined}
       style={{ ...blockStyle, ...style }}
       {...rest}
     >

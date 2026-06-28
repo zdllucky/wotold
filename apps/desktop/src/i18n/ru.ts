@@ -65,6 +65,16 @@ const ruInternal = {
     viewMonth: 'Месяц',
     comingSoon: 'Скоро',
     todayBtn: 'Сегодня',
+    filter: 'Фильтр',
+    recordShort: 'Записать',
+    colName: 'Название',
+    colParticipants: 'Участники',
+    colDuration: 'Длит.',
+    colDate: 'Дата',
+    rowActions: 'Действия',
+    rowOpen: 'Открыть',
+    rowReprocess: 'Переобработать',
+    rowExport: 'Экспорт…',
   },
 
   // ── Common buttons / labels / states ────────────────────────────────────

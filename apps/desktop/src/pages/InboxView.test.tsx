@@ -1,7 +1,10 @@
-// [B18.2a] InboxView behaviour test (retargeted from CallsPage). A ready call
-// with an active background task (regen) shows the «обрабатывается» indicator,
-// even though its status stays 'ready'. Source: list_active_call_ids
+// [B18.2a / B18.9] InboxView behaviour test (retargeted from CallsPage). A ready
+// call with an active background task (regen) shows the «обрабатывается»
+// indicator, even though its status stays 'ready'. Source: list_active_call_ids
 // (pipeline_tasks registry). Без активной задачи — чисто, без строки.
+//
+// Also asserts the v2 header/layout structure: the shared `.view-head` bar and
+// the database `.tbl` table replace the old flex header + `.lrow` list.
 
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -99,5 +102,30 @@ describe('InboxView — processing status', () => {
 
     expect(screen.getByText('Синхрон по проекту')).toBeTruthy();
     expect(screen.queryByText('обрабатывается')).toBeNull();
+  });
+
+  test('renders the shared .view-head bar and the v2 .tbl table', async () => {
+    routeInvoke([]);
+    const { container } = render(<InboxView onOpen={() => {}} />);
+    await flush();
+
+    expect(container.querySelector('.view-head')).not.toBeNull();
+    expect(container.querySelector('.tbl')).not.toBeNull();
+    expect(container.querySelector('.tbl-head')).not.toBeNull();
+    // The list row uses the database `.trow` grid, not the old `.lrow`.
+    expect(container.querySelector('.trow')).not.toBeNull();
+    expect(container.querySelector('.lrow')).toBeNull();
+  });
+
+  test('record action is omitted unless onRecord is provided', async () => {
+    routeInvoke([]);
+    const { container, rerender } = render(<InboxView onOpen={() => {}} />);
+    await flush();
+    expect(container.querySelector('.btn--primary')).toBeNull();
+
+    rerender(<InboxView onOpen={() => {}} onRecord={() => {}} />);
+    await flush();
+    // The «Записать» primary button now appears in the header.
+    expect(screen.getByText('Записать')).toBeTruthy();
   });
 });

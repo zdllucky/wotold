@@ -455,7 +455,16 @@ function AppShell() {
           </p>
         )}
 
-        {view === 'inbox' && <InboxView onOpen={onOpenCall} />}
+        {view === 'inbox' && (
+          <InboxView
+            onOpen={onOpenCall}
+            onRecord={onRecordToggle}
+            recording={rec.status.kind === 'recording' || rec.status.kind === 'paused'}
+            paused={rec.status.kind === 'paused'}
+            elapsed={rec.elapsedSec}
+            onPause={onPauseToggle}
+          />
+        )}
         {view === 'call' && detailCallId && (
           <CallDetailPage
             callId={detailCallId}
