@@ -11,6 +11,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, setSetting, SETTINGS_KEYS } from './api/settings';
 import { getActivePipelineCount } from './api/calls';
 import { listCalls, type Call } from './api/recording';
+import { listContacts } from './api/contacts';
 import { humanError } from './api/errors';
 import { localEngineGetActiveEngine } from './api/local-engine';
 import type { EngineKind } from './components/EngineChip';
@@ -71,6 +72,8 @@ function AppShell() {
   const [activePipelines, setActivePipelines] = useState(0);
   const [activeEngine, setActiveEngine] = useState<EngineKind | null>(null);
   const [recent, setRecent] = useState<Call[]>([]);
+  const [callsCount, setCallsCount] = useState(0);
+  const [contactsCount, setContactsCount] = useState(0);
 
   // [B18.1a] collapsible rail state.
   const [collapsed, setCollapsed] = useState(false);
@@ -123,12 +126,20 @@ function AppShell() {
     });
   }, []);
 
-  // Recent calls for the rail. Refetch when a pipeline finishes (titles land).
+  // Recent calls + nav count badges for the rail. Refetch when a pipeline
+  // finishes (titles land) so counts/recents stay current.
   useEffect(() => {
-    const load = () =>
-      listCalls()
-        .then((calls) => setRecent(calls.slice(0, 50)))
+    const load = () => {
+      void listCalls()
+        .then((calls) => {
+          setRecent(calls.slice(0, 50));
+          setCallsCount(calls.length);
+        })
         .catch((e: unknown) => console.warn('listCalls (rail) failed', e));
+      void listContacts()
+        .then((cs) => setContactsCount(cs.length))
+        .catch((e: unknown) => console.warn('listContacts (rail) failed', e));
+    };
     void load();
     let unlisten: UnlistenFn | null = null;
     void listen('pipeline:finished', () => void load())
@@ -405,6 +416,9 @@ function AppShell() {
     busy: rec.busy,
     pipelineCount: activePipelines,
     recent,
+    callsCount,
+    contactsCount,
+    activeCallId: view === 'call' ? detailCallId : null,
     isDev: IS_DEV,
     resolvedTheme,
     onRecord: onRecordToggle,
