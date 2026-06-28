@@ -12,7 +12,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { ask } from '@tauri-apps/plugin-dialog';
 import { humanError } from '../api/errors';
 import {
   regenerateEmptyRecaps,
@@ -36,6 +35,7 @@ import { useI18n } from '../i18n';
 import { Select, Skeleton } from '../ui';
 import { Icon, type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
@@ -605,29 +605,47 @@ function BulkRecapSection() {
   return (
     <div style={{ maxWidth: 560 }}>
       {error && (
-        <p role="alert" style={{ color: 'var(--signal)', marginBottom: 16 }}>
+        <p role="alert" style={{ color: 'var(--danger)', marginBottom: 16 }}>
           {error}
         </p>
       )}
 
       {running && progress ? (
         <div
-          className="activity-strip"
+          className="panel"
           role="status"
-          style={{ marginBottom: 16 }}
+          style={{
+            background: 'var(--accent-soft)',
+            borderColor: 'transparent',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '12px 16px',
+            marginBottom: 16,
+          }}
         >
-          <span>
+          <span className="wave" style={{ color: 'var(--accent)' }}>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <i key={i} style={{ animationDelay: i * 0.1 + 's' }} />
+            ))}
+          </span>
+          <span style={{ flex: '1 1 auto', color: 'var(--text-2)' }}>
             {t('settings.bulkRecapProgress', {
               done: progress.done + 1,
               total: progress.total,
             })}
           </span>
-          <button type="button" className="btn btn--quiet" onClick={() => void stop()}>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            data-size="sm"
+            onClick={() => void stop()}
+          >
             {t('settings.bulkRecapStop')}
           </button>
         </div>
       ) : running ? (
-        <p className="subtle" style={{ marginBottom: 16 }} role="status">
+        <p style={{ color: 'var(--text-3)', marginBottom: 16 }} role="status">
           {t('settings.bulkRecapScanning')}
         </p>
       ) : null}
@@ -636,9 +654,8 @@ function BulkRecapSection() {
         <p
           role="status"
           style={{
-            fontFamily: 'var(--font-serif)',
             fontSize: 16,
-            color: 'var(--ink)',
+            color: 'var(--text)',
             marginBottom: 16,
             maxWidth: 560,
           }}
@@ -670,34 +687,14 @@ function DeleteAllDataSection() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const handleWipe = async () => {
-    const ok = await ask(t('settings.wipeConfirmBody'), {
-      title: t('settings.wipeConfirmTitle'),
-      kind: 'warning',
-      okLabel: t('settings.wipeConfirmOk'),
-      cancelLabel: t('common.cancel'),
-    });
-    if (!ok) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await invoke('wipe_all_data');
-      setDone(true);
-    } catch (e) {
-      setError(humanError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (done) {
     return (
       <p
         style={{
-          fontFamily: 'var(--font-serif)',
           fontSize: 16,
-          color: 'var(--ink)',
+          color: 'var(--text)',
           margin: 0,
           maxWidth: 560,
         }}
@@ -713,8 +710,7 @@ function DeleteAllDataSection() {
         <p
           role="alert"
           style={{
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-sans)',
+            color: 'var(--danger)',
             marginBottom: 12,
           }}
         >
@@ -723,13 +719,35 @@ function DeleteAllDataSection() {
       )}
       <button
         type="button"
-        className="btn btn--ghost"
-        onClick={handleWipe}
+        className="btn btn--danger-ghost"
+        onClick={() => setConfirmOpen(true)}
         disabled={busy}
-        style={{ color: 'var(--signal)', borderColor: 'var(--signal)' }}
       >
         {busy ? t('settings.wipeBusy') : t('settings.wipeBtn')}
       </button>
+      <ConfirmModal
+        open={confirmOpen}
+        title={t('settings.wipeConfirmTitle')}
+        body={t('settings.wipeConfirmBody')}
+        confirmLabel={t('settings.wipeConfirmOk')}
+        cancelLabel={t('common.cancel')}
+        danger
+        busy={busy}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={async () => {
+          setConfirmOpen(false);
+          setBusy(true);
+          setError(null);
+          try {
+            await invoke('wipe_all_data');
+            setDone(true);
+          } catch (e) {
+            setError(humanError(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
     </div>
   );
 }
