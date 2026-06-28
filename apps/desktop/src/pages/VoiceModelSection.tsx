@@ -36,7 +36,7 @@ import {
 } from '../api/settings';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
-import { Skeleton } from '../ui';
+import { SettingRow, Skeleton, Switch } from '../ui';
 
 type TFn = ReturnType<typeof useI18n>['t'];
 
@@ -54,28 +54,25 @@ interface ToggleRowProps {
 
 // [B18.5b] v2 toggle row with disabled semantics — gasим switch когда модель
 // не готова (без эмбеддингов матчинга нет / pyannote отсутствует).
+// [B18.7c] Internals now compose canonical SettingRow + Switch wrappers.
+// Switch uses native `disabled` (inert when not ready); SettingRow `disabled`
+// keeps the row opacity. Behaviour 1-в-1 с прежним raw markup.
 function ToggleRow({ label, hint, checked, disabled, onToggle }: ToggleRowProps) {
   return (
-    <div className="setting-row" style={disabled ? { opacity: 0.6 } : undefined}>
-      <div className="setting-row-text">
-        <div className="setting-row-label">{label}</div>
-        <div className="set-hint">{hint}</div>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        aria-disabled={disabled || undefined}
-        className="switch"
-        data-on={checked ? 'true' : undefined}
-        onClick={() => {
-          if (disabled) return;
-          onToggle(!checked);
-        }}
-        style={{ marginTop: 2, cursor: disabled ? 'not-allowed' : 'pointer' }}
-      />
-    </div>
+    <SettingRow
+      label={label}
+      hint={hint}
+      disabled={disabled}
+      control={
+        <Switch
+          checked={checked}
+          onChange={onToggle}
+          label={label}
+          disabled={disabled}
+          style={{ marginTop: 2 }}
+        />
+      }
+    />
   );
 }
 

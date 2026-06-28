@@ -5,6 +5,7 @@
 // <Icon/>. Логика записи/навигации — в App.tsx; здесь только presentation.
 
 import { Icon } from '../ui/Icon';
+import { IconBtn, NavItem } from '../ui';
 import { formatElapsed } from '../recording/RecordingContext';
 import type { Call } from '../api/recording';
 import { useI18n } from '../i18n';
@@ -120,15 +121,14 @@ export function Sidebar(props: RailProps) {
         }}
       >
         <Brand />
-        <button
-          className="iconbtn"
-          data-size="sm"
-          aria-label={t('rail.collapse')}
+        <IconBtn
+          icon="sidebar"
+          size="sm"
+          iconSize={16}
+          label={t('rail.collapse')}
           title={`${t('rail.collapse')} ⌘\\`}
           onClick={onCollapse}
-        >
-          <Icon name="sidebar" size={16} />
-        </button>
+        />
       </div>
 
       {/* Record / recording status */}
@@ -216,16 +216,12 @@ export function Sidebar(props: RailProps) {
             </span>
           )}
         </button>
-        <button
-          className="navitem"
-          data-active={view === 'contacts' ? 'true' : undefined}
+        <NavItem
+          icon="users"
+          label={t('nav.contacts')}
+          active={view === 'contacts'}
           onClick={() => onNav('contacts')}
-        >
-          <span className="nav-ico">
-            <Icon name="users" size={16} />
-          </span>
-          <span className="nav-label">{t('nav.contacts')}</span>
-        </button>
+        />
 
         {recentTop.length > 0 && (
           <>
@@ -265,26 +261,24 @@ export function Sidebar(props: RailProps) {
             <span className="nav-label">{t('nav.settings')}</span>
           </button>
           {isDev && (
-            <button
-              className="iconbtn"
-              data-size="sm"
-              data-active={view === 'ds' ? 'true' : undefined}
-              aria-label={t('rail.designSystem')}
+            <IconBtn
+              icon="code"
+              size="sm"
+              iconSize={16}
+              active={view === 'ds'}
+              label={t('rail.designSystem')}
               title={t('rail.designSystem')}
               onClick={() => onNav('ds')}
-            >
-              <Icon name="code" size={16} />
-            </button>
+            />
           )}
-          <button
-            className="iconbtn"
-            data-size="sm"
-            aria-label={t('nav.settings')}
+          <IconBtn
+            icon={resolvedTheme === 'dark' ? 'sun' : 'moon'}
+            size="sm"
+            iconSize={16}
+            label={t('nav.settings')}
             title={resolvedTheme === 'dark' ? 'Light' : 'Dark'}
             onClick={onToggleTheme}
-          >
-            <Icon name={resolvedTheme === 'dark' ? 'sun' : 'moon'} size={16} />
-          </button>
+          />
         </div>
       </div>
       <div className="rail-resize" onMouseDown={onResizeStart} />
@@ -312,14 +306,13 @@ export function MiniRail(props: RailProps) {
 
   return (
     <aside className="minirail" data-tauri-drag-region>
-      <button
-        className="iconbtn"
-        aria-label={t('rail.expand')}
+      <IconBtn
+        icon="sidebar"
+        iconSize={18}
+        label={t('rail.expand')}
         title={`${t('rail.expand')} ⌘\\`}
         onClick={onExpand}
-      >
-        <Icon name="sidebar" size={18} />
-      </button>
+      />
       <div className="minirail-sep" />
       {recording ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
@@ -332,15 +325,14 @@ export function MiniRail(props: RailProps) {
           >
             <Icon name="stop" size={18} />
           </button>
-          <button
-            className="iconbtn"
-            data-size="sm"
-            aria-label={paused ? t('recording.resumeAction') : t('recording.pauseAction')}
+          <IconBtn
+            icon={paused ? 'play' : 'pause'}
+            size="sm"
+            iconSize={16}
+            label={paused ? t('recording.resumeAction') : t('recording.pauseAction')}
             onClick={onPause}
             disabled={busy}
-          >
-            <Icon name={paused ? 'play' : 'pause'} size={16} />
-          </button>
+          />
         </div>
       ) : (
         <button
@@ -353,50 +345,45 @@ export function MiniRail(props: RailProps) {
           <Icon name="mic" size={19} />
         </button>
       )}
-      <button
-        className="iconbtn"
-        aria-label={t('palette.commands')}
+      <IconBtn
+        icon="command"
+        iconSize={18}
+        label={t('palette.commands')}
         title={`${t('palette.commands')} ⌘K`}
         onClick={onSearch}
-      >
-        <Icon name="command" size={18} />
-      </button>
+      />
       <div className="minirail-sep" />
-      <button
-        className="iconbtn"
-        aria-label={t('nav.calls')}
+      <IconBtn
+        icon="inbox"
+        iconSize={18}
+        label={t('nav.calls')}
         title={t('nav.calls')}
-        data-active={view === 'inbox' || view === 'call' ? 'true' : undefined}
+        active={view === 'inbox' || view === 'call'}
         onClick={() => onNav('inbox')}
-      >
-        <Icon name="inbox" size={18} />
-      </button>
-      <button
-        className="iconbtn"
-        aria-label={t('nav.contacts')}
+      />
+      <IconBtn
+        icon="users"
+        iconSize={18}
+        label={t('nav.contacts')}
         title={t('nav.contacts')}
-        data-active={view === 'contacts' ? 'true' : undefined}
+        active={view === 'contacts'}
         onClick={() => onNav('contacts')}
-      >
-        <Icon name="users" size={18} />
-      </button>
+      />
       <div className="mr-spacer" />
-      <button
-        className="iconbtn"
-        aria-label="Theme"
+      <IconBtn
+        icon={resolvedTheme === 'dark' ? 'sun' : 'moon'}
+        iconSize={18}
+        label="Theme"
         onClick={onToggleTheme}
-      >
-        <Icon name={resolvedTheme === 'dark' ? 'sun' : 'moon'} size={18} />
-      </button>
-      <button
-        className="iconbtn"
-        aria-label={t('nav.settings')}
+      />
+      <IconBtn
+        icon="settings"
+        iconSize={18}
+        label={t('nav.settings')}
         title={t('nav.settings')}
-        data-active={view === 'settings' ? 'true' : undefined}
+        active={view === 'settings'}
         onClick={() => onNav('settings')}
-      >
-        <Icon name="settings" size={18} />
-      </button>
+      />
       <div className="rail-resize" onMouseDown={onResizeStart} />
     </aside>
   );

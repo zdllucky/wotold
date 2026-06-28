@@ -32,8 +32,8 @@ import {
   type PreferredLanguage,
 } from '../api/settings';
 import { useI18n } from '../i18n';
-import { Select, Skeleton } from '../ui';
-import { Icon, type IconName } from '../ui/Icon';
+import { NavItem, Select, Skeleton, Switch } from '../ui';
+import { type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
@@ -211,19 +211,14 @@ export function SettingsPage() {
           {t('settings.title')}
         </div>
         {NAV.filter((s) => !s.hidden).map((s) => (
-          <button
+          <NavItem
             key={s.id}
-            type="button"
-            className="navitem"
-            data-active={section === s.id ? 'true' : undefined}
+            icon={SECTION_ICONS[s.id]}
+            label={s.label}
+            active={section === s.id}
+            current={section === s.id}
             onClick={() => setSection(s.id)}
-            aria-current={section === s.id ? 'page' : undefined}
-          >
-            <span className="nav-ico">
-              <Icon name={SECTION_ICONS[s.id]} size={16} />
-            </span>
-            <span className="nav-label">{s.label}</span>
-          </button>
+          />
         ))}
         {savedTick > 0 && (
           <div
@@ -400,15 +395,11 @@ export function SettingsPage() {
                     {t('settings.callDetectLabel')}
                   </label>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={callDetectEnabled}
-                      aria-label={t('settings.callDetectCheckboxLabel')}
-                      className="switch"
-                      data-on={callDetectEnabled ? 'true' : undefined}
-                      onClick={() => {
-                        const v = !callDetectEnabled;
+                    <Switch
+                      checked={callDetectEnabled}
+                      label={t('settings.callDetectCheckboxLabel')}
+                      style={{ marginTop: 2, flex: '0 0 auto' }}
+                      onChange={(v) => {
                         setCallDetectEnabled(v);
                         void persist(
                           SETTINGS_KEYS.CALL_DETECT_ENABLED,
@@ -427,7 +418,6 @@ export function SettingsPage() {
                           });
                         }
                       }}
-                      style={{ marginTop: 2, flex: '0 0 auto' }}
                     />
                     <span style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.5 }}>
                       {t('settings.callDetectCheckboxLabel')}

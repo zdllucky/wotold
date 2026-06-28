@@ -30,7 +30,7 @@ import type {
 
 import { DeleteModelConfirm } from '../components/DeleteModelConfirm';
 import { RediscoveryChip } from '../components/RediscoveryChip';
-import { Icon, Skeleton } from '../ui';
+import { Icon, IconBtn, Skeleton } from '../ui';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import {
   localEngineGetActiveEngine,
@@ -676,11 +676,11 @@ export function LocalEngineSection() {
                   </div>
                   <div style={{ flex: '0 0 28px' }}>
                     {status.state === 'present' ? (
-                      <button
-                        type="button"
-                        className="iconbtn"
-                        data-size="sm"
-                        aria-label={t('localEngine.deleteAria', { name: modelLabel(row.id, t) })}
+                      <IconBtn
+                        icon="trash"
+                        size="sm"
+                        iconSize={14}
+                        label={t('localEngine.deleteAria', { name: modelLabel(row.id, t) })}
                         title={t('localEngine.delete')}
                         onClick={() =>
                           void onDeleteFromStorage(row.id, row.is_active, () => {
@@ -688,20 +688,16 @@ export function LocalEngineSection() {
                             void refreshStatuses([row.id]);
                           })
                         }
-                      >
-                        <Icon name="trash" size={14} />
-                      </button>
+                      />
                     ) : !progress ? (
-                      <button
-                        type="button"
-                        className="iconbtn"
-                        data-size="sm"
-                        aria-label={t('localEngine.downloadAria', { name: modelLabel(row.id, t) })}
+                      <IconBtn
+                        icon="download"
+                        size="sm"
+                        iconSize={14}
+                        label={t('localEngine.downloadAria', { name: modelLabel(row.id, t) })}
                         title={t('localEngine.download')}
                         onClick={() => void onDownload(row.id)}
-                      >
-                        <Icon name="download" size={14} />
-                      </button>
+                      />
                     ) : null}
                   </div>
                 </div>

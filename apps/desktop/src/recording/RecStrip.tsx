@@ -17,7 +17,7 @@ import { listCalls, type Call } from '../api/recording';
 import { useAudioLevel } from '../hooks/useAudioLevel';
 import { useI18n } from '../i18n';
 import { EngineChip, type EngineKind } from '../components/EngineChip';
-import { Icon } from '../ui/Icon';
+import { IconBtn } from '../ui';
 
 import { RecEq } from './RecEq';
 import { RecMiniButton } from './RecMiniButton';
@@ -147,15 +147,13 @@ export function RecStrip({ activeEngine, collapsed = false }: RecStripProps = {}
 
         <div style={{ flex: 1 }} />
 
-        <button
-          type="button"
-          className="iconbtn"
+        <IconBtn
+          icon="pip"
+          iconSize={16}
           onClick={onMinimize}
-          aria-label={t('rail.collapse')}
+          label={t('rail.collapse')}
           title={t('rail.collapse')}
-        >
-          <Icon name="pip" size={16} />
-        </button>
+        />
         <RecMiniButton
           variant={isPaused ? 'play' : 'pause'}
           onClick={onTogglePause}
