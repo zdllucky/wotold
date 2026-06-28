@@ -1,24 +1,23 @@
-// [W3] Persistent recording strip shown at the top of `app-main`.
+// [B18.1b] Recording dock — Wotold v2. Was a top strip (.rec-strip); now a
+// footer dock (.composer-dock + .composer--rec) per ~/Downloads/Wotold v2
+// wk-app.jsx RecDock. Fixed to the bottom of the content area, offset by the
+// rail width (rail-mini when collapsed). Mount-conditional: null when idle.
 //
-// Mount-conditional: returns null when status.kind === 'idle'. When the user
-// is recording or paused, RecStrip shows the equalizer indicator, a copy
-// label, the elapsed timer, optional call title (best-effort lookup via
-// list_calls), and pause/resume + stop controls.
+// Wiring preserved 1-to-1: useRecording status/elapsed/busy, audio-reactive
+// RecEq (mic+system RMS), pause/resume + stop. New: «свернуть в виджет» (pip)
+// minimises the main window → Rust emits main-window:minimized → floating
+// widget window appears (App.tsx listener).
 //
-// Click on the strip body itself is a no-op for now — W4 will wire it to
-// "open the floating recording pane" (a second Tauri window).
-//
-// Accessibility:
-//   - The wrapper carries `role="status"` + `aria-live="polite"` so screen
-//     readers announce the state change without stealing focus.
-//   - Buttons have explicit `aria-label`s (no icon text).
+// A11y: role="status" + aria-live="polite"; explicit aria-labels on controls.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { listCalls, type Call } from '../api/recording';
 import { useAudioLevel } from '../hooks/useAudioLevel';
 import { useI18n } from '../i18n';
 import { EngineChip, type EngineKind } from '../components/EngineChip';
+import { Icon } from '../ui/Icon';
 
 import { RecEq } from './RecEq';
 import { RecMiniButton } from './RecMiniButton';
@@ -33,19 +32,18 @@ function activeCallId(
 
 interface RecStripProps {
   activeEngine?: EngineKind | null;
+  /** Rail collapsed → dock offsets by rail-mini instead of rail-w. */
+  collapsed?: boolean;
 }
 
-export function RecStrip({ activeEngine }: RecStripProps = {}) {
+export function RecStrip({ activeEngine, collapsed = false }: RecStripProps = {}) {
   const { t } = useI18n();
   const rec = useRecording();
   const callId = activeCallId(rec.status);
   const isPaused = rec.status.kind === 'paused';
   const [title, setTitle] = useState<string | null>(null);
 
-  // Best-effort title lookup. We avoid `get_call` because that triggers full
-  // detail page load logic; `list_calls` is already cached on App mount and
-  // is cheap. We only re-query if callId changes — title rarely changes during
-  // a recording (LLM generates it later).
+  // Best-effort title lookup (list_calls is cached; cheap). Decorative only.
   useEffect(() => {
     if (!callId) {
       setTitle(null);
@@ -59,7 +57,7 @@ export function RecStrip({ activeEngine }: RecStripProps = {}) {
         const c = calls.find((x: Call) => x.id === callId) ?? null;
         setTitle(c?.title ?? null);
       } catch {
-        // Silent — title is purely decorative on the strip.
+        /* silent — title is decorative */
       }
     })();
     return () => {
@@ -68,19 +66,17 @@ export function RecStrip({ activeEngine }: RecStripProps = {}) {
   }, [callId]);
 
   const label = useMemo(
-    () =>
-      isPaused ? t('recording.stripPaused') : t('recording.stripRecording'),
+    () => (isPaused ? t('recording.stripPaused') : t('recording.stripRecording')),
     [isPaused, t],
   );
 
-  // Live audio levels — mic + system tracks. max(mic, system) per index чтобы
-  // бары реагировали на любой источник (твой голос ИЛИ собеседник через
-  // process tap). RecEq смотрит на levels.slice(-3) — recompute дешёвый.
+  // Live audio levels — max(mic, system) per index so bars react to either source.
   const isRecordingActive = rec.status.kind === 'recording';
   const audio = useAudioLevel(isRecordingActive);
-  const levels = useMemo(() => {
-    return audio.mic.map((m, i) => Math.max(m, audio.system[i] ?? 0));
-  }, [audio.mic, audio.system]);
+  const levels = useMemo(
+    () => audio.mic.map((m, i) => Math.max(m, audio.system[i] ?? 0)),
+    [audio.mic, audio.system],
+  );
 
   if (rec.status.kind === 'idle') return null;
 
@@ -92,42 +88,74 @@ export function RecStrip({ activeEngine }: RecStripProps = {}) {
 
   const onStop = () => {
     if (rec.busy) return;
-    // Result is consumed by W5 (HomePage) — for now we just trigger the call.
     void rec.stop().catch(() => {
       /* error already surfaced via rec.error */
     });
   };
 
+  const onMinimize = () => {
+    // Minimise the main window; Rust emits main-window:minimized → floating
+    // widget window is shown (App.tsx listener while recording).
+    void getCurrentWindow()
+      .minimize()
+      .catch((e) => console.warn('minimize main window failed', e));
+  };
+
   return (
     <div
-      className="rec-strip"
-      role="status"
-      aria-live="polite"
-      data-paused={isPaused ? 'true' : 'false'}
+      className="composer-dock"
+      style={
+        {
+          position: 'fixed',
+          left: collapsed ? 'var(--rail-mini)' : 'var(--rail-w)',
+          right: 0,
+          bottom: 0,
+          zIndex: 40,
+        } as CSSProperties
+      }
     >
-      <RecEq paused={isPaused} levels={levels} />
-
-      <div className="rec-strip-meta">
-        <div className="rec-strip-meta-row">
-          <span className="rec-strip-label">{label}</span>
-          {activeEngine && <EngineChip kind={activeEngine} variant="recording" />}
-          <span className="rec-strip-timer">
-            {formatElapsed(rec.elapsedSec)}
+      <div
+        className="composer composer--rec"
+        role="status"
+        aria-live="polite"
+        data-paused={isPaused ? 'true' : 'false'}
+        style={{ maxWidth: 'none' }}
+      >
+        <span
+          className={isPaused ? 'dot' : 'dot dot--pulse'}
+          style={{ background: 'var(--danger)' }}
+          aria-hidden
+        />
+        <span style={{ color: 'var(--danger)', fontWeight: 600, fontSize: 13 }}>
+          {label}
+        </span>
+        {activeEngine && <EngineChip kind={activeEngine} variant="recording" />}
+        <span className="mono" style={{ fontSize: 16, fontWeight: 600 }}>
+          {formatElapsed(rec.elapsedSec)}
+        </span>
+        <RecEq paused={isPaused} levels={levels} />
+        {title && (
+          <span className="u-muted u-trunc" style={{ fontSize: 12, maxWidth: 220 }}>
+            {title}
           </span>
-        </div>
-        {title && <span className="rec-strip-title">{title}</span>}
-      </div>
+        )}
 
-      <div className="rec-strip-actions">
+        <div style={{ flex: 1 }} />
+
+        <button
+          type="button"
+          className="iconbtn"
+          onClick={onMinimize}
+          aria-label={t('rail.collapse')}
+          title={t('rail.collapse')}
+        >
+          <Icon name="pip" size={16} />
+        </button>
         <RecMiniButton
           variant={isPaused ? 'play' : 'pause'}
           onClick={onTogglePause}
           disabled={rec.busy}
-          ariaLabel={
-            isPaused
-              ? t('recording.resumeAction')
-              : t('recording.pauseAction')
-          }
+          ariaLabel={isPaused ? t('recording.resumeAction') : t('recording.pauseAction')}
         />
         <RecMiniButton
           variant="stop"

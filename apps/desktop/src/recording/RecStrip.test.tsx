@@ -55,7 +55,8 @@ describe('RecStrip', () => {
       </I18nProvider>,
     );
     await flush();
-    expect(container.querySelector('.rec-strip')).toBeNull();
+    // [B18.1b] dock footer = .composer-dock (was .rec-strip).
+    expect(container.querySelector('.composer-dock')).toBeNull();
   });
 
   test('shows recording label + timer when active', async () => {
@@ -84,7 +85,7 @@ describe('RecStrip', () => {
     // Russian copy (test setup pins navigator.language to ru-RU).
     expect(screen.getByText('Идёт запись')).toBeTruthy();
     // Timer is mm:ss; rough sanity — contains a colon.
-    const strip = document.querySelector('.rec-strip');
+    const strip = document.querySelector('.composer');
     expect(strip).not.toBeNull();
     expect(strip?.getAttribute('data-paused')).toBe('false');
     expect(strip?.textContent ?? '').toMatch(/\d{2}:\d{2}/);
@@ -115,7 +116,7 @@ describe('RecStrip', () => {
     await flush();
 
     expect(screen.getByText('Пауза · записано')).toBeTruthy();
-    const strip = document.querySelector('.rec-strip');
+    const strip = document.querySelector('.composer');
     expect(strip?.getAttribute('data-paused')).toBe('true');
 
     // Pause-action button switches to Resume (variant='play').
