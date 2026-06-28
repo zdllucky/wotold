@@ -43,8 +43,10 @@ process.stdin.on('end', () => {
   const WHITELIST = [
     /\/styles\/tokens\.css$/,
     /\/styles\/wotold\.css$/,
+    /\/styles\/wk\.css$/,
     /\/styles\/legacy-tokens\.css$/,
     /\/styles\/fonts\.css$/,
+    /\/docs\/design\/wotold-v2\//,
     /\/docs\/design\/atelier-v2\//,
     /\.claude\//,
   ];
@@ -58,7 +60,7 @@ process.stdin.on('end', () => {
   if (hexMatches.length > 0) {
     findings.push(
       `[design-gate] Сырой hex: ${[...new Set(hexMatches)].slice(0, 5).join(', ')}\n` +
-        `[design-gate] → используй var(--*) из tokens.css (--ink/--accent/--signal/--bg/...)`,
+        `[design-gate] → используй var(--*) из tokens.css (--text/--accent/--danger/--bg/--border/...)`,
     );
   }
 
@@ -77,8 +79,9 @@ process.stdin.on('end', () => {
   if (legacyMatches.length > 0) {
     findings.push(
       `[design-gate] Legacy токены: ${[...new Set(legacyMatches)].slice(0, 5).join(', ')}\n` +
-        `[design-gate] → мигрируй на новый набор (--bg, --ink, --accent, --signal, --line, --muted и т.д.)\n` +
-        `[design-gate] см. docs/design/atelier-v2/tokens.css + legacy-tokens.css mapping.`,
+        `[design-gate] → канон Wotold v2 (uikit): --bg, --text, --accent, --danger, --border, --text-3 и т.д.\n` +
+        `[design-gate] Atelier-имена (--ink/--line/--signal/...) допустимы через legacy-tokens.css shim до B18.6.\n` +
+        `[design-gate] см. docs/design/wotold-v2/ + styles/legacy-tokens.css mapping.`,
     );
   }
 

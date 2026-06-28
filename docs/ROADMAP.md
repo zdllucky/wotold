@@ -340,6 +340,73 @@
 - [x] `useFocusTrap` test suite (8 cases) — initial focus, ESC, Tab/Shift+Tab cycling, inactive, scroll-lock.
 - [ ] **Manual visual QA** — пройти руками 6 theme×accent комбинаций (light/dark × bordeaux/persian/ink) на всех экранах. Делается перед публичным релизом, не разработка.
 
+## Wotold v2 Redesign (B18)
+
+> **Контекст**: 2026-06-28 получен новый дизайн-прототип **«Wotold v2»** (`~/Downloads/Wotold v2/`: `uikit.css` + `uikit.jsx` + `wk-*.jsx`, входная точка `Wotold v2.html`). Это **смена поколения ДС поверх Atelier v2 (B17)**, не рестайл: Hanken Grotesk + IBM Plex Mono (**без serif**), новый surface/density-токенсет, складной Notion-rail + icon-only minirail, глобальный recording **dock** + floating **widget**, **⌘K command palette**, новые поверхности **Inbox / Views / Explore**, call-detail с right-rail и **Assistant**-табом. Прототип — единственный источник истины: своего handoff-дока у wk-дизайна нет (пакетный `CLAUDE.md` и `design_handoff_wotold_atelier/` описывают СТАРЫЙ Atelier — устарели). Анализ: `scratchpad/v2-analysis.md`. Миграция итерациями ниже, открытые развилки помечены **⚠️** (решаются перед стартом фазы). Паспорт > мок (W6); R1–R13 не «чинить».
+>
+> **Решения (2026-06-28, владелец)**: акцент = **моно-графит (ink)**, picker убран, QA = light/dark; density = **фикс cozy** (без переключателя); **Home удаляется полностью** (главная не нужна); recording = **новый dock + widget** (суть та же, исполнение из прототипа, логика записи/паузы/стопа сохраняется 1-в-1); все экраны — **ровно по новому дизайну** (Inbox / Views / Explore / filters в scope B18); **Assistant-таб отложен** отдельной доработкой (вернёмся позже).
+
+### B18.0 · Foundation — токены, шрифты, ДС-слой
+
+- [x] Перенесены токены `uikit.css` → `apps/desktop/src/styles/tokens.css`: surface-набор `--bg/--sunken/--panel/--raised/--hover/--active`, текст `--text/-2/-3/-faint`, бордеры `--border/-2/-strong`, `--t-11..28`, `--s1..9`, `--r-xs..pill`, `--fast/base/slow + --ease`, speaker `--sp1..5`, `--rail-w`, shadows. Light + dark.
+- [x] Шрифты: Hanken Grotesk + IBM Plex Mono (`fonts.css`), убраны Source Serif 4 + DM Sans + JetBrains Mono. Google CDN (self-host — TODO B18.x в комментарии fonts.css).
+- [x] Component-классы `uikit.css` → новый `apps/desktop/src/styles/wk.css` (импорт ПОСЛЕ wotold.css; на коллизиях примитивов побеждает uikit). Полное удаление atelier-классов из `wotold.css` — в B18.6.
+- [x] Legacy-shim `apps/desktop/src/styles/legacy-tokens.css`: `--space-*`→`--sN`, `--ink*`→`--text*`, `--line*`→`--border*`, `--signal`→`--danger`, `--font-serif`→`--font` и т.д. Удалить в B18.6.
+- [x] **Акцент = моно-графит (ink)**: tokens.css один accent-набор (графит), `useTheme` `DEFAULT_ACCENT='ink'` + `data-accent` no-op. accent-picker из Settings убрать — в B18.5. QA = light/dark.
+- [x] **Density = фикс cozy**: `useTheme` ставит `data-density="cozy"` на `<html>`; compact-токены в wk.css не активны.
+- [x] Icon-set `uikit-icons.jsx` → `src/ui/Icon.tsx` (62 line-иконки, 1.5px, `currentColor`, без emoji) + экспорт из `ui/index.ts`.
+- [x] **design-gate** обновлён: whitelist `wk.css` + `docs/design/wotold-v2/` в `scripts/hooks/design-gate.mjs`, сообщения на uikit-канон; `CLAUDE.md` §Design Gate переписан; `docs/design/wotold-v2/README.md` (atelier-v2 = legacy).
+
+### B18.1 · App shell + IA (складной rail, dock, palette)
+
+- [ ] `App.tsx`: `.app-rail` (tabs) → **Sidebar (256px) + MiniRail (56px)** пара, складывание `⌘\`, resize 216–380px + localStorage, авто-collapse <198px.
+- [ ] Recording: `RecStrip` → **RecDock** (footer-anchored) + **RecWidget** (floating, drag, pip-minimize) ✅решено: берём исполнение из прототипа (суть flow та же), **логика записи/паузы/стопа/событий Rust сохраняется 1-в-1**.
+- [ ] **Command palette (⌘K)** — `components/CommandPalette.tsx`: поиск звонков + действия (record/inbox/contacts/settings), ↑↓/Enter/Esc, focus-trap.
+- [ ] **Home удаляется полностью** ✅решено (главная не нужна): default-экран = Inbox. `HomePage.tsx` удалить; consent-gate (C1/R2), updater-баннер, hotkey-hints переехать в shell/Inbox. First-run consent — в shell перед первой записью.
+- [ ] Recent-calls list в rail (`StatusCell` + `fmtDur`).
+
+### B18.2 · Inbox (замена Home + Calls)
+
+- [ ] `pages/InboxView.tsx` — unified список: **omni-bar** (текст-поиск + facet-токены), **facet-фильтры** (статус/recap/контакт/период), **view switcher** (list/cards/week/month), month-grouping sticky, virtualization ≥200.
+- [ ] `CallRow`: status-dot / title (+recap sparkle, status-chip) / participants (AvatarGroup) / duration (mono) / date / ⋯-меню (open/reprocess/export/delete) + engine-chip в строку.
+- [ ] Переиспользовать `listCalls` + фильтры + `callState`; данные уже есть (title/status/started_at/parts/processing_via/recap).
+- [ ] **Views (saved smart-collections) + Explore** ✅в scope (ровно по прототипу) — персистентность `SavedView` (локальный storage / S2 контракт `{label, filter_state, view_mode, sort}`).
+- [ ] Stats (4 hero + sparkline) — разместить как в прототипе (`wk-screens`/`wk-inbox`).
+
+### B18.3 · Call detail (two-column + right rail + tabs)
+
+- [ ] `CallDetailPage` → **doc-column + CallRail** (properties / participants / actions). Tabs **Transcript / Recap / Assistant**.
+- [ ] Transcript: `.turn` speaker-turns (avatar + name + time clickable + text), seek-sync с player-scrubber внизу.
+- [ ] Recap: summary + **DecisionsBlock + OpenQuestionsBlock + ActionItemsV2** (category-icon commitment/proposal/idea + evidence-quote), rich↔raw toggle. Маппинг на реальные `listCallDecisions`/`listCallOpenQuestions`/`ActionItemV2` (уже в контрактах M14 — переиспользовать).
+- [ ] `SpeakerRow` dropdown assign (search contacts / assign / reset); неподтверждённые = «Говорящий» (серый avatar). **Сохранить consent / biometric R2 логику 1-в-1.**
+- [ ] **Assistant-таб ОТЛОЖЕН** ⏸️ отдельной доработкой (вернёмся позже): в B18.3 таб либо скрыт, либо «coming soon»-stub. Backend (LLM Q&A над транскриптом) — вне scope B18. Tabs пока Transcript / Recap.
+
+### B18.4 · Contacts
+
+- [ ] `ContactsView` — 2-pane (list + detail), reskin под uikit. Показать `identifiers` (email/phone chips — gap #1: мок их не показывал). Derivations (calls-count / last / confirmed) — агрегат из истории (gap #2, новый query). Voice samples — по факту реализации (gap #7).
+
+### B18.5 · Settings (Row-layout, 9 секций)
+
+- [ ] `SettingsPage` → rail 300px, **Row-primitive** (label слева / контрол справа). **Сохранить ВСЮ логику / SETTINGS_KEYS / i18n 1-в-1.**
+- [ ] Appearance: theme → **Segmented** (sun/moon/none); **accent-picker удалён** (моно-графит); language Select. Без density-контрола (фикс cozy).
+- [ ] Processing: **OptionCard** engine×2 + preset×3 (quality-dots), models **Table**, hw-probe activity-strip + recompute, cloud-usage **quota-bars** (минуты+токены), BYO-keys в `<details>`.
+- [ ] Permissions: 3 dense Row. Recording: Select / HotkeyCapture / **Switch** (checkbox→Switch). Speakers: Panel-card + Switch. Labs: 3 Switch. Maintenance: Row + Wave. Privacy: Row + **HTML Modal** (по прототипу; native `ask()` заменяется).
+
+### B18.6 · DS page + cleanup + QA
+
+- [ ] `DesignSystemPage` переписать под wk-uikit — единый источник всех примитивов / токенов (зеркало `wk-designsystem.jsx`).
+- [ ] `src/ui/*` примитивы → thin-wrappers над новыми классами: Btn / IconBtn / Chip / MetricChip / Input / Select / Switch / Segmented / Modal / Panel / Avatar / Dot / Kbd / Wave / Progress / Tabs / Dropdown / NavItem.
+- [ ] Удалить legacy-shim, старые atelier-классы, неиспользуемый CSS (`pages.css`/устаревшие).
+- [ ] Тесты RTL: обновить под новый DOM (role/label-queries, не классы). Сохранить green core-flow тесты (consent / hotkey / pipeline-sync).
+- [ ] **⚠️ Manual visual QA**: light/dark × (1 или 3 акцента) × (cozy/compact) на всех экранах. A11y: focus-trap (palette / modal / widget), keyboard-nav, ARIA, `prefers-reduced-motion`.
+
+### Контракты / backend (S2) — параллельно, по мере scope
+
+- [ ] `SavedView` persistence ✅в scope (Views = B18.2).
+- [ ] Assistant Q&A endpoint + prompt ⏸️ отложено (Assistant вне scope B18).
+- [ ] Contact derivations query (calls / last / confirmed) для B18.4.
+- [ ] Свериться: `ActionItemV2` / `Decisions` / `OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать (S2).
+
 ## Production Readiness (B16)
 
 > **Контекст**: после прохождения MVP-фич — 4 параллельных аудита (UX/CX, Visual/Design, Logic/Code Quality, Build/Deploy/Security) нашли ~260 пунктов разной серьёзности для перехода PoC → consumer-ready. Здесь — сводка с приоритетами. Items закрываются батчами; статус фиксируется галочкой ☑. **P0** = блокер для shipping / data loss / security. **P1** = serious UX / maintenance burden. **P2** = polish.

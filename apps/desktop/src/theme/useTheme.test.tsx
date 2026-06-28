@@ -72,7 +72,23 @@ describe('ThemeProvider — boot', () => {
     });
 
     expect(result.theme).toBe('system');
-    expect(result.accent).toBe('bordeaux');
+    // [B18.0] Wotold v2 = моно-графит: дефолтный акцент 'ink' (был 'bordeaux').
+    expect(result.accent).toBe('ink');
+  });
+
+  test('[B18.0] pins data-density="cozy" on root', async () => {
+    mockGetSetting.mockResolvedValue(null);
+    mockSetSetting.mockResolvedValue(undefined);
+
+    await act(async () => {
+      render(
+        <ThemeProvider>
+          <div />
+        </ThemeProvider>,
+      );
+    });
+
+    expect(document.documentElement.getAttribute('data-density')).toBe('cozy');
   });
 
   test('applies data-theme attribute to document root on boot', async () => {
