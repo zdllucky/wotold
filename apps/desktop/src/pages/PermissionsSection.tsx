@@ -10,7 +10,7 @@ import {
   type SystemPane,
 } from '../api/permissions';
 import { useI18n } from '../i18n';
-import { Badge, Button } from '../ui';
+import { Button } from '../ui';
 
 type Target = 'microphone' | 'screen_recording' | 'accessibility';
 
@@ -81,16 +81,9 @@ export function PermissionsSection() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className="set-group">
       {error && (
-        <p
-          role="alert"
-          style={{
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-sans)',
-            marginBottom: 0,
-          }}
-        >
+        <p role="alert" style={{ color: 'var(--danger)', margin: 0 }}>
           {error}
         </p>
       )}
@@ -98,42 +91,21 @@ export function PermissionsSection() {
         const current: PermissionStatus = status?.[row.target] ?? 'unknown';
         const isBusy = busy === row.target;
         return (
-          <div
-            key={row.target}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr auto',
-              gap: 16,
-              padding: '14px 0',
-              borderBottom: '1px solid var(--line-soft)',
-              alignItems: 'start',
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
+          <div key={row.target} className="setting-row">
+            <div className="setting-row-text">
               <div
                 style={{
                   display: 'flex',
-                  gap: 10,
-                  alignItems: 'baseline',
+                  gap: 8,
+                  alignItems: 'center',
                   flexWrap: 'wrap',
                   marginBottom: 4,
                 }}
               >
-                <span
-                  style={{
-                    fontFamily: 'var(--font-serif)',
-                    fontSize: 16,
-                    color: 'var(--ink)',
-                  }}
-                >
-                  {t(row.labelKey)}
-                </span>
-                <PermBadge status={current} />
+                <span className="setting-row-label">{t(row.labelKey)}</span>
+                <PermChip status={current} />
               </div>
-              <p
-                className="muted"
-                style={{ fontSize: 13, margin: 0, lineHeight: 1.45 }}
-              >
+              <p className="set-hint" style={{ marginTop: 0 }}>
                 {t(row.descKey)}
               </p>
             </div>
@@ -143,6 +115,7 @@ export function PermissionsSection() {
                 gap: 6,
                 alignItems: 'center',
                 flexWrap: 'wrap',
+                flex: '0 0 auto',
               }}
             >
               <Button
@@ -188,54 +161,56 @@ export function PermissionsSection() {
   );
 }
 
-function PermBadge({ status }: { status: PermissionStatus }) {
-  const { t } = useI18n();
-  const meta = badgeMeta(status, t);
-  return (
-    <Badge tone={meta.tone} title={meta.title}>
-      {meta.label}
-    </Badge>
-  );
-}
-
-type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
+type ChipVariant = 'ok' | 'danger' | 'warn' | 'line';
 
 type TFn = ReturnType<typeof useI18n>['t'];
 
-function badgeMeta(
+// [B18.5b] Permission state → v2 `.chip` variant. Semantics preserved from the
+// prior <Badge> mapping (granted=ok, denied/restricted=danger, pending=warn).
+function PermChip({ status }: { status: PermissionStatus }) {
+  const { t } = useI18n();
+  const meta = chipMeta(status, t);
+  return (
+    <span className={`chip chip--${meta.variant}`} data-size="sm" title={meta.title}>
+      {meta.label}
+    </span>
+  );
+}
+
+function chipMeta(
   status: PermissionStatus,
   t: TFn,
-): { label: string; title: string; tone: Tone } {
+): { label: string; title: string; variant: ChipVariant } {
   switch (status) {
     case 'granted':
       return {
         label: t('permissions.granted'),
         title: t('permissions.grantedTitle'),
-        tone: 'success',
+        variant: 'ok',
       };
     case 'denied':
       return {
         label: t('permissions.denied'),
         title: t('permissions.deniedTitle'),
-        tone: 'danger',
+        variant: 'danger',
       };
     case 'not_determined':
       return {
         label: t('permissions.notDetermined'),
         title: t('permissions.notDeterminedTitle'),
-        tone: 'warning',
+        variant: 'warn',
       };
     case 'restricted':
       return {
         label: t('permissions.restricted'),
         title: t('permissions.restrictedTitle'),
-        tone: 'danger',
+        variant: 'danger',
       };
     default:
       return {
         label: t('permissions.unknown'),
         title: t('permissions.unknownTitle'),
-        tone: 'neutral',
+        variant: 'line',
       };
   }
 }

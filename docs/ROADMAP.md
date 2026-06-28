@@ -387,10 +387,10 @@
 
 ### B18.5 · Settings (Row-layout, 9 секций)
 
-- [ ] `SettingsPage` → rail 300px, **Row-primitive** (label слева / контрол справа). **Сохранить ВСЮ логику / SETTINGS_KEYS / i18n 1-в-1.**
-- [ ] Appearance: theme → **Segmented** (sun/moon/none); **accent-picker удалён** (моно-графит); language Select. Без density-контрола (фикс cozy).
-- [ ] Processing: **OptionCard** engine×2 + preset×3 (quality-dots), models **Table**, hw-probe activity-strip + recompute, cloud-usage **quota-bars** (минуты+токены), BYO-keys в `<details>`.
-- [ ] Permissions: 3 dense Row. Recording: Select / HotkeyCapture / **Switch** (checkbox→Switch). Speakers: Panel-card + Switch. Labs: 3 Switch. Maintenance: Row + Wave. Privacy: Row + **HTML Modal** (по прототипу; native `ask()` заменяется).
+- [x] **B18.5a** `SettingsPage` shell → rail `.navitem`+иконки, `.set-*` headers, **Row-primitive**. Логика / SETTINGS_KEYS / i18n 1-в-1.
+- [x] **B18.5a** Appearance: theme → **Segmented** (sun/moon/system); **accent-picker удалён** (моно-графит); language Select. Без density-контрола (фикс cozy).
+- [x] **B18.5b** Permissions: 3 dense `.setting-row` + `.chip`. Recording: Select / HotkeyCapture / **Switch** (5a). Speakers/VoiceModel: `.panel` + **Switch** (auto-bind / mic-diariz). Labs: 2 **Switch** + Select.
+- [ ] **B18.5c** Processing/LocalEngine: **OptionCard** engine×2 + preset×3 (quality-dots), models **Table**, hw-probe activity-strip + recompute, BYO-keys в `<details>`. Account: state-machine restyle. Maintenance: Row + Wave. Privacy: **HTML Modal** (native `ask()` заменяется).
 
 ### B18.6 · DS page + cleanup + QA
 
