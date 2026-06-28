@@ -22,6 +22,15 @@ const ruInternal = {
     brandFooter: 'Локально · macOS',
   },
 
+  // [B18.1a] Wotold v2 shell rail.
+  rail: {
+    record: 'Записать звонок',
+    recent: 'Недавние',
+    collapse: 'Свернуть',
+    expand: 'Развернуть панель',
+    designSystem: 'Дизайн-система',
+  },
+
   // ── Common buttons / labels / states ────────────────────────────────────
   common: {
     save: 'Сохранить',

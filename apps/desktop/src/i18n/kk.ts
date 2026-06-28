@@ -18,6 +18,15 @@ export const kk: TranslationStrings = {
     brandFooter: 'Жергілікті · macOS',
   },
 
+  // [B18.1a] Wotold v2 shell rail.
+  rail: {
+    record: 'Қоңырауды жазу',
+    recent: 'Соңғы',
+    collapse: 'Жию',
+    expand: 'Панельді ашу',
+    designSystem: 'Дизайн-жүйе',
+  },
+
   common: {
     save: 'Сақтау',
     cancel: 'Болдырмау',
