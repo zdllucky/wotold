@@ -537,7 +537,10 @@ export function InboxView({
   const nActive = facetCount(facets) + (text ? 1 : 0);
 
   return (
-    <section>
+    // [B18.9-fix] Shared shell: bleed past .app-main 34/44 padding + fill the
+    // viewport so the .view-head navbar spans flush (rail→right edge) and the
+    // table scrolls in its own region below — same pattern as Contacts/Settings.
+    <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
       <ViewHead icon="inbox" title={t('nav.calls')} count={calls?.length} countTone="line">
         <div
           style={{
@@ -690,6 +693,6 @@ export function InboxView({
           </div>
         )}
       </div>
-    </section>
+    </div>
   );
 }
