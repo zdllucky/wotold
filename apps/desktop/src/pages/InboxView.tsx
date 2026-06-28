@@ -24,17 +24,17 @@ import { Icon, type IconName } from '../ui/Icon';
 import { useI18n, type TranslationKey } from '../i18n';
 import { CallStateTag, ProgressRail } from '../components/call-state';
 import { pipelineStepKey, type CallState } from '../types/callState';
+import { AvatarGroup, StatusCell } from './inboxBits';
+import { InboxCards, InboxMonth, InboxWeek } from './InboxCalendarViews';
 import {
   FACETS_EMPTY,
   ROW_HEIGHT,
-  SP_COLORS,
   VIRTUALIZATION_THRESHOLD,
   VIRTUAL_LIST_HEIGHT,
   callHasRecap,
   declinePlural,
   deriveCallState,
   facetCount,
-  formatDay,
   formatDuration,
   formatMegabytes,
   groupByMonth,
@@ -88,52 +88,8 @@ function facetDefs(t: TFn): FacetDef[] {
   ];
 }
 
-const STATE_DOT: Record<CallState, string> = {
-  live: 'var(--danger)',
-  error: 'var(--danger)',
-  ready: 'var(--ok)',
-  uploading: 'var(--accent)',
-  processing: 'var(--accent)',
-  queued: 'var(--text-faint)',
-};
-
-function StatusCell({ call, busy }: { call: Call; busy: boolean }) {
-  const state = busy ? 'processing' : deriveCallState(call);
-  const pulse = state === 'processing' || state === 'uploading' || state === 'live';
-  return (
-    <span
-      className={`dot${pulse ? ' dot--pulse' : ''}`}
-      style={{ background: STATE_DOT[state] }}
-      aria-hidden
-    />
-  );
-}
-
-function AvatarGroup({ list }: { list: string[] }) {
-  return (
-    <span className="avatar-grp" data-on="bg" style={{ alignItems: 'center' }}>
-      {list.slice(0, 3).map((s, i) => (
-        <span
-          key={i}
-          className="avatar"
-          style={{
-            background: SP_COLORS[i % SP_COLORS.length],
-            width: 24,
-            height: 24,
-            fontSize: 9,
-          }}
-        >
-          {s}
-        </span>
-      ))}
-      {list.length > 3 && (
-        <span className="u-faint mono" style={{ fontSize: 11, marginLeft: 6 }}>
-          +{list.length - 3}
-        </span>
-      )}
-    </span>
-  );
-}
+// StatusCell / AvatarGroup / statusColor moved to ./inboxBits (shared with
+// the calendar views). CallState is still used by renderSecondary below.
 
 // ── Omni-bar (text + facet tokens + suggestions) ──
 
@@ -483,7 +439,6 @@ function CallRow({ call, onOpen, hasBorder, speakers, isActive, t }: CallRowProp
         style={{ fontSize: 12, textAlign: 'right', letterSpacing: '0.02em', minWidth: 52 }}
       >
         {formatDuration(call.duration_sec)}
-        <span style={{ display: 'none' }}>{formatDay(call.started_at)}</span>
       </div>
     </div>
   );
@@ -691,8 +646,12 @@ export function InboxView({ onOpen }: InboxViewProps) {
             </li>
           ))}
         </ul>
-      ) : view !== 'list' ? (
-        <Empty title={t(VIEW_DEFS.find(([v]) => v === view)![2])} description={t('inbox.comingSoon')} />
+      ) : view === 'cards' ? (
+        <InboxCards calls={filtered} onOpen={onOpen} speakerInitials={speakerInitials} locale={locale} t={t} />
+      ) : view === 'week' ? (
+        <InboxWeek calls={filtered} onOpen={onOpen} speakerInitials={speakerInitials} locale={locale} t={t} />
+      ) : view === 'month' ? (
+        <InboxMonth calls={filtered} onOpen={onOpen} speakerInitials={speakerInitials} locale={locale} t={t} />
       ) : calls.length === 0 ? (
         <Empty title={t('calls.emptyTitle')} description={t('calls.emptyBody')} />
       ) : filtered.length === 0 ? (

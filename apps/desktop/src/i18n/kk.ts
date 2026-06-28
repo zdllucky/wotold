@@ -59,6 +59,7 @@ export const kk: TranslationStrings = {
     viewWeek: 'Апта',
     viewMonth: 'Ай',
     comingSoon: 'Жақында',
+    todayBtn: 'Бүгін',
   },
 
   common: {
