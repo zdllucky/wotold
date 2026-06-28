@@ -198,7 +198,7 @@ export function DesignSystemPage() {
               <Button variant="primary">Primary</Button>
               <Button variant="secondary">Default</Button>
               <Button variant="ghost">Ghost</Button>
-              <Button variant="secondary">Soft</Button>
+              <Button variant="soft">Soft</Button>
               <Button variant="danger">Danger</Button>
               <Button variant="ghost" style={{ color: 'var(--danger)' }}>
                 Danger ghost
@@ -211,7 +211,7 @@ export function DesignSystemPage() {
               <Button variant="secondary" leading={<Icon name="download" size={15} />}>
                 Экспорт
               </Button>
-              <Button variant="secondary" leading={<Icon name="check" size={15} />}>
+              <Button variant="soft" leading={<Icon name="check" size={15} />}>
                 Подтвердить
               </Button>
             </DsRow>
@@ -238,6 +238,10 @@ export function DesignSystemPage() {
               <IconBtn icon="settings" active label="актив" />
               <IconBtn icon="refresh" size="sm" label="sm" />
               <IconBtn icon="folder" size="lg" label="lg" />
+            </DsRow>
+            <DsRow label="tooltip">
+              <IconBtn icon="sparkle" label="подсказка" tip="Подсказка снизу" />
+              <IconBtn icon="bolt" label="подсказка справа" tip="Подсказка справа" tipSide="right" />
             </DsRow>
           </DsSection>
 

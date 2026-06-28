@@ -1,8 +1,9 @@
 // [M12.7.3] Onboarding step «Engine setup» — обязательный шаг для новых
 // macOS-юзеров между Owner (step 2) и Permissions+Consent (step 4).
 //
-// Design Gate alignment block — см. PR описание. Atelier v2 классы only:
-// .index-card, .dot--{success,accent,muted}, .btn--{primary,ghost,quiet},
+// Design Gate alignment block — см. PR описание. Wotold v2 (uikit) классы:
+// .panel (probe result card — content внутри родительского onboarding dialog,
+// не сам dialog), .dot--{success,accent,muted}, .btn--{primary,ghost,quiet},
 // .activity-strip pattern для progress.
 //
 // Flow (PRD §M12.7.3):
@@ -370,7 +371,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
 
       {/* Probe result card */}
       <div
-        className="index-card"
+        className="panel"
         style={{
           marginBottom: 24,
           padding: 18,

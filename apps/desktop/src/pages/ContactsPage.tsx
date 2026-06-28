@@ -18,6 +18,7 @@ import {
 } from '../api/contacts';
 import { listCalls, type Call } from '../api/recording';
 import { listCallSpeakers } from '../api/speakers';
+import { SP_COLORS } from './CallDetailUtils';
 import { Empty, Skeleton } from '../ui';
 import { Icon, type IconName } from '../ui/Icon';
 import { bcp47, useI18n } from '../i18n';
@@ -28,8 +29,6 @@ interface ContactStats {
   callCount: number;
   totalSec: number;
 }
-
-const SP_COLORS = ['var(--sp1)', 'var(--sp2)', 'var(--sp3)', 'var(--sp4)', 'var(--sp5)'];
 
 type Mode =
   | { kind: 'view'; contactId: string }

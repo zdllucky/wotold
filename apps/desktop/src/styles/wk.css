@@ -1,9 +1,8 @@
 /* ─────────────────────────────────────────────────────────────
-   Wotold v2 · component layer (uikit) — BASE + LAYOUT + COMPONENTS.
-   Источник: ~/Downloads/Wotold v2/uikit.css §2–5 (строки 139–584). ROADMAP §B18.0.
-   Импортируется ПОСЛЕ wotold.css: на коллизиях примитивов
-   (.btn/.input/.tab/.card?/.chip/.dot/.field/.kbd/.avatar/.tabs/.empty) побеждает uikit.
-   Токены — из tokens.css (uikit). Удалить старый wotold.css в B18.6.
+   Wotold v2 · component layer (uikit) — primitives (BASE + LAYOUT).
+   Источник: ~/Downloads/Wotold v2/uikit.css §2–5. ROADMAP §B18.
+   Парный слой — styles/components.css (app-специфичные классы).
+   Токены — из tokens.css (uikit).
    ───────────────────────────────────────────────────────────── */
 
 /* ───────────────── 2 · BASE ───────────────── */

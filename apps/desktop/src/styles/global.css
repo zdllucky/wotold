@@ -1,7 +1,6 @@
-/* [B17] Atelier v2 — global base. wotold.css уже устанавливает body,
- * box-sizing и focus-visible reset. Здесь — селекция, markdown типографика,
- * topnav drag-region (только Tauri-специфичные хвосты), и macOS traffic
- * lights padding.
+/* Wotold v2 — global base tail. wk.css устанавливает body / box-sizing /
+ * focus-visible reset. Здесь — селекция, markdown типографика, topnav
+ * drag-region (Tauri-специфичные хвосты) и macOS traffic-lights padding.
  */
 
 ::selection {
