@@ -31,3 +31,5 @@ export { Dropdown, MenuItem, MenuLabel, MenuSep } from './Menu';
 export { ViewHead } from './ViewHead';
 // [window] Кастомные кнопки управления окном (macOS-светофор, hover-reveal).
 export { WindowControls } from './WindowControls';
+// [toast] Лёгкая toast-система (правый-нижний угол, авто-dismiss).
+export { ToastProvider, useToast } from './Toast';

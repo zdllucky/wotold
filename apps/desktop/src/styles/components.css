@@ -1136,3 +1136,76 @@ html.recording-widget .rec-float {
   border-radius: var(--r-md);
   padding: var(--s5);
 }
+
+/* [toast] Транзиентные сообщения — правый-нижний угол, ниже модалок (overlay
+ * z-100). Производное от .suggest-banner. Тон = цвет левого бордера. */
+.toaster {
+  position: fixed;
+  right: var(--s5);
+  bottom: var(--s5);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  pointer-events: none;
+  max-width: min(360px, calc(100vw - 2 * var(--s5)));
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px 11px 14px;
+  background: var(--raised);
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--t-13);
+  color: var(--text);
+  animation: toast-in var(--base) var(--ease);
+}
+.toast--success {
+  border-left-color: var(--ok);
+}
+.toast--warn {
+  border-left-color: var(--warn);
+}
+.toast--danger {
+  border-left-color: var(--danger);
+}
+.toast-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.4;
+}
+.toast-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  transition: background var(--fast), color var(--fast);
+}
+.toast-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}

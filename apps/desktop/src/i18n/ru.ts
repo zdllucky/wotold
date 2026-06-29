@@ -82,6 +82,7 @@ const ruInternal = {
     winClose: 'Закрыть окно',
     winMinimize: 'Свернуть окно',
     winMaximize: 'На весь экран',
+    dismiss: 'Закрыть',
     save: 'Сохранить',
     cancel: 'Отмена',
     delete: 'Удалить',
@@ -1101,6 +1102,7 @@ const ruInternal = {
     // [W3] RecStrip labels — persistent strip rendered above main content
     // while a recording is active (or paused).
     stripRecording: 'Идёт запись',
+    tooShort: 'Запись короче {sec} с — не сохранена',
     stripPaused: 'Пауза · записано',
     // [B18.7b] 10-мин чанк-индикатор в RecStrip (R11: offline, не live-анализ).
     segment: 'сегмент · {n}',

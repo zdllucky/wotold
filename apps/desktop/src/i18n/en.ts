@@ -77,6 +77,7 @@ export const en: TranslationStrings = {
     winClose: 'Close window',
     winMinimize: 'Minimize window',
     winMaximize: 'Fullscreen',
+    dismiss: 'Dismiss',
     save: 'Save',
     cancel: 'Cancel',
     delete: 'Delete',
@@ -1035,6 +1036,7 @@ export const en: TranslationStrings = {
   recording: {
     overlayLabel: 'Recording',
     stripRecording: 'Recording',
+    tooShort: 'Recording under {sec}s — not saved',
     stripPaused: 'Paused · recorded',
     segment: 'segment · {n}',
     pauseAction: 'Pause recording',

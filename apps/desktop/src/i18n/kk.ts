@@ -77,6 +77,7 @@ export const kk: TranslationStrings = {
     winClose: 'Терезені жабу',
     winMinimize: 'Терезені жию',
     winMaximize: 'Толық экран',
+    dismiss: 'Жабу',
     save: 'Сақтау',
     cancel: 'Болдырмау',
     delete: 'Жою',
@@ -1030,6 +1031,7 @@ export const kk: TranslationStrings = {
   recording: {
     overlayLabel: 'Жазу жүруде',
     stripRecording: 'Жазу жүруде',
+    tooShort: '{sec} с-тан қысқа жазба — сақталмады',
     stripPaused: 'Кідіріс · жазылды',
     segment: 'сегмент · {n}',
     pauseAction: 'Жазуды кідірту',
