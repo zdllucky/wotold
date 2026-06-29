@@ -76,7 +76,7 @@ export const kk: TranslationStrings = {
   common: {
     winClose: 'Терезені жабу',
     winMinimize: 'Терезені жию',
-    winMaximize: 'Терезені үлкейту',
+    winMaximize: 'Толық экран',
     save: 'Сақтау',
     cancel: 'Болдырмау',
     delete: 'Жою',

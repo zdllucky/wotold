@@ -485,9 +485,10 @@ pub fn run() {
 
             // [window] Скрываем нативные macOS-светофоры main-окна — рисуем
             // свои кастомные кнопки (hover-reveal, src/ui/WindowControls.tsx).
+            // В fullscreen фронт вернёт их через set_main_traffic_lights_hidden(false).
             #[cfg(target_os = "macos")]
             if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
-                hide_main_window_buttons(&main);
+                set_main_window_buttons_hidden(&main, true);
             }
 
             // [S7] Persist floating-widget position when user drags it. We
@@ -584,6 +585,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_main_traffic_lights_hidden,
             commands::get_device_id,
             commands::get_owner_contact,
             commands::list_contacts,
@@ -721,9 +723,10 @@ fn make_widget_draggable_by_background(widget: &tauri::WebviewWindow) {
     }
 }
 
-/// Скрывает три нативных macOS-кнопки main-окна (close/miniaturize/zoom), чтобы
-/// нарисовать свой кастомный светофор (hover-reveal, WindowControls.tsx).
-/// NSWindowButton: Close=0, Miniaturize=1, Zoom=2.
+/// Прячет/показывает три нативных macOS-кнопки main-окна (close/miniaturize/zoom).
+/// hidden=true — рисуем свой кастомный светофор (hover-reveal, WindowControls.tsx);
+/// hidden=false — возвращаем нативные (нужно в fullscreen, где их показывает
+/// нативная авто-плашка). NSWindowButton: Close=0, Miniaturize=1, Zoom=2.
 ///
 /// # Safety
 ///
@@ -731,9 +734,9 @@ fn make_widget_draggable_by_background(widget: &tauri::WebviewWindow) {
 /// `setHidden:` — простые AppKit-аксессоры без эксцепшнов / side effects.
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
-fn hide_main_window_buttons(main: &tauri::WebviewWindow) {
+fn set_main_window_buttons_hidden(main: &tauri::WebviewWindow, hidden: bool) {
     use objc::msg_send;
-    use objc::runtime::{Object, YES};
+    use objc::runtime::{Object, BOOL, NO, YES};
     use objc::sel;
     use objc::sel_impl;
 
@@ -748,6 +751,7 @@ fn hide_main_window_buttons(main: &tauri::WebviewWindow) {
         log::warn!("main ns_window is null");
         return;
     }
+    let val: BOOL = if hidden { YES } else { NO };
     // SAFETY: NSWindow* lives as long as the main window; standardWindowButton:
     // / setHidden: are no-throw AppKit accessors.
     unsafe {
@@ -756,8 +760,23 @@ fn hide_main_window_buttons(main: &tauri::WebviewWindow) {
         for kind in 0usize..=2 {
             let btn: *mut Object = msg_send![ns_window, standardWindowButton: kind];
             if !btn.is_null() {
-                let _: () = msg_send![btn, setHidden: YES];
+                let _: () = msg_send![btn, setHidden: val];
             }
         }
     }
+}
+
+/// Команда из фронта: переключить видимость нативных светофоров main-окна.
+/// JS зовёт на смене fullscreen — в fullscreen показываем нативные (там их
+/// плашка), иначе скрываем (берут верх кастомные WindowControls).
+#[tauri::command]
+fn set_main_traffic_lights_hidden(app: tauri::AppHandle, hidden: bool) {
+    #[cfg(target_os = "macos")]
+    if let Some(main) = tauri::Manager::get_webview_window(&app, "main") {
+        set_main_window_buttons_hidden(&main, hidden);
+    } else {
+        log::warn!("set_main_traffic_lights_hidden: main window not found");
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, hidden);
 }

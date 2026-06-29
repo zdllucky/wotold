@@ -1,14 +1,15 @@
-// Smoke tests for WindowControls — macOS-светофор (close/min/max).
+// Smoke tests for WindowControls — macOS-светофор (close/min/fullscreen).
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 const close = vi.fn(() => Promise.resolve());
 const minimize = vi.fn(() => Promise.resolve());
-const toggleMaximize = vi.fn(() => Promise.resolve());
+const setFullscreen = vi.fn(() => Promise.resolve());
+const isFullscreen = vi.fn(() => Promise.resolve(false));
 
 vi.mock('@tauri-apps/api/window', () => ({
-  getCurrentWindow: () => ({ close, minimize, toggleMaximize }),
+  getCurrentWindow: () => ({ close, minimize, setFullscreen, isFullscreen }),
 }));
 
 import { WindowControls } from './WindowControls';
@@ -26,17 +27,22 @@ describe('WindowControls', () => {
     expect(document.querySelectorAll('.wc-btn').length).toBe(3);
     expect(screen.getByLabelText(/закрыть|close|жабу/i)).toBeTruthy();
     expect(screen.getByLabelText(/свернуть|minimize|жию/i)).toBeTruthy();
-    expect(screen.getByLabelText(/развернуть|zoom|maximize|үлкейту/i)).toBeTruthy();
+    expect(screen.getByLabelText(/весь экран|fullscreen|толық/i)).toBeTruthy();
   });
 
-  test('clicks call the matching window APIs', () => {
+  test('close/minimize call the matching window APIs', () => {
     render(<WindowControls open onOpen={noop} onClose={noop} />);
     fireEvent.click(document.querySelector('.wc-btn--close')!);
     fireEvent.click(document.querySelector('.wc-btn--min')!);
-    fireEvent.click(document.querySelector('.wc-btn--max')!);
     expect(close).toHaveBeenCalledTimes(1);
     expect(minimize).toHaveBeenCalledTimes(1);
-    expect(toggleMaximize).toHaveBeenCalledTimes(1);
+  });
+
+  test('max toggles fullscreen (isFullscreen → setFullscreen)', async () => {
+    render(<WindowControls open onOpen={noop} onClose={noop} />);
+    fireEvent.click(document.querySelector('.wc-btn--max')!);
+    await waitFor(() => expect(setFullscreen).toHaveBeenCalledWith(true));
+    expect(isFullscreen).toHaveBeenCalled();
   });
 
   test('onOpen/onClose fire on hover of the wrapper', () => {

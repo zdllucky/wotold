@@ -141,7 +141,7 @@ export function Sidebar(props: RailProps) {
     <aside className="rail" aria-label={t('nav.main')}>
       {/* [window] .rail-head — header рейла; на data-chrome=open лого едет
           вправо, освобождая угол под кастомный светофор (global.css). */}
-      <div data-tauri-drag-region className="rail-head">
+      <div data-tauri-drag-region="deep" className="rail-head">
         <Brand />
         <IconBtn
           icon="sidebar"
@@ -315,7 +315,7 @@ export function MiniRail(props: RailProps) {
   const paused = recKind === 'paused';
 
   return (
-    <aside className="minirail" data-tauri-drag-region>
+    <aside className="minirail" data-tauri-drag-region="deep">
       <IconBtn
         icon="sidebar"
         iconSize={18}

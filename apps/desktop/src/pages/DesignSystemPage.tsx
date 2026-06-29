@@ -90,7 +90,7 @@ export function DesignSystemPage() {
     // viewport so the .view-head pins flush and the .scroll body scrolls below
     // — same pattern as Inbox/Contacts/Settings.
     <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
-      <div className="view-head">
+      <div className="view-head" data-tauri-drag-region="deep">
         <Icon name="code" size={17} style={{ color: 'var(--text-3)' }} />
         <span style={{ fontWeight: 650 }}>Дизайн-система</span>
         <Chip size="sm" tone="accent">

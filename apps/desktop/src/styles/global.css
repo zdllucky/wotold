@@ -116,28 +116,14 @@ button:disabled,
   -webkit-app-region: no-drag;
 }
 
-/* [window-drag] Навбар тащит окно; интерактив внутри — no-drag (клики/фокус
- * работают, свайп по пустому навбару двигает окно). Зеркалит rail-паттерн. */
-.view-head {
-  -webkit-app-region: drag;
-}
-.view-head button,
-.view-head a,
-.view-head input,
-.view-head select,
-.view-head textarea,
-.view-head [role='button'],
-.view-head [role='tablist'],
-.view-head .omni,
-.view-head .input,
-.win-controls,
-.win-controls * {
-  -webkit-app-region: no-drag;
-}
+/* [window-drag] Drag окна — через data-tauri-drag-region="deep" на .view-head /
+ * .rail-head / .minirail / .win-controls (Tauri 2 уважает ТОЛЬКО атрибут; CSS
+ * -webkit-app-region — no-op). Кликабельные дети авто-блокируют drag. */
 
 /* [window-controls] macOS-светофор — fixed top-left, скрыт по умолчанию,
  * раскрывается при наведении (App ставит data-chrome на .app; hover-зона —
- * сам .win-controls). Glyph ×/−/+ появляются на hover группы, как нативные. */
+ * сам .win-controls). Высота = центру навбара (collapsed 48) / лого-ряда
+ * (expanded ~60). Глифы (.wc-glyph SVG) появляются на hover группы. */
 .win-controls {
   position: fixed;
   top: 0;
@@ -149,7 +135,14 @@ button:disabled,
   gap: 8px;
   padding-left: 14px;
   z-index: 50;
-  -webkit-app-region: no-drag;
+}
+/* В раскрытом рейле — центрировать под лого-ряд `.rail-head` (выше навбара). */
+.app:not([data-collapsed]) .win-controls {
+  height: 60px;
+}
+/* В fullscreen — нативная плашка сверху уже показывает кнопки; свои прячем. */
+.app[data-fullscreen] .win-controls {
+  display: none;
 }
 .wc-btn {
   width: 12px;
@@ -180,20 +173,17 @@ button:disabled,
   pointer-events: auto;
   transform: none;
 }
-.win-controls:hover .wc-btn::before {
+/* Глифы (inline SVG) — скрыты, появляются на hover группы (как нативные). */
+.wc-glyph {
+  width: 12px;
+  height: 12px;
+  display: block;
   color: var(--wc-glyph);
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 1;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
 }
-.win-controls:hover .wc-btn--close::before {
-  content: '\00d7';
-}
-.win-controls:hover .wc-btn--min::before {
-  content: '\2212';
-}
-.win-controls:hover .wc-btn--max::before {
-  content: '\002b';
+.win-controls:hover .wc-glyph {
+  opacity: 1;
 }
 
 /* [expanded push] header рейла; лого едет вправо когда светофор раскрыт.
@@ -220,11 +210,11 @@ button:disabled,
   height: 48px;
   z-index: 40;
   background: var(--bg);
-  padding-left: calc(var(--wc-w) + var(--s2));
+  padding-left: var(--wc-w);
   transition: padding-left var(--base) var(--ease);
 }
 .app[data-collapsed][data-chrome='open'] .view-head {
-  padding-left: calc(var(--wc-w) + var(--s4));
+  padding-left: calc(var(--wc-w) + var(--s2));
 }
 .app[data-collapsed] .main {
   padding-top: 48px;
