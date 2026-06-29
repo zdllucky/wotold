@@ -16,6 +16,7 @@ import { humanError } from './api/errors';
 import { localEngineGetActiveEngine } from './api/local-engine';
 import type { EngineKind } from './components/EngineChip';
 import { Sidebar, MiniRail, type RailView } from './components/AppSidebar';
+import { WindowControls } from './ui';
 import { CommandPalette } from './components/CommandPalette';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useFocusTrap } from './hooks/useFocusTrap';
@@ -79,6 +80,8 @@ function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [railW, setRailW] = useState<number>(readSavedRailW);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // [window] Раскрыт ли кастомный светофор (hover верхнего-левого угла).
+  const [chromeOpen, setChromeOpen] = useState(false);
 
   // [B18.1a] recording consent (lifted from HomePage). C1/R2: persisted once on
   // first «Записать звонок».
@@ -436,8 +439,16 @@ function AppShell() {
     <div
       className="app"
       data-collapsed={collapsed ? 'true' : undefined}
+      data-chrome={chromeOpen ? 'open' : undefined}
       style={{ ['--rail-w']: `${railW}px` } as CSSProperties}
     >
+      {/* [window] Кастомный светофор — fixed верхний-левый угол, hover-reveal.
+          Первым ребёнком, чтобы оверлеить угол и рейла, и full-width навбара. */}
+      <WindowControls
+        open={chromeOpen}
+        onOpen={() => setChromeOpen(true)}
+        onClose={() => setChromeOpen(false)}
+      />
       {collapsed ? <MiniRail {...railProps} /> : <Sidebar {...railProps} />}
 
       <main className="app-main">

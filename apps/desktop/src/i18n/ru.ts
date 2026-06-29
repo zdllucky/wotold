@@ -79,6 +79,9 @@ const ruInternal = {
 
   // ── Common buttons / labels / states ────────────────────────────────────
   common: {
+    winClose: 'Закрыть окно',
+    winMinimize: 'Свернуть окно',
+    winMaximize: 'Развернуть окно',
     save: 'Сохранить',
     cancel: 'Отмена',
     delete: 'Удалить',

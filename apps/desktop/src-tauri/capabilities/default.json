@@ -9,6 +9,12 @@
     "dialog:default",
     "deep-link:default",
     "notification:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
     {
       "identifier": "shell:allow-execute",
       "allow": [
