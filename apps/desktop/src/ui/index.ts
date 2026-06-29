@@ -12,6 +12,8 @@ export { Toolbar } from './Toolbar';
 export { UsageBar } from './UsageBar';
 // [B18.0] Wotold v2 line-icon set (port of uikit-icons.jsx).
 export { Icon, type IconName } from './Icon';
+// [recap] Markdown-рендер в типографику v2 (.md-rich) — react-markdown + remark-gfm.
+export { Markdown, type MarkdownProps } from './Markdown';
 // [B18.6c] Wotold v2 uikit primitives.
 export { Switch } from './Switch';
 export { Segmented, type SegOption } from './Segmented';
