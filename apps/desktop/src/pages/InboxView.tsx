@@ -150,7 +150,12 @@ function OmniBar({ facets, setFacets, text, setText, defs, t }: OmniBarProps) {
   const hasAny = tokens.length > 0 || !!text;
 
   return (
-    <div className="omni" data-focus={focus ? 'true' : undefined} style={{ flex: 1, minWidth: 0 }}>
+    <div
+      className="omni"
+      data-focus={focus ? 'true' : undefined}
+      data-tauri-drag-region="false"
+      style={{ flex: 1, minWidth: 0 }}
+    >
       <Icon name="search" size={15} style={{ color: 'var(--text-faint)', flex: '0 0 auto' }} />
       <div className="omni-row">
         {tokens.map((tok) => (

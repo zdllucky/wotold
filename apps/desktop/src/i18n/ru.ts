@@ -81,7 +81,7 @@ const ruInternal = {
   common: {
     winClose: 'Закрыть окно',
     winMinimize: 'Свернуть окно',
-    winMaximize: 'Развернуть окно',
+    winMaximize: 'На весь экран',
     save: 'Сохранить',
     cancel: 'Отмена',
     delete: 'Удалить',

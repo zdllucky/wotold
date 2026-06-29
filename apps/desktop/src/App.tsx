@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CallDetailPage } from './pages/CallDetailPage';
 import { InboxView } from './pages/InboxView';
 import { Coachmarks } from './pages/Coachmarks';
@@ -82,6 +83,8 @@ function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   // [window] Раскрыт ли кастомный светофор (hover верхнего-левого угла).
   const [chromeOpen, setChromeOpen] = useState(false);
+  // [window] Нативный fullscreen — прячем кастомный светофор, возвращаем нативные.
+  const [fullscreen, setFullscreen] = useState(false);
 
   // [B18.1a] recording consent (lifted from HomePage). C1/R2: persisted once on
   // first «Записать звонок».
@@ -248,6 +251,49 @@ function AppShell() {
       for (const u of unlisteners) u();
     };
   }, [rec.status.kind]);
+
+  // [window] Fullscreen-синк: в fullscreen прячем кастомный светофор (CSS по
+  // data-fullscreen) и возвращаем нативные кнопки (там их показывает нативная
+  // авто-плашка сверху). onResized ловит и нативный Ctrl+Cmd+F; синкаем только
+  // на реальной смене состояния (не на каждый resize-кадр).
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
+    const sync = async (fs: boolean) => {
+      if (cancelled) return;
+      setFullscreen(fs);
+      if (fs) setChromeOpen(false);
+      await invoke('set_main_traffic_lights_hidden', { hidden: !fs }).catch((e) => {
+        console.warn('set_main_traffic_lights_hidden failed', e);
+      });
+    };
+    const attach = async () => {
+      try {
+        const w = getCurrentWindow();
+        let prev = await w.isFullscreen().catch(() => false);
+        await sync(prev);
+        const u = await w.onResized(() => {
+          void w
+            .isFullscreen()
+            .then((fs) => {
+              if (cancelled || fs === prev) return;
+              prev = fs;
+              void sync(fs);
+            })
+            .catch(() => {});
+        });
+        if (cancelled) u();
+        else unlisten = u;
+      } catch (e) {
+        console.warn('fullscreen listener failed:', e);
+      }
+    };
+    void attach();
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // ── Recording actions (lifted from HomePage, consent-gated). ──
   const startFlow = useCallback(async () => {
@@ -440,6 +486,7 @@ function AppShell() {
       className="app"
       data-collapsed={collapsed ? 'true' : undefined}
       data-chrome={chromeOpen ? 'open' : undefined}
+      data-fullscreen={fullscreen ? 'true' : undefined}
       style={{ ['--rail-w']: `${railW}px` } as CSSProperties}
     >
       {/* [window] Кастомный светофор — fixed верхний-левый угол, hover-reveal.

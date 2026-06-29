@@ -19,7 +19,10 @@ interface ViewHeadProps {
 
 export function ViewHead({ icon, title, count, countTone = 'line', children }: ViewHeadProps) {
   return (
-    <div className="view-head">
+    // [window] data-tauri-drag-region="deep" — пустой навбар/иконка/заголовок
+    // таскают окно; кликабельные дети (кнопки/инпут/табы) авто-блокируют drag
+    // (Tauri drag.js isClickableElement). CSS -webkit-app-region — no-op в Tauri 2.
+    <div className="view-head" data-tauri-drag-region="deep">
       {icon && <Icon name={icon} size={17} style={ICON_STYLE} />}
       <span style={TITLE_STYLE}>{title}</span>
       {count != null && (

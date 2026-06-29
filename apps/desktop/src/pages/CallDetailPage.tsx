@@ -297,7 +297,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     // `.main` gives the flex column + relative positioning; negative margins
     // pull the bar full-bleed across the padded `.app-main` scroll viewport.
     <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
-      <div className="view-head">
+      <div className="view-head" data-tauri-drag-region="deep">
         {/* Back to inbox — plain text button, no border/bg (prototype CallView). */}
         <button
           type="button"

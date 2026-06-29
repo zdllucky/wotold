@@ -76,7 +76,7 @@ export const en: TranslationStrings = {
   common: {
     winClose: 'Close window',
     winMinimize: 'Minimize window',
-    winMaximize: 'Zoom window',
+    winMaximize: 'Fullscreen',
     save: 'Save',
     cancel: 'Cancel',
     delete: 'Delete',
