@@ -132,8 +132,8 @@ button:disabled,
   width: var(--wc-w);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-left: 14px;
+  gap: 6px;
+  padding-left: 10px;
   z-index: 50;
 }
 /* В раскрытом рейле — центрировать под лого-ряд `.rail-head` (выше навбара). */
@@ -145,8 +145,8 @@ button:disabled,
   display: none;
 }
 .wc-btn {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   border: none;
   flex: 0 0 auto;
@@ -175,8 +175,8 @@ button:disabled,
 }
 /* Глифы (inline SVG) — скрыты, появляются на hover группы (как нативные). */
 .wc-glyph {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   display: block;
   color: var(--wc-glyph);
   opacity: 0;
@@ -196,7 +196,7 @@ button:disabled,
   transition: padding-left var(--base) var(--ease);
 }
 .app[data-chrome='open'] .rail-head {
-  padding-left: var(--wc-w);
+  padding-left: calc(var(--wc-w) + var(--s3));
 }
 
 /* [collapsed] Навбар на всю ширину окна поверх минирейла; минирейл встаёт под
