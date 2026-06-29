@@ -448,8 +448,6 @@ export const en: TranslationStrings = {
     sectionLabs: 'Labs',
     sectionMaintenance: 'Maintenance',
     maintenanceTitle: 'Data maintenance.',
-    maintenanceLede:
-      'Calls processed earlier may have an empty recap. Regenerate summaries for all such calls in one action.',
     bulkRecapStart: 'Regenerate empty summaries',
     bulkRecapRunning: 'Processing…',
     bulkRecapScanning: 'Scanning for empty recaps…',
@@ -458,12 +456,6 @@ export const en: TranslationStrings = {
     bulkRecapResult: 'Done: {regenerated} regenerated, {failed} failed.',
     bulkRecapNoneEmpty: 'No empty recaps found — all good.',
     sectionPrivacy: 'Privacy',
-    sectionProcessingSubtitle:
-      'Where your calls are processed. Local — free, offline. Cloud — faster, more accurate.',
-    sectionRecordingSubtitle:
-      'Hotkeys, transcription language, auto call detection.',
-    sectionSpeakersSubtitle:
-      'Recognize speakers by voice — Wotold tags names automatically.',
     speakersAutoBindLabel: 'Auto-bind speakers to contacts',
     speakersAutoBindHint:
       'Only when confident — can be undone right in the call.',
@@ -475,8 +467,6 @@ export const en: TranslationStrings = {
     micDiarizationInstall: '↓ Install voice splitting module',
     micDiarizationInstalling: 'Installing module…',
     appearanceTitle: 'Appearance.',
-    appearanceLede:
-      'Theme and accent apply instantly — switch and compare. All screens respond simultaneously.',
     fieldTheme: 'Theme',
     fieldAccent: 'Accent color',
     fieldLanguage: 'Interface language',
@@ -489,11 +479,7 @@ export const en: TranslationStrings = {
     accentPersian: 'Cobalt',
     accentInk: 'Graphite',
     accountTitle: 'Account.',
-    accountLede:
-      'Cloud sync coming soon. For now, signing in unlocks nothing — Wotold works fully locally without login.',
     permissionsTitle: 'System permissions.',
-    permissionsLede:
-      'Wotold needs two macOS permissions: microphone and screen recording for system audio. Without them recording will not start.',
     engineTitle: 'Recognition engine.',
     engineLede:
       'Where your calls are processed. Local — free, offline, all on device. Cloud — best quality, needs internet.',
@@ -578,11 +564,7 @@ export const en: TranslationStrings = {
     voiceLede:
       'Wotold can suggest who is speaking based on voice match — but only after downloading the biometric model (25 MB, optional). Final confirmation is always yours (passport R2).',
     privacyTitle: 'Privacy.',
-    privacyLede:
-      'Complete local data wipe. Useful before handing the device to someone else or revoking consent.',
     labsTitle: 'Labs.',
-    labsLede:
-      'Experimental features. On by default — turn off if something breaks.',
     summaryV2Label: 'New summary format',
     summaryV2Hint:
       'On by default. Turn off if you hit issues with call type, evidence quotes or decisions — recaps fall back to simple format.',
