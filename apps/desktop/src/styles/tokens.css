@@ -32,7 +32,7 @@
   /* window controls — macOS traffic lights. Функциональные оконные цвета
    * (одинаковы в light/dark, как нативные); исключение из графит-моно. */
   --wc-close: #FF5F57; --wc-min: #FEBC2E; --wc-max: #28C840;
-  --wc-glyph: rgba(0, 0, 0, .55); --wc-w: 60px;
+  --wc-glyph: rgba(0, 0, 0, .55); --wc-w: 60px; --wc-trigger: 20px;
 
   --rail-w: 256px;
 }
