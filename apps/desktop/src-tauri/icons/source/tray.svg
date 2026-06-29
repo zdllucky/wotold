@@ -1,9 +1,9 @@
-<svg width="74" height="46" viewBox="0 0 74 46" xmlns="http://www.w3.org/2000/svg">
+<svg width="88" height="64" viewBox="0 0 88 64" xmlns="http://www.w3.org/2000/svg">
   <!-- Wotold v2 tray (menu-bar) icon — monochrome TEMPLATE: black + alpha only.
        macOS tints it for light/dark menu bar (icon_as_template=true). The two-tone
        brand read is preserved via the bottom bar's reduced opacity (template honors
        the alpha channel). Mark = AppSidebar Brand, tight-cropped with ~4px padding. -->
-  <g transform="translate(1,-2)">
+  <g transform="translate(8,7)">
     <rect x="3" y="6" width="56" height="17" rx="8.5" fill="#000000"/>
     <rect x="13" y="27" width="56" height="17" rx="8.5" fill="#000000" fill-opacity="0.55"/>
   </g>
