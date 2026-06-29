@@ -14,8 +14,6 @@ import { getActivePipelineCount } from './api/calls';
 import { listCalls, type Call } from './api/recording';
 import { listContacts } from './api/contacts';
 import { humanError } from './api/errors';
-import { localEngineGetActiveEngine } from './api/local-engine';
-import type { EngineKind } from './components/EngineChip';
 import { Sidebar, MiniRail, type RailView } from './components/AppSidebar';
 import { WindowControls } from './ui';
 import { CommandPalette } from './components/CommandPalette';
@@ -23,7 +21,6 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { useFocusTrap } from './hooks/useFocusTrap';
 import { I18nProvider, useI18n } from './i18n';
 import { RecordingProvider, useRecording } from './recording/RecordingContext';
-import { RecStrip } from './recording/RecStrip';
 import { SuggestBanner } from './recording/SuggestBanner';
 import { ThemeProvider, useTheme } from './theme/useTheme';
 import {
@@ -72,7 +69,6 @@ function AppShell() {
     return new URLSearchParams(window.location.search).get('detail');
   });
   const [activePipelines, setActivePipelines] = useState(0);
-  const [activeEngine, setActiveEngine] = useState<EngineKind | null>(null);
   const [recent, setRecent] = useState<Call[]>([]);
   const [callsCount, setCallsCount] = useState(0);
   const [contactsCount, setContactsCount] = useState(0);
@@ -107,14 +103,6 @@ function AppShell() {
         setBootstrap('app');
       }
     })();
-  }, []);
-
-  useEffect(() => {
-    localEngineGetActiveEngine()
-      .then(setActiveEngine)
-      .catch(() => {
-        /* graceful — engine may be unavailable on first run */
-      });
   }, []);
 
   // Consent + hotkeys load.
@@ -499,9 +487,8 @@ function AppShell() {
       {collapsed ? <MiniRail {...railProps} /> : <Sidebar {...railProps} />}
 
       <main className="app-main">
-        {/* [B18.1b] RecStrip renders a fixed footer dock (.composer-dock) when
-            recording — its position in the tree is irrelevant. */}
-        <RecStrip activeEngine={activeEngine} collapsed={collapsed} />
+        {/* [recording] Нижняя плашка RecStrip убрана — индикатор записи (живая
+            дорожка + таймер + стоп) живёт в rail/навбар-кнопках. */}
         <SuggestBanner />
         <UpdateBanner />
         {localError && (

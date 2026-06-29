@@ -23,7 +23,6 @@ import { listCallSpeakers } from '../api/speakers';
 import {
   Button,
   CallRowSkeleton,
-  Dot,
   Dropdown,
   Empty,
   IconBtn,
@@ -36,6 +35,7 @@ import {
 } from '../ui';
 import { Icon, type IconName } from '../ui/Icon';
 import { formatElapsed } from '../recording/RecordingContext';
+import { LiveRecEq } from '../recording/LiveRecEq';
 import { useI18n, type TranslationKey } from '../i18n';
 import { TableRow } from './inboxBits';
 import { InboxCards, InboxMonth, InboxWeek } from './InboxCalendarViews';
@@ -584,7 +584,7 @@ export function InboxView({
                 onClick={onRecord}
                 style={{ gap: 8 }}
               >
-                <Dot color="currentColor" pulse={!paused} />
+                <LiveRecEq paused={paused} inherit />
                 <span className="mono" style={{ fontWeight: 600 }}>
                   {formatElapsed(elapsed)}
                 </span>
