@@ -219,12 +219,28 @@ pub async fn stop_recording(
             // → не accumulated). Используем session.started_at, минус
             // paused_total_ms из DB (finish_recording не делает это сам).
             let elapsed_ms = (chrono::Utc::now() - started_at).num_milliseconds().max(0);
-            let paused_ms: i64 =
-                sqlx::query_scalar("SELECT paused_total_ms FROM calls WHERE id = ?1")
+            // paused_total_ms НЕ включает текущее открытое окно паузы, если stop
+            // нажали во время паузы (resume_call/finish_recording свернут его лишь
+            // позже, line 242). Складываем его здесь тем же расчётом, что resume_call
+            // (RFC3339 paused_at) — иначе total_sec завышается на длительность паузы,
+            // duration_sec пишется неверно, и короткая запись (audio <30с, но долгая
+            // пауза) могла бы проскочить min-duration гейт.
+            let (paused_at, paused_total_ms): (Option<String>, i64) =
+                sqlx::query_as("SELECT paused_at, paused_total_ms FROM calls WHERE id = ?1")
                     .bind(&call_id)
                     .fetch_optional(&state.db)
                     .await?
-                    .unwrap_or(0);
+                    .unwrap_or((None, 0));
+            let lingering_paused_ms = paused_at
+                .as_deref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| {
+                    (chrono::Utc::now() - dt.with_timezone(&chrono::Utc))
+                        .num_milliseconds()
+                        .max(0)
+                })
+                .unwrap_or(0);
+            let paused_ms = paused_total_ms.saturating_add(lingering_paused_ms);
             let total_sec = (elapsed_ms - paused_ms).max(0) as f64 / 1000.0;
             // [min-duration] <30с — отбрасываем: удаляем строку звонка + temp
             // WAV, пайплайн НЕ пускаем. Фронт покажет тост «слишком коротко».

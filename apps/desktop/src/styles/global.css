@@ -87,18 +87,6 @@ button:disabled,
   min-height: 100vh;
 }
 
-/* [B16] macOS traffic lights — в Tauri titleBarStyle: 'Overlay' кружки
- * рисуются поверх окна. Левый padding 88px в .app-rail зарезервирован под
- * них, плюс drag-region. */
-.app-rail {
-  padding-top: 56px;
-  -webkit-app-region: drag;
-}
-.app-rail button,
-.app-rail a {
-  -webkit-app-region: no-drag;
-}
-
 /* [B18.1a] Wotold v2 shell rail — drag-region. Нативные светофоры скрыты
  * (lib.rs hide_main_window_buttons), поэтому top-reserve минимальный — лого/
  * иконки поднимаются к верху, кастомные светофоры (.win-controls) рисуются над. */
@@ -175,12 +163,18 @@ button:disabled,
 .wc-btn--max {
   background: var(--wc-max);
 }
-.app[data-chrome='open'] .wc-btn {
+.app[data-chrome='open'] .wc-btn,
+.win-controls:focus-within .wc-btn {
   opacity: 1;
   pointer-events: auto;
   transform: none;
 }
-/* Глифы (inline SVG) — скрыты, появляются на hover группы (как нативные). */
+/* [a11y] Видимый фокус-индикатор для keyboard-навигации (SC 2.4.11). */
+.wc-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Глифы (inline SVG) — скрыты, появляются на hover/focus группы (как нативные). */
 .wc-glyph {
   width: 13px;
   height: 13px;
@@ -189,7 +183,8 @@ button:disabled,
   opacity: 0;
   transition: opacity var(--fast) var(--ease);
 }
-.win-controls:hover .wc-glyph {
+.win-controls:hover .wc-glyph,
+.win-controls:focus-within .wc-glyph {
   opacity: 1;
 }
 
@@ -321,11 +316,6 @@ button:disabled,
 /* Responsive — Tauri minimum window 760×560. Narrow desktop / split-pane
  * — сужаем main padding и сворачиваем 4-col grids. */
 @media (max-width: 880px) {
-  .app-rail {
-    width: 168px;
-    padding-left: 12px;
-    padding-right: 12px;
-  }
   .app-main {
     padding: 24px 22px;
   }
@@ -334,38 +324,10 @@ button:disabled,
 @media (max-width: 640px) {
   /* [B17] Column layout — снимаем 100vh / overflow:hidden чтобы шапка не
    * фиксировалась, и страница скроллится естественно. */
-  .app-shell {
-    flex-direction: column;
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-  }
-  .app-rail {
-    width: 100%;
-    height: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    border-right: none;
-    border-bottom: 1px solid var(--border-2);
-    padding: 12px 16px;
-    overflow: visible;
-    overscroll-behavior: auto;
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    background: var(--panel);
-  }
   .app-main {
     height: auto;
     overflow: visible;
     overscroll-behavior: auto;
-  }
-  .app-rail-foot {
-    display: none;
-  }
-  .app-brand {
-    margin-bottom: 0;
-    margin-right: 14px;
   }
   .nav-item--active::before {
     display: none;

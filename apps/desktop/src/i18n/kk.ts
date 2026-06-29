@@ -403,9 +403,6 @@ export const kk: TranslationStrings = {
     voiceN: 'Дауыс {n}',
     voiceFallback: 'Дауыс',
     suggestionRoleNone: '—',
-    transcriptIdentifyChip: '? бұл кім',
-    transcriptIdentifyTitle: 'Бұл кім? Дауысты растау',
-    transcriptIdentifyAria: 'Бұл кім? {tag} дауысын растау',
   },
 
   participants: {
@@ -761,22 +758,6 @@ export const kk: TranslationStrings = {
     other: 'Қоңырау',
   },
 
-  decisionsBlock: {
-    title: 'Шешімдер',
-  },
-
-  openQuestionsBlock: {
-    title: 'Ашық сұрақтар',
-    raisedBy: 'көтерген',
-  },
-
-  evidence: {
-    fromTranscript: 'Транскрипттен үзінді',
-    jumpToMoment: 'Сәтке өту',
-    lowConfidence: 'Сенімділік төмен — үзіндіні тексер',
-    speakerLabel: 'Сөйлеуші',
-  },
-
   privacyDisclaimer: {
     oneOnOneTitle: '🔒 Бұл 1:1 кездесу болды',
     oneOnOneBody:
@@ -1033,7 +1014,6 @@ export const kk: TranslationStrings = {
     stripRecording: 'Жазу жүруде',
     tooShort: '{sec} с-тан қысқа жазба — сақталмады',
     stripPaused: 'Кідіріс · жазылды',
-    segment: 'сегмент · {n}',
     pauseAction: 'Жазуды кідірту',
     resumeAction: 'Жазуды жалғастыру',
     stopAction: 'Жазуды тоқтату',

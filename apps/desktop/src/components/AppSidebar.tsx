@@ -173,6 +173,7 @@ export function Sidebar(props: RailProps) {
           </div>
         ) : (
           <button
+            type="button"
             className="btn btn--primary"
             data-block="true"
             onClick={onRecord}

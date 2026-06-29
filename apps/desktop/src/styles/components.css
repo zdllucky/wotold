@@ -2,8 +2,8 @@
  *
  * Ported from the legacy Atelier `wotold.css` (now deleted): only the
  * still-used component classes that have no equivalent in `wk.css`
- * (transcript, pipeline strips, stat-tags, rec-float/strip, banners,
- * evidence/recap blocks, modal frame, text helpers). All design tokens
+ * (transcript, pipeline strips, stat-tags, rec-float, banners, toaster,
+ * modal frame, text helpers). All design tokens
  * rewritten to uikit (`--text`/`--border`/`--danger`/`--font`/`--r-*`…),
  * serif dropped. Shared-name primitives (.btn/.input/.dot/...) live in
  * wk.css and are NOT duplicated here. (One-off extraction + token-sweep.)
@@ -958,138 +958,6 @@ html.recording-widget .rec-float {
 .call-type-chip .engine-chip-dot.dot--success { background: var(--ok); }
 .call-type-chip .engine-chip-dot.dot--warning { background: var(--warn); }
 .call-type-chip .engine-chip-dot.dot--muted { background: var(--text-2); }
-.v2-block {
-  margin: 0 0 20px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--panel);
-}
-.v2-block-title {
-  font-family: var(--font);
-  font-size: 16px;
-  margin: 0 0 12px;
-  font-weight: 500;
-  color: var(--text);
-}
-.v2-block-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.decision-row,
-.open-question-row {
-  display: grid;
-  grid-template-columns: 14px 1fr auto;
-  align-items: start;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-.decision-row:last-child,
-.open-question-row:last-child {
-  border-bottom: none;
-}
-.decision-row .dot,
-.open-question-row .dot {
-  margin-top: 5px;
-}
-.open-question-row .dot--warning {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--bg);
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-}
-.decision-text,
-.open-question-text {
-  font-family: var(--font);
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text);
-}
-.open-question-raised-by {
-  white-space: nowrap;
-}
-.decision-meta,
-.open-question-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.evidence-tooltip {
-  display: inline-block;
-  position: relative;
-}
-.evidence-trigger {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  padding: 2px 6px;
-  opacity: 0.55;
-  transition: opacity 120ms;
-  color: var(--text-2);
-}
-.evidence-trigger:hover,
-.evidence-trigger:focus-visible {
-  opacity: 1;
-  outline: 2px solid var(--accent-soft, var(--accent));
-  outline-offset: 1px;
-  border-radius: 4px;
-}
-.evidence-popover {
-  position: absolute;
-  z-index: 50;
-  top: calc(100% + 6px);
-  right: 0;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 12px 14px;
-  box-shadow: var(--shadow-lg);
-  min-width: 260px;
-  max-width: 360px;
-}
-.evidence-popover .evidence-quote {
-  border-left: 3px solid var(--accent);
-  padding: 2px 0 2px 10px;
-  margin: 0 0 8px;
-  font-style: italic;
-  font-size: 13px;
-  color: var(--text);
-  font-family: var(--font);
-}
-.evidence-popover .evidence-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--text-2);
-}
-.evidence-jump-btn {
-  display: inline-block;
-  margin-top: 8px;
-  padding: 4px 8px;
-  font-size: 12px;
-}
-.confidence-low {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--warn-soft);
-  color: var(--warn);
-  font-size: 10px;
-  font-weight: 700;
-  cursor: help;
-}
 .privacy-disclaimer {
   margin: 0 0 16px;
   padding: 12px 16px;
