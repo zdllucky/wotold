@@ -15,7 +15,7 @@ import { listCalls, type Call } from './api/recording';
 import { listContacts } from './api/contacts';
 import { humanError } from './api/errors';
 import { Sidebar, MiniRail, type RailView } from './components/AppSidebar';
-import { WindowControls } from './ui';
+import { ToastProvider, useToast, WindowControls } from './ui';
 import { CommandPalette } from './components/CommandPalette';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useFocusTrap } from './hooks/useFocusTrap';
@@ -38,6 +38,9 @@ const RAIL_MIN = 216;
 const RAIL_MAX = 380;
 const RAIL_DEFAULT = 256;
 const RAIL_COLLAPSE_AT = 198;
+// Мин. длительность записи (сек) — держать в синхроне с Rust MIN_RECORDING_SEC
+// (commands/recording.rs). Короче — запись отбрасывается бэкендом → тост.
+const MIN_RECORDING_SEC = 30;
 
 function initialView(): RailView {
   if (typeof window === 'undefined') return 'inbox';
@@ -60,6 +63,7 @@ function readSavedRailW(): number {
 function AppShell() {
   const { t } = useI18n();
   const rec = useRecording();
+  const toast = useToast();
   const { resolvedTheme, setTheme } = useTheme();
 
   const [bootstrap, setBootstrap] = useState<Bootstrap>('loading');
@@ -317,12 +321,20 @@ function AppShell() {
     setLocalError(null);
     try {
       const result = await rec.stop();
+      if (!result.callId) {
+        // Запись короче минимума (30с) — отброшена бэкендом. Тост вместо навигации.
+        toast.show({
+          tone: 'warn',
+          message: t('recording.tooShort', { sec: MIN_RECORDING_SEC }),
+        });
+        return;
+      }
       setDetailCallId(result.callId);
       setView('call');
     } catch (e) {
       setLocalError(humanError(e));
     }
-  }, [rec]);
+  }, [rec, toast, t]);
 
   // Rail record button + ⌘⇧R toggle: idle→start, recording→stop, paused→resume.
   const onRecordToggle = useCallback(() => {
@@ -599,7 +611,9 @@ export function App() {
         {/* [W3] Recording state is App-level so the rail, RecStrip, and the
             floating widget window share one source of truth. */}
         <RecordingProvider>
-          <AppShell />
+          <ToastProvider>
+            <AppShell />
+          </ToastProvider>
         </RecordingProvider>
       </ThemeProvider>
     </I18nProvider>

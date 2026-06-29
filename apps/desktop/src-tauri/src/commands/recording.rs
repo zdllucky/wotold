@@ -167,8 +167,15 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     }
 }
 
+/// Минимальная длительность записи (сек) — короче отбрасываем (не сохраняем,
+/// не обрабатываем). Держать в синхроне с i18n `recording.tooShort {sec:30}`.
+const MIN_RECORDING_SEC: f64 = 30.0;
+
 #[tauri::command]
-pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Result<Call, AppError> {
+pub async fn stop_recording(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<Call>, AppError> {
     let session = {
         let mut guard = state.recording.lock().await;
         guard
@@ -219,6 +226,19 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
                     .await?
                     .unwrap_or(0);
             let total_sec = (elapsed_ms - paused_ms).max(0) as f64 / 1000.0;
+            // [min-duration] <30с — отбрасываем: удаляем строку звонка + temp
+            // WAV, пайплайн НЕ пускаем. Фронт покажет тост «слишком коротко».
+            if total_sec < MIN_RECORDING_SEC {
+                // DB-удаление логируем (ghost-строка в list_calls опаснее), WAV —
+                // best-effort (NotFound норм, если sidecar не писал system-трек).
+                if let Err(e) = crate::db::delete_call_and_samples(&state.db, &call_id).await {
+                    log::warn!("min-duration discard: delete call {call_id} failed: {e}");
+                }
+                let _ = tokio::fs::remove_file(&mic_path).await;
+                let _ = tokio::fs::remove_file(&system_path).await;
+                EventBus::new(Some(&app)).recording_state_changed();
+                return Ok(None);
+            }
             crate::db::finish_recording(&state.db, &call_id, total_sec).await?
         }
         Err(e) => {
@@ -245,7 +265,7 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     )
     .await;
 
-    Ok(call)
+    Ok(Some(call))
 }
 
 /// [W2] Pause активную запись. DB-only: проставляет `paused_at = now()` чтобы

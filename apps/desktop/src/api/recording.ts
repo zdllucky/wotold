@@ -79,8 +79,10 @@ export function startRecording(): Promise<Call> {
   return invoke<Call>('start_recording');
 }
 
-export function stopRecording(): Promise<Call> {
-  return invoke<Call>('stop_recording');
+/** Останавливает запись. `null` = запись короче минимума (30с) — отброшена
+ *  (строка звонка + WAV удалены, пайплайн не запущен). */
+export function stopRecording(): Promise<Call | null> {
+  return invoke<Call | null>('stop_recording');
 }
 
 export function getRecordingState(): Promise<RecordingState | null> {

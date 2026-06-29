@@ -60,7 +60,8 @@ export interface RecordingApi {
   start: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
-  stop: () => Promise<{ callId: string }>;
+  /** `callId: null` = запись короче минимума (30с) — отброшена, не сохранена. */
+  stop: () => Promise<{ callId: string | null }>;
 }
 
 const RecordingContext = createContext<RecordingApi | null>(null);
@@ -241,14 +242,15 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
     }
   }, []);
 
-  const stop = useCallback(async (): Promise<{ callId: string }> => {
+  const stop = useCallback(async (): Promise<{ callId: string | null }> => {
     setError(null);
     setBusy(true);
     try {
       const call = await stopRecording();
       setStatus({ kind: 'idle' });
       setElapsedSec(0);
-      return { callId: call.id };
+      // call === null → запись короче минимума, отброшена бэкендом.
+      return { callId: call?.id ?? null };
     } catch (e) {
       setError(errorMessage(e));
       throw e;
