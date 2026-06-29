@@ -303,11 +303,12 @@ pub fn run() {
 
                 let quitting_for_menu = quitting.clone();
                 let _tray = TrayIconBuilder::with_id("wotold-tray")
-                    .icon(
-                        app.default_window_icon()
-                            .cloned()
-                            .ok_or_else(|| std::io::Error::other("default_window_icon missing"))?,
-                    )
+                    // Dedicated monochrome TEMPLATE mark (black + alpha) — macOS tints it
+                    // for the light/dark menu bar. Не переиспользуем цветную bundle-иконку
+                    // (её альфа в template-режиме дала бы силуэт-кляксу).
+                    .icon(tauri::image::Image::from_bytes(include_bytes!(
+                        "../icons/tray.png"
+                    ))?)
                     .icon_as_template(true)
                     .menu(&tray_menu)
                     .show_menu_on_left_click(false)
