@@ -452,3 +452,28 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .md-rich .md-tasks { list-style: none; margin: 0; padding: 0; }
 .md-rich .md-tasks li { display: flex; gap: 9px; padding: 5px 0; font-size: 14px; line-height: 1.5; align-items: flex-start; }
 .md-rich .md-code { font-family: var(--mono); font-size: 12px; background: var(--sunken); border: 1px solid var(--border); border-radius: var(--r-xs); padding: 2px 7px; color: var(--text-2); }
+/* [recap] md-rich — полное покрытие markdown-элементов (Wotold v2). */
+.md-rich .md-ol { margin: 0; padding-left: 22px; list-style: decimal; }
+.md-rich .md-ol li { font-size: 14px; line-height: 1.5; padding: 3px 0; }
+.md-rich .md-ol li::marker { color: var(--accent); font-variant-numeric: tabular-nums; }
+.md-rich li > .md-ul, .md-rich li > .md-ol { margin: 4px 0 2px; }
+.md-rich .md-p + .md-h, .md-rich .md-ul + .md-h, .md-rich .md-ol + .md-h { margin-top: 22px; }
+/* вертикальный ритм между блоками документа (заголовки/hr держат свой отступ) */
+.md-rich > * + *:not(.md-h):not(hr) { margin-top: 12px; }
+.md-rich blockquote { margin: 0; padding: 2px 0 2px 14px; border-left: 2px solid var(--accent-line); color: var(--text-2); }
+.md-rich blockquote .md-p { color: var(--text-2); }
+.md-rich .md-a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--accent-line); transition: text-decoration-color var(--fast); }
+.md-rich .md-a:hover { text-decoration-color: var(--accent); }
+.md-rich strong { font-weight: 650; color: var(--text); }
+.md-rich em { font-style: italic; }
+.md-rich del { text-decoration: line-through; color: var(--text-faint); }
+.md-rich hr { height: 1px; border: none; background: var(--border); margin: var(--s5) 0; }
+.md-rich pre { font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: var(--text-2); background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; overflow-x: auto; margin: 0; }
+.md-rich pre .md-code { background: none; border: none; padding: 0; font-size: inherit; color: inherit; }
+.md-rich table { width: 100%; border-collapse: collapse; font-size: var(--t-13); margin: 0; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.md-rich thead th { background: var(--sunken); font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint); text-align: left; }
+.md-rich th, .md-rich td { padding: 7px 10px; border: 1px solid var(--border); vertical-align: top; line-height: 1.5; }
+.md-rich .contains-task-list { list-style: none; padding-left: 2px; }
+.md-rich li.task-list-item { display: flex; gap: 9px; align-items: flex-start; padding: 5px 0; font-size: 14px; line-height: 1.5; }
+.md-rich li.task-list-item::marker { content: none; }
+.md-rich li.task-list-item input[type="checkbox"] { margin-top: 3px; accent-color: var(--accent); width: 14px; height: 14px; flex: 0 0 auto; }

@@ -7,10 +7,9 @@
 // Пустые / generating / regenerate состояния сохранены из прежнего MdPanel.
 
 import { useState } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
 import { useI18n } from '../../i18n';
 import { useTypewriter } from '../../hooks/useTypewriter';
-import { Button, Empty, Icon, Segmented } from '../../ui';
+import { Button, Empty, Icon, Markdown, Segmented } from '../../ui';
 import { isMarkdownBlank } from '../../utils/markdown';
 
 type Mode = 'rich' | 'md';
@@ -28,19 +27,6 @@ interface RecapViewProps {
   regenerating?: boolean;
   regenerateDisabled?: boolean;
 }
-
-// Рендер markdown в типографику прототипа `.md-rich` (h→.md-h, p→.md-p,
-// списки→.md-ul, code→.md-code).
-const MD_RICH: Components = {
-  h1: ({ children }) => <h3 className="md-h">{children}</h3>,
-  h2: ({ children }) => <h3 className="md-h">{children}</h3>,
-  h3: ({ children }) => <h3 className="md-h">{children}</h3>,
-  h4: ({ children }) => <h3 className="md-h">{children}</h3>,
-  p: ({ children }) => <p className="md-p">{children}</p>,
-  ul: ({ children }) => <ul className="md-ul">{children}</ul>,
-  ol: ({ children }) => <ul className="md-ul">{children}</ul>,
-  code: ({ children }) => <code className="md-code">{children}</code>,
-};
 
 export function RecapView({
   recap,
@@ -143,10 +129,10 @@ export function RecapView({
       {mode === 'md' ? (
         <pre className="md-raw">{md}</pre>
       ) : (
-        <div className="md-rich">
-          <ReactMarkdown components={MD_RICH}>{shown}</ReactMarkdown>
+        <>
+          <Markdown>{shown}</Markdown>
           {!done && <span className="caret" aria-hidden="true" />}
-        </div>
+        </>
       )}
     </div>
   );
