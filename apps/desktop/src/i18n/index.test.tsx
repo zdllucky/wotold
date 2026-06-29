@@ -80,9 +80,9 @@ function Probe() {
   return (
     <div>
       <span data-testid="locale">{locale}</span>
-      <span data-testid="home-title">{t('home.readyHeadline')}</span>
+      <span data-testid="home-title">{t('home.consentTitle')}</span>
       <span data-testid="templated">
-        {t('home.savedHint', { sec: 42 })}
+        {t('home.updateAvailable', { version: 42, current: 41 })}
       </span>
       <button onClick={() => setLocale('en')}>switch-en</button>
       <button onClick={() => setLocale('kk')}>switch-kk</button>
@@ -112,7 +112,7 @@ describe('I18nProvider + useI18n', () => {
   test('mounts with detected ru locale and translates a key', async () => {
     await renderWithProvider();
     expect(screen.getByTestId('locale').textContent).toBe('ru');
-    expect(screen.getByTestId('home-title').textContent).toBe('Готов записывать.');
+    expect(screen.getByTestId('home-title').textContent).toBe('Перед стартом');
   });
 
   test('substitutes {placeholders} via params', async () => {
@@ -122,12 +122,12 @@ describe('I18nProvider + useI18n', () => {
 
   test('setLocale switches strings and persists to settings', async () => {
     await renderWithProvider();
-    expect(screen.getByTestId('home-title').textContent).toBe('Готов записывать.');
+    expect(screen.getByTestId('home-title').textContent).toBe('Перед стартом');
     await act(async () => {
       screen.getByText('switch-en').click();
     });
     expect(screen.getByTestId('locale').textContent).toBe('en');
-    expect(screen.getByTestId('home-title').textContent).toBe('Ready to record.');
+    expect(screen.getByTestId('home-title').textContent).toBe('Before you start');
     // Persistence check — value should land in our mock store.
     const { getSetting } = await import('../api/settings');
     await Promise.resolve();
@@ -140,7 +140,7 @@ describe('I18nProvider + useI18n', () => {
       screen.getByText('switch-kk').click();
     });
     expect(screen.getByTestId('locale').textContent).toBe('kk');
-    expect(screen.getByTestId('home-title').textContent).toBe('Жазуға дайын.');
+    expect(screen.getByTestId('home-title').textContent).toBe('Бастамас бұрын');
   });
 });
 
