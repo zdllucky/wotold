@@ -29,3 +29,5 @@ export { Modal } from './Modal';
 export { Dropdown, MenuItem, MenuLabel, MenuSep } from './Menu';
 // [B18.9] Shared per-screen header bar (.view-head).
 export { ViewHead } from './ViewHead';
+// [window] Кастомные кнопки управления окном (macOS-светофор, hover-reveal).
+export { WindowControls } from './WindowControls';

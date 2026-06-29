@@ -483,6 +483,13 @@ pub fn run() {
                 make_widget_draggable_by_background(&widget);
             }
 
+            // [window] Скрываем нативные macOS-светофоры main-окна — рисуем
+            // свои кастомные кнопки (hover-reveal, src/ui/WindowControls.tsx).
+            #[cfg(target_os = "macos")]
+            if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
+                hide_main_window_buttons(&main);
+            }
+
             // [S7] Persist floating-widget position when user drags it. We
             // debounce via a tokio task that resets a 400ms timer on each
             // `Moved` event — Tauri fires `Moved` ~per-frame during drag, and
@@ -711,5 +718,46 @@ fn make_widget_draggable_by_background(widget: &tauri::WebviewWindow) {
     unsafe {
         let ns_window = ns_window as *mut Object;
         let _: () = msg_send![ns_window, setMovableByWindowBackground: YES];
+    }
+}
+
+/// Скрывает три нативных macOS-кнопки main-окна (close/miniaturize/zoom), чтобы
+/// нарисовать свой кастомный светофор (hover-reveal, WindowControls.tsx).
+/// NSWindowButton: Close=0, Miniaturize=1, Zoom=2.
+///
+/// # Safety
+///
+/// `ns_window` валиден от Tauri пока окно живёт; `standardWindowButton:` и
+/// `setHidden:` — простые AppKit-аксессоры без эксцепшнов / side effects.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn hide_main_window_buttons(main: &tauri::WebviewWindow) {
+    use objc::msg_send;
+    use objc::runtime::{Object, YES};
+    use objc::sel;
+    use objc::sel_impl;
+
+    let ns_window = match main.ns_window() {
+        Ok(ptr) => ptr,
+        Err(e) => {
+            log::warn!("main ns_window unavailable: {e}");
+            return;
+        }
+    };
+    if ns_window.is_null() {
+        log::warn!("main ns_window is null");
+        return;
+    }
+    // SAFETY: NSWindow* lives as long as the main window; standardWindowButton:
+    // / setHidden: are no-throw AppKit accessors.
+    unsafe {
+        let ns_window = ns_window as *mut Object;
+        // NSWindowButton — NSUInteger (= usize на всех целевых платформах).
+        for kind in 0usize..=2 {
+            let btn: *mut Object = msg_send![ns_window, standardWindowButton: kind];
+            if !btn.is_null() {
+                let _: () = msg_send![btn, setHidden: YES];
+            }
+        }
     }
 }

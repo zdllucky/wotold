@@ -29,6 +29,11 @@
   /* speaker palette (theme-tuned below for dark) */
   --sp1: #5B5BD6; --sp2: #0E9888; --sp3: #C2410C; --sp4: #9333EA; --sp5: #1D7AD1;
 
+  /* window controls — macOS traffic lights. Функциональные оконные цвета
+   * (одинаковы в light/dark, как нативные); исключение из графит-моно. */
+  --wc-close: #FF5F57; --wc-min: #FEBC2E; --wc-max: #28C840;
+  --wc-glyph: rgba(0, 0, 0, .55); --wc-w: 80px;
+
   --rail-w: 256px;
 }
 

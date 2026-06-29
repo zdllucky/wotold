@@ -99,12 +99,12 @@ button:disabled,
   -webkit-app-region: no-drag;
 }
 
-/* [B18.1a] Wotold v2 shell rail — macOS traffic-light reserve + drag-region.
- * `.app >` specificity beats wk.css `.minirail { padding }` regardless of
- * stylesheet import order. */
+/* [B18.1a] Wotold v2 shell rail — drag-region. Нативные светофоры скрыты
+ * (lib.rs hide_main_window_buttons), поэтому top-reserve минимальный — лого/
+ * иконки поднимаются к верху, кастомные светофоры (.win-controls) рисуются над. */
 .app > .rail,
 .app > .minirail {
-  padding-top: 26px;
+  padding-top: 8px;
   -webkit-app-region: drag;
 }
 .app > .rail button,
@@ -114,6 +114,123 @@ button:disabled,
 .app > .minirail button,
 .app > .minirail .rail-resize {
   -webkit-app-region: no-drag;
+}
+
+/* [window-drag] Навбар тащит окно; интерактив внутри — no-drag (клики/фокус
+ * работают, свайп по пустому навбару двигает окно). Зеркалит rail-паттерн. */
+.view-head {
+  -webkit-app-region: drag;
+}
+.view-head button,
+.view-head a,
+.view-head input,
+.view-head select,
+.view-head textarea,
+.view-head [role='button'],
+.view-head [role='tablist'],
+.view-head .omni,
+.view-head .input,
+.win-controls,
+.win-controls * {
+  -webkit-app-region: no-drag;
+}
+
+/* [window-controls] macOS-светофор — fixed top-left, скрыт по умолчанию,
+ * раскрывается при наведении (App ставит data-chrome на .app; hover-зона —
+ * сам .win-controls). Glyph ×/−/+ появляются на hover группы, как нативные. */
+.win-controls {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 48px;
+  width: var(--wc-w);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 14px;
+  z-index: 50;
+  -webkit-app-region: no-drag;
+}
+.wc-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  flex: 0 0 auto;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.62);
+  transition: opacity var(--fast) var(--ease), transform var(--fast) var(--ease);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.wc-btn--close {
+  background: var(--wc-close);
+}
+.wc-btn--min {
+  background: var(--wc-min);
+}
+.wc-btn--max {
+  background: var(--wc-max);
+}
+.app[data-chrome='open'] .wc-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+.win-controls:hover .wc-btn::before {
+  color: var(--wc-glyph);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+.win-controls:hover .wc-btn--close::before {
+  content: '\00d7';
+}
+.win-controls:hover .wc-btn--min::before {
+  content: '\2212';
+}
+.win-controls:hover .wc-btn--max::before {
+  content: '\002b';
+}
+
+/* [expanded push] header рейла; лого едет вправо когда светофор раскрыт.
+ * Padding в классе (не инлайн), иначе data-chrome override не победит инлайн. */
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 8px;
+  transition: padding-left var(--base) var(--ease);
+}
+.app[data-chrome='open'] .rail-head {
+  padding-left: var(--wc-w);
+}
+
+/* [collapsed] Навбар на всю ширину окна поверх минирейла; минирейл встаёт под
+ * ним. Светофор ложится в зарезервированный левый угол навбара; на hover контент
+ * навбара чуть уходит правее. `.view-head` у всех 5 страниц — первый ребёнок
+ * корневого `.main`, поэтому правило одно. box-sizing:border-box → padding-top
+ * не ломает height:100vh. */
+.app[data-collapsed] .view-head {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 48px;
+  z-index: 40;
+  background: var(--bg);
+  padding-left: calc(var(--wc-w) + var(--s2));
+  transition: padding-left var(--base) var(--ease);
+}
+.app[data-collapsed][data-chrome='open'] .view-head {
+  padding-left: calc(var(--wc-w) + var(--s4));
+}
+.app[data-collapsed] .main {
+  padding-top: 48px;
+}
+.app[data-collapsed] .minirail {
+  padding-top: 48px;
 }
 
 /* Markdown — recap и transcript-fallback. Serif first-class. */

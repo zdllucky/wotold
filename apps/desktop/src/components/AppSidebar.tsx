@@ -139,15 +139,9 @@ export function Sidebar(props: RailProps) {
 
   return (
     <aside className="rail" aria-label={t('nav.main')}>
-      <div
-        data-tauri-drag-region
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 12px 8px',
-        }}
-      >
+      {/* [window] .rail-head — header рейла; на data-chrome=open лого едет
+          вправо, освобождая угол под кастомный светофор (global.css). */}
+      <div data-tauri-drag-region className="rail-head">
         <Brand />
         <IconBtn
           icon="sidebar"
