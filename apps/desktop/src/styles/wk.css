@@ -38,7 +38,8 @@ a { color: inherit; text-decoration: none; }
 .minirail .mr-rec { width: 38px; height: 38px; border-radius: var(--r-md); background: var(--accent); color: var(--on-accent);
   display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; transition: background var(--fast), transform var(--fast); }
 .minirail .mr-rec:hover { background: var(--accent-hover); }
-.minirail .mr-rec[data-rec="true"] { background: var(--danger); }
+/* Запись: красный фон → белый контент (дорожка), как .btn--danger. */
+.minirail .mr-rec[data-rec="true"] { background: var(--danger); color: #fff; }
 .minirail .mr-rec[data-rec="true"]:hover { filter: brightness(1.06); }
 .minirail-sep { width: 26px; height: 1px; background: var(--border); margin: 4px 0; flex: 0 0 auto; }
 .minirail .mr-spacer { flex: 1 1 auto; }
