@@ -303,6 +303,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           type="button"
           onClick={onBack}
           style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
             background: 'none',
             border: 'none',
             cursor: 'pointer',
@@ -317,6 +320,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             e.currentTarget.style.color = 'var(--text-3)';
           }}
         >
+          <Icon name="chevronLeft" size={14} />
           {t('common.backAll')}
         </button>
         <Icon name="chevronRight" size={13} style={{ color: 'var(--text-faint)' }} />

@@ -129,17 +129,35 @@ function RowStatusChip({
 interface TableRowProps {
   call: Call;
   onOpen: (id: string) => void;
+  /** Row-menu actions — when omitted the item is disabled (no-op). */
+  onReprocess?: (call: Call) => void;
+  onExport?: (call: Call) => void;
+  onDelete?: (call: Call) => void;
   speakers?: string[];
   isActive?: boolean;
   locale: string;
   t: TFn;
 }
 
-export function TableRow({ call, onOpen, speakers, isActive, locale, t }: TableRowProps) {
+export function TableRow({
+  call,
+  onOpen,
+  onReprocess,
+  onExport,
+  onDelete,
+  speakers,
+  isActive,
+  locale,
+  t,
+}: TableRowProps) {
   const list = speakers && speakers.length > 0 ? speakers : inferSpeakers(call);
   const uiState = deriveCallState(call);
   const busy = call.status === 'ready' && isActive === true;
   const hasTag = busy || uiState !== 'ready';
+  // Reprocess: ready or failed calls, not while a task is running / in progress.
+  const canReprocess = !busy && (uiState === 'ready' || uiState === 'error');
+  // Export needs a finished transcript/recap → ready only.
+  const canExport = uiState === 'ready';
   const title = call.title ?? t('calls.fallbackCallTitle', { short: call.id.slice(0, 8) });
 
   return (
@@ -181,10 +199,18 @@ export function TableRow({ call, onOpen, speakers, isActive, locale, t }: TableR
           <MenuItem icon="doc" onClick={() => onOpen(call.id)}>
             {t('inbox.rowOpen')}
           </MenuItem>
-          <MenuItem icon="refresh">{t('inbox.rowReprocess')}</MenuItem>
-          <MenuItem icon="download">{t('inbox.rowExport')}</MenuItem>
+          <MenuItem
+            icon="refresh"
+            disabled={!canReprocess}
+            onClick={() => onReprocess?.(call)}
+          >
+            {t('inbox.rowReprocess')}
+          </MenuItem>
+          <MenuItem icon="download" disabled={!canExport} onClick={() => onExport?.(call)}>
+            {t('inbox.rowExport')}
+          </MenuItem>
           <MenuSep />
-          <MenuItem icon="trash" danger>
+          <MenuItem icon="trash" danger onClick={() => onDelete?.(call)}>
             {t('common.delete')}
           </MenuItem>
         </Dropdown>

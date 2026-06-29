@@ -86,23 +86,60 @@ export type PeriodFacet = 'today' | 'week';
 /** Person facet values are confirmed-contact display names (dynamic). */
 export type PersonFacet = string;
 
+/** Custom date range (inclusive). ISO `YYYY-MM-DD` (local calendar days) or null. */
+export interface DateRange {
+  from: string | null;
+  to: string | null;
+}
+
 export interface Facets {
   status: StatusFacet[];
   recap: RecapFacet[];
   period: PeriodFacet[];
   person: PersonFacet[];
+  range: DateRange;
 }
 
-export const FACETS_EMPTY: Facets = { status: [], recap: [], period: [], person: [] };
+export const FACETS_EMPTY: Facets = {
+  status: [],
+  recap: [],
+  period: [],
+  person: [],
+  range: { from: null, to: null },
+};
+
+/** Facet keys backed by a string[] (everything except the `range` object). */
+export type StrFacetKey = 'status' | 'recap' | 'period' | 'person';
+export const STR_FACET_KEYS: StrFacetKey[] = ['status', 'recap', 'period', 'person'];
+
+export function hasRange(f: Facets): boolean {
+  return Boolean(f.range.from || f.range.to);
+}
 
 export function facetCount(f: Facets): number {
-  return f.status.length + f.recap.length + f.period.length + f.person.length;
+  return (
+    f.status.length +
+    f.recap.length +
+    f.period.length +
+    f.person.length +
+    (hasRange(f) ? 1 : 0)
+  );
 }
 
-export function toggleFacet(f: Facets, k: keyof Facets, v: string): Facets {
+/** Toggle a string[]-valued facet (status/recap/period/person). */
+export function toggleFacet(
+  f: Facets,
+  k: 'status' | 'recap' | 'period' | 'person',
+  v: string,
+): Facets {
   const arr = f[k] as string[];
   const next = arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
   return { ...f, [k]: next } as Facets;
+}
+
+/** Set/clear one bound of the custom date range. */
+export function setRange(f: Facets, patch: Partial<DateRange>): Facets {
+  return { ...f, range: { ...f.range, ...patch } };
 }
 
 export function callStatusFacet(c: Call): StatusFacet {
@@ -135,11 +172,28 @@ export function matchesFacets(
   if (f.status.length && !f.status.includes(callStatusFacet(c))) return false;
   if (f.recap.length && !f.recap.includes(callHasRecap(c) ? 'yes' : 'no')) return false;
   if (f.period.length && !withinPeriod(c, f.period)) return false;
+  if (hasRange(f) && !withinRange(c, f.range)) return false;
   if (f.person.length) {
     const people = callPersons?.get(c.id);
     if (!people || !f.person.some((p) => people.includes(p))) return false;
   }
   if (text && !matchesQuery(c, text)) return false;
+  return true;
+}
+
+/** Inclusive custom range: local-day `from` 00:00 … `to` 23:59:59.999. */
+function withinRange(c: Call, range: DateRange): boolean {
+  const t = new Date(c.started_at).getTime();
+  if (!Number.isFinite(t)) return false;
+  if (range.from) {
+    const from = new Date(`${range.from}T00:00:00`).getTime();
+    // Fail-closed: an unparseable bound excludes rather than silently widening.
+    if (!Number.isFinite(from) || t < from) return false;
+  }
+  if (range.to) {
+    const to = new Date(`${range.to}T23:59:59.999`).getTime();
+    if (!Number.isFinite(to) || t > to) return false;
+  }
   return true;
 }
 
