@@ -11,7 +11,7 @@ export function ErrorDiagnostics({ call }: { call: Call }) {
     <details style={{ marginTop: 18 }}>
       <summary
         className="small-caps"
-        style={{ cursor: 'pointer', color: 'var(--text-muted)' }}
+        style={{ cursor: 'pointer', color: 'var(--text-3)' }}
       >
         {t('callDetail.errorDiagnosticsTitle')}
       </summary>
@@ -21,7 +21,7 @@ export function ErrorDiagnostics({ call }: { call: Call }) {
           gridTemplateColumns: '160px 1fr',
           gap: '6px 16px',
           marginTop: 10,
-          fontFamily: 'var(--font-mono)',
+          fontFamily: 'var(--mono)',
           fontSize: 12,
         }}
       >

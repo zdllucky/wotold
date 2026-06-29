@@ -26,12 +26,15 @@ import {
 import { getSetting, setSetting } from '../api/settings';
 
 export type Theme = 'light' | 'dark' | 'system';
+// [B18.0] Wotold v2 = моно-графит (ink), один акцент. Тип сохраняем чтобы не
+// ломать AppearanceSection; picker удаляется в B18.5. Не-ink значения визуально
+// no-op (в tokens.css нет [data-accent] блоков).
 export type Accent = 'bordeaux' | 'persian' | 'ink';
 
 const KEY_THEME = 'ui.theme';
 const KEY_ACCENT = 'ui.accent';
 const DEFAULT_THEME: Theme = 'system';
-const DEFAULT_ACCENT: Accent = 'bordeaux';
+const DEFAULT_ACCENT: Accent = 'ink';
 
 interface ThemeCtx {
   theme: Theme;
@@ -53,6 +56,8 @@ function applyToRoot(theme: Theme, accent: Accent): 'light' | 'dark' {
     theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme;
   root.setAttribute('data-theme', resolved);
   root.setAttribute('data-accent', accent);
+  // [B18.0] density фиксирован cozy (без переключателя). compact-токены в wk.css.
+  root.setAttribute('data-density', 'cozy');
   return resolved;
 }
 

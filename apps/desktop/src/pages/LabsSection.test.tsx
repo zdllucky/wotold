@@ -1,7 +1,11 @@
 // [M14 T-14 + T-16 P2] LabsSection vitest — load defaults, toggle persist for
 // summary_v2 (default ON) и speculative decoding (default OFF).
+//
+// [B18.5b] Wotold v2: checkboxes → role=switch buttons (aria-checked),
+// native <select> → custom Select (combobox trigger + listbox options).
 
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -33,12 +37,12 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
-    expect(boxes).toHaveLength(2);
-    const summaryV2 = boxes[0]!;
-    const speculative = boxes[1]!;
-    await waitFor(() => expect(summaryV2.checked).toBe(true));
-    expect(speculative.checked).toBe(false);
+    const switches = screen.getAllByRole('switch');
+    expect(switches).toHaveLength(2);
+    const summaryV2 = switches[0]!;
+    const speculative = switches[1]!;
+    await waitFor(() => expect(summaryV2).toHaveAttribute('aria-checked', 'true'));
+    expect(speculative).toHaveAttribute('aria-checked', 'false');
   });
 
   test('renders summary v2 OFF when setting is "0"', async () => {
@@ -52,8 +56,8 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const summaryV2 = (screen.getAllByRole('checkbox') as HTMLInputElement[])[0]!;
-    await waitFor(() => expect(summaryV2.checked).toBe(false));
+    const summaryV2 = screen.getAllByRole('switch')[0]!;
+    await waitFor(() => expect(summaryV2).toHaveAttribute('aria-checked', 'false'));
   });
 
   test('summary v2 toggle click persists via set_setting', async () => {
@@ -73,8 +77,8 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const summaryV2 = (screen.getAllByRole('checkbox') as HTMLInputElement[])[0]!;
-    await waitFor(() => expect(summaryV2.checked).toBe(true));
+    const summaryV2 = screen.getAllByRole('switch')[0]!;
+    await waitFor(() => expect(summaryV2).toHaveAttribute('aria-checked', 'true'));
     await act(async () => {
       summaryV2.click();
     });
@@ -91,10 +95,10 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const select = await waitFor(() =>
-      screen.getByRole('combobox') as HTMLSelectElement,
+    // Trigger shows the selected option's label.
+    await waitFor(() =>
+      expect(screen.getByRole('combobox')).toHaveTextContent('Авто (рекомендовано)'),
     );
-    expect(select.value).toBe('auto');
   });
 
   test('force-N-speakers reads "3" из DB и render"ит', async () => {
@@ -108,12 +112,9 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const select = await waitFor(() => {
-      const s = screen.getByRole('combobox') as HTMLSelectElement;
-      if (s.value !== '3') throw new Error('not yet');
-      return s;
-    });
-    expect(select.value).toBe('3');
+    await waitFor(() =>
+      expect(screen.getByRole('combobox')).toHaveTextContent('3 собеседника'),
+    );
   });
 
   test('force-N-speakers change persists via set_setting', async () => {
@@ -130,11 +131,10 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const select = screen.getByRole('combobox') as HTMLSelectElement;
-    await act(async () => {
-      select.value = '2';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    // Open the custom Select, pick the "2 собеседника" option (index 1).
+    await userEvent.click(screen.getByRole('combobox'));
+    const opts = screen.getAllByRole('option');
+    fireEvent.mouseDown(opts[1]!);
     expect(mockInvoke).toHaveBeenCalledWith('set_setting', {
       key: 'mic_diarization_num_speakers',
       value: '2',
@@ -155,8 +155,8 @@ describe('LabsSection', () => {
     });
     render(<LabsSection />);
     await flush();
-    const speculative = (screen.getAllByRole('checkbox') as HTMLInputElement[])[1]!;
-    await waitFor(() => expect(speculative.checked).toBe(false));
+    const speculative = screen.getAllByRole('switch')[1]!;
+    await waitFor(() => expect(speculative).toHaveAttribute('aria-checked', 'false'));
     await act(async () => {
       speculative.click();
     });

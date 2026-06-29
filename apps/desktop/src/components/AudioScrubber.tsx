@@ -1,307 +1,138 @@
-// [B17 V3.4] Sticky bottom audio scrubber pill — dumb presentation component.
-// useCallAudio() hook играет ОБА трека одновременно (mic + system), нет
-// track switcher. Browser mixer сводит их в один stream.
+// Wotold v2 player dock — .player-dock / .player (uikit, см. wk-screens CallPlayer).
+// useCallAudio() играет ОБА трека одновременно (mic + system) — Browser mixer
+// сводит в один stream, нет track switcher. Бары рендерятся из combined peaks
+// (fallback — псевдослучайная высота от seed пока peaks не декодированы).
 //
-// Layout pill (слева направо):
-//   [▶] [00:04] [combined peaks waveform] [SpeakerChip|пауза] [01:11]
+// Layout (.player, слева направо):
+//   [▶ accent-кружок] [00:04] [130 баров + playhead] [01:11]
 
+import { useRef } from 'react';
 import type { CallAudioHandle } from '../hooks/useCallAudio';
-import type { CurrentSpeakerInfo } from '../utils/callMeta';
 import { useI18n } from '../i18n';
-import { Waveform } from './Waveform';
+import { Icon } from '../ui';
 
-const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
-
-// Re-export для удобства callers'ов (CallDetailPage).
-export type { CurrentSpeakerInfo };
+const BARS = 130;
 
 interface AudioScrubberProps {
   audio: CallAudioHandle;
-  /** seed для seeded random fallback (когда peaks не загружены). */
+  /** seed для псевдослучайной высоты баров когда peaks ещё не декодированы. */
   seed: number;
-  /** Скрыть scrubber если false. */
+  /** Скрыть плеер если false. */
   enabled?: boolean;
-  /** Текущий говорящий (computed на CallDetailPage из rawStt + currentTime). */
-  currentSpeaker: CurrentSpeakerInfo | null;
-  /** Клик по speaker chip → switch на transcript tab (auto-scroll к active row
-   *  делает InteractiveTranscript сам через currentTime sync). */
-  onJumpToSpeaker?: () => void;
 }
 
-export function AudioScrubber({
-  audio,
-  seed,
-  enabled = true,
-  currentSpeaker,
-  onJumpToSpeaker,
-}: AudioScrubberProps) {
+export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProps) {
   const { t } = useI18n();
+  const waveRef = useRef<HTMLDivElement | null>(null);
   if (!enabled) return null;
   if (audio.bothMissing) return null;
 
-  const onWaveformClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!audio.duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    audio.seek(ratio * audio.duration);
+  const pct =
+    audio.duration > 0
+      ? Math.max(0, Math.min(1, audio.currentTime / audio.duration))
+      : 0;
+
+  const seekAt = (clientX: number) => {
+    const el = waveRef.current;
+    if (!el || !audio.duration) return;
+    const r = el.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    audio.seek(x * audio.duration);
   };
 
-  const progressPct =
-    audio.duration > 0 ? (audio.currentTime / audio.duration) * 100 : 0;
+  // Click + drag scrubbing (как в прототипе CallPlayer).
+  const onDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    seekAt(e.clientX);
+    const move = (ev: MouseEvent) => seekAt(ev.clientX);
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  };
+
+  // Высота баров: реальные peaks (combined mic+system, 0..1) либо
+  // детерминированный fallback от seed (звонок узнаваем, но не загружен).
+  const peaks = audio.peaks;
+  const bars = Array.from({ length: BARS }, (_, i) => {
+    const v =
+      peaks && peaks.length > 0
+        ? peaks[Math.floor((i / BARS) * peaks.length)] ?? 0
+        : ((i * 53 + seed) % 18) / 18;
+    return 4 + Math.round(v * 18);
+  });
 
   return (
-    <div
-      style={{
-        position: 'sticky',
-        bottom: 12,
-        zIndex: 20,
-        // [B17 V3.8] marginTop:auto в flex-column parent pushes scrubber
-        // к низу .app-main scroll viewport даже при коротком контенте.
-        // Sticky bottom держит у низа при длинном контенте/scrolling.
-        marginTop: 'auto',
-        pointerEvents: 'auto',
-      }}
-    >
-      {/* Pill */}
-      <div
-        style={{
-          background: 'var(--paper)',
-          border: '1px solid var(--line)',
-          borderRadius: 999,
-          padding: '8px 14px 8px 8px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          boxShadow: '0 6px 24px rgba(26,22,18,0.08)',
-          backdropFilter: 'blur(8px)',
-        }}
-      >
+    <div className="player-dock">
+      <div className="player">
         <button
           type="button"
+          className="player-play"
           onClick={audio.togglePlay}
           disabled={!audio.ready}
           aria-label={audio.playing ? t('scrubber.pause') : t('scrubber.play')}
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: '50%',
-            background: 'var(--ink)',
-            color: 'var(--paper)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 11,
-            border: 'none',
-            cursor: audio.ready ? 'pointer' : 'not-allowed',
-            opacity: audio.ready ? 1 : 0.4,
-            flexShrink: 0,
-            transition: 'transform var(--duration-fast) var(--ease-out-expo)',
-          }}
         >
-          {audio.playing ? '❚❚' : '▶'}
+          <Icon name={audio.playing ? 'pause' : 'play'} size={16} />
         </button>
-        <div
+        <span
           className="mono"
           style={{
-            fontSize: 11,
-            color: 'var(--muted)',
-            flexShrink: 0,
-            minWidth: 50,
+            fontSize: 'var(--t-12)',
+            color: 'var(--text-2)',
+            width: 44,
+            textAlign: 'right',
+            flex: '0 0 auto',
           }}
         >
           {formatTime(audio.currentTime)}
-        </div>
-
-        {/* Waveform + progress fill via clip-path overlay. Use real peaks
-            when decoded, fallback to seeded random. */}
+        </span>
         <div
-          onClick={onWaveformClick}
-          style={{
-            flex: 1,
-            height: 22,
-            position: 'relative',
-            cursor: 'pointer',
-            minWidth: 80,
-          }}
+          className="player-wave"
+          ref={waveRef}
+          onMouseDown={onDown}
           role="slider"
+          tabIndex={0}
           aria-label={t('scrubber.progressAria')}
           aria-valuemin={0}
           aria-valuemax={Math.floor(audio.duration)}
           aria-valuenow={Math.floor(audio.currentTime)}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              opacity: 0.25,
-              color: 'var(--accent)',
-            }}
-          >
-            <Waveform
-              seed={seed}
-              peaks={audio.peaks ?? undefined}
-              color="currentColor"
-              width={600}
-              height={22}
-              count={200}
-              gap={1.5}
-            />
-          </div>
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              color: 'var(--accent)',
-              clipPath: `inset(0 ${Math.max(0, 100 - progressPct)}% 0 0)`,
-              transition: 'clip-path 100ms linear',
-            }}
-          >
-            <Waveform
-              seed={seed}
-              peaks={audio.peaks ?? undefined}
-              color="currentColor"
-              width={600}
-              height={22}
-              count={200}
-              gap={1.5}
-            />
-          </div>
-        </div>
-
-        {/* Speaker chip — fixed-width контейнер, чтобы waveform не прыгал
-            при смене speaker/пауза. 140px = max chip width + breathing. */}
-        <div
-          style={{
-            width: 140,
-            flexShrink: 0,
-            display: 'flex',
-            justifyContent: 'center',
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') {
+              e.preventDefault();
+              audio.seek(Math.max(0, audio.currentTime - 5));
+            } else if (e.key === 'ArrowRight') {
+              e.preventDefault();
+              audio.seek(Math.min(audio.duration, audio.currentTime + 5));
+            }
           }}
         >
-          <SpeakerChip
-            speaker={currentSpeaker}
-            onClick={onJumpToSpeaker}
-          />
+          {bars.map((h, i) => (
+            <i
+              key={i}
+              style={{
+                height: h,
+                background:
+                  i / BARS <= pct ? 'var(--accent)' : 'var(--border-strong)',
+              }}
+            />
+          ))}
+          <span className="player-head" style={{ left: pct * 100 + '%' }} />
         </div>
-
-        <div
+        <span
           className="mono"
           style={{
-            fontSize: 11,
-            color: 'var(--muted)',
-            flexShrink: 0,
-            minWidth: 50,
-            textAlign: 'right',
+            fontSize: 'var(--t-12)',
+            color: 'var(--text-faint)',
+            width: 44,
+            flex: '0 0 auto',
           }}
         >
           {formatTime(audio.duration)}
-        </div>
+        </span>
       </div>
-
     </div>
-  );
-}
-
-// SpeakerChip — current speaker indicator inline (без border/bg карточки).
-// Click → onJumpToSpeaker. Если none — italic «пауза».
-function SpeakerChip({
-  speaker,
-  onClick,
-}: {
-  speaker: CurrentSpeakerInfo | null;
-  onClick?: () => void;
-}) {
-  const { t } = useI18n();
-  if (!speaker) {
-    return (
-      <span
-        className="muted"
-        style={{
-          fontFamily: 'var(--font-serif)',
-          fontStyle: 'italic',
-          fontSize: 12,
-        }}
-      >
-        {t('scrubber.pausedItalic')}
-      </span>
-    );
-  }
-  const color = SP_COLORS[speaker.colorIdx % SP_COLORS.length];
-  const firstName = speaker.displayName.split(/\s+/)[0] ?? speaker.displayName;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      title={
-        onClick
-          ? t('scrubber.speakerJumpTitle', { name: speaker.displayName })
-          : undefined
-      }
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: 0,
-        background: 'none',
-        border: 'none',
-        fontSize: 12,
-        fontWeight: 500,
-        color: 'var(--ink)',
-        fontFamily: 'var(--font-sans)',
-        letterSpacing: '-0.005em',
-        cursor: onClick ? 'pointer' : 'default',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        maxWidth: '100%',
-        transition: 'color var(--duration-fast)',
-      }}
-      onMouseEnter={(e) => {
-        if (onClick) e.currentTarget.style.color = 'var(--accent)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.color = 'var(--ink)';
-      }}
-    >
-      <span
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: '50%',
-          background: color,
-          color: '#fff',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 8,
-          fontWeight: 600,
-          letterSpacing: '0.02em',
-          flexShrink: 0,
-        }}
-      >
-        {initials(speaker.displayName)}
-      </span>
-      <span
-        style={{
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        {firstName}
-      </span>
-    </button>
-  );
-}
-
-function initials(name: string): string {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase() ?? '')
-      .join('') || '·'
   );
 }
 

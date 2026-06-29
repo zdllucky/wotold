@@ -83,7 +83,7 @@ function TabsTrigger({ value, disabled, counter, children }: TabsTriggerProps) {
       {counter !== undefined && counter !== null && (
         <span
           className="mono"
-          style={{ marginLeft: 6, color: 'var(--muted)', fontSize: 12 }}
+          style={{ marginLeft: 6, color: 'var(--text-3)', fontSize: 12 }}
         >
           {counter}
         </span>

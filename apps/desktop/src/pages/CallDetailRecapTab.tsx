@@ -55,10 +55,10 @@ export function RecapTab({
             </div>
             <div
               style={{
-                fontFamily: 'var(--font-serif)',
+                fontFamily: 'var(--font)',
                 fontSize: 19,
                 lineHeight: 1.55,
-                color: 'var(--ink)',
+                color: 'var(--text)',
                 letterSpacing: '-0.005em',
               }}
             >
@@ -87,7 +87,7 @@ export function RecapTab({
             </div>
             <ol
               style={{
-                fontFamily: 'var(--font-serif)',
+                fontFamily: 'var(--font)',
                 fontSize: 16,
                 lineHeight: 1.6,
                 paddingLeft: 0,
@@ -102,7 +102,7 @@ export function RecapTab({
                     display: 'flex',
                     gap: 14,
                     padding: '6px 0',
-                    borderBottom: '1px dotted var(--line-soft)',
+                    borderBottom: '1px dotted var(--border-2)',
                   }}
                 >
                   <span
@@ -169,8 +169,8 @@ export function RecapTab({
       <aside>
         <div
           style={{
-            borderTop: '1px solid var(--line)',
-            borderBottom: '1px solid var(--line)',
+            borderTop: '1px solid var(--border)',
+            borderBottom: '1px solid var(--border)',
             padding: '14px 0',
             marginBottom: 18,
           }}
@@ -261,7 +261,7 @@ export function TaskRow({
         alignItems: 'baseline',
         gap: 12,
         padding: '12px 0',
-        borderBottom: '1px dotted var(--line-soft)',
+        borderBottom: '1px dotted var(--border-2)',
       }}
     >
       <span
@@ -269,13 +269,13 @@ export function TaskRow({
         style={{
           width: 16,
           height: 16,
-          border: `1.5px solid ${task.done ? 'var(--accent)' : 'var(--line)'}`,
+          border: `1.5px solid ${task.done ? 'var(--accent)' : 'var(--border)'}`,
           background: task.done ? 'var(--accent)' : 'transparent',
           borderRadius: 3,
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'var(--paper)',
+          color: 'var(--panel)',
           fontSize: 10,
           flexShrink: 0,
           position: 'relative',
@@ -287,9 +287,9 @@ export function TaskRow({
       <div style={{ flex: 1 }}>
         <div
           style={{
-            fontFamily: 'var(--font-serif)',
+            fontFamily: 'var(--font)',
             fontSize: 16,
-            color: 'var(--ink)',
+            color: 'var(--text)',
             textDecoration: task.done ? 'line-through' : 'none',
             opacity: task.done ? 0.55 : 1,
           }}

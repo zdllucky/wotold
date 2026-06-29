@@ -1,12 +1,11 @@
-/* [B17] Atelier v2 — global base. wotold.css уже устанавливает body,
- * box-sizing и focus-visible reset. Здесь — селекция, markdown типографика,
- * topnav drag-region (только Tauri-специфичные хвосты), и macOS traffic
- * lights padding.
+/* Wotold v2 — global base tail. wk.css устанавливает body / box-sizing /
+ * focus-visible reset. Здесь — селекция, markdown типографика, topnav
+ * drag-region (Tauri-специфичные хвосты) и macOS traffic-lights padding.
  */
 
 ::selection {
   background: var(--accent-soft);
-  color: var(--ink);
+  color: var(--text);
 }
 
 /* [Native UX] Tauri webview ≠ браузер.
@@ -88,50 +87,178 @@ button:disabled,
   min-height: 100vh;
 }
 
-/* [B16] macOS traffic lights — в Tauri titleBarStyle: 'Overlay' кружки
- * рисуются поверх окна. Левый padding 88px в .app-rail зарезервирован под
- * них, плюс drag-region. */
-.app-rail {
-  padding-top: 56px;
+/* [B18.1a] Wotold v2 shell rail — drag-region. Нативные светофоры скрыты
+ * (lib.rs hide_main_window_buttons), поэтому top-reserve минимальный — лого/
+ * иконки поднимаются к верху, кастомные светофоры (.win-controls) рисуются над. */
+.app > .rail,
+.app > .minirail {
+  padding-top: 8px;
   -webkit-app-region: drag;
 }
-.app-rail button,
-.app-rail a {
+.app > .rail button,
+.app > .rail a,
+.app > .rail input,
+.app > .rail .rail-resize,
+.app > .minirail button,
+.app > .minirail .rail-resize {
   -webkit-app-region: no-drag;
+}
+
+/* [window-drag] Drag окна — через data-tauri-drag-region="deep" на .view-head /
+ * .rail-head / .minirail / .win-controls (Tauri 2 уважает ТОЛЬКО атрибут; CSS
+ * -webkit-app-region — no-op). Кликабельные дети авто-блокируют drag. */
+
+/* [window-controls] macOS-светофор — fixed top-left, скрыт по умолчанию,
+ * раскрывается при наведении (App ставит data-chrome на .app; hover-зона —
+ * сам .win-controls). Высота = центру навбара (collapsed 48) / лого-ряда
+ * (expanded ~60). Глифы (.wc-glyph SVG) появляются на hover группы. */
+.win-controls {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 48px;
+  /* Закрыто — узкая угловая hover-зона (контент навбара/лого у левого края,
+   * без большого пустого отступа). На hover расширяется под светофоры. */
+  width: var(--wc-trigger);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 9px;
+  overflow: hidden;
+  z-index: 50;
+  transition: width var(--base) var(--ease);
+}
+.app[data-chrome='open'] .win-controls {
+  width: var(--wc-w);
+}
+/* В раскрытом рейле — центрировать под лого-ряд `.rail-head` (выше навбара). */
+.app:not([data-collapsed]) .win-controls {
+  height: 60px;
+}
+/* В fullscreen — нативная плашка сверху уже показывает кнопки; свои прячем. */
+.app[data-fullscreen] .win-controls {
+  display: none;
+}
+.wc-btn {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: none;
+  flex: 0 0 auto;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.62);
+  transition: opacity var(--fast) var(--ease), transform var(--fast) var(--ease);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.wc-btn--close {
+  background: var(--wc-close);
+}
+.wc-btn--min {
+  background: var(--wc-min);
+}
+.wc-btn--max {
+  background: var(--wc-max);
+}
+.app[data-chrome='open'] .wc-btn,
+.win-controls:focus-within .wc-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+/* [a11y] Видимый фокус-индикатор для keyboard-навигации (SC 2.4.11). */
+.wc-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Глифы (inline SVG) — скрыты, появляются на hover/focus группы (как нативные). */
+.wc-glyph {
+  width: 13px;
+  height: 13px;
+  display: block;
+  color: var(--wc-glyph);
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+.win-controls:hover .wc-glyph,
+.win-controls:focus-within .wc-glyph {
+  opacity: 1;
+}
+
+/* [expanded push] header рейла; лого едет вправо когда светофор раскрыт.
+ * Padding в классе (не инлайн), иначе data-chrome override не победит инлайн. */
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 8px;
+  transition: padding-left var(--base) var(--ease);
+}
+.app[data-chrome='open'] .rail-head {
+  padding-left: calc(var(--wc-w) + var(--s3));
+}
+
+/* [collapsed] Навбар на всю ширину окна поверх минирейла; минирейл встаёт под
+ * ним. Светофор ложится в зарезервированный левый угол навбара; на hover контент
+ * навбара чуть уходит правее. `.view-head` у всех 5 страниц — первый ребёнок
+ * корневого `.main`, поэтому правило одно. box-sizing:border-box → padding-top
+ * не ломает height:100vh. */
+.app[data-collapsed] .view-head {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 48px;
+  z-index: 40;
+  background: var(--bg);
+  /* По умолчанию контент у левого края (только узкий триггер); на hover уезжает
+   * вправо, освобождая место под светофоры. */
+  padding-left: var(--wc-trigger);
+  transition: padding-left var(--base) var(--ease);
+}
+.app[data-collapsed][data-chrome='open'] .view-head {
+  padding-left: calc(var(--wc-w) + var(--s2));
+}
+.app[data-collapsed] .main {
+  padding-top: 48px;
+}
+.app[data-collapsed] .minirail {
+  padding-top: 48px;
 }
 
 /* Markdown — recap и transcript-fallback. Serif first-class. */
 .markdown,
 .markdown p,
 .markdown li {
-  font-family: var(--font-serif);
+  font-family: var(--font);
   font-size: 17px;
   line-height: 1.6;
-  color: var(--ink);
+  color: var(--text);
 }
 
 .markdown h1 {
-  font-family: var(--font-serif);
-  font-size: var(--text-2xl);
+  font-family: var(--font);
+  font-size: 1.6rem;
   font-weight: 500;
   margin: 0 0 12px;
-  letter-spacing: var(--tracking-tight);
+  letter-spacing: -0.025em;
 }
 
 .markdown h2 {
-  font-family: var(--font-serif);
-  font-size: var(--text-lg);
+  font-family: var(--font);
+  font-size: 1.05rem;
   font-weight: 500;
   margin: 20px 0 8px;
 }
 
 .markdown h3 {
-  font-family: var(--font-sans);
+  font-family: var(--font);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--tracking-caps);
-  color: var(--muted);
+  letter-spacing: 0.13em;
+  color: var(--text-3);
   margin: 18px 0 8px;
 }
 
@@ -150,18 +277,18 @@ button:disabled,
 }
 
 .markdown code {
-  font-family: var(--font-mono);
+  font-family: var(--mono);
   font-size: 0.88em;
-  background: var(--bg-2);
+  background: var(--sunken);
   padding: 0.08rem 4px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-xs);
 }
 
 .markdown pre {
-  font-family: var(--font-mono);
-  background: var(--bg-2);
+  font-family: var(--mono);
+  background: var(--sunken);
   padding: 14px;
-  border-radius: var(--radius-md);
+  border-radius: var(--r-sm);
   overflow-x: auto;
   font-size: 13px;
   line-height: 1.5;
@@ -173,7 +300,7 @@ button:disabled,
 
 .markdown em {
   font-style: italic;
-  color: var(--muted);
+  color: var(--text-3);
 }
 
 .markdown a {
@@ -189,11 +316,6 @@ button:disabled,
 /* Responsive — Tauri minimum window 760×560. Narrow desktop / split-pane
  * — сужаем main padding и сворачиваем 4-col grids. */
 @media (max-width: 880px) {
-  .app-rail {
-    width: 168px;
-    padding-left: 12px;
-    padding-right: 12px;
-  }
   .app-main {
     padding: 24px 22px;
   }
@@ -202,38 +324,10 @@ button:disabled,
 @media (max-width: 640px) {
   /* [B17] Column layout — снимаем 100vh / overflow:hidden чтобы шапка не
    * фиксировалась, и страница скроллится естественно. */
-  .app-shell {
-    flex-direction: column;
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-  }
-  .app-rail {
-    width: 100%;
-    height: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    border-right: none;
-    border-bottom: 1px solid var(--line-soft);
-    padding: 12px 16px;
-    overflow: visible;
-    overscroll-behavior: auto;
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    background: var(--paper);
-  }
   .app-main {
     height: auto;
     overflow: visible;
     overscroll-behavior: auto;
-  }
-  .app-rail-foot {
-    display: none;
-  }
-  .app-brand {
-    margin-bottom: 0;
-    margin-right: 14px;
   }
   .nav-item--active::before {
     display: none;

@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { CallSpeakerView } from '../api/speakers';
-import { Empty } from '../ui';
+import { Avatar, Empty, Icon } from '../ui';
 import { useI18n } from '../i18n';
 import { humanSpeakerLabel } from '../utils/callMeta';
 
@@ -67,9 +67,9 @@ function hashTag(tag: string): number {
 }
 
 function colorVarFor(tag: string): string {
-  if (tag === OWNER_TAG) return 'var(--sp-1)';
+  if (tag === OWNER_TAG) return 'var(--sp1)';
   const idx = (hashTag(tag) % 4) + 2; // 2..5
-  return `var(--sp-${idx})`;
+  return `var(--sp${idx})`;
 }
 
 function formatTimecode(sec: number): string {
@@ -111,12 +111,7 @@ interface Props {
   currentTime?: number;
   /** Клик по блоку → seek в начало этого блока. */
   onSeek?: (seconds: number) => void;
-  /** Клик по «? Кто это?» chip → открывает SpeakerConfirmModal на заданном теге. */
-  onIdentifySpeaker?: (speakerTag: string) => void;
-  /** [P-fix10] One-shot каскад появления строк (после генерации). reduced-motion
-   *  → мгновенно. */
-  reveal?: boolean;
-  /** [P-fix10] Идёт STT и расшифровки ещё нет → ghost-строки (shimmer) вместо
+  /** [P-fix10] Идёт STT и расшифровки ещё нет → ghost-строки (skeleton) вместо
    *  пустоты, чтобы не казалось зависшим. */
   generating?: boolean;
 }
@@ -134,38 +129,16 @@ function buildLabelMap(speakers?: CallSpeakerView[]): Map<string, string> {
   return m;
 }
 
-/** Set теэгов, которые ещё не подтверждены — для них показываем «Кто это?» chip. */
-function buildUnconfirmedSet(speakers?: CallSpeakerView[]): Set<string> {
-  const s = new Set<string>();
-  if (!speakers) return s;
-  for (const sp of speakers) {
-    if (!sp.confirmed) s.add(sp.speaker_tag);
-  }
-  return s;
-}
-
 export function InteractiveTranscript({
   rawSttJson,
   fallbackMd,
   speakers,
   currentTime,
   onSeek,
-  onIdentifySpeaker,
-  reveal = false,
   generating = false,
 }: Props) {
   const { t } = useI18n();
-  // [P-fix10] reduced-motion → не вешаем reveal-класс (иначе строки залипли бы
-  // на opacity:0 если нет CSS-override). Текст всегда доступен.
-  const revealRows =
-    reveal &&
-    !(
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    );
   const labels = useMemo(() => buildLabelMap(speakers), [speakers]);
-  const unconfirmed = useMemo(() => buildUnconfirmedSet(speakers), [speakers]);
   const segments: Segment[] | null = useMemo(() => {
     if (!rawSttJson) return null;
     const parsed = parseRawStt(rawSttJson);
@@ -209,16 +182,27 @@ export function InteractiveTranscript({
     // [P-fix10] Идёт STT — ghost-строки (shimmer) вместо пустоты.
     if (generating) {
       return (
-        <div
-          className="transcript"
-          aria-busy="true"
-          aria-label={t('callDetail.generatingTranscript')}
-        >
+        <div aria-busy="true" aria-label={t('callDetail.generatingTranscript')}>
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="transcript-row transcript-row--ghost">
-              <div className="transcript-speaker" />
-              <div className="transcript-text" />
-              <div className="transcript-time" />
+            <div key={i} className="turn">
+              <div>
+                <div className="turn-sp">
+                  <span
+                    className="skeleton"
+                    style={{ width: 20, height: 20, borderRadius: '50%' }}
+                  />
+                  <span
+                    className="skeleton"
+                    style={{ width: 56, height: 9, borderRadius: 'var(--r-xs)' }}
+                  />
+                </div>
+              </div>
+              <div className="turn-text">
+                <span
+                  className="skeleton"
+                  style={{ display: 'block', width: '85%', height: 12, borderRadius: 'var(--r-xs)' }}
+                />
+              </div>
             </div>
           ))}
         </div>
@@ -228,7 +212,7 @@ export function InteractiveTranscript({
   }
 
   return (
-    <div className="transcript">
+    <div>
       {groups.map((g, idx) => {
         const start = g.segments[0]?.start ?? 0;
         const color = colorVarFor(g.tag);
@@ -251,25 +235,11 @@ export function InteractiveTranscript({
             key={`${g.tag}-${idx}`}
             ref={isActive ? activeRowRef : undefined}
             className={
-              revealRows ? 'transcript-row transcript-row--streaming' : 'transcript-row'
+              'turn' +
+              (isClickable ? ' turn--seek' : '') +
+              (isActive ? ' turn--active' : '')
             }
             onClick={isClickable ? () => onSeek!(start) : undefined}
-            style={{
-              cursor: isClickable ? 'pointer' : 'default',
-              background: isActive ? 'var(--accent-soft)' : 'transparent',
-              borderLeft: isActive
-                ? `3px solid ${color}`
-                : '3px solid transparent',
-              paddingLeft: 9,
-              marginLeft: -12,
-              borderRadius: 'var(--radius-sm)',
-              transition:
-                'background var(--duration-fast), border-color var(--duration-fast)',
-              // [P-fix10] Каскад: каждая строка появляется с задержкой (cap ~1.4s).
-              ...(revealRows
-                ? { animationDelay: `${Math.min(idx, 40) * 35}ms` }
-                : {}),
-            }}
             role={isClickable ? 'button' : undefined}
             tabIndex={isClickable ? 0 : undefined}
             onKeyDown={
@@ -283,27 +253,25 @@ export function InteractiveTranscript({
                 : undefined
             }
           >
-            <div className="transcript-speaker" style={{ color }}>
-              {firstName}
-              {unconfirmed.has(g.tag) && onIdentifySpeaker && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onIdentifySpeaker(g.tag);
-                  }}
-                  className="transcript-identify-chip"
-                  title={t('speakers.transcriptIdentifyTitle')}
-                  aria-label={t('speakers.transcriptIdentifyAria', { tag: g.tag })}
-                >
-                  {t('speakers.transcriptIdentifyChip')}
-                </button>
-              )}
+            <div>
+              <div className="turn-sp" style={{ color }}>
+                <Avatar name={firstName} color={color} size={20} />
+                {firstName}
+              </div>
+              <div className="turn-time">
+                {formatTimecode(start)}
+                {isClickable && (
+                  <Icon
+                    name="play"
+                    size={9}
+                    style={{ marginLeft: 4, opacity: isActive ? 1 : 0 }}
+                  />
+                )}
+              </div>
             </div>
-            <div className="transcript-text">
+            <div className="turn-text">
               {text || <span className="subtle">…</span>}
             </div>
-            <div className="transcript-time">{formatTimecode(start)}</div>
           </div>
         );
       })}

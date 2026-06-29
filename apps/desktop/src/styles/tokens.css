@@ -1,218 +1,128 @@
 /* ─────────────────────────────────────────────────────────────
-   Wotold · Design Tokens (Atelier v2)
-   Drop-in replacement for apps/desktop/src/styles/tokens.css
+   Wotold · Design Tokens (Wotold v2 — uikit)
+   Источник: ~/Downloads/Wotold v2/uikit.css §1 TOKENS. ROADMAP §B18.0.
 
-   Theme:  set data-theme="light" | "dark" on <html> or <body>
-   Accent: set data-accent="persian" | "ink" | "bordeaux" (default: persian)
-
-   Switching theme is one attribute change. No re-render needed.
+   Тема:  data-theme="light" | "dark" на <html> (одна атрибут-смена).
+   Акцент: МОНО-ГРАФИТ (ink) — один набор, без data-accent (решение B18.0).
+   Density: фикс cozy (data-density="cozy") — compact-токены живут в wk.css.
    ───────────────────────────────────────────────────────────── */
 
 :root {
-  color-scheme: light dark;
+  /* type */
+  --font: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* ── Type stacks ────────────────────────────────────── */
-  --font-serif: 'Source Serif 4', 'IBM Plex Serif', Georgia, serif;
-  --font-sans:  'DM Sans', 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --t-11: 11px; --t-12: 12px; --t-13: 13px; --t-14: 14px;
+  --t-15: 15px; --t-16: 16px; --t-18: 18px; --t-22: 22px; --t-28: 28px;
 
-  /* Back-compat with old codebase naming */
-  --font-system: var(--font-sans);
+  /* spacing — 4px base */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px;
+  --s6: 24px; --s7: 32px; --s8: 40px; --s9: 56px;
 
-  /* ── Type scale ─────────────────────────────────────── */
-  --text-xs:       0.72rem;   /* 11.5px */
-  --text-sm:       0.82rem;   /* 13px   */
-  --text-base:     0.92rem;   /* 14.7px */
-  --text-lg:       1.05rem;   /* 16.8px */
-  --text-xl:       1.25rem;   /* 20px   */
-  --text-2xl:      1.6rem;    /* 25.6px */
-  --text-display:  2.1rem;    /* 33.6px */
-  --text-hero:     3.4rem;    /* 54.4px */
+  /* radius */
+  --r-xs: 4px; --r-sm: 6px; --r: 8px; --r-md: 10px; --r-lg: 14px; --r-xl: 18px; --r-pill: 999px;
 
-  --leading-tight:   1.15;
-  --leading-snug:    1.3;
-  --leading-normal:  1.5;
-  --leading-relaxed: 1.6;
+  /* motion */
+  --fast: 110ms; --base: 180ms; --slow: 320ms;
+  --ease: cubic-bezier(.2, .8, .2, 1);
 
-  --tracking-tight:  -0.025em;
-  --tracking-snug:   -0.01em;
-  --tracking-normal: 0;
-  --tracking-wide:   0.04em;
-  --tracking-caps:   0.13em;
+  /* speaker palette (theme-tuned below for dark) */
+  --sp1: #5B5BD6; --sp2: #0E9888; --sp3: #C2410C; --sp4: #9333EA; --sp5: #1D7AD1;
 
-  /* ── Spacing — 4px base ─────────────────────────────── */
-  --space-0: 0;
-  --space-1: 0.25rem;   /* 4px */
-  --space-2: 0.5rem;    /* 8px */
-  --space-3: 0.75rem;   /* 12px */
-  --space-4: 1rem;      /* 16px */
-  --space-5: 1.25rem;   /* 20px */
-  --space-6: 1.5rem;    /* 24px */
-  --space-7: 2rem;      /* 32px */
-  --space-8: 3rem;      /* 48px */
-  --space-9: 4rem;      /* 64px */
+  /* window controls — macOS traffic lights. Функциональные оконные цвета
+   * (одинаковы в light/dark, как нативные); исключение из графит-моно. */
+  --wc-close: #FF5F57; --wc-min: #FEBC2E; --wc-max: #28C840;
+  --wc-glyph: rgba(0, 0, 0, .55); --wc-w: 60px; --wc-trigger: 20px;
 
-  /* ── Radius ─────────────────────────────────────────── */
-  --radius-sm:    4px;
-  --radius-md:    6px;
-  --radius-lg:    10px;
-  --radius-xl:    16px;
-  --radius-pill:  999px;
-
-  /* ── Motion ─────────────────────────────────────────── */
-  --duration-fast:   120ms;
-  --duration-normal: 220ms;
-  --duration-slow:   360ms;
-  --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-out-quart:  cubic-bezier(0.25, 1, 0.5, 1);
-
-  /* ── Layout caps ────────────────────────────────────── */
-  --layout-max-narrow:  28rem;
-  --layout-max-content: 36rem;
-  --layout-max-wide:    44rem;
-
-  /* ── Speaker / track palette ────────────────────────── */
-  /* Intermediate hues — readable on both light and dark backgrounds.
-     Used as solid backgrounds with white text on avatars and dots. */
-  --sp-1: #3D5BAB;  /* Owner (You) — cobalt */
-  --sp-2: #2E8C5F;  /* emerald */
-  --sp-3: #B86842;  /* rust */
-  --sp-4: #7958C7;  /* indigo */
-  --sp-5: #3D87A4;  /* teal */
+  --rail-w: 256px;
 }
 
-/* ═══════════════════════════════════════════════════════
-   LIGHT theme (default)
-   ═══════════════════════════════════════════════════════ */
-:root,
-[data-theme="light"] {
-  --bg:           #F4F4F2;
-  --bg-2:         #ECECE8;
-  --paper:        #FCFCFA;
-  --surface:      #FFFFFF;
-  --surface-raised: #FFFFFF;
+/* LIGHT */
+:root, [data-theme="light"] {
+  color-scheme: light;
 
-  --line:         #E1E0DA;
-  --line-soft:    #ECEAE3;
-  --line-strong:  #C8C7C0;
+  --bg: #FAFAFB;
+  --sunken: #F2F3F5;
+  --panel: #FFFFFF;
+  --raised: #FFFFFF;
+  --hover: #F3F4F6;
+  --active: #ECEDF1;
 
-  --ink:          #14151A;
-  --ink-2:        #2A2B30;
-  --muted:        #6B6C72;
-  --subtle:       #9C9D9F;
+  --border: #E9EAEE;
+  --border-2: #DFE1E6;
+  --border-strong: #CFD2DA;
 
-  /* Accent — default Bordeaux (oxblood wine) */
-  --accent:       #7E1F2A;
-  --accent-hover: #8E2536;
-  --accent-soft:  #F2DCDF;
-  --accent-fg:    #FFFFFF;
+  --text: #1A1B23;
+  --text-2: #4A4C57;
+  --text-3: #71747F;
+  --text-faint: #9C9FAB;
 
-  /* Signal — record / danger. Always red, both themes. */
-  --signal:       #DC2626;
-  --signal-soft:  #FCE7E7;
-  --signal-fg:    #FFFFFF;
+  /* accent — моно-графит (ink), единый набор (B18.0) */
+  --accent: #3C3D49;
+  --accent-hover: #30313B;
+  --accent-press: #282933;
+  --accent-soft: #EDEEF1;
+  --accent-line: #DEDFE5;
+  --accent-text: #3C3D49;
+  --on-accent: #FFFFFF;
 
-  --success:      #15803D;
-  --success-soft: #DCFCE7;
-  --warning:      #B45309;
-  --warning-soft: #FEF3C7;
+  --danger: #E0484D;
+  --danger-soft: #FDECEC;
+  --danger-text: #C5363B;
+  --ok: #1F9D63;
+  --ok-soft: #E7F6EE;
+  --warn: #C2710C;
+  --warn-soft: #FBF0DE;
+  --info-soft: #E8F1FC;
 
-  --shadow-1: 0 1px 2px rgba(20, 21, 26, 0.06);
-  --shadow-2: 0 6px 18px -4px rgba(20, 21, 26, 0.08), 0 1px 2px rgba(20, 21, 26, 0.05);
-  --shadow-3: 0 24px 48px -16px rgba(20, 21, 26, 0.18), 0 2px 6px rgba(20, 21, 26, 0.06);
-
-  --blur-overlay: 12px;
+  --shadow-sm: 0 1px 2px rgba(17,18,28,.06);
+  --shadow: 0 4px 14px -2px rgba(17,18,28,.10), 0 1px 3px rgba(17,18,28,.06);
+  --shadow-lg: 0 18px 44px -14px rgba(17,18,28,.26), 0 4px 12px rgba(17,18,28,.08);
+  --blur: 8px;
 }
 
-/* ═══════════════════════════════════════════════════════
-   DARK theme
-   ═══════════════════════════════════════════════════════ */
+/* DARK */
 [data-theme="dark"] {
-  --bg:           #15161B;
-  --bg-2:         #1B1D24;
-  --paper:        #1E2027;
-  --surface:      #23252D;
-  --surface-raised: #2A2C35;
-
-  --line:         #2E3038;
-  --line-soft:    #262830;
-  --line-strong:  #3E4049;
-
-  --ink:          #E6E6E3;
-  --ink-2:        #C8C8C5;
-  --muted:        #8E8F95;
-  --subtle:       #5D5E64;
-
-  --accent:       #D45A6B;
-  --accent-hover: #E47585;
-  --accent-soft:  rgba(212, 90, 107, 0.18);
-  --accent-fg:    #15161B;
-
-  --signal:       #F87171;
-  --signal-soft:  rgba(248, 113, 113, 0.16);
-  --signal-fg:    #15161B;
-
-  --success:      #4ADE80;
-  --success-soft: rgba(74, 222, 128, 0.16);
-  --warning:      #FBBF24;
-  --warning-soft: rgba(251, 191, 36, 0.16);
-
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.5);
-  --shadow-3: 0 24px 48px rgba(0, 0, 0, 0.65);
-
-  /* Speaker palette — slightly brighter for dark legibility */
-  --sp-1: #6B92E8;
-  --sp-2: #5DD39E;
-  --sp-3: #F0A672;
-  --sp-4: #A78BFA;
-  --sp-5: #5EC2D9;
-
   color-scheme: dark;
-}
 
-/* ═══════════════════════════════════════════════════════
-   ACCENT swatches — orthogonal to theme
-   Combine: data-theme="dark" data-accent="persian"
-   ═══════════════════════════════════════════════════════ */
-[data-accent="persian"] {
-  --accent:       #1E3A8A;
-  --accent-hover: #1E40AF;
-  --accent-soft:  #DBE4F6;
-  --accent-fg:    #FFFFFF;
-}
-[data-theme="dark"][data-accent="persian"],
-[data-accent="persian"][data-theme="dark"] {
-  --accent:       #6B92E8;
-  --accent-hover: #84A5EE;
-  --accent-soft:  rgba(107, 146, 232, 0.18);
-  --accent-fg:    #0F1116;
-}
+  --bg: #0D0D11;
+  --sunken: #141419;
+  --panel: #17171D;
+  --raised: #1E1E25;
+  --hover: #20212A;
+  --active: #282935;
 
-[data-accent="ink"] {
-  --accent:       #1A1B20;
-  --accent-hover: #2B2C32;
-  --accent-soft:  #E5E4DE;
-  --accent-fg:    #F4F4F2;
-}
-[data-theme="dark"][data-accent="ink"],
-[data-accent="ink"][data-theme="dark"] {
-  --accent:       #E8E8E5;
-  --accent-hover: #FFFFFF;
-  --accent-soft:  rgba(232, 232, 229, 0.16);
-  --accent-fg:    #15161B;
-}
+  --border: #26272F;
+  --border-2: #2E2F39;
+  --border-strong: #3A3B47;
 
-[data-accent="bordeaux"] {
-  --accent:       #7E1F2A;
-  --accent-hover: #8E2536;
-  --accent-soft:  #F2DCDF;
-  --accent-fg:    #FFFFFF;
-}
-[data-theme="dark"][data-accent="bordeaux"],
-[data-accent="bordeaux"][data-theme="dark"] {
-  --accent:       #D45A6B;
-  --accent-hover: #E47585;
-  --accent-soft:  rgba(212, 90, 107, 0.18);
-  --accent-fg:    #15161B;
+  --text: #ECEDF1;
+  --text-2: #B4B6C0;
+  --text-3: #83868F;
+  --text-faint: #5C5E68;
+
+  /* accent — моно-графит (ink) dark */
+  --accent: #C8CAD3;
+  --accent-hover: #D5D7DE;
+  --accent-press: #DEE0E6;
+  --accent-soft: #20212A;
+  --accent-line: #2F303A;
+  --accent-text: #D1D3DB;
+  --on-accent: #15151E;
+
+  --danger: #F0686C;
+  --danger-soft: #2A1719;
+  --danger-text: #F58A8D;
+  --ok: #4ED08A;
+  --ok-soft: #14241B;
+  --warn: #E0A24A;
+  --warn-soft: #2A2113;
+  --info-soft: #142133;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+  --shadow: 0 6px 18px rgba(0,0,0,.55);
+  --shadow-lg: 0 24px 56px rgba(0,0,0,.7);
+  --blur: 10px;
+
+  --sp1: #8B8BF7; --sp2: #3FCBA9; --sp3: #E68A55; --sp4: #BE82F0; --sp5: #5BA7E8;
 }

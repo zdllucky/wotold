@@ -10,6 +10,8 @@ interface RecEqProps {
   paused?: boolean;
   /** Optional rolling RMS history (0..1). Last 3 entries used as bar heights. */
   levels?: number[];
+  /** Бары наследуют цвет текста (currentColor) — для красных danger-кнопок. */
+  inherit?: boolean;
 }
 
 const MIN_HEIGHT = 3;
@@ -22,7 +24,7 @@ function barHeight(level: number): number {
   return MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * boosted;
 }
 
-export function RecEq({ paused = false, levels }: RecEqProps) {
+export function RecEq({ paused = false, levels, inherit = false }: RecEqProps) {
   const useReal = !paused && levels !== undefined && levels.length >= 3;
   // Take the last 3 samples — most recent right-most bar.
   const recent = useReal ? levels.slice(-3) : [0, 0, 0];
@@ -31,7 +33,7 @@ export function RecEq({ paused = false, levels }: RecEqProps) {
     <span
       className={`rec-eq${paused ? ' rec-eq--paused' : ''}${
         useReal ? ' rec-eq--live' : ''
-      }`}
+      }${inherit ? ' rec-eq--inherit' : ''}`}
       aria-hidden="true"
     >
       <span

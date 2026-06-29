@@ -20,24 +20,20 @@ import {
 import { retryChunk } from '../api/recording';
 import { humanError } from '../api/errors';
 import { engineLabelHuman } from '../utils/engineLabel';
-import { Tabs } from '../ui';
+import { Dropdown, Icon, IconBtn, MenuItem, MenuSep, Tabs } from '../ui';
 import {
   AutoBoundBanner,
   CallDetailSkeleton,
   CallTypeBadge,
-  DecisionsBlock,
   ErrorScreen,
-  HeaderActions,
   LegacyRecapBanner,
-  MdPanel,
-  OpenQuestionsBlock,
-  ParticipantsRow,
   PrivacyDisclaimer,
   ProcessingPanel,
   RecapRegenSuggestionStrip,
+  RecapView,
   ReprocessBanner,
-  TasksPanel,
 } from '../components/call-detail';
+import { CallRail } from '../components/call-detail/CallRail';
 import { AudioScrubber } from '../components/AudioScrubber';
 import { InteractiveTranscript } from '../components/InteractiveTranscript';
 import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
@@ -45,16 +41,13 @@ import { EngineChip } from '../components/EngineChip';
 import { CallStateTag, ProgressRail } from '../components/call-state';
 import { useCallAudio } from '../hooks/useCallAudio';
 import { useCallDetail } from '../hooks/useCallDetail';
-import { useI18n } from '../i18n';
-import { SpeakersSection, extractSamples } from './SpeakersSection';
-import {
-  findSpeakerAtTime,
-  formatHeaderMeta,
-  hashCallId,
-  simpleDateTitle,
-} from '../utils/callMeta';
+import { bcp47, useI18n } from '../i18n';
+import { extractSamples } from './SpeakersSection';
+import { formatDur } from './CallDetailUtils';
+import { hashCallId, simpleDateTitle } from '../utils/callMeta';
 
-type Tab = 'recap' | 'transcript' | 'tasks' | 'speakers';
+// [B18.3a] v2 IA: 2 tabs. Tasks fold into Recap; speakers move to CallRail.
+type Tab = 'recap' | 'transcript';
 
 interface CallDetailPageProps {
   callId: string;
@@ -62,19 +55,16 @@ interface CallDetailPageProps {
 }
 
 export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const {
     call,
     setCall,
     recap,
     transcript,
     rawStt,
-    tasks,
     contacts,
     speakers: speakersLite,
     chunks,
-    decisions,
-    openQuestions,
     micSrc,
     systemSrc,
     recapElapsedSec,
@@ -104,13 +94,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   // [B17 V3.2] Single audio source — shared между AudioScrubber и
   // InteractiveTranscript (для highlight current + click-to-seek).
   const audio = useCallAudio(callId, call?.duration_sec ?? 0);
-
-  // [B17 V3.3] Current speaker info — derived from rawStt segments + audio
-  // currentTime. Используется в AudioScrubber SpeakerChip.
-  const currentSpeaker = useMemo(
-    () => findSpeakerAtTime(rawStt, speakersLite, audio.currentTime),
-    [rawStt, speakersLite, audio.currentTime],
-  );
 
   // [B17 V4.1] Per-tag sample bubble (text + start/end/src) — для модала
   // и (потенциально) для будущего sample-row inline-feature в транскрипте.
@@ -299,85 +282,144 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   if (loading) return <CallDetailSkeleton onBack={onBack} />;
   if (error)
     return (
-      <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+      <p role="alert" style={{ color: 'var(--danger)', fontFamily: 'var(--font)' }}>
         {error}
       </p>
     );
   if (!call) return <p className="muted">{t('callDetail.notFound')}</p>;
 
+  const title = call.title?.trim() || simpleDateTitle(call);
+  const hasFailedChunks = (chunks ?? []).some((c) => c.status === 'failed');
+
   return (
-    // [B17 V3.8] flex column + minHeight: 100% — scrubber последний child
-    // получает marginTop: auto и прижимается к низу .app-main scroll viewport.
-    // Без этого при коротком контенте (например пустой recap) sticky bottom
-    // не активируется, scrubber висит в середине экрана.
-    <section
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100%',
-      }}
-    >
-      <button
-        type="button"
-        className="btn btn--quiet"
-        onClick={onBack}
-        style={{ marginBottom: 18, paddingLeft: 0 }}
-      >
-        {t('common.backAll')}
-      </button>
-
-      <header style={{ marginBottom: 22, position: 'relative' }}>
-        {/* Meta — human Russian per reference §5: ВТОРНИК · 19 МАЯ · 11:24 · 32 МИН 14 СЕК */}
-        <div
-          className="small-caps"
-          style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}
+    // [B18.9] v2 IA: shared `.view-head` breadcrumb bar at the very top
+    // (Звонки › <title> + kebab), then the existing two-column body below.
+    // `.main` gives the flex column + relative positioning; negative margins
+    // pull the bar full-bleed across the padded `.app-main` scroll viewport.
+    <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
+      <div className="view-head" data-tauri-drag-region="deep">
+        {/* Back to inbox — plain text button, no border/bg (prototype CallView). */}
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--text-3)',
+            fontSize: 'var(--t-13)',
+            padding: 0,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--text)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--text-3)';
+          }}
         >
-          {formatHeaderMeta(call)}
-          {call.processing_via && (
-            <EngineChip kind={call.processing_via} variant="header" />
+          {t('common.backAll')}
+        </button>
+        <Icon name="chevronRight" size={13} style={{ color: 'var(--text-faint)' }} />
+        <span className="u-trunc" style={{ fontWeight: 600, maxWidth: 360 }}>
+          {title}
+        </span>
+        <div style={{ flex: 1 }} />
+        {/* Action overflow — kebab folding the former HeaderActions menu
+            (reprocess / regenerate-recap / regenerate-title / export / delete)
+            into a shared Dropdown wired to the same handlers. */}
+        <Dropdown
+          align="right"
+          width={200}
+          trigger={({ open, toggle }) => (
+            <IconBtn
+              icon="dots"
+              onClick={toggle}
+              label={t('callDetail.actionsAria')}
+              hasPopup
+              expanded={open}
+            />
           )}
-          {/* [M14 T-11] Тип звонка (sales/standup/1:1/...) — chip справа от engine. */}
-          <CallTypeBadge
-            callType={call.call_type}
-            confidence={call.call_type_confidence}
-          />
-        </div>
-
-        {/* Title — LLM-generated если есть, иначе простой fallback "Звонок · 20 мая" */}
-        <h1
-          className="title"
-          style={{ fontSize: 36, margin: 0, marginBottom: 14 }}
         >
-          {call.title?.trim() || simpleDateTitle(call)}
-        </h1>
+          <MenuItem
+            icon="refresh"
+            disabled={reprocessing || deleting || exporting || bgBusy || hasFailedChunks}
+            title={hasFailedChunks ? t('chunkProgress.resumeBlockedHint') : undefined}
+            onClick={() => void onReprocess()}
+          >
+            {reprocessing ? t('callDetail.reprocessing') : t('callDetail.reprocess')}
+          </MenuItem>
+          <MenuItem
+            icon="sparkle"
+            disabled={bgBusy || !transcript || reprocessing || deleting || exporting}
+            onClick={() => void onRegenerateRecap()}
+          >
+            {bgBusy
+              ? recapElapsedSec !== null
+                ? t('callDetail.regeneratingWithElapsed', { sec: recapElapsedSec })
+                : t('callDetail.regenerating')
+              : t('callDetail.regenerateRecap')}
+          </MenuItem>
+          <MenuItem
+            icon="edit"
+            disabled={bgBusy || !transcript || reprocessing || deleting || exporting}
+            onClick={() => void onRegenerateTitle()}
+          >
+            {bgBusy ? t('callDetail.regeneratingTitle') : t('callDetail.regenerateTitle')}
+          </MenuItem>
+          <MenuItem
+            icon="download"
+            disabled={exporting || reprocessing || deleting || bgBusy}
+            onClick={() => void onExportMarkdown()}
+          >
+            {exporting ? t('callDetail.exporting') : t('callDetail.exportMd')}
+          </MenuItem>
+          <MenuSep />
+          <MenuItem
+            icon="trash"
+            danger
+            disabled={deleting || reprocessing || exporting}
+            onClick={() => void onDelete()}
+          >
+            {deleting ? t('common.deleting') : t('common.delete')}
+          </MenuItem>
+        </Dropdown>
+      </div>
 
-        {/* Action overflow — kebab menu top-right с reprocess/regenerate-recap/
-            regenerate-title (M14 T-17)/export/delete */}
-        <HeaderActions
-          onReprocess={() => void onReprocess()}
-          onRegenerateRecap={() => void onRegenerateRecap()}
-          onRegenerateTitle={() => void onRegenerateTitle()}
-          onExport={() => void onExportMarkdown()}
-          onDelete={onDelete}
-          reprocessing={reprocessing}
-          regenerating={bgBusy}
-          regenerateDisabled={!transcript}
-          regeneratingTitle={bgBusy}
-          regenerateTitleDisabled={!transcript}
-          exporting={exporting}
-          deleting={deleting}
-          recapElapsedSec={recapElapsedSec}
-          hasFailedChunks={(chunks ?? []).some((c) => c.status === 'failed')}
-        />
-
-        {/* Participants chips — same row после title */}
-        {speakersLite.length > 0 && (
-          <ParticipantsRow
-            speakers={speakersLite}
-            onConfirmAnonymous={(s) => setConfirmingTag(s.speaker_tag)}
-          />
-        )}
-      </header>
+      {/* [call-detail] Wotold v2 body (прототип CallView): .view-body (flex row)
+          → doc-колонка (.content.doc-wrap > .doc-scroll > .doc, max-width 720 по
+          центру, собственный скролл) с плеером .player-dock у низа + CallRail. */}
+      <div className="view-body">
+        <div className="content doc-wrap">
+          <div className="doc-scroll scroll">
+            <div className="doc" style={{ paddingBottom: 104 }}>
+              <h1 className="doc-title">{title}</h1>
+              {/* Meta-чипы — время · длительность · движок · тип (прототип CallView). */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 6,
+                  alignItems: 'center',
+                  margin: '12px 0 4px',
+                }}
+              >
+                <span className="chip">
+                  <Icon name="clock" size={11} />
+                  {fmtClock(call.started_at, locale)}
+                </span>
+                <span className="chip">
+                  <Icon name="waveform" size={11} />
+                  {formatDur(call.duration_sec ?? 0)}
+                </span>
+                {call.processing_via && (
+                  <EngineChip kind={call.processing_via} variant="header" />
+                )}
+                {/* [M14 T-11] Тип звонка (sales/standup/1:1/...) — chip справа от движка. */}
+                <CallTypeBadge
+                  callType={call.call_type}
+                  confidence={call.call_type_confidence}
+                />
+              </div>
 
       {/* [V8] Если есть прежние артефакты (recap или transcript) → это
           reprocess, рендерим компактный баннер с Cancel и оставляем старый
@@ -430,7 +472,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           call={call}
           reprocessing={reprocessing}
           onRetry={() => void onReprocess()}
-          hasFailedChunks={(chunks ?? []).some((c) => c.status === 'failed')}
+          hasFailedChunks={hasFailedChunks}
         />
       )}
 
@@ -439,10 +481,10 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           className="card"
           style={{
             marginBottom: 18,
-            borderColor: 'var(--warning)',
+            borderColor: 'var(--warn)',
           }}
         >
-          <div className="small-caps" style={{ color: 'var(--warning)', marginBottom: 6 }}>
+          <div className="small-caps" style={{ color: 'var(--warn)', marginBottom: 6 }}>
             {t('callDetail.recapFailBadge')}
             {/* [Bug-fix] Engine label — показывает какой движок обслуживал
                 последнюю (упавшую) попытку. Помогает понять stale-cloud-error
@@ -464,7 +506,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           </div>
           <p
             style={{
-              fontFamily: 'var(--font-serif)',
+              fontFamily: 'var(--font)',
               fontSize: 16,
               margin: '0 0 14px',
             }}
@@ -523,7 +565,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
         <Tabs.List>
-          {(['recap', 'transcript', 'tasks', 'speakers'] as Tab[]).map((tabId) => (
+          {(['transcript', 'recap'] as Tab[]).map((tabId) => (
             <Tabs.Trigger key={tabId} value={tabId}>
               {tabLabel(tabId, t)}
             </Tabs.Trigger>
@@ -531,32 +573,15 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         </Tabs.List>
 
         <Tabs.Panel value="recap">
-          {/* [V5.4] Кнопка «↻ Пересоздать саммари» перенесена в kebab
-              menu (HeaderActions) — было два «обращения» к одной операции,
-              UI clutter. Failed-banner внизу всё ещё имеет inline CTA
-              для retry, потому что там это критичный fix-state. */}
           {/* [M14 T-11] PrivacyDisclaimer для one_on_one — undismissable
-              напоминание о приватности перед content. */}
+              напоминание о приватности перед content (privacy-first). */}
           {call.call_type === 'one_on_one' && <PrivacyDisclaimer />}
-          {/* [M14 T-11] V2 structured blocks выше markdown — surfaces
-              key takeaways первыми (Granola/Fireflies pattern). При пустых
-              decisions/openQuestions блоки рендерят null. */}
-          <DecisionsBlock
-            decisions={decisions}
-            onJumpToTranscript={(ms) => {
-              setTab('transcript');
-              audio.seek(ms / 1000);
-            }}
-          />
-          <OpenQuestionsBlock
-            openQuestions={openQuestions}
-            onJumpToTranscript={(ms) => {
-              setTab('transcript');
-              audio.seek(ms / 1000);
-            }}
-          />
-          <MdPanel
-            md={recap}
+          {/* [call-detail] Recap = Wotold v2 макет: rich/markdown toggle + copy.
+              Структурные блоки (decisions/open-questions/tasks/evidence) сведены
+              к markdown-документу по решению редизайна — данные продолжают
+              извлекаться, но в этом табе не рендерятся отдельными секциями. */}
+          <RecapView
+            recap={recap}
             animate={justGenerated}
             generating={call.status === 'processing' || bgBusy}
             generatingLabel={
@@ -587,71 +612,62 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             fallbackMd={transcript}
             speakers={speakersLite}
             currentTime={audio.currentTime}
-            reveal={justGenerated}
             generating={call.status === 'processing'}
             onSeek={(s) => {
               audio.seek(s);
               if (!audio.playing && audio.ready) audio.togglePlay();
             }}
-            onIdentifySpeaker={(tag) => setConfirmingTag(tag)}
-          />
-        </Tabs.Panel>
-        <Tabs.Panel value="tasks">
-          <TasksPanel
-            tasks={tasks ?? []}
-            contacts={contacts}
-            onJumpToTranscript={(ms) => {
-              setTab('transcript');
-              audio.seek(ms / 1000);
-            }}
-          />
-        </Tabs.Panel>
-        <Tabs.Panel value="speakers">
-          <SpeakersSection
-            callId={callId}
-            onSpeakersChanged={() => {
-              void refetchSpeakersAndContacts();
-              // [Bug-fix #6] Имена участников могли измениться — предложить regen.
-              setPendingRecapRegen(true);
-            }}
           />
         </Tabs.Panel>
       </Tabs>
+            </div>
+          </div>
+          {/* [V6.5] Плеер .player-dock пристыкован к низу .doc-wrap, поверх
+              .doc-scroll. Включён и для failed: аудио сохранено локально, юзер
+              должен иметь возможность послушать даже если транскрипт не получился.
+              enabled=false (null) только когда нет ни одной дорожки. */}
+          <AudioScrubber audio={audio} seed={hashCallId(callId)} enabled />
+        </div>
 
-      {/* [B17 V3.1] Sticky-bottom audio scrubber pill — overflow'ит над
-          контентом любого активного таба (transcript / recap / tasks /
-          speakers).
-          [V6.5] Включаем и для failed: аудио сохранено локально, юзер
-          должен иметь возможность послушать запись даже если транскрипт
-          не получился. enabled=false только когда нет ни одной дорожки. */}
-      <AudioScrubber
-        audio={audio}
-        seed={hashCallId(callId)}
-        enabled
-        currentSpeaker={currentSpeaker}
-        onJumpToSpeaker={
-          currentSpeaker ? () => setTab('transcript') : undefined
-        }
-      />
-
-      {confirmingSpeaker && (
-        <SpeakerConfirmModal
-          speaker={confirmingSpeaker}
-          contacts={contacts}
-          sample={samplesByTag.get(confirmingSpeaker.speaker_tag) ?? null}
-          onClose={() => setConfirmingTag(null)}
-          onConfirmed={() => {
-            void refetchSpeakersAndContacts();
-            // [Bug-fix #6] Имя спикера изменилось — предложить regen recap.
-            setPendingRecapRegen(true);
-          }}
+        <CallRail
+          call={call}
+          speakers={speakersLite}
+          onIdentify={(tag) => setConfirmingTag(tag)}
+          onExport={() => void onExportMarkdown()}
+          exporting={exporting}
         />
-      )}
-    </section>
+
+        {confirmingSpeaker && (
+          <SpeakerConfirmModal
+            speaker={confirmingSpeaker}
+            contacts={contacts}
+            sample={samplesByTag.get(confirmingSpeaker.speaker_tag) ?? null}
+            onClose={() => setConfirmingTag(null)}
+            onConfirmed={() => {
+              void refetchSpeakersAndContacts();
+              // [Bug-fix #6] Имя спикера изменилось — предложить regen recap.
+              setPendingRecapRegen(true);
+            }}
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
 type TFn = ReturnType<typeof useI18n>['t'];
+
+// Время начала звонка для meta-чипа (HH:MM в локали интерфейса).
+function fmtClock(iso: string, locale: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString(
+      bcp47(locale as Parameters<typeof bcp47>[0]),
+      { hour: '2-digit', minute: '2-digit' },
+    );
+  } catch {
+    return '';
+  }
+}
 
 function tabLabel(tab: Tab, t: TFn): string {
   switch (tab) {
@@ -659,10 +675,6 @@ function tabLabel(tab: Tab, t: TFn): string {
       return t('callDetail.tabRecap');
     case 'transcript':
       return t('callDetail.tabTranscript');
-    case 'tasks':
-      return t('callDetail.tabTasks');
-    case 'speakers':
-      return t('callDetail.tabSpeakers');
   }
 }
 

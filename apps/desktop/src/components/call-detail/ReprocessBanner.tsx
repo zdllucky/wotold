@@ -40,10 +40,10 @@ export function ReprocessBanner({ call, onCancel }: ReprocessBannerProps) {
           alignItems: 'center',
           gap: 12,
           marginTop: 10,
-          fontFamily: 'var(--font-serif)',
+          fontFamily: 'var(--font)',
           fontStyle: 'italic',
           fontSize: 13,
-          color: 'var(--text-muted)',
+          color: 'var(--text-3)',
         }}
       >
         <span style={{ flex: 1, minWidth: 0 }}>

@@ -18,7 +18,66 @@ export const en: TranslationStrings = {
     brandFooter: 'Local · macOS',
   },
 
+  // [B18.1a] Wotold v2 shell rail.
+  rail: {
+    record: 'Record call',
+    recent: 'Recent',
+    collapse: 'Collapse',
+    expand: 'Expand panel',
+    designSystem: 'Design system',
+  },
+
+  // [B18.1c] ⌘K command palette.
+  palette: {
+    placeholder: 'Jump to a call or run a command…',
+    commands: 'Commands',
+    calls: 'Calls',
+    empty: 'Nothing found',
+    allCalls: 'All calls',
+  },
+
+  // [B18.2a] Inbox — omni-bar, facets, view switcher.
+  inbox: {
+    searchPlaceholder: 'Search or filter…',
+    clearAll: 'Clear',
+    facetStatus: 'Status',
+    facetRecap: 'Recap',
+    facetPeriod: 'Period',
+    facetPerson: 'Participant',
+    statusReady: 'Ready',
+    statusProcessing: 'Processing',
+    statusError: 'Error',
+    recapYes: 'With recap',
+    recapNo: 'No recap',
+    periodToday: 'Today',
+    periodWeek: 'This week',
+    quickFilters: 'Quick filters',
+    addFilter: 'Add filter',
+    searchInTitles: 'Search “{q}” in titles',
+    viewLabel: 'View',
+    viewList: 'List',
+    viewCards: 'Cards',
+    viewWeek: 'Week',
+    viewMonth: 'Month',
+    comingSoon: 'Coming soon',
+    todayBtn: 'Today',
+    filter: 'Filter',
+    recordShort: 'Record',
+    colName: 'Title',
+    colParticipants: 'Participants',
+    colDuration: 'Dur.',
+    colDate: 'Date',
+    rowActions: 'Actions',
+    rowOpen: 'Open',
+    rowReprocess: 'Reprocess',
+    rowExport: 'Export…',
+  },
+
   common: {
+    winClose: 'Close window',
+    winMinimize: 'Minimize window',
+    winMaximize: 'Fullscreen',
+    dismiss: 'Dismiss',
     save: 'Save',
     cancel: 'Cancel',
     delete: 'Delete',
@@ -173,6 +232,20 @@ export const en: TranslationStrings = {
     notFound: 'Call not found.',
     tabRecap: 'Recap',
     tabTranscript: 'Transcript',
+    // [B18.3a] Right rail (CallRail).
+    railProperties: 'Properties',
+    railStatus: 'Status',
+    railEngine: 'Engine',
+    railDate: 'Date',
+    railDuration: 'Duration',
+    railParticipants: 'Participants',
+    railUndefined: '{n} unidentified',
+    railNoSpeakers: 'Participants appear after processing.',
+    railSpeakerUnknown: 'Speaker',
+    railIdentify: 'Identify',
+    railActions: 'Actions',
+    railExport: 'Export recap',
+    exportBusy: 'Exporting…',
     tabTasks: 'Tasks',
     tabSpeakers: 'Participants',
     actionsAria: 'Call actions',
@@ -262,6 +335,10 @@ export const en: TranslationStrings = {
   },
 
   recap: {
+    modeRich: 'Rich',
+    modeMd: 'Markdown',
+    copyMd: 'Copy .md',
+    copied: 'Copied',
     summary: 'Summary',
     summaryAlt: 'Recap',
     keyPoints: 'Key points',
@@ -327,9 +404,6 @@ export const en: TranslationStrings = {
     voiceN: 'Voice {n}',
     voiceFallback: 'Voice',
     suggestionRoleNone: '—',
-    transcriptIdentifyChip: '? who is this',
-    transcriptIdentifyTitle: 'Who is this? Confirm voice',
-    transcriptIdentifyAria: 'Who is this? Confirm voice {tag}',
   },
 
   participants: {
@@ -378,6 +452,8 @@ export const en: TranslationStrings = {
     statCalls: 'Calls',
     statRecorded: 'Recorded',
     statVoiceSamples: 'Voice samples',
+    recentCalls: 'Recent calls',
+    voiceConfirmed: 'Voice confirmed',
     voiceOptIn: 'opt-in',
     voiceOff: '—',
     contactsBlock: 'Contacts',
@@ -687,22 +763,6 @@ export const en: TranslationStrings = {
     other: 'Call',
   },
 
-  decisionsBlock: {
-    title: 'Decisions',
-  },
-
-  openQuestionsBlock: {
-    title: 'Open questions',
-    raisedBy: 'raised by',
-  },
-
-  evidence: {
-    fromTranscript: 'Quote from transcript',
-    jumpToMoment: 'Jump to moment',
-    lowConfidence: 'Low confidence — verify the quote',
-    speakerLabel: 'Speaker',
-  },
-
   privacyDisclaimer: {
     oneOnOneTitle: '🔒 This was a 1:1 meeting',
     oneOnOneBody:
@@ -957,6 +1017,7 @@ export const en: TranslationStrings = {
   recording: {
     overlayLabel: 'Recording',
     stripRecording: 'Recording',
+    tooShort: 'Recording under {sec}s — not saved',
     stripPaused: 'Paused · recorded',
     pauseAction: 'Pause recording',
     resumeAction: 'Resume recording',

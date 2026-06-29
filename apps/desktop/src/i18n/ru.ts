@@ -22,8 +22,67 @@ const ruInternal = {
     brandFooter: 'Локально · macOS',
   },
 
+  // [B18.1a] Wotold v2 shell rail.
+  rail: {
+    record: 'Записать звонок',
+    recent: 'Недавние',
+    collapse: 'Свернуть',
+    expand: 'Развернуть панель',
+    designSystem: 'Дизайн-система',
+  },
+
+  // [B18.1c] ⌘K command palette.
+  palette: {
+    placeholder: 'Перейти к звонку или команда…',
+    commands: 'Команды',
+    calls: 'Звонки',
+    empty: 'Ничего не найдено',
+    allCalls: 'Все звонки',
+  },
+
+  // [B18.2a] Inbox — omni-bar, facets, view switcher.
+  inbox: {
+    searchPlaceholder: 'Поиск или фильтр…',
+    clearAll: 'Сбросить',
+    facetStatus: 'Статус',
+    facetRecap: 'Рекап',
+    facetPeriod: 'Период',
+    facetPerson: 'Участник',
+    statusReady: 'Готово',
+    statusProcessing: 'Обработка',
+    statusError: 'Ошибка',
+    recapYes: 'С рекапом',
+    recapNo: 'Без рекапа',
+    periodToday: 'Сегодня',
+    periodWeek: 'Эта неделя',
+    quickFilters: 'Быстрые фильтры',
+    addFilter: 'Добавить фильтр',
+    searchInTitles: 'Искать «{q}» в названиях',
+    viewLabel: 'Представление',
+    viewList: 'Список',
+    viewCards: 'Карточки',
+    viewWeek: 'Неделя',
+    viewMonth: 'Месяц',
+    comingSoon: 'Скоро',
+    todayBtn: 'Сегодня',
+    filter: 'Фильтр',
+    recordShort: 'Записать',
+    colName: 'Название',
+    colParticipants: 'Участники',
+    colDuration: 'Длит.',
+    colDate: 'Дата',
+    rowActions: 'Действия',
+    rowOpen: 'Открыть',
+    rowReprocess: 'Переобработать',
+    rowExport: 'Экспорт…',
+  },
+
   // ── Common buttons / labels / states ────────────────────────────────────
   common: {
+    winClose: 'Закрыть окно',
+    winMinimize: 'Свернуть окно',
+    winMaximize: 'На весь экран',
+    dismiss: 'Закрыть',
     save: 'Сохранить',
     cancel: 'Отмена',
     delete: 'Удалить',
@@ -186,6 +245,20 @@ const ruInternal = {
     notFound: 'Звонок не найден.',
     tabRecap: 'Саммари',
     tabTranscript: 'Расшифровка',
+    // [B18.3a] Right rail (CallRail).
+    railProperties: 'Свойства',
+    railStatus: 'Статус',
+    railEngine: 'Движок',
+    railDate: 'Дата',
+    railDuration: 'Длительность',
+    railParticipants: 'Участники',
+    railUndefined: '{n} не определено',
+    railNoSpeakers: 'Участники появятся после обработки.',
+    railSpeakerUnknown: 'Говорящий',
+    railIdentify: 'Определить',
+    railActions: 'Действия',
+    railExport: 'Экспортировать рекап',
+    exportBusy: 'Экспортируем…',
     tabTasks: 'Задачи',
     tabSpeakers: 'Участники',
     actionsAria: 'Действия со звонком',
@@ -290,6 +363,10 @@ const ruInternal = {
 
   // ── Recap tab (dossier) ─────────────────────────────────────────────────
   recap: {
+    modeRich: 'Оформленный',
+    modeMd: 'Markdown',
+    copyMd: 'Копировать .md',
+    copied: 'Скопировано',
     summary: 'Резюме',
     summaryAlt: 'Саммари',
     keyPoints: 'Ключевые моменты',
@@ -355,9 +432,6 @@ const ruInternal = {
     voiceN: 'Голос {n}',
     voiceFallback: 'Голос',
     suggestionRoleNone: '—',
-    transcriptIdentifyChip: '? кто это',
-    transcriptIdentifyTitle: 'Кто это? Подтвердить голос',
-    transcriptIdentifyAria: 'Кто это? Подтвердить голос {tag}',
   },
 
   // ── Participants row (CallDetail header) ───────────────────────────────
@@ -412,6 +486,8 @@ const ruInternal = {
     statCalls: 'Звонков',
     statRecorded: 'Записано',
     statVoiceSamples: 'Голосовые семплы',
+    recentCalls: 'Недавние звонки',
+    voiceConfirmed: 'Голос подтверждён',
     voiceOptIn: 'opt-in',
     voiceOff: '—',
     contactsBlock: 'Контакты',
@@ -729,25 +805,6 @@ const ruInternal = {
     other: 'Звонок',
   },
 
-  // [M14 T-11] Decisions block — список решений из cloud v2 recap.
-  decisionsBlock: {
-    title: 'Решения',
-  },
-
-  // [M14 T-11] Open questions block — нерешённые вопросы из звонка.
-  openQuestionsBlock: {
-    title: 'Открытые вопросы',
-    raisedBy: 'поднял(а)',
-  },
-
-  // [M14 T-11] Evidence quote tooltips и confidence indicators.
-  evidence: {
-    fromTranscript: 'Цитата из расшифровки',
-    jumpToMoment: 'К моменту в записи',
-    lowConfidence: 'Невысокая уверенность — проверь цитату',
-    speakerLabel: 'Говорит',
-  },
-
   // [M14 T-11] Privacy disclaimer для 1:1 встреч (содержит личную обратную связь).
   privacyDisclaimer: {
     oneOnOneTitle: '🔒 Это была встреча 1:1',
@@ -1023,6 +1080,7 @@ const ruInternal = {
     // [W3] RecStrip labels — persistent strip rendered above main content
     // while a recording is active (or paused).
     stripRecording: 'Идёт запись',
+    tooShort: 'Запись короче {sec} с — не сохранена',
     stripPaused: 'Пауза · записано',
     pauseAction: 'Поставить на паузу',
     resumeAction: 'Продолжить запись',

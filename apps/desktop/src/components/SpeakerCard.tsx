@@ -17,7 +17,7 @@ import { useI18n } from '../i18n';
 import { Select } from '../ui';
 import { humanSpeakerLabel, shortSpeakerLabel } from '../utils/callMeta';
 
-const SP_COLORS = ['#3D5BAB', '#2E8C5F', '#B86842', '#7958C7', '#3D87A4'];
+import { SP_COLORS } from '../pages/CallDetailUtils';
 
 /** [P-fix8] Кол-во баров реальной скраб-дорожки сэмпла. */
 const SAMPLE_BAR_COUNT = 72;
@@ -310,7 +310,7 @@ export function SpeakerCard({
   const sampleDurationSec = sample ? Math.max(1, Math.round(sample.end - sample.start)) : null;
 
   return (
-    <div className="index-card" style={{ position: 'relative', maxWidth: 720 }}>
+    <div className="panel" style={{ position: 'relative', maxWidth: 720, padding: '36px 40px' }}>
       <div
         style={{
           display: 'flex',
@@ -336,8 +336,8 @@ export function SpeakerCard({
           alignItems: 'center',
           gap: 22,
           padding: '16px 0',
-          borderTop: '1px solid var(--line-soft)',
-          borderBottom: '1px solid var(--line-soft)',
+          borderTop: '1px solid var(--border-2)',
+          borderBottom: '1px solid var(--border-2)',
           marginBottom: 22,
         }}
       >
@@ -347,11 +347,11 @@ export function SpeakerCard({
             height: 56,
             borderRadius: '50%',
             background: color,
-            color: 'var(--paper)',
+            color: 'var(--panel)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--mono)',
             fontWeight: 600,
             fontSize: 16,
             letterSpacing: '0.04em',
@@ -364,11 +364,11 @@ export function SpeakerCard({
           <div
             data-selectable
             style={{
-              fontFamily: 'var(--font-serif)',
+              fontFamily: 'var(--font)',
               fontStyle: 'italic',
               fontSize: 16,
               marginBottom: 8,
-              color: 'var(--ink)',
+              color: 'var(--text)',
               letterSpacing: '-0.01em',
               display: '-webkit-box',
               WebkitLineClamp: 2,
@@ -487,10 +487,10 @@ export function SpeakerCard({
             <div style={{ flex: 1, minWidth: 200 }}>
               <div
                 style={{
-                  fontFamily: 'var(--font-serif)',
+                  fontFamily: 'var(--font)',
                   fontSize: 17,
                   letterSpacing: '-0.01em',
-                  color: 'var(--ink)',
+                  color: 'var(--text)',
                 }}
               >
                 {suggestionName}
@@ -565,7 +565,7 @@ export function SpeakerCard({
         <div
           style={{
             padding: 14,
-            background: 'var(--bg-2)',
+            background: 'var(--sunken)',
             borderRadius: 8,
             marginBottom: 18,
           }}
@@ -590,7 +590,7 @@ export function SpeakerCard({
               alignItems: 'flex-start',
               gap: 8,
               fontSize: 13,
-              color: 'var(--ink-2)',
+              color: 'var(--text-2)',
               marginBottom: 10,
             }}
           >
@@ -627,7 +627,7 @@ export function SpeakerCard({
         style={{
           display: 'flex',
           gap: 10,
-          borderTop: '1px solid var(--line-soft)',
+          borderTop: '1px solid var(--border-2)',
           paddingTop: 18,
           flexWrap: 'wrap',
         }}

@@ -1,5 +1,6 @@
 // [W3] Recording state lifted to an App-level provider so any surface
-// (HomePage, RecStrip, future RecFloat window) reads the same source of truth.
+// (rail record controls, navbar button, RecFloat window) reads the same
+// source of truth.
 //
 // The provider:
 //  - reconstructs status on mount via `getRecordingState` (W2 backend);
@@ -7,10 +8,8 @@
 //  - ticks `elapsedSec` every 250ms, freezing the value during pauses;
 //  - surfaces backend errors via `error` for the UI to show as banner/toast.
 //
-// HomePage hotkey handler keeps its own copy of `recording` for now — W5 will
-// migrate HomePage onto this hook. We intentionally do NOT subscribe to
-// `pipeline:started/finished` here; those are a separate concern owned by
-// AppShell's activity badge.
+// We intentionally do NOT subscribe to `pipeline:started/finished` here; those
+// are a separate concern owned by AppShell's activity badge.
 
 import {
   createContext,
@@ -60,7 +59,8 @@ export interface RecordingApi {
   start: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
-  stop: () => Promise<{ callId: string }>;
+  /** `callId: null` = запись короче минимума (30с) — отброшена, не сохранена. */
+  stop: () => Promise<{ callId: string | null }>;
 }
 
 const RecordingContext = createContext<RecordingApi | null>(null);
@@ -241,14 +241,15 @@ export function RecordingProvider({ children }: RecordingProviderProps) {
     }
   }, []);
 
-  const stop = useCallback(async (): Promise<{ callId: string }> => {
+  const stop = useCallback(async (): Promise<{ callId: string | null }> => {
     setError(null);
     setBusy(true);
     try {
       const call = await stopRecording();
       setStatus({ kind: 'idle' });
       setElapsedSec(0);
-      return { callId: call.id };
+      // call === null → запись короче минимума, отброшена бэкендом.
+      return { callId: call?.id ?? null };
     } catch (e) {
       setError(errorMessage(e));
       throw e;

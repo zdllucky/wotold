@@ -1,6 +1,6 @@
-// [B17] Onboarding — exact match per docs/design/atelier-v2/_reference/atelier.jsx §1.
+// [B17][B18.7a] Onboarding — Wotold v2 uikit (.overlay/.modal idiom).
 //
-// Centred 540px column poверх .modal-backdrop:
+// Centred 540px column в .overlay → .modal:
 //   - .eyebrow "Шаг 0N из 03 · {step.label}"
 //   - .display 2-line headline
 //   - .subtitle lede
@@ -174,14 +174,15 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   };
 
   return (
-    <div
-      ref={rootRef}
-      className="modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="onboarding-title"
-    >
-      <div style={{ width: 540, maxWidth: '90vw', padding: '40px 4px' }}>
+    <div className="overlay">
+      <div
+        ref={rootRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        style={{ width: 540, maxWidth: '90vw', padding: '40px 4px' }}
+      >
         <div className="eyebrow" style={{ marginBottom: 14 }}>
           {t('onboarding.stepLabel', { step, total: stepTotal, label: STEP_LABEL[step] })}
         </div>
@@ -209,9 +210,9 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               display: 'flex',
               flexDirection: 'column',
               gap: 10,
-              fontFamily: 'var(--font-serif)',
+              fontFamily: 'var(--font)',
               fontSize: 17,
-              color: 'var(--ink-2)',
+              color: 'var(--text-2)',
             }}
           >
             <li>{t('onboarding.feature1')}</li>
@@ -293,7 +294,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               className="muted"
               style={{
                 marginTop: 18,
-                fontFamily: 'var(--font-serif)',
+                fontFamily: 'var(--font)',
                 fontStyle: 'italic',
                 fontSize: 14,
                 lineHeight: 1.55,
@@ -309,8 +310,8 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
           <p
             role="alert"
             style={{
-              color: 'var(--signal)',
-              fontFamily: 'var(--font-sans)',
+              color: 'var(--danger)',
+              fontFamily: 'var(--font)',
               marginBottom: 16,
             }}
           >
@@ -323,7 +324,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
             display: 'flex',
             alignItems: 'center',
             gap: 16,
-            borderTop: '1px solid var(--line-soft)',
+            borderTop: '1px solid var(--border-2)',
             paddingTop: 24,
           }}
         >
@@ -371,7 +372,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
                 key={i}
                 className="dot"
                 style={{
-                  background: i <= step ? 'var(--accent)' : 'var(--line)',
+                  background: i <= step ? 'var(--accent)' : 'var(--border)',
                   opacity: 1,
                 }}
               />

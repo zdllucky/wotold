@@ -6,6 +6,9 @@
 //
 // Слушает Tauri-события `voice-model:progress` + `voice-model:done` для
 // real-time прогресса.
+//
+// [B18.5b] Wotold v2 restyle: card → `.panel`, checkboxes → `.setting-row` +
+// `.switch`, badges → `.chip`, progress → token bar. Логика/listeners 1-в-1.
 
 import { useCallback, useEffect, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -33,12 +36,44 @@ import {
 } from '../api/settings';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
-import { Skeleton } from '../ui';
+import { SettingRow, Skeleton, Switch } from '../ui';
 
 type TFn = ReturnType<typeof useI18n>['t'];
 
 function formatMB(bytes: number, t: TFn): string {
   return t('voiceModel.mb', { n: (bytes / (1024 * 1024)).toFixed(1) });
+}
+
+interface ToggleRowProps {
+  label: string;
+  hint: string;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: (next: boolean) => void;
+}
+
+// [B18.5b] v2 toggle row with disabled semantics — gasим switch когда модель
+// не готова (без эмбеддингов матчинга нет / pyannote отсутствует).
+// [B18.7c] Internals now compose canonical SettingRow + Switch wrappers.
+// Switch uses native `disabled` (inert when not ready); SettingRow `disabled`
+// keeps the row opacity. Behaviour 1-в-1 с прежним raw markup.
+function ToggleRow({ label, hint, checked, disabled, onToggle }: ToggleRowProps) {
+  return (
+    <SettingRow
+      label={label}
+      hint={hint}
+      disabled={disabled}
+      control={
+        <Switch
+          checked={checked}
+          onChange={onToggle}
+          label={label}
+          disabled={disabled}
+          style={{ marginTop: 2 }}
+        />
+      }
+    />
+  );
 }
 
 export function VoiceModelSection() {
@@ -202,13 +237,13 @@ export function VoiceModelSection() {
       role="status"
       style={{
         fontSize: 12,
-        color: 'var(--muted)',
-        fontFamily: 'var(--font-sans)',
-        background: 'var(--bg-2)',
+        color: 'var(--warn)',
+        background: 'var(--warn-soft)',
         padding: '10px 14px',
-        borderRadius: 'var(--radius-sm)',
-        marginBottom: 18,
-        borderLeft: '3px solid var(--warning)',
+        borderRadius: 'var(--r-sm)',
+        borderLeft: '3px solid var(--warn)',
+        margin: 0,
+        lineHeight: 1.5,
       }}
     >
       {t('voiceModel.featureOff')}
@@ -216,52 +251,32 @@ export function VoiceModelSection() {
   );
 
   return (
-    <div style={{ maxWidth: 620 }}>
+    <div style={{ maxWidth: 620, display: 'flex', flexDirection: 'column', gap: 16 }}>
       {featureBadge}
 
       {error && (
-        <p
-          role="alert"
-          style={{
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-sans)',
-            marginBottom: 14,
-          }}
-        >
+        <p role="alert" style={{ color: 'var(--danger)', margin: 0 }}>
           {error}
         </p>
       )}
 
       <div
-        className="card"
+        className="panel"
         style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <div>
-            <div className="small-caps">{t('voiceModel.modelEyebrow')}</div>
-            <div
-              style={{
-                fontFamily: 'var(--font-serif)',
-                fontSize: 18,
-                color: 'var(--ink)',
-                marginTop: 2,
-              }}
-            >
+            <div className="set-eyebrow" style={{ marginBottom: 4 }}>
+              {t('voiceModel.modelEyebrow')}
+            </div>
+            <div style={{ fontSize: 'var(--t-16)', fontWeight: 600, color: 'var(--text)' }}>
               {t('voiceModel.modelName')}
             </div>
           </div>
-          <StatusBadge status={status} downloading={downloading} />
+          <StatusChip status={status} downloading={downloading} />
         </div>
 
-        <p
-          style={{
-            fontFamily: 'var(--font-serif)',
-            fontSize: 14,
-            color: 'var(--muted)',
-            margin: 0,
-            lineHeight: 1.5,
-          }}
-        >
+        <p style={{ fontSize: 14, color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>
           {status.status === 'valid'
             ? t('voiceModel.descValid')
             : status.status === 'corrupted'
@@ -274,8 +289,8 @@ export function VoiceModelSection() {
             <div
               style={{
                 height: 6,
-                background: 'var(--bg-2)',
-                borderRadius: 4,
+                background: 'var(--sunken)',
+                borderRadius: 'var(--r-pill)',
                 overflow: 'hidden',
               }}
             >
@@ -289,10 +304,10 @@ export function VoiceModelSection() {
               />
             </div>
             <div
-              className="mono"
               style={{
+                fontFamily: 'var(--mono)',
                 fontSize: 11,
-                color: 'var(--muted)',
+                color: 'var(--text-3)',
                 marginTop: 6,
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -338,54 +353,14 @@ export function VoiceModelSection() {
 
       {/* Auto-bind toggle — связан со списком voiced спикеров.
           Гасим если модель не скачана: без эмбеддингов матчинга нет. */}
-      <div
-        style={{
-          marginTop: 22,
-          padding: 18,
-          border: '1px solid var(--line-soft)',
-          borderRadius: 'var(--radius-card, 8px)',
-          background: 'var(--bg)',
-          opacity: status.status === 'valid' ? 1 : 0.6,
-        }}
-      >
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 12,
-            cursor: status.status === 'valid' ? 'pointer' : 'not-allowed',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={autoBindEnabled}
-            disabled={status.status !== 'valid'}
-            onChange={(e) => void persistAutoBind(e.target.checked)}
-            style={{ marginTop: 4 }}
-          />
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: 14,
-                color: 'var(--ink)',
-                fontWeight: 500,
-                marginBottom: 4,
-              }}
-            >
-              {t('settings.speakersAutoBindLabel')}
-            </div>
-            <div
-              style={{
-                fontSize: 12,
-                color: 'var(--subtle)',
-                lineHeight: 1.5,
-              }}
-            >
-              {t('settings.speakersAutoBindHint')}
-            </div>
-          </div>
-        </label>
+      <div className="panel" style={{ padding: 18 }}>
+        <ToggleRow
+          label={t('settings.speakersAutoBindLabel')}
+          hint={t('settings.speakersAutoBindHint')}
+          checked={autoBindEnabled}
+          disabled={status.status !== 'valid'}
+          onToggle={(next) => void persistAutoBind(next)}
+        />
       </div>
 
       {/* [M13 follow-up + Bug-fix #4] Mic diarization toggle. Default ON.
@@ -393,73 +368,27 @@ export function VoiceModelSection() {
           модель отсутствует — здесь явный gating: toggle disabled до
           установки модели, with inline install button. Размер модели в
           catalog: ~6МБ ONNX. */}
-      <div
-        style={{
-          marginTop: 12,
-          padding: 18,
-          border: '1px solid var(--line-soft)',
-          borderRadius: 'var(--radius-card, 8px)',
-          background: 'var(--bg)',
-          opacity: pyannoteReady ? 1 : 0.85,
-        }}
-      >
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 12,
-            cursor: pyannoteReady ? 'pointer' : 'not-allowed',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={micDiarizationEnabled && pyannoteReady}
-            disabled={!pyannoteReady}
-            onChange={(e) => void persistMicDiarization(e.target.checked)}
-            style={{ marginTop: 4 }}
-          />
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: 14,
-                color: 'var(--ink)',
-                fontWeight: 500,
-                marginBottom: 4,
-              }}
-            >
-              {t('settings.speakersMicDiarizationLabel')}
-            </div>
-            <div
-              style={{
-                fontSize: 12,
-                color: 'var(--subtle)',
-                lineHeight: 1.5,
-              }}
-            >
-              {t('settings.speakersMicDiarizationHint')}
-            </div>
-          </div>
-        </label>
+      <div className="panel" style={{ padding: 18 }}>
+        <ToggleRow
+          label={t('settings.speakersMicDiarizationLabel')}
+          hint={t('settings.speakersMicDiarizationHint')}
+          checked={micDiarizationEnabled && pyannoteReady}
+          disabled={!pyannoteReady}
+          onToggle={(next) => void persistMicDiarization(next)}
+        />
 
         {!pyannoteReady && (
           <div
             style={{
               marginTop: 12,
               paddingTop: 12,
-              borderTop: '1px dashed var(--line-soft)',
+              borderTop: '1px dashed var(--border)',
               display: 'flex',
               flexDirection: 'column',
               gap: 10,
             }}
           >
-            <div
-              style={{
-                fontSize: 12,
-                color: 'var(--warning, var(--subtle))',
-                lineHeight: 1.5,
-              }}
-            >
+            <div style={{ fontSize: 12, color: 'var(--warn)', lineHeight: 1.5 }}>
               {t('settings.micDiarizationModelMissing')}
             </div>
             <button
@@ -480,7 +409,11 @@ export function VoiceModelSection() {
   );
 }
 
-function StatusBadge({
+type ChipVariant = 'ok' | 'line' | 'warn' | 'accent';
+
+// [B18.5b] Voice-model state → v2 `.chip`. valid=ok, missing=line,
+// corrupted=warn, downloading=accent.
+function StatusChip({
   status,
   downloading,
 }: {
@@ -488,29 +421,17 @@ function StatusBadge({
   downloading: boolean;
 }) {
   const { t } = useI18n();
-  const styles: Record<string, { bg: string; fg: string; text: string }> = {
-    valid: { bg: 'var(--accent-soft)', fg: 'var(--accent)', text: t('voiceModel.statusValid') },
-    missing: { bg: 'var(--bg-2)', fg: 'var(--muted)', text: t('voiceModel.statusMissing') },
-    corrupted: { bg: 'var(--bg-2)', fg: 'var(--warning)', text: t('voiceModel.statusCorrupted') },
-    downloading: { bg: 'var(--bg-2)', fg: 'var(--accent)', text: t('voiceModel.statusDownloading') },
+  const meta: Record<string, { variant: ChipVariant; text: string }> = {
+    valid: { variant: 'ok', text: t('voiceModel.statusValid') },
+    missing: { variant: 'line', text: t('voiceModel.statusMissing') },
+    corrupted: { variant: 'warn', text: t('voiceModel.statusCorrupted') },
+    downloading: { variant: 'accent', text: t('voiceModel.statusDownloading') },
   };
   const key = downloading ? 'downloading' : status.status;
-  const s = styles[key] ?? styles.missing!;
+  const m = meta[key] ?? meta.missing!;
   return (
-    <span
-      style={{
-        fontFamily: 'var(--font-sans)',
-        fontSize: 11,
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: 0.06,
-        padding: '4px 10px',
-        borderRadius: 999,
-        background: s.bg,
-        color: s.fg,
-      }}
-    >
-      {s.text}
+    <span className={`chip chip--${m.variant}`} data-size="sm">
+      {m.text}
     </span>
   );
 }

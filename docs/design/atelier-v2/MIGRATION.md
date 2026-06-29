@@ -1,5 +1,11 @@
 # Migration Map · Page by Page
 
+> ⚠️ **LEGACY (Atelier v2).** Этот документ описывает старый дизайн (Atelier v2),
+> полностью заменённый редизайном **Wotold v2 (B18)**. Часть упоминаемых здесь
+> экранов (напр. HomePage) и классов больше не существует. Действующий канон —
+> [`docs/design/wotold-v2/README.md`](../wotold-v2/README.md) + код (`wk.css` /
+> `components.css` / `tokens.css`). Файл остаётся только для истории.
+
 This is the developer's task list. Each section maps old JSX → new JSX + classes.
 Apply in order; **don't skip Foundation**.
 

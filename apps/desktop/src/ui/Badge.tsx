@@ -15,13 +15,13 @@ function styleFor(tone: Tone): CSSProperties {
     case 'accent':
       return { background: 'var(--accent-soft)', color: 'var(--accent)' };
     case 'success':
-      return { background: 'var(--success-soft)', color: 'var(--success)' };
+      return { background: 'var(--ok-soft)', color: 'var(--ok)' };
     case 'warning':
-      return { background: 'var(--warning-soft)', color: 'var(--warning)' };
+      return { background: 'var(--warn-soft)', color: 'var(--warn)' };
     case 'danger':
-      return { background: 'var(--signal-soft)', color: 'var(--signal)' };
+      return { background: 'var(--danger-soft)', color: 'var(--danger)' };
     case 'neutral':
-      return { background: 'var(--bg-2)', color: 'var(--muted)' };
+      return { background: 'var(--sunken)', color: 'var(--text-3)' };
   }
 }
 
@@ -33,13 +33,13 @@ export function Badge({ tone = 'neutral', className, children, style, ...rest }:
         display: 'inline-flex',
         alignItems: 'center',
         gap: 4,
-        fontFamily: 'var(--font-sans)',
+        fontFamily: 'var(--font)',
         fontSize: 11,
         fontWeight: 600,
         letterSpacing: '0.06em',
         textTransform: 'uppercase',
         padding: '2px 8px',
-        borderRadius: 'var(--radius-pill)',
+        borderRadius: 'var(--r-pill)',
         lineHeight: 1.4,
         ...styleFor(tone),
         ...style,

@@ -28,9 +28,9 @@ function FieldShell({ label, hint, error, inline, htmlFor, children }: FieldShel
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
-        margin: 'var(--space-2) 0',
+        margin: 'var(--s2) 0',
       }
-    : { display: 'flex', flexDirection: 'column', gap: 6, margin: 'var(--space-2) 0' };
+    : { display: 'flex', flexDirection: 'column', gap: 6, margin: 'var(--s2) 0' };
   return (
     <div className="field" style={containerStyle}>
       {label && (
@@ -40,7 +40,7 @@ function FieldShell({ label, hint, error, inline, htmlFor, children }: FieldShel
       )}
       {children}
       {hint && !error && (
-        <span style={{ fontSize: 12, color: 'var(--subtle)', marginTop: 2 }}>
+        <span style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 2 }}>
           {hint}
         </span>
       )}
@@ -48,8 +48,8 @@ function FieldShell({ label, hint, error, inline, htmlFor, children }: FieldShel
         <span
           style={{
             fontSize: 12,
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-mono)',
+            color: 'var(--danger)',
+            fontFamily: 'var(--mono)',
             marginTop: 2,
           }}
         >
@@ -102,7 +102,7 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(funct
         ref={ref}
         id={fieldId}
         className={['input', 'input--box', className ?? ''].filter(Boolean).join(' ')}
-        style={{ fontFamily: 'var(--font-sans)' }}
+        style={{ fontFamily: 'var(--font)' }}
         {...rest}
       >
         {children}
@@ -130,7 +130,7 @@ export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>
           style={{
             resize: 'vertical',
             minHeight: '4rem',
-            fontFamily: 'var(--font-sans)',
+            fontFamily: 'var(--font)',
           }}
           {...rest}
         />
