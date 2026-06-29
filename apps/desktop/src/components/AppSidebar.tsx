@@ -280,7 +280,11 @@ export function Sidebar(props: RailProps) {
           />
         </div>
       </div>
-      <div className="rail-resize" onMouseDown={onResizeStart} />
+      <div
+        className="rail-resize"
+        data-tauri-drag-region="false"
+        onMouseDown={onResizeStart}
+      />
     </aside>
   );
 }
@@ -316,8 +320,8 @@ export function MiniRail(props: RailProps) {
       <div className="minirail-sep" />
       {recording ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-          {/* [recording] Стоп-кнопка = живая дорожка + stop-иконка (она же
-              индикатор записи); таймер — под кнопкой паузы. */}
+          {/* [recording] Стоп-кнопка = только живая дорожка (белая, индикатор
+              записи; клик = стоп через aria-label). Таймер — под паузой. */}
           <button
             className="mr-rec"
             data-rec="true"
@@ -325,12 +329,7 @@ export function MiniRail(props: RailProps) {
             onClick={onRecord}
             disabled={busy}
           >
-            <span
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}
-            >
-              <LiveRecEq paused={paused} inherit />
-              <Icon name="stop" size={12} />
-            </span>
+            <LiveRecEq paused={paused} inherit />
           </button>
           <IconBtn
             icon={paused ? 'play' : 'pause'}
@@ -397,7 +396,11 @@ export function MiniRail(props: RailProps) {
         active={view === 'settings'}
         onClick={() => onNav('settings')}
       />
-      <div className="rail-resize" onMouseDown={onResizeStart} />
+      <div
+        className="rail-resize"
+        data-tauri-drag-region="false"
+        onMouseDown={onResizeStart}
+      />
     </aside>
   );
 }
