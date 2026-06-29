@@ -425,15 +425,15 @@
 
 Полировка v2 по списку багов от юзера. Порядок строгий. Логика/i18n 1-в-1, design-gate (токены/wk/Icon).
 
-- [ ] **B19.1** Call-detail overscroll-баунс («улетают границы») → `overscroll-behavior:none` на `.doc-scroll` (+ `.app-main` `contain`→`none`).
-- [ ] **B19.2** Week/Month: date-jump дропдаун (год ◀▶ + сетка месяцев) — портнуть `CalHeader` month-picker из прототипа `wk-inbox.jsx`, завязать `onPickMonth` в `InboxWeek/Month`.
-- [ ] **B19.3** Фильтр периода «с … по …» — кастомный диапазон дат (`range{from,to}` facet + 2 date-инпута в Фильтр-дропдауне + `matchesFacets` + чип).
-- [ ] **B19.4** Оверлеи/дропдауны/попапы вылетают за край окна — `useAnchoredPosition` (flip-up + clamp-x) в `Menu`/`Select`; `max-height`+scroll для модалок/палитры.
-- [ ] **B19.5** Min-size окна 760×560 → **960×600** (тулбар обрезался).
-- [ ] **B19.6** Прерванная запись <30с не автоудаляется — на старте reconcile орфан-`recording` по длине частичного WAV: <30с → delete+cleanup, ≥30с → 'failed' (восстановимо); `sweep_stale_calls` → только 'processing'. (Нормальный стоп <30с уже удаляется, B18.12.)
-- [ ] **B19.7** Kebab в списке = заглушки → реальные Переработать (`reprocessCall`) / Экспорт (save-dialog + `exportCallMarkdown`) / Удалить (`ConfirmModal` + `deleteCall`) + тосты.
-- [ ] **B19.8** Карточный вид — некрасивые отступы контейнера → `padding: var(--s5)`.
-- [ ] **B19.9** Крошки звонка: сырой `←` в i18n → `<Icon name="chevronLeft">` (разделитель chevronRight уже по гайду).
+- [x] **B19.1** Call-detail overscroll-баунс («улетают границы») → `overscroll-behavior:none` на `.doc-scroll` (+ `.app-main` `contain`→`none`).
+- [x] **B19.2** Week/Month: date-jump дропдаун (год ◀▶ + сетка месяцев) — портнуть `CalHeader` month-picker из прототипа `wk-inbox.jsx`, завязать `onPickMonth` в `InboxWeek/Month`.
+- [x] **B19.3** Фильтр периода «с … по …» — кастомный диапазон дат (`range{from,to}` facet + 2 date-инпута в Фильтр-дропдауне + `matchesFacets` + чип).
+- [x] **B19.4** Оверлеи/дропдауны/попапы вылетают за край окна — `useAnchoredPosition` (flip-up + clamp-x) в `Menu`/`Select`; `max-height`+scroll для модалок/палитры.
+- [x] **B19.5** Min-size окна 760×560 → **960×600** (тулбар обрезался).
+- [x] **B19.6** Прерванная запись <30с не автоудаляется — на старте reconcile орфан-`recording` по длине частичного WAV: <30с → delete+cleanup, ≥30с → 'failed' (восстановимо); `sweep_stale_calls` → только 'processing'. (Нормальный стоп <30с уже удаляется, B18.12.)
+- [x] **B19.7** Kebab в списке = заглушки → реальные Переработать (`reprocessCall`) / Экспорт (save-dialog + `exportCallMarkdown`) / Удалить (`ConfirmModal` + `deleteCall`) + тосты.
+- [x] **B19.8** Карточный вид — некрасивые отступы контейнера → `padding: var(--s5)`.
+- [x] **B19.9** Крошки звонка: сырой `←` в i18n → `<Icon name="chevronLeft">` (разделитель chevronRight уже по гайду).
 
 ### Контракты / backend (S2) — параллельно, по мере scope
 
