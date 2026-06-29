@@ -127,34 +127,6 @@ const ruInternal = {
 
   // ── HomePage ────────────────────────────────────────────────────────────
   home: {
-    eyebrowRecording: '● Идёт запись · Локально',
-    readyHeadline: 'Готов записывать.',
-    readyHeadlineRecording: 'Запись идёт фоном.',
-    readyHeadlinePaused: 'Запись на паузе.',
-    subtitle:
-      'Нажмите красный кружок когда начнёте звонок. Расшифровка приходит через 10–30 секунд.',
-    subtitlePaused:
-      'Звук сейчас не пишется. Продолжите, когда вернётесь к разговору — или остановите запись из полоски сверху.',
-    closeWhileRecordingTitle: 'Идёт запись',
-    closeWhileRecordingBody:
-      'Окно будет закрыто, и запись остановится. Аудио и расшифровка будут сохранены. Продолжить?',
-    closeWhileRecordingOk: 'Остановить и закрыть',
-    startAria: 'Начать запись',
-    startingAria: 'Запускаем',
-    starting: 'Запускаем…',
-    hotkeyHint: 'Или просто нажмите горячую клавишу',
-    hotkeyTitle: 'Горячая клавиша: {chord}',
-    stopAria: 'Остановить запись',
-    savedTitle: '✓ Звонок сохранён',
-    savedHint: 'Длительность: {sec} сек. Распознавание идёт в фоне — обычно занимает 10–30 секунд.',
-    statTotal: 'Звонков · всего',
-    statWeek: 'За неделю',
-    statArchive: 'В архиве',
-    statPending: 'Ждут подтверждения',
-    hoursAbbr: 'ч',
-    recentTitle: 'Недавно',
-    allCalls: 'Все звонки →',
-    fallbackCallTitle: 'Звонок {short}',
     consentEyebrow: 'Согласие на запись',
     consentTitle: 'Перед стартом',
     consentBody:
@@ -164,76 +136,18 @@ const ruInternal = {
     updateAvailable: 'Доступна версия {version} (сейчас {current}).',
     updateInstall: 'Обновить сейчас',
     updateInstalling: 'Устанавливаем…',
-    // [M12.7.5] Local-engine announcement для existing users.
-    engineAnnouncementAria: 'Появился локальный режим',
-    engineAnnouncementTitle: 'Появился локальный режим',
-    engineAnnouncementBody:
-      'Теперь Wotold может работать полностью на устройстве, без облака — бесплатно навсегда. Попробовать?',
-    engineAnnouncementOpen: 'Открыть',
-    engineAnnouncementDismiss: 'Позже',
-    // [M12-v1.1] Banner variants
-    engineAnnouncementDefault: {
-      eyebrow: 'Локальный режим',
-      title: 'Обрабатывай звонки без облака',
-      beforeLabel: 'Было',
-      beforeValue: 'Облако',
-      afterLabel: 'Стало',
-      afterValue: 'Локально · бесплатно',
-    },
-    engineAnnouncementFailures: {
-      eyebrow: 'Частые ошибки',
-      title: 'Переключись на локальный режим',
-      beforeLabel: 'Сбоев за 24ч',
-      beforeValue: '{count}',
-    },
-    engineAnnouncementQuota: {
-      eyebrow: 'Лимит облака',
-      title: 'Переходи на локальный — без лимитов',
-      beforeLabel: 'Использовано',
-      beforeValue: '{pct}%',
-    },
-    channelMic: 'Вы · микрофон',
-    channelSystem: 'Собеседник · системный звук',
-    waveformFmt: '16 кГц моно · WAV · {time}',
-    transcriptionWillStart: 'Расшифровка начнётся автоматически',
-    dbInf: '−∞ dB',
   },
 
   // ── CallsPage ───────────────────────────────────────────────────────────
   calls: {
-    title: 'Звонки',
-    search: 'Найти в расшифровках…',
-    searchAria: 'Поиск звонков',
-    filterAll: 'Все',
-    filterToday: 'Сегодня',
-    filterWeek: 'Неделя',
-    // [V8.2] Появляется только когда хоть один звонок recording|processing.
-    filterProcessing: 'В обработке',
     filteredOf: '{filtered} из {total} {plural}',
     countOf: '{n} {plural}',
-    hoursSuffix: '· {n} ч',
     emptyTitle: 'Звонков пока нет',
     emptyBody: 'Начни запись на «Главной» — звонок появится здесь сразу после остановки.',
     notFoundTitle: 'Ничего не нашлось',
     notFoundBody: 'Сбрось фильтры или измени запрос.',
-    badgeProcessing: 'распознаём',
-    badgeFailed: 'ошибка',
-    badgeRecording: '● запись',
-    // [V6.3] Глобальный activity-strip над списком звонков. Показываем когда
-    // ≥1 звонок в processing — успокаиваем юзера что можно закрыть окно.
-    activityStripOne: 'Обрабатываем 1 звонок · можно закрыть окно',
-    activityStripMany: 'Обрабатываем {n} {plural} · можно закрыть окно',
-    // [V6.8] Secondary row под title в списке звонков.
-    secondaryLive: 'идёт запись',
-    secondaryUploading: 'Загружаем аудио',
-    secondaryQueued: 'Ждёт очередь',
-    secondaryEta: 'осталось ~{sec} сек',
     // [Processing status] фон-regen звонка (status остаётся ready).
     secondaryBusy: 'обрабатывается',
-    tooltipRecording: 'Идёт запись прямо сейчас.',
-    tooltipProcessing: 'Запись завершена, идёт транскрипция через STT.',
-    tooltipReady: 'Готово — есть transcript.md и raw_stt.json.',
-    tooltipFailed: 'Звонок не доведён до transcript. Аудио всё ещё на диске.',
     fallbackCallTitle: 'Звонок {short}',
     callsForm1: 'звонок',
     callsForm2: 'звонка',

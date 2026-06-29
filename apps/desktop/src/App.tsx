@@ -204,7 +204,7 @@ function AppShell() {
     if (typeof document === 'undefined') return;
     if (import.meta.env.DEV) return; // right-click allowed in dev
     const ALLOW =
-      'input, textarea, [contenteditable="true"], .markdown, .markdown *, .transcript-row, .transcript-row *, .transcript-text, .turn, .turn *, .turn-text, .title, .display, .subtitle, .doc-title, code, pre, kbd, [data-selectable], [data-selectable] *';
+      'input, textarea, [contenteditable="true"], .markdown, .markdown *, .md-rich, .md-rich *, .md-raw, .transcript-row, .transcript-row *, .transcript-text, .turn, .turn *, .turn-text, .title, .display, .subtitle, .doc-title, code, pre, kbd, [data-selectable], [data-selectable] *';
     const onContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && target.closest(ALLOW)) return;
