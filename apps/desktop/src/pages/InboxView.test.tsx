@@ -21,10 +21,15 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 import { invoke } from '@tauri-apps/api/core';
+import type { ReactElement } from 'react';
 import type { Call } from '../api/recording';
+import { ToastProvider } from '../ui';
 import { InboxView } from './InboxView';
 
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
+
+// InboxView's row-menu actions use useToast() → wrap in the provider.
+const renderInbox = (ui: ReactElement) => render(<ToastProvider>{ui}</ToastProvider>);
 
 const READY_CALL: Call = {
   id: 'call-busy-1',
@@ -88,7 +93,7 @@ describe('InboxView — processing status', () => {
 
   test('ready call with active background task shows processing indicator', async () => {
     routeInvoke([READY_CALL.id]);
-    render(<InboxView onOpen={() => {}} />);
+    renderInbox(<InboxView onOpen={() => {}} />);
     await flush();
 
     expect(screen.getByText('Синхрон по проекту')).toBeTruthy();
@@ -97,7 +102,7 @@ describe('InboxView — processing status', () => {
 
   test('ready call without active task stays clean (no busy row)', async () => {
     routeInvoke([]);
-    render(<InboxView onOpen={() => {}} />);
+    renderInbox(<InboxView onOpen={() => {}} />);
     await flush();
 
     expect(screen.getByText('Синхрон по проекту')).toBeTruthy();
@@ -106,7 +111,7 @@ describe('InboxView — processing status', () => {
 
   test('renders the shared .view-head bar and the v2 .tbl table', async () => {
     routeInvoke([]);
-    const { container } = render(<InboxView onOpen={() => {}} />);
+    const { container } = renderInbox(<InboxView onOpen={() => {}} />);
     await flush();
 
     expect(container.querySelector('.view-head')).not.toBeNull();
@@ -119,11 +124,15 @@ describe('InboxView — processing status', () => {
 
   test('record action is omitted unless onRecord is provided', async () => {
     routeInvoke([]);
-    const { container, rerender } = render(<InboxView onOpen={() => {}} />);
+    const { container, rerender } = renderInbox(<InboxView onOpen={() => {}} />);
     await flush();
     expect(container.querySelector('.btn--primary')).toBeNull();
 
-    rerender(<InboxView onOpen={() => {}} onRecord={() => {}} />);
+    rerender(
+      <ToastProvider>
+        <InboxView onOpen={() => {}} onRecord={() => {}} />
+      </ToastProvider>,
+    );
     await flush();
     // The «Записать» primary button now appears in the header.
     expect(screen.getByText('Записать')).toBeTruthy();

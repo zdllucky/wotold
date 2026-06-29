@@ -90,7 +90,7 @@
   padding: 34px 44px;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   background: var(--bg);
 }
 .btn--quiet { color: var(--text-3); padding: 6px 10px; }
