@@ -619,6 +619,13 @@
   animation: none;
   transition: height 80ms ease-out;
 }
+/* Бары наследуют цвет текста — для белых баров на красных danger-кнопках.
+ * Второй селектор (выше специфичность) побеждает grey-фон паузы независимо
+ * от порядка правил. */
+.rec-eq--inherit > span,
+.rec-eq--inherit.rec-eq--paused > span {
+  background: currentColor;
+}
 @media (prefers-reduced-motion: reduce) {
   .rec-eq > span {
     animation: none;

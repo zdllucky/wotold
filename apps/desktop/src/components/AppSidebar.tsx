@@ -8,6 +8,7 @@ import { Icon } from '../ui/Icon';
 import { IconBtn, Kbd, NavItem } from '../ui';
 import { StatusCell } from '../pages/inboxBits';
 import { formatElapsed } from '../recording/RecordingContext';
+import { LiveRecEq } from '../recording/LiveRecEq';
 import type { Call } from '../api/recording';
 import { useI18n } from '../i18n';
 
@@ -80,17 +81,6 @@ function Brand() {
   );
 }
 
-/** Status dot used in recording rows. */
-function RecDot({ paused }: { paused: boolean }) {
-  return (
-    <span
-      className={`dot${paused ? '' : ' dot--pulse'}`}
-      style={{ background: 'var(--danger)' }}
-      aria-hidden
-    />
-  );
-}
-
 export function Sidebar(props: RailProps) {
   const { t } = useI18n();
   const {
@@ -156,31 +146,30 @@ export function Sidebar(props: RailProps) {
       {/* Record / recording status */}
       <div style={{ padding: '0 10px 8px' }}>
         {recording ? (
-          <div style={{ display: 'grid', gap: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 4px' }}>
-              <RecDot paused={paused} />
-              <span style={{ color: 'var(--danger)', fontWeight: 600, fontSize: 12.5 }}>
-                {paused ? t('recording.stripPaused') : t('recording.stripRecording')}
-              </span>
-              <span className="mono" style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600 }}>
+          /* [recording] Компактный ряд (без переполнения 256px): danger-кнопка =
+             живая дорожка + таймер + стоп (она же индикатор), пауза = icon-кнопка. */
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              className="btn btn--danger"
+              onClick={onRecord}
+              disabled={busy}
+              aria-label={t('recording.stopAction')}
+              style={{ flex: 1, gap: 8, justifyContent: 'flex-start' }}
+            >
+              <LiveRecEq paused={paused} inherit />
+              <span className="mono" style={{ fontWeight: 600 }}>
                 {formatElapsed(elapsed)}
               </span>
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                className="btn btn--default"
-                style={{ flex: 1 }}
-                onClick={onPause}
-                disabled={busy}
-              >
-                <Icon name={paused ? 'play' : 'pause'} size={15} />
-                {paused ? t('recording.resumeAction') : t('recording.pauseAction')}
-              </button>
-              <button className="btn btn--danger" onClick={onRecord} disabled={busy}>
-                <Icon name="stop" size={15} />
-                {t('recording.stopAction')}
-              </button>
-            </div>
+              <span style={{ flex: 1 }} />
+              <Icon name="stop" size={15} />
+            </button>
+            <IconBtn
+              icon={paused ? 'play' : 'pause'}
+              label={paused ? t('recording.resumeAction') : t('recording.pauseAction')}
+              onClick={onPause}
+              disabled={busy}
+            />
           </div>
         ) : (
           <button
@@ -301,6 +290,7 @@ export function MiniRail(props: RailProps) {
   const {
     view,
     recKind,
+    elapsed,
     busy,
     onRecord,
     onPause,
@@ -326,6 +316,8 @@ export function MiniRail(props: RailProps) {
       <div className="minirail-sep" />
       {recording ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+          {/* [recording] Стоп-кнопка = живая дорожка + stop-иконка (она же
+              индикатор записи); таймер — под кнопкой паузы. */}
           <button
             className="mr-rec"
             data-rec="true"
@@ -333,7 +325,12 @@ export function MiniRail(props: RailProps) {
             onClick={onRecord}
             disabled={busy}
           >
-            <Icon name="stop" size={18} />
+            <span
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}
+            >
+              <LiveRecEq paused={paused} inherit />
+              <Icon name="stop" size={12} />
+            </span>
           </button>
           <IconBtn
             icon={paused ? 'play' : 'pause'}
@@ -343,6 +340,12 @@ export function MiniRail(props: RailProps) {
             onClick={onPause}
             disabled={busy}
           />
+          <span
+            className="mono"
+            style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-3)' }}
+          >
+            {formatElapsed(elapsed)}
+          </span>
         </div>
       ) : (
         <button
