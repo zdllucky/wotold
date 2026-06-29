@@ -15,6 +15,14 @@ describe('RecapView', () => {
     expect(document.querySelector('.md-h')).toBeTruthy();
   });
 
+  test('renders rich markdown elements (gfm table) through Markdown', () => {
+    render(
+      <RecapView recap={'## Итоги\n\n| Тема | Статус |\n| - | - |\n| A | ok |'} emptyHint="пусто" />,
+    );
+    expect(document.querySelector('.md-rich table')).toBeTruthy();
+    expect(document.querySelectorAll('.md-rich tbody td')).toHaveLength(2);
+  });
+
   test('toggles to markdown mode (pre.md-raw with raw source)', () => {
     render(<RecapView recap={'# Заголовок\n\nТело документа'} emptyHint="пусто" />);
     fireEvent.click(screen.getByText('Markdown'));
