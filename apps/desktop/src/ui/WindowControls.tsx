@@ -32,18 +32,24 @@ export function WindowControls({ open, onOpen, onClose }: WindowControlsProps) {
     <div
       className="win-controls"
       data-tauri-drag-region="deep"
-      // [a11y] Скрыты по умолчанию (opacity/pointer-events:none). Убираем из
-      // tab-order и из дерева скринридера пока не раскрыты — нативные ⌘W/⌘M
-      // остаются доступны с клавиатуры.
+      // [a11y] Скрыты по умолчанию (opacity/pointer-events:none). Раскрываются на
+      // hover ИЛИ на keyboard-focus (onFocusCapture → open → CSS reveal + снимаем
+      // aria-hidden). Кнопки tab-reachable всегда (tabIndex 0); фокус сам раскрывает
+      // группу, поэтому клавиатурой они достижимы (SC 2.1.1). onBlurCapture
+      // сворачивает обратно когда фокус ушёл из группы.
       aria-hidden={open ? undefined : true}
       onMouseEnter={onOpen}
       onMouseLeave={onClose}
+      onFocusCapture={onOpen}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onClose();
+      }}
     >
       <button
         type="button"
         className="wc-btn wc-btn--close"
         aria-label={t('common.winClose')}
-        tabIndex={open ? 0 : -1}
+        tabIndex={0}
         onClick={() => void win().close().catch(ignore)}
       >
         <svg className="wc-glyph" viewBox="0 0 12 12" aria-hidden="true">
@@ -60,7 +66,7 @@ export function WindowControls({ open, onOpen, onClose }: WindowControlsProps) {
         type="button"
         className="wc-btn wc-btn--min"
         aria-label={t('common.winMinimize')}
-        tabIndex={open ? 0 : -1}
+        tabIndex={0}
         onClick={() => void win().minimize().catch(ignore)}
       >
         <svg className="wc-glyph" viewBox="0 0 12 12" aria-hidden="true">
@@ -77,7 +83,7 @@ export function WindowControls({ open, onOpen, onClose }: WindowControlsProps) {
         type="button"
         className="wc-btn wc-btn--max"
         aria-label={t('common.winMaximize')}
-        tabIndex={open ? 0 : -1}
+        tabIndex={0}
         onClick={() => void toggleFullscreen().catch(ignore)}
       >
         {/* Нативный «enter fullscreen» — две треугольные стрелки в углы. */}

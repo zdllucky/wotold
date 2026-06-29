@@ -1,5 +1,6 @@
 // [W3] Recording state lifted to an App-level provider so any surface
-// (HomePage, RecStrip, future RecFloat window) reads the same source of truth.
+// (rail record controls, navbar button, RecFloat window) reads the same
+// source of truth.
 //
 // The provider:
 //  - reconstructs status on mount via `getRecordingState` (W2 backend);
@@ -7,10 +8,8 @@
 //  - ticks `elapsedSec` every 250ms, freezing the value during pauses;
 //  - surfaces backend errors via `error` for the UI to show as banner/toast.
 //
-// HomePage hotkey handler keeps its own copy of `recording` for now — W5 will
-// migrate HomePage onto this hook. We intentionally do NOT subscribe to
-// `pipeline:started/finished` here; those are a separate concern owned by
-// AppShell's activity badge.
+// We intentionally do NOT subscribe to `pipeline:started/finished` here; those
+// are a separate concern owned by AppShell's activity badge.
 
 import {
   createContext,

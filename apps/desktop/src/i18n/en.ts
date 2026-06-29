@@ -404,9 +404,6 @@ export const en: TranslationStrings = {
     voiceN: 'Voice {n}',
     voiceFallback: 'Voice',
     suggestionRoleNone: '—',
-    transcriptIdentifyChip: '? who is this',
-    transcriptIdentifyTitle: 'Who is this? Confirm voice',
-    transcriptIdentifyAria: 'Who is this? Confirm voice {tag}',
   },
 
   participants: {
@@ -766,22 +763,6 @@ export const en: TranslationStrings = {
     other: 'Call',
   },
 
-  decisionsBlock: {
-    title: 'Decisions',
-  },
-
-  openQuestionsBlock: {
-    title: 'Open questions',
-    raisedBy: 'raised by',
-  },
-
-  evidence: {
-    fromTranscript: 'Quote from transcript',
-    jumpToMoment: 'Jump to moment',
-    lowConfidence: 'Low confidence — verify the quote',
-    speakerLabel: 'Speaker',
-  },
-
   privacyDisclaimer: {
     oneOnOneTitle: '🔒 This was a 1:1 meeting',
     oneOnOneBody:
@@ -1038,7 +1019,6 @@ export const en: TranslationStrings = {
     stripRecording: 'Recording',
     tooShort: 'Recording under {sec}s — not saved',
     stripPaused: 'Paused · recorded',
-    segment: 'segment · {n}',
     pauseAction: 'Pause recording',
     resumeAction: 'Resume recording',
     stopAction: 'Stop recording',

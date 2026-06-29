@@ -581,6 +581,7 @@ export function InboxView({
               <button
                 type="button"
                 className="btn btn--danger"
+                aria-label={t('recording.stopAction')}
                 onClick={onRecord}
                 style={{ gap: 8 }}
               >

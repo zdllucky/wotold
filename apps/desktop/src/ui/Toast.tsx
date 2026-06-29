@@ -21,6 +21,8 @@ interface ToastItem {
   id: number;
   message: string;
   tone: ToastTone;
+  /** ms до авто-исчезновения; 0 = sticky (для pause/resume). */
+  duration: number;
 }
 
 interface ToastOptions {
@@ -41,29 +43,64 @@ const DEFAULT_DURATION = 4500;
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const idRef = useRef(0);
-  const timersRef = useRef<number[]>([]);
+  // id → timer handle. Удаляем по dismiss/fire — массив не растёт бесконечно.
+  const timersRef = useRef<Map<number, number>>(new Map());
+  // Зеркало текущих тостов для resume (re-arm после паузы по hover/focus).
+  const toastsRef = useRef<ToastItem[]>([]);
+  toastsRef.current = toasts;
 
-  const dismiss = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+  const clearTimer = useCallback((id: number) => {
+    const h = timersRef.current.get(id);
+    if (h !== undefined) {
+      window.clearTimeout(h);
+      timersRef.current.delete(id);
+    }
   }, []);
+
+  const dismiss = useCallback(
+    (id: number) => {
+      clearTimer(id);
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    },
+    [clearTimer],
+  );
+
+  const armTimer = useCallback(
+    (id: number, duration: number) => {
+      if (duration <= 0) return;
+      clearTimer(id);
+      timersRef.current.set(id, window.setTimeout(() => dismiss(id), duration));
+    },
+    [clearTimer, dismiss],
+  );
 
   const show = useCallback(
     ({ message, tone = 'info', duration = DEFAULT_DURATION }: ToastOptions) => {
       idRef.current += 1;
       const id = idRef.current;
-      setToasts((prev) => [...prev, { id, message, tone }]);
-      if (duration > 0) {
-        timersRef.current.push(window.setTimeout(() => dismiss(id), duration));
-      }
+      setToasts((prev) => [...prev, { id, message, tone, duration }]);
+      armTimer(id, duration);
     },
-    [dismiss],
+    [armTimer],
   );
+
+  // [a11y SC 2.2.1] Пауза авто-dismiss пока курсор/фокус на тостере, чтобы
+  // пользователь успел прочитать/среагировать; re-arm когда уходит.
+  const pauseAll = useCallback(() => {
+    for (const h of timersRef.current.values()) window.clearTimeout(h);
+    timersRef.current.clear();
+  }, []);
+
+  const resumeAll = useCallback(() => {
+    for (const item of toastsRef.current) armTimer(item.id, item.duration);
+  }, [armTimer]);
 
   // Чистим все авто-dismiss таймеры на unmount (нет setState на мёртвом провайдере).
   useEffect(() => {
     const timers = timersRef.current;
     return () => {
-      for (const h of timers) window.clearTimeout(h);
+      for (const h of timers.values()) window.clearTimeout(h);
+      timers.clear();
     };
   }, []);
 
@@ -72,7 +109,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <Toaster toasts={toasts} onDismiss={dismiss} />
+      <Toaster
+        toasts={toasts}
+        onDismiss={dismiss}
+        onPause={pauseAll}
+        onResume={resumeAll}
+      />
     </ToastContext.Provider>
   );
 }
@@ -86,17 +128,30 @@ export function useToast(): ToastApi {
 function Toaster({
   toasts,
   onDismiss,
+  onPause,
+  onResume,
 }: {
   toasts: ToastItem[];
   onDismiss: (id: number) => void;
+  onPause: () => void;
+  onResume: () => void;
 }) {
   const { t } = useI18n();
   // Контейнер всегда смонтирован (стабильный live-region, иначе SR пропускает
-  // первое сообщение). aria-live на контейнере, не на каждом тосте.
+  // первое сообщение). aria-live на контейнере, НЕ role=status на каждом тосте
+  // (иначе VoiceOver/NVDA дублируют объявление — вложенные live-region'ы).
   return (
-    <div className="toaster" aria-live="polite" aria-atomic="false">
+    <div
+      className="toaster"
+      aria-live="polite"
+      aria-atomic="false"
+      onMouseEnter={onPause}
+      onMouseLeave={onResume}
+      onFocus={onPause}
+      onBlur={onResume}
+    >
       {toasts.map((toast) => (
-        <div key={toast.id} className={`toast toast--${toast.tone}`} role="status">
+        <div key={toast.id} className={`toast toast--${toast.tone}`}>
           <span className="toast-msg">{toast.message}</span>
           <button
             type="button"

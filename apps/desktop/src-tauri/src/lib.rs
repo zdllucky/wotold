@@ -716,7 +716,11 @@ fn make_widget_draggable_by_background(widget: &tauri::WebviewWindow) {
         log::warn!("widget ns_window is null");
         return;
     }
-    // SAFETY: NSWindow* lives as long as the widget window; setter is no-throw.
+    // SAFETY: (1) NSWindow* lives as long as the widget window (`widget` keeps it
+    // alive for this call). (2) setMovableByWindowBackground: is a no-throw AppKit
+    // setter. (3) Must run on the main thread — call sites are Tauri 2 setup() (runs
+    // on main) / window-setup, never a spawned thread; moving this onto a background
+    // thread would be unsound (AppKit is main-thread-only).
     unsafe {
         let ns_window = ns_window as *mut Object;
         let _: () = msg_send![ns_window, setMovableByWindowBackground: YES];
@@ -752,8 +756,12 @@ fn set_main_window_buttons_hidden(main: &tauri::WebviewWindow, hidden: bool) {
         return;
     }
     let val: BOOL = if hidden { YES } else { NO };
-    // SAFETY: NSWindow* lives as long as the main window; standardWindowButton:
-    // / setHidden: are no-throw AppKit accessors.
+    // SAFETY: (1) NSWindow* lives as long as the main window (`main` keeps it alive
+    // for this call). (2) standardWindowButton: / setHidden: are no-throw AppKit
+    // accessors. (3) Must run on the main thread — call sites are Tauri 2 setup()
+    // (runs on main) and the #[tauri::command] path (wry's WKScriptMessageHandler
+    // is MainThreadOnly, so IPC fires on main); moving onto a spawned thread would
+    // be unsound (AppKit is main-thread-only).
     unsafe {
         let ns_window = ns_window as *mut Object;
         // NSWindowButton — NSUInteger (= usize на всех целевых платформах).

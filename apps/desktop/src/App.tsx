@@ -608,7 +608,7 @@ export function App() {
   return (
     <I18nProvider>
       <ThemeProvider>
-        {/* [W3] Recording state is App-level so the rail, RecStrip, and the
+        {/* [W3] Recording state is App-level so the rail, navbar, and the
             floating widget window share one source of truth. */}
         <RecordingProvider>
           <ToastProvider>

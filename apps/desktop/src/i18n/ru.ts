@@ -432,9 +432,6 @@ const ruInternal = {
     voiceN: 'Голос {n}',
     voiceFallback: 'Голос',
     suggestionRoleNone: '—',
-    transcriptIdentifyChip: '? кто это',
-    transcriptIdentifyTitle: 'Кто это? Подтвердить голос',
-    transcriptIdentifyAria: 'Кто это? Подтвердить голос {tag}',
   },
 
   // ── Participants row (CallDetail header) ───────────────────────────────
@@ -808,25 +805,6 @@ const ruInternal = {
     other: 'Звонок',
   },
 
-  // [M14 T-11] Decisions block — список решений из cloud v2 recap.
-  decisionsBlock: {
-    title: 'Решения',
-  },
-
-  // [M14 T-11] Open questions block — нерешённые вопросы из звонка.
-  openQuestionsBlock: {
-    title: 'Открытые вопросы',
-    raisedBy: 'поднял(а)',
-  },
-
-  // [M14 T-11] Evidence quote tooltips и confidence indicators.
-  evidence: {
-    fromTranscript: 'Цитата из расшифровки',
-    jumpToMoment: 'К моменту в записи',
-    lowConfidence: 'Невысокая уверенность — проверь цитату',
-    speakerLabel: 'Говорит',
-  },
-
   // [M14 T-11] Privacy disclaimer для 1:1 встреч (содержит личную обратную связь).
   privacyDisclaimer: {
     oneOnOneTitle: '🔒 Это была встреча 1:1',
@@ -1104,8 +1082,6 @@ const ruInternal = {
     stripRecording: 'Идёт запись',
     tooShort: 'Запись короче {sec} с — не сохранена',
     stripPaused: 'Пауза · записано',
-    // [B18.7b] 10-мин чанк-индикатор в RecStrip (R11: offline, не live-анализ).
-    segment: 'сегмент · {n}',
     pauseAction: 'Поставить на паузу',
     resumeAction: 'Продолжить запись',
     stopAction: 'Остановить запись',

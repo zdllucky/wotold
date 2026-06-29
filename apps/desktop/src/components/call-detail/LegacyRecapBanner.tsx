@@ -5,7 +5,7 @@
 // `regenerateRecap(call_id)` Tauri-команд — backend через T-02 path пишет
 // CallSummaryV2 в DB → pipeline:finished → useCallDetail.refetchAll →
 // `summary_schema_version=2` → banner condition false → banner исчезает,
-// CallTypeBadge / DecisionsBlock / OpenQuestionsBlock появляются.
+// CallTypeBadge + v2-рекап (RecapView) появляются.
 //
 // Mirror AutoBoundBanner.tsx — то же `.activity-strip` оформление.
 
