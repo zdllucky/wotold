@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon, type IconName } from './Icon';
+import { useAnchoredPosition } from './useAnchoredPosition';
 
 interface DropdownApi {
   open: boolean;
@@ -21,6 +22,8 @@ interface DropdownProps {
 export function Dropdown({ trigger, children, align, up, width, block }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const place = useAnchoredPosition(open, ref, panelRef, up);
   const toggle = () => setOpen((v) => !v);
   const close = () => setOpen(false);
 
@@ -42,8 +45,10 @@ export function Dropdown({ trigger, children, align, up, width, block }: Dropdow
 
   const pos: CSSProperties = {
     width,
-    [up ? 'bottom' : 'top']: 'calc(100% + 6px)',
+    [place.up ? 'bottom' : 'top']: 'calc(100% + 6px)',
     [align ?? 'left']: 0,
+    ...(place.shiftX ? { transform: `translateX(${place.shiftX}px)` } : null),
+    ...(place.maxHeight ? { maxHeight: place.maxHeight, overflowY: 'auto' } : null),
   };
 
   return (
@@ -51,6 +56,7 @@ export function Dropdown({ trigger, children, align, up, width, block }: Dropdow
       {trigger({ open, toggle, close })}
       {open && (
         <div
+          ref={panelRef}
           className="menu fade"
           style={{ position: 'absolute', zIndex: 60, ...pos }}
           onClick={() => close()}
