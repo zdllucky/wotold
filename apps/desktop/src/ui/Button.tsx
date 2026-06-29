@@ -1,9 +1,9 @@
-// [B17] Atelier v2 thin wrapper — emit .btn + .btn--{variant} + .btn--{size}
-// поверх классов из styles/wotold.css. API сохранён 1-в-1 для всех callers.
+// Wotold v2 (uikit) thin wrapper — emit .btn + .btn--{variant} + .btn--{size}
+// поверх классов из styles/wk.css. API сохранён 1-в-1 для всех callers.
 
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'record';
+type Variant = 'primary' | 'secondary' | 'default' | 'ghost' | 'soft' | 'danger' | 'record';
 type Size = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
@@ -18,29 +18,21 @@ interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'chi
   children: ReactNode;
 }
 
-// Старый variant → Atelier btn-class mapping. `record` НЕ используется в
-// HomePage (там raw .rec-btn), но если кто-то вызвал — рендерим как danger.
+// variant → uikit btn-class mapping. `record` рендерится как danger.
 function variantClass(v: Variant): string {
   switch (v) {
     case 'primary':
       return 'btn--primary';
+    case 'default':
+      return 'btn--default';
     case 'ghost':
     case 'secondary':
       return 'btn--ghost';
+    case 'soft':
+      return 'btn--soft';
     case 'danger':
     case 'record':
       return 'btn--danger';
-  }
-}
-
-function sizeClass(s: Size): string {
-  switch (s) {
-    case 'sm':
-      return 'btn--sm';
-    case 'lg':
-      return 'btn--lg';
-    case 'md':
-      return '';
   }
 }
 
@@ -59,12 +51,7 @@ export function Button({
   ...rest
 }: ButtonProps) {
   void _pill;
-  const classes = [
-    'btn',
-    variantClass(variant),
-    sizeClass(size),
-    className ?? '',
-  ]
+  const classes = ['btn', variantClass(variant), className ?? '']
     .filter(Boolean)
     .join(' ');
   const blockStyle = block ? { width: '100%', justifyContent: 'center' as const } : undefined;
@@ -72,7 +59,10 @@ export function Button({
     <button
       type={type}
       className={classes}
+      // wk.css sizes via [data-size]; 'md' is the default (no attr).
+      data-size={size === 'md' ? undefined : size}
       data-busy={busy ? 'true' : undefined}
+      data-block={block ? 'true' : undefined}
       style={{ ...blockStyle, ...style }}
       {...rest}
     >

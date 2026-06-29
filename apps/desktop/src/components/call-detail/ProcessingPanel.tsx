@@ -65,7 +65,7 @@ export function ProcessingPanel({ call, chunks, onRetryChunk }: ProcessingPanelP
       <p
         className="muted"
         style={{
-          fontFamily: 'var(--font-serif)',
+          fontFamily: 'var(--font)',
           fontSize: 14,
           fontStyle: 'italic',
           marginTop: 14,

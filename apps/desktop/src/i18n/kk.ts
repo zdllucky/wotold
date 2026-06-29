@@ -18,7 +18,66 @@ export const kk: TranslationStrings = {
     brandFooter: 'Жергілікті · macOS',
   },
 
+  // [B18.1a] Wotold v2 shell rail.
+  rail: {
+    record: 'Қоңырауды жазу',
+    recent: 'Соңғы',
+    collapse: 'Жию',
+    expand: 'Панельді ашу',
+    designSystem: 'Дизайн-жүйе',
+  },
+
+  // [B18.1c] ⌘K command palette.
+  palette: {
+    placeholder: 'Қоңырауға өту немесе команда…',
+    commands: 'Командалар',
+    calls: 'Қоңыраулар',
+    empty: 'Ештеңе табылмады',
+    allCalls: 'Барлық қоңыраулар',
+  },
+
+  // [B18.2a] Inbox — omni-bar, facets, view switcher.
+  inbox: {
+    searchPlaceholder: 'Іздеу немесе сүзгі…',
+    clearAll: 'Тазалау',
+    facetStatus: 'Күй',
+    facetRecap: 'Рекап',
+    facetPeriod: 'Кезең',
+    facetPerson: 'Қатысушы',
+    statusReady: 'Дайын',
+    statusProcessing: 'Өңдеу',
+    statusError: 'Қате',
+    recapYes: 'Рекаппен',
+    recapNo: 'Рекапсыз',
+    periodToday: 'Бүгін',
+    periodWeek: 'Осы апта',
+    quickFilters: 'Жылдам сүзгілер',
+    addFilter: 'Сүзгі қосу',
+    searchInTitles: '«{q}» атауларда іздеу',
+    viewLabel: 'Көрініс',
+    viewList: 'Тізім',
+    viewCards: 'Карточкалар',
+    viewWeek: 'Апта',
+    viewMonth: 'Ай',
+    comingSoon: 'Жақында',
+    todayBtn: 'Бүгін',
+    filter: 'Сүзгі',
+    recordShort: 'Жазу',
+    colName: 'Атауы',
+    colParticipants: 'Қатысушылар',
+    colDuration: 'Ұзақт.',
+    colDate: 'Күні',
+    rowActions: 'Әрекеттер',
+    rowOpen: 'Ашу',
+    rowReprocess: 'Қайта өңдеу',
+    rowExport: 'Экспорт…',
+  },
+
   common: {
+    winClose: 'Терезені жабу',
+    winMinimize: 'Терезені жию',
+    winMaximize: 'Толық экран',
+    dismiss: 'Жабу',
     save: 'Сақтау',
     cancel: 'Болдырмау',
     delete: 'Жою',
@@ -172,6 +231,20 @@ export const kk: TranslationStrings = {
     notFound: 'Қоңырау табылмады.',
     tabRecap: 'Қорытынды',
     tabTranscript: 'Транскрипт',
+    // [B18.3a] Right rail (CallRail).
+    railProperties: 'Сипаттар',
+    railStatus: 'Күй',
+    railEngine: 'Қозғалтқыш',
+    railDate: 'Күні',
+    railDuration: 'Ұзақтығы',
+    railParticipants: 'Қатысушылар',
+    railUndefined: '{n} анықталмаған',
+    railNoSpeakers: 'Қатысушылар өңдеуден кейін шығады.',
+    railSpeakerUnknown: 'Сөйлеуші',
+    railIdentify: 'Анықтау',
+    railActions: 'Әрекеттер',
+    railExport: 'Қорытындыны экспорттау',
+    exportBusy: 'Экспорттаудамыз…',
     tabTasks: 'Тапсырмалар',
     tabSpeakers: 'Қатысушылар',
     actionsAria: 'Қоңырау әрекеттері',
@@ -262,6 +335,10 @@ export const kk: TranslationStrings = {
   },
 
   recap: {
+    modeRich: 'Безендірілген',
+    modeMd: 'Markdown',
+    copyMd: '.md көшіру',
+    copied: 'Көшірілді',
     summary: 'Қорытынды',
     summaryAlt: 'Қорытынды',
     keyPoints: 'Негізгі сәттер',
@@ -326,9 +403,6 @@ export const kk: TranslationStrings = {
     voiceN: 'Дауыс {n}',
     voiceFallback: 'Дауыс',
     suggestionRoleNone: '—',
-    transcriptIdentifyChip: '? бұл кім',
-    transcriptIdentifyTitle: 'Бұл кім? Дауысты растау',
-    transcriptIdentifyAria: 'Бұл кім? {tag} дауысын растау',
   },
 
   participants: {
@@ -377,6 +451,8 @@ export const kk: TranslationStrings = {
     statCalls: 'Қоңыраулар',
     statRecorded: 'Жазылған',
     statVoiceSamples: 'Дауыс үлгілері',
+    recentCalls: 'Соңғы қоңыраулар',
+    voiceConfirmed: 'Дауыс расталды',
     voiceOptIn: 'opt-in',
     voiceOff: '—',
     contactsBlock: 'Контактілер',
@@ -682,22 +758,6 @@ export const kk: TranslationStrings = {
     other: 'Қоңырау',
   },
 
-  decisionsBlock: {
-    title: 'Шешімдер',
-  },
-
-  openQuestionsBlock: {
-    title: 'Ашық сұрақтар',
-    raisedBy: 'көтерген',
-  },
-
-  evidence: {
-    fromTranscript: 'Транскрипттен үзінді',
-    jumpToMoment: 'Сәтке өту',
-    lowConfidence: 'Сенімділік төмен — үзіндіні тексер',
-    speakerLabel: 'Сөйлеуші',
-  },
-
   privacyDisclaimer: {
     oneOnOneTitle: '🔒 Бұл 1:1 кездесу болды',
     oneOnOneBody:
@@ -952,6 +1012,7 @@ export const kk: TranslationStrings = {
   recording: {
     overlayLabel: 'Жазу жүруде',
     stripRecording: 'Жазу жүруде',
+    tooShort: '{sec} с-тан қысқа жазба — сақталмады',
     stripPaused: 'Кідіріс · жазылды',
     pauseAction: 'Жазуды кідірту',
     resumeAction: 'Жазуды жалғастыру',

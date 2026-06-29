@@ -167,8 +167,15 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     }
 }
 
+/// Минимальная длительность записи (сек) — короче отбрасываем (не сохраняем,
+/// не обрабатываем). Держать в синхроне с i18n `recording.tooShort {sec:30}`.
+const MIN_RECORDING_SEC: f64 = 30.0;
+
 #[tauri::command]
-pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Result<Call, AppError> {
+pub async fn stop_recording(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<Call>, AppError> {
     let session = {
         let mut guard = state.recording.lock().await;
         guard
@@ -212,13 +219,42 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
             // → не accumulated). Используем session.started_at, минус
             // paused_total_ms из DB (finish_recording не делает это сам).
             let elapsed_ms = (chrono::Utc::now() - started_at).num_milliseconds().max(0);
-            let paused_ms: i64 =
-                sqlx::query_scalar("SELECT paused_total_ms FROM calls WHERE id = ?1")
+            // paused_total_ms НЕ включает текущее открытое окно паузы, если stop
+            // нажали во время паузы (resume_call/finish_recording свернут его лишь
+            // позже, line 242). Складываем его здесь тем же расчётом, что resume_call
+            // (RFC3339 paused_at) — иначе total_sec завышается на длительность паузы,
+            // duration_sec пишется неверно, и короткая запись (audio <30с, но долгая
+            // пауза) могла бы проскочить min-duration гейт.
+            let (paused_at, paused_total_ms): (Option<String>, i64) =
+                sqlx::query_as("SELECT paused_at, paused_total_ms FROM calls WHERE id = ?1")
                     .bind(&call_id)
                     .fetch_optional(&state.db)
                     .await?
-                    .unwrap_or(0);
+                    .unwrap_or((None, 0));
+            let lingering_paused_ms = paused_at
+                .as_deref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| {
+                    (chrono::Utc::now() - dt.with_timezone(&chrono::Utc))
+                        .num_milliseconds()
+                        .max(0)
+                })
+                .unwrap_or(0);
+            let paused_ms = paused_total_ms.saturating_add(lingering_paused_ms);
             let total_sec = (elapsed_ms - paused_ms).max(0) as f64 / 1000.0;
+            // [min-duration] <30с — отбрасываем: удаляем строку звонка + temp
+            // WAV, пайплайн НЕ пускаем. Фронт покажет тост «слишком коротко».
+            if total_sec < MIN_RECORDING_SEC {
+                // DB-удаление логируем (ghost-строка в list_calls опаснее), WAV —
+                // best-effort (NotFound норм, если sidecar не писал system-трек).
+                if let Err(e) = crate::db::delete_call_and_samples(&state.db, &call_id).await {
+                    log::warn!("min-duration discard: delete call {call_id} failed: {e}");
+                }
+                let _ = tokio::fs::remove_file(&mic_path).await;
+                let _ = tokio::fs::remove_file(&system_path).await;
+                EventBus::new(Some(&app)).recording_state_changed();
+                return Ok(None);
+            }
             crate::db::finish_recording(&state.db, &call_id, total_sec).await?
         }
         Err(e) => {
@@ -245,7 +281,7 @@ pub async fn stop_recording(app: AppHandle, state: State<'_, AppState>) -> Resul
     )
     .await;
 
-    Ok(call)
+    Ok(Some(call))
 }
 
 /// [W2] Pause активную запись. DB-only: проставляет `paused_at = now()` чтобы

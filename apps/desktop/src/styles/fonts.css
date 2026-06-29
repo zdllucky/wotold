@@ -1,55 +1,36 @@
 /* ─────────────────────────────────────────────────────────────
-   Wotold · Fonts
-   Two options — pick ONE and remove the other before shipping.
+   Wotold · Fonts (Wotold v2) — Hanken Grotesk + IBM Plex Mono.
+   B18.0: serif (Source Serif 4) + DM Sans + JetBrains Mono выпилены.
    ───────────────────────────────────────────────────────────── */
 
 /* ════════════════════════════════════════════════════════
-   OPTION A — Google Fonts CDN  (simplest; needs internet)
+   OPTION A — Google Fonts CDN  (текущая; нужен интернет)
    ════════════════════════════════════════════════════════ */
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;450;500;550;600;650;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 /* ════════════════════════════════════════════════════════
-   OPTION B — Self-hosted (offline-first; recommended for Tauri)
+   OPTION B — Self-hosted (offline-first; recommended для Tauri)  — TODO B18.x
 
-   1. Download from https://fonts.google.com:
-      - Source Serif 4 (variable, weight 200..900, italic optional)
-      - DM Sans (variable, weight 100..1000)
-      - JetBrains Mono (variable, weight 100..800)
-
-   2. Drop the .woff2 files into apps/desktop/public/fonts/
-
-   3. Comment out OPTION A above and uncomment the @font-face
-      block below.
+   Wotold local-first → CDN-зависимость убрать до публичного релиза.
+   1. Скачать с https://fonts.google.com: Hanken Grotesk (variable),
+      IBM Plex Mono (400/500/600).
+   2. Положить .woff2 в apps/desktop/public/fonts/.
+   3. Закомментировать OPTION A, раскомментировать блок ниже.
    ════════════════════════════════════════════════════════ */
 
 /*
 @font-face {
-  font-family: 'Source Serif 4';
+  font-family: 'Hanken Grotesk';
   font-style: normal;
-  font-weight: 200 900;
+  font-weight: 400 700;
   font-display: swap;
-  src: url('/fonts/SourceSerif4-VariableFont_opsz,wght.woff2') format('woff2');
+  src: url('/fonts/HankenGrotesk-VariableFont_wght.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Source Serif 4';
-  font-style: italic;
-  font-weight: 200 900;
-  font-display: swap;
-  src: url('/fonts/SourceSerif4-Italic-VariableFont_opsz,wght.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'DM Sans';
+  font-family: 'IBM Plex Mono';
   font-style: normal;
-  font-weight: 100 1000;
+  font-weight: 400 600;
   font-display: swap;
-  src: url('/fonts/DMSans-VariableFont_opsz,wght.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 100 800;
-  font-display: swap;
-  src: url('/fonts/JetBrainsMono-VariableFont_wght.woff2') format('woff2');
+  src: url('/fonts/IBMPlexMono-Regular.woff2') format('woff2');
 }
 */

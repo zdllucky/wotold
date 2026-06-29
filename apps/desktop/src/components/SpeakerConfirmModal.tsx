@@ -95,25 +95,30 @@ export function SpeakerConfirmModal({
 
   return (
     <div
-      className="modal-backdrop"
+      className="overlay"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('speakers.confirmModalAria')}
     >
-      <div ref={ref} style={{ width: 'min(560px, 90vw)' }}>
+      <div
+        ref={ref}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('speakers.confirmModalAria')}
+        style={{ width: 'min(560px, 90vw)' }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         {error && (
           <p
             role="alert"
             style={{
-              color: 'var(--signal)',
-              fontFamily: 'var(--font-sans)',
+              color: 'var(--danger)',
+              fontFamily: 'var(--font)',
               marginBottom: 12,
-              background: 'var(--paper)',
+              background: 'var(--danger-soft)',
               padding: '8px 14px',
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 'var(--r-xs)',
             }}
           >
             {error}

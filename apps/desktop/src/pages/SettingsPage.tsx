@@ -1,4 +1,4 @@
-// [B17] SettingsPage — exact match per docs/design/atelier-v2/_reference/atelier-2.jsx §9.
+// SettingsPage — Wotold v2 (uikit) settings shell + 9 sections (B18.5).
 //
 // Inner 220px rail (Настройки nav) + flex content with per-section layout:
 //   - Eyebrow "Настройки · {section.label}"
@@ -12,7 +12,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { ask } from '@tauri-apps/plugin-dialog';
 import { humanError } from '../api/errors';
 import {
   regenerateEmptyRecaps,
@@ -33,8 +32,10 @@ import {
   type PreferredLanguage,
 } from '../api/settings';
 import { useI18n } from '../i18n';
-import { Select, Skeleton } from '../ui';
+import { Icon, NavItem, Select, Skeleton, Switch } from '../ui';
+import { type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
 import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
@@ -59,6 +60,19 @@ interface SectionMeta {
   label: string;
   hidden?: boolean;
 }
+
+// [B18.5a] v2 rail icon per section.
+const SECTION_ICONS: Record<SectionId, IconName> = {
+  appearance: 'sun',
+  account: 'user',
+  processing: 'cpu',
+  permissions: 'lock',
+  recording: 'mic',
+  speakers: 'users',
+  labs: 'bolt',
+  maintenance: 'refresh',
+  privacy: 'shield',
+};
 
 export function SettingsPage() {
   const { t } = useI18n();
@@ -177,60 +191,59 @@ export function SettingsPage() {
   const activeMeta = NAV.find((s) => s.id === section) ?? NAV[0]!;
 
   return (
+    // [B18.9] Shared shell: full-width .view-head (48px) over a flex .view-body.
+    // Bleed past .app-main 34/44 padding and fill the viewport so the header bar
+    // spans edge-to-edge and the 2-pane body fills below.
     <div
-      style={{
-        margin: '-34px -44px',
-        display: 'flex',
-        minHeight: '100%',
-      }}
+      className="main"
+      style={{ margin: '-34px -44px', height: '100vh' }}
     >
-      {/* Inner settings rail */}
-      <div
-        style={{
-          width: 220,
-          padding: '32px 22px',
-          borderRight: '1px solid var(--line-soft)',
-          flexShrink: 0,
-        }}
-      >
-        <div className="small-caps" style={{ marginBottom: 14 }}>
-          {t('settings.title')}
-        </div>
-        {NAV.filter((s) => !s.hidden).map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className={`nav-item${section === s.id ? ' nav-item--active' : ''}`}
-            onClick={() => setSection(s.id)}
-            aria-current={section === s.id ? 'page' : undefined}
-            style={{ fontSize: 14 }}
-          >
-            {s.label}
-          </button>
-        ))}
-        {savedTick > 0 && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="small-caps"
-            style={{ marginTop: 18, color: 'var(--success)', fontSize: 11 }}
-          >
-            {t('settings.saved')}
-          </div>
-        )}
+      {/* [B18.9] Breadcrumb view-head per prototype: Настройки › {section} + saved. */}
+      <div className="view-head">
+        <Icon name="settings" size={17} style={{ color: 'var(--text-3)' }} />
+        <span className="u-faint" style={{ fontSize: 'var(--t-13)' }}>{t('settings.title')}</span>
+        <Icon name="chevronRight" size={13} style={{ color: 'var(--text-faint)' }} />
+        <span style={{ fontWeight: 600 }}>{activeMeta.label}</span>
+        <span
+          className="set-saved"
+          role="status"
+          aria-live="polite"
+          style={{ marginLeft: 10, opacity: savedTick > 0 ? 1 : 0 }}
+        >
+          {t('settings.saved')}
+        </span>
       </div>
-
-      {/* Content */}
-      <div style={{ flex: 1, padding: '32px 44px', overflowY: 'auto' }}>
-        <div className="small-caps" style={{ marginBottom: 8 }}>
-          {t('settings.breadcrumb', { section: activeMeta.label })}
+      <div className="view-body">
+        {/* [B18.5a] v2 inner settings rail */}
+        <div
+          style={{
+            width: 250,
+            padding: '26px 10px 10px',
+            borderRight: '1px solid var(--border)',
+            flexShrink: 0,
+            overflowY: 'auto',
+          }}
+        >
+          {NAV.filter((s) => !s.hidden).map((s) => (
+            <NavItem
+              key={s.id}
+              icon={SECTION_ICONS[s.id]}
+              label={s.label}
+              active={section === s.id}
+              current={section === s.id}
+              onClick={() => setSection(s.id)}
+            />
+          ))}
         </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, padding: '32px 44px', overflowY: 'auto' }}>
         {error && (
           <p
             role="alert"
             style={{
-              color: 'var(--signal)',
-              fontFamily: 'var(--font-sans)',
+              color: 'var(--danger)',
+              fontFamily: 'var(--font)',
               marginBottom: 14,
             }}
           >
@@ -287,7 +300,7 @@ export function SettingsPage() {
                     void persist(SETTINGS_KEYS.STT_LANG, v);
                   }}
                 />
-                <span style={{ fontSize: 12, color: 'var(--subtle)', marginTop: 2 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 2 }}>
                   {t('settings.sttLangHint')}
                 </span>
               </div>
@@ -305,7 +318,7 @@ export function SettingsPage() {
                     void persist(SETTINGS_KEYS.PREFERRED_LANGUAGE, v);
                   }}
                 />
-                <span style={{ fontSize: 12, color: 'var(--subtle)', marginTop: 2 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 2 }}>
                   {t('settings.sttRecapLangHint')}
                 </span>
               </div>
@@ -315,7 +328,7 @@ export function SettingsPage() {
                 style={{
                   marginTop: 8,
                   paddingTop: 18,
-                  borderTop: '1px solid var(--line-soft)',
+                  borderTop: '1px solid var(--border-2)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 18,
@@ -336,7 +349,7 @@ export function SettingsPage() {
                   <span
                     style={{
                       fontSize: 12,
-                      color: 'var(--subtle)',
+                      color: 'var(--text-faint)',
                       marginTop: 6,
                     }}
                   >
@@ -358,7 +371,7 @@ export function SettingsPage() {
                   <span
                     style={{
                       fontSize: 12,
-                      color: 'var(--subtle)',
+                      color: 'var(--text-faint)',
                       marginTop: 6,
                     }}
                   >
@@ -372,7 +385,7 @@ export function SettingsPage() {
                 style={{
                   marginTop: 8,
                   paddingTop: 18,
-                  borderTop: '1px solid var(--line-soft)',
+                  borderTop: '1px solid var(--border-2)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 18,
@@ -382,27 +395,18 @@ export function SettingsPage() {
                   <label className="field-label">
                     {t('settings.callDetectLabel')}
                   </label>
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 12,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <Switch
                       checked={callDetectEnabled}
-                      onChange={(e) => {
-                        const v = e.target.checked;
+                      label={t('settings.callDetectCheckboxLabel')}
+                      style={{ marginTop: 2, flex: '0 0 auto' }}
+                      onChange={(v) => {
                         setCallDetectEnabled(v);
                         void persist(
                           SETTINGS_KEYS.CALL_DETECT_ENABLED,
                           v ? '1' : '0',
                         );
-                        // [S2] Поднять/потушить probe сразу же — не ждать
-                        // следующего рестарта. cooldown в минутах из текущего
-                        // значения селектора.
+                        // [S2] Поднять/потушить probe сразу же.
                         if (v) {
                           void invoke('enable_call_detect', {
                             cooldownMin: Number.parseInt(callDetectCooldown, 10),
@@ -415,23 +419,15 @@ export function SettingsPage() {
                           });
                         }
                       }}
-                      style={{ marginTop: 4 }}
                     />
-                    <span
-                      style={{
-                        fontFamily: 'var(--font-serif)',
-                        fontSize: 14,
-                        color: 'var(--ink-2)',
-                        lineHeight: 1.5,
-                      }}
-                    >
+                    <span style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.5 }}>
                       {t('settings.callDetectCheckboxLabel')}
                     </span>
-                  </label>
+                  </div>
                   <span
                     style={{
                       fontSize: 12,
-                      color: 'var(--subtle)',
+                      color: 'var(--text-faint)',
                       marginTop: 6,
                       fontStyle: 'italic',
                     }}
@@ -470,7 +466,7 @@ export function SettingsPage() {
                     <span
                       style={{
                         fontSize: 12,
-                        color: 'var(--subtle)',
+                        color: 'var(--text-faint)',
                         marginTop: 2,
                       }}
                     >
@@ -512,6 +508,7 @@ export function SettingsPage() {
             <DeleteAllDataSection />
           </SectionShell>
         )}
+        </div>
       </div>
     </div>
   );
@@ -526,10 +523,10 @@ interface SectionShellProps {
 function SectionShell({ title, lede, children }: SectionShellProps) {
   return (
     <>
-      <div className="display" style={{ fontSize: 40, marginBottom: 10, marginTop: 0 }}>
+      <div className="set-display" style={{ marginBottom: 10, marginTop: 0 }}>
         {title}
       </div>
-      <p className="subtitle" style={{ maxWidth: 560, marginBottom: 32 }}>
+      <p className="set-lead" style={{ maxWidth: 560, marginBottom: 32 }}>
         {lede}
       </p>
       {children}
@@ -600,29 +597,47 @@ function BulkRecapSection() {
   return (
     <div style={{ maxWidth: 560 }}>
       {error && (
-        <p role="alert" style={{ color: 'var(--signal)', marginBottom: 16 }}>
+        <p role="alert" style={{ color: 'var(--danger)', marginBottom: 16 }}>
           {error}
         </p>
       )}
 
       {running && progress ? (
         <div
-          className="activity-strip"
+          className="panel"
           role="status"
-          style={{ marginBottom: 16 }}
+          style={{
+            background: 'var(--accent-soft)',
+            borderColor: 'transparent',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '12px 16px',
+            marginBottom: 16,
+          }}
         >
-          <span>
+          <span className="wave" style={{ color: 'var(--accent)' }}>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <i key={i} style={{ animationDelay: i * 0.1 + 's' }} />
+            ))}
+          </span>
+          <span style={{ flex: '1 1 auto', color: 'var(--text-2)' }}>
             {t('settings.bulkRecapProgress', {
               done: progress.done + 1,
               total: progress.total,
             })}
           </span>
-          <button type="button" className="btn btn--quiet" onClick={() => void stop()}>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            data-size="sm"
+            onClick={() => void stop()}
+          >
             {t('settings.bulkRecapStop')}
           </button>
         </div>
       ) : running ? (
-        <p className="subtle" style={{ marginBottom: 16 }} role="status">
+        <p style={{ color: 'var(--text-3)', marginBottom: 16 }} role="status">
           {t('settings.bulkRecapScanning')}
         </p>
       ) : null}
@@ -631,9 +646,8 @@ function BulkRecapSection() {
         <p
           role="status"
           style={{
-            fontFamily: 'var(--font-serif)',
             fontSize: 16,
-            color: 'var(--ink)',
+            color: 'var(--text)',
             marginBottom: 16,
             maxWidth: 560,
           }}
@@ -665,34 +679,14 @@ function DeleteAllDataSection() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const handleWipe = async () => {
-    const ok = await ask(t('settings.wipeConfirmBody'), {
-      title: t('settings.wipeConfirmTitle'),
-      kind: 'warning',
-      okLabel: t('settings.wipeConfirmOk'),
-      cancelLabel: t('common.cancel'),
-    });
-    if (!ok) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await invoke('wipe_all_data');
-      setDone(true);
-    } catch (e) {
-      setError(humanError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (done) {
     return (
       <p
         style={{
-          fontFamily: 'var(--font-serif)',
           fontSize: 16,
-          color: 'var(--ink)',
+          color: 'var(--text)',
           margin: 0,
           maxWidth: 560,
         }}
@@ -708,8 +702,7 @@ function DeleteAllDataSection() {
         <p
           role="alert"
           style={{
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-sans)',
+            color: 'var(--danger)',
             marginBottom: 12,
           }}
         >
@@ -718,13 +711,35 @@ function DeleteAllDataSection() {
       )}
       <button
         type="button"
-        className="btn btn--ghost"
-        onClick={handleWipe}
+        className="btn btn--danger-ghost"
+        onClick={() => setConfirmOpen(true)}
         disabled={busy}
-        style={{ color: 'var(--signal)', borderColor: 'var(--signal)' }}
       >
         {busy ? t('settings.wipeBusy') : t('settings.wipeBtn')}
       </button>
+      <ConfirmModal
+        open={confirmOpen}
+        title={t('settings.wipeConfirmTitle')}
+        body={t('settings.wipeConfirmBody')}
+        confirmLabel={t('settings.wipeConfirmOk')}
+        cancelLabel={t('common.cancel')}
+        danger
+        busy={busy}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={async () => {
+          setConfirmOpen(false);
+          setBusy(true);
+          setError(null);
+          try {
+            await invoke('wipe_all_data');
+            setDone(true);
+          } catch (e) {
+            setError(humanError(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
     </div>
   );
 }

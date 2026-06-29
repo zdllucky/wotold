@@ -17,9 +17,9 @@ export function Empty({ icon, title, description, action }: EmptyProps) {
       {title && (
         <p
           style={{
-            fontFamily: 'var(--font-serif)',
+            fontFamily: 'var(--font)',
             fontSize: 19,
-            color: 'var(--ink)',
+            color: 'var(--text)',
             fontStyle: 'normal',
             margin: 0,
           }}
@@ -33,7 +33,7 @@ export function Empty({ icon, title, description, action }: EmptyProps) {
             margin: 0,
             maxWidth: '34rem',
             fontStyle: 'italic',
-            color: 'var(--muted)',
+            color: 'var(--text-3)',
           }}
         >
           {description}

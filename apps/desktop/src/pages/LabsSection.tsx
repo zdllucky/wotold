@@ -5,8 +5,8 @@
 // - Speculative decoding (T-16 P2, default OFF) — 0.5B draft model для
 //   Quality preset speedup
 //
-// Mirror VoiceModelSection.tsx mic-diarization toggle pattern (.card-like
-// wrapper + native checkbox + label/hint stack).
+// [B18.5b] Wotold v2 restyle: native checkboxes → `.setting-row` + `.switch`
+// (role=switch, mirrors SettingsPage call-detect), force-N `<select>` → `Select`.
 
 import { useEffect, useState } from 'react';
 
@@ -20,6 +20,27 @@ import {
 } from '../api/settings';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
+import { Select, SettingRow, Switch } from '../ui';
+
+interface ToggleRowProps {
+  label: string;
+  hint: string;
+  checked: boolean;
+  onToggle: (next: boolean) => void;
+}
+
+// [B18.7c] v2 toggle row — thin wrapper around SettingRow + Switch wrappers.
+function ToggleRow({ label, hint, checked, onToggle }: ToggleRowProps) {
+  return (
+    <SettingRow
+      label={label}
+      hint={hint}
+      control={
+        <Switch checked={checked} onChange={onToggle} label={label} style={{ marginTop: 2 }} />
+      }
+    />
+  );
+}
 
 export function LabsSection() {
   const { t } = useI18n();
@@ -85,101 +106,41 @@ export function LabsSection() {
     }
   };
 
-  const cardStyle: React.CSSProperties = {
-    padding: 18,
-    border: '1px solid var(--line-soft)',
-    borderRadius: 'var(--radius-card, 8px)',
-    background: 'var(--bg)',
-  };
-  const labelStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 12,
-    cursor: 'pointer',
-  };
-  const titleStyle: React.CSSProperties = {
-    fontFamily: 'var(--font-sans)',
-    fontSize: 14,
-    color: 'var(--ink)',
-    fontWeight: 500,
-    marginBottom: 4,
-  };
-  const hintStyle: React.CSSProperties = {
-    fontSize: 12,
-    color: 'var(--subtle)',
-    lineHeight: 1.5,
-  };
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 600 }}>
+    <div className="set-group">
       {error && (
-        <p role="alert" style={{ color: 'var(--signal)', fontFamily: 'var(--font-sans)' }}>
+        <p role="alert" style={{ color: 'var(--danger)', margin: 0 }}>
           {error}
         </p>
       )}
 
-      <div style={cardStyle}>
-        <label style={labelStyle}>
-          <input
-            type="checkbox"
-            checked={v2Enabled}
-            onChange={(e) => void persistV2(e.target.checked)}
-            style={{ marginTop: 4 }}
-          />
-          <div style={{ flex: 1 }}>
-            <div style={titleStyle}>{t('settings.summaryV2Label')}</div>
-            <div style={hintStyle}>{t('settings.summaryV2Hint')}</div>
-          </div>
-        </label>
-      </div>
+      <ToggleRow
+        label={t('settings.summaryV2Label')}
+        hint={t('settings.summaryV2Hint')}
+        checked={v2Enabled}
+        onToggle={(next) => void persistV2(next)}
+      />
 
       {/* [M14 T-16 P2] Speculative decoding toggle. */}
-      <div style={cardStyle}>
-        <label style={labelStyle}>
-          <input
-            type="checkbox"
-            checked={speculativeEnabled}
-            onChange={(e) => void persistSpeculative(e.target.checked)}
-            style={{ marginTop: 4 }}
-          />
-          <div style={{ flex: 1 }}>
-            <div style={titleStyle}>{t('settings.speculativeDecodingLabel')}</div>
-            <div style={hintStyle}>{t('settings.speculativeDecodingHint')}</div>
-          </div>
-        </label>
-      </div>
+      <ToggleRow
+        label={t('settings.speculativeDecodingLabel')}
+        hint={t('settings.speculativeDecodingHint')}
+        checked={speculativeEnabled}
+        onToggle={(next) => void persistSpeculative(next)}
+      />
 
-      {/* [P1.2] Force-N-speakers Labs override. Native <select> — minimal
-          chrome, нет нужды в кастомных radio когда whitelist 4 options. */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={titleStyle}>{t('settings.forceNumSpeakersLabel')}</div>
-          <div style={hintStyle}>{t('settings.forceNumSpeakersHint')}</div>
-          <select
-            value={numSpeakers}
-            onChange={(e) =>
-              void persistNumSpeakers(e.target.value as MicDiarizationNumSpeakers)
-            }
-            aria-label={t('settings.forceNumSpeakersLabel')}
-            style={{
-              marginTop: 4,
-              padding: '6px 10px',
-              fontFamily: 'var(--font-sans)',
-              fontSize: 13,
-              color: 'var(--ink)',
-              background: 'var(--bg-2, var(--bg))',
-              border: '1px solid var(--line-soft)',
-              borderRadius: 6,
-              maxWidth: 240,
-            }}
-          >
-            {MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {t(`settings.forceNumSpeakersOptions.${opt}`)}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* [P1.2] Force-N-speakers Labs override. Whitelist 4 options → Select. */}
+      <div className="field" style={{ maxWidth: 260 }}>
+        <label className="field-label">{t('settings.forceNumSpeakersLabel')}</label>
+        <Select<MicDiarizationNumSpeakers>
+          value={numSpeakers}
+          options={MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS.map((opt) => ({
+            value: opt,
+            label: t(`settings.forceNumSpeakersOptions.${opt}`),
+          }))}
+          onChange={(v) => void persistNumSpeakers(v)}
+        />
+        <span className="set-hint">{t('settings.forceNumSpeakersHint')}</span>
       </div>
     </div>
   );

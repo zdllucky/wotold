@@ -14,7 +14,7 @@ export function RediscoveryChip({ onInstall, onTerminalDismiss }: RediscoveryChi
       <p
         className="muted"
         style={{
-          fontFamily: 'var(--font-mono)',
+          fontFamily: 'var(--mono)',
           fontSize: 9.5,
           textTransform: 'uppercase',
           letterSpacing: '0.1em',
@@ -23,7 +23,7 @@ export function RediscoveryChip({ onInstall, onTerminalDismiss }: RediscoveryChi
       >
         {t('localEngine.rediscovery.eyebrow')}
       </p>
-      <p style={{ fontFamily: 'var(--font-serif)', fontSize: 15, marginBottom: 4 }}>
+      <p style={{ fontFamily: 'var(--font)', fontSize: 15, marginBottom: 4 }}>
         {t('localEngine.rediscovery.title')}
       </p>
       <p className="muted" style={{ fontSize: 13, lineHeight: 1.45, marginBottom: 0 }}>

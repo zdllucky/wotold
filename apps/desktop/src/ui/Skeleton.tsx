@@ -32,7 +32,7 @@ export function Skeleton({
       style={{
         width,
         height,
-        borderRadius: radius ?? 'var(--radius-md)',
+        borderRadius: radius ?? 'var(--r-sm)',
         ...style,
       }}
     />
@@ -48,7 +48,7 @@ export function CallRowSkeleton() {
         gridTemplateColumns: '110px 1fr 110px 60px',
         gap: 18,
         padding: '14px 0',
-        borderTop: '1px solid var(--line-soft)',
+        borderTop: '1px solid var(--border-2)',
         alignItems: 'baseline',
         pointerEvents: 'none',
       }}
@@ -58,7 +58,7 @@ export function CallRowSkeleton() {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: 'var(--space-1)',
+          gap: 'var(--s1)',
         }}
       >
         <Skeleton width="14rem" height="1em" />

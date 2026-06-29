@@ -80,9 +80,9 @@ export function ChunkFailureAccordion({
       open={defaultOpen}
       style={{
         marginTop: 14,
-        background: 'var(--bg-2)',
-        border: '1px solid var(--line)',
-        borderRadius: 'var(--radius-md)',
+        background: 'var(--sunken)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-sm)',
         padding: '10px 14px',
       }}
     >
@@ -94,9 +94,9 @@ export function ChunkFailureAccordion({
           alignItems: 'center',
           gap: 10,
           listStyle: 'none',
-          fontFamily: 'var(--font-sans)',
+          fontFamily: 'var(--font)',
           fontSize: 13,
-          color: 'var(--signal)',
+          color: 'var(--danger)',
         }}
       >
         <span aria-hidden="true" style={{ fontSize: 14 }}>
@@ -120,7 +120,7 @@ export function ChunkFailureAccordion({
         className="muted"
         style={{
           fontSize: 12,
-          fontFamily: 'var(--font-sans)',
+          fontFamily: 'var(--font)',
           margin: '10px 0 8px',
         }}
       >
@@ -148,14 +148,14 @@ export function ChunkFailureAccordion({
                 alignItems: 'center',
                 gap: 12,
                 padding: '6px 10px',
-                background: 'var(--paper)',
-                border: '1px solid var(--line)',
-                borderRadius: 'var(--radius-sm)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r-xs)',
               }}
             >
               <span
                 aria-label={t('chunkProgress.statusFailed')}
-                style={{ color: 'var(--signal)', fontSize: 14 }}
+                style={{ color: 'var(--danger)', fontSize: 14 }}
               >
                 !
               </span>
@@ -172,7 +172,7 @@ export function ChunkFailureAccordion({
                 style={{
                   fontSize: 11,
                   padding: '4px 10px',
-                  fontFamily: 'var(--font-sans)',
+                  fontFamily: 'var(--font)',
                 }}
                 disabled={isRetrying}
                 onClick={() => {

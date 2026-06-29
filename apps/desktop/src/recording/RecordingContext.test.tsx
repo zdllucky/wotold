@@ -69,7 +69,7 @@ function Probe() {
       <button
         onClick={async () => {
           const r = await rec.stop();
-          (window as unknown as { __lastCallId: string }).__lastCallId =
+          (window as unknown as { __lastCallId: string | null }).__lastCallId =
             r.callId;
         }}
       >
@@ -258,7 +258,7 @@ describe('RecordingContext', () => {
 
     expect(screen.getByTestId('kind').textContent).toBe('idle');
     expect(
-      (window as unknown as { __lastCallId: string }).__lastCallId,
+      (window as unknown as { __lastCallId: string | null }).__lastCallId,
     ).toBe('call-99');
   });
 });

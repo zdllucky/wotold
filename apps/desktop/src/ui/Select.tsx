@@ -306,20 +306,20 @@ export function Select<V extends string = string>({
 
   const triggerStyle: CSSProperties = {
     width,
-    border: '1px solid var(--line-strong)',
-    borderRadius: 'var(--radius-sm)',
+    border: '1px solid var(--border-strong)',
+    borderRadius: 'var(--r-xs)',
     padding: '10px 36px 10px 12px',
-    fontFamily: 'var(--font-sans)',
+    fontFamily: 'var(--font)',
     fontSize: 14,
-    background: 'var(--surface)',
-    color: 'var(--ink)',
+    background: 'var(--panel)',
+    color: 'var(--text)',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
     textAlign: 'left',
     position: 'relative',
     outline: 'none',
     letterSpacing: '-0.005em',
-    transition: 'border-color var(--duration-fast)',
+    transition: 'border-color var(--fast)',
     ...style,
   };
 
@@ -355,7 +355,7 @@ export function Select<V extends string = string>({
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            color: selected ? 'var(--ink)' : 'var(--subtle)',
+            color: selected ? 'var(--text)' : 'var(--text-faint)',
           }}
         >
           {selected ? selected.label : resolvedPlaceholder}
@@ -375,10 +375,10 @@ export function Select<V extends string = string>({
             left: 0,
             right: 0,
             zIndex: 30,
-            background: 'var(--paper)',
-            border: '1px solid var(--line)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-2)',
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-sm)',
+            boxShadow: 'var(--shadow)',
             padding: 4,
             maxHeight: 340,
             overflowY: 'auto',
@@ -389,11 +389,11 @@ export function Select<V extends string = string>({
             <div
               style={{
                 padding: '6px 6px 8px',
-                borderBottom: '1px solid var(--line-soft)',
+                borderBottom: '1px solid var(--border-2)',
                 marginBottom: 4,
                 position: 'sticky',
                 top: 0,
-                background: 'var(--paper)',
+                background: 'var(--panel)',
               }}
             >
               <input
@@ -410,11 +410,11 @@ export function Select<V extends string = string>({
                 style={{
                   width: '100%',
                   padding: '6px 10px',
-                  border: '1px solid var(--line-soft)',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'var(--surface)',
-                  color: 'var(--ink)',
-                  fontFamily: 'var(--font-sans)',
+                  border: '1px solid var(--border-2)',
+                  borderRadius: 'var(--r-xs)',
+                  background: 'var(--panel)',
+                  color: 'var(--text)',
+                  fontFamily: 'var(--font)',
                   fontSize: 13,
                   outline: 'none',
                 }}
@@ -426,8 +426,8 @@ export function Select<V extends string = string>({
               style={{
                 padding: '12px 14px',
                 fontSize: 13,
-                color: 'var(--subtle)',
-                fontFamily: 'var(--font-sans)',
+                color: 'var(--text-faint)',
+                fontFamily: 'var(--font)',
                 fontStyle: 'italic',
               }}
             >
@@ -460,15 +460,15 @@ export function Select<V extends string = string>({
                   gap: 8,
                   alignItems: 'center',
                   padding: '8px 10px 8px 6px',
-                  borderRadius: 'var(--radius-sm)',
+                  borderRadius: 'var(--r-xs)',
                   cursor: opt.disabled ? 'not-allowed' : 'pointer',
-                  background: isHighlight ? 'var(--bg-2)' : 'transparent',
-                  color: opt.disabled ? 'var(--subtle)' : 'var(--ink)',
+                  background: isHighlight ? 'var(--sunken)' : 'transparent',
+                  color: opt.disabled ? 'var(--text-faint)' : 'var(--text)',
                   fontSize: 13.5,
-                  fontFamily: 'var(--font-sans)',
+                  fontFamily: 'var(--font)',
                   letterSpacing: '-0.005em',
                   fontWeight: isSelected ? 600 : 500,
-                  transition: 'background var(--duration-fast)',
+                  transition: 'background var(--fast)',
                 }}
               >
                 {/* Accent stripe for selected — column 1. */}
@@ -549,8 +549,8 @@ function Caret({ open }: { open: boolean }) {
         right: 12,
         top: '50%',
         transform: `translateY(-50%) rotate(${open ? 180 : 0}deg)`,
-        transition: 'transform var(--duration-fast) var(--ease-out-expo)',
-        color: 'var(--muted)',
+        transition: 'transform var(--fast) cubic-bezier(0.16, 1, 0.3, 1)',
+        color: 'var(--text-3)',
         pointerEvents: 'none',
       }}
     >

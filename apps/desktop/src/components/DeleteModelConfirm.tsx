@@ -1,7 +1,10 @@
-import { useRef } from 'react';
+// [B18.6c] Thin wrapper over the v2 ConfirmModal (.overlay/.modal + focus-trap).
+// Always-open here — the caller renders it conditionally. Focus-trap and the
+// danger button variant are handled by ConfirmModal; this file only assembles
+// the localized body.
+
 import { useI18n } from '../i18n';
-import { useFocusTrap } from '../hooks/useFocusTrap';
-import { Button } from '../ui';
+import { ConfirmModal } from './ConfirmModal';
 
 interface DeleteModelConfirmProps {
   modelRole: string;
@@ -19,54 +22,38 @@ export function DeleteModelConfirm({
   onCancel,
 }: DeleteModelConfirmProps) {
   const { t } = useI18n();
-  const ref = useRef<HTMLDivElement>(null);
-  useFocusTrap(ref, true, { onClose: onCancel });
 
-  const body = t('localEngine.storageConfirm.body').replace('{fallback}', fallbackPreset);
+  const bodyText = t('localEngine.storageConfirm.body').replace('{fallback}', fallbackPreset);
+
+  const body = (
+    <>
+      <div
+        style={{
+          fontFamily: 'var(--mono)',
+          fontSize: 10,
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+          color: 'var(--text-3)',
+          marginBottom: 6,
+        }}
+      >
+        {modelRole}
+      </div>
+      <div>{bodyText}</div>
+      <div style={{ color: 'var(--text-3)', fontSize: 12, marginTop: 4 }}>{currentPreset}</div>
+    </>
+  );
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div
-        ref={ref}
-        className="index-card"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-model-confirm-title"
-        style={{ maxWidth: 420 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <p
-          className="muted"
-          style={{ fontFamily: 'var(--font-mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}
-        >
-          {modelRole}
-        </p>
-        <h2
-          id="delete-model-confirm-title"
-          style={{ fontFamily: 'var(--font-serif)', fontSize: 18, marginBottom: 8 }}
-        >
-          {t('localEngine.storageConfirm.title')}
-        </h2>
-        <p className="muted" style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 4 }}>
-          {body}
-        </p>
-        <p className="muted" style={{ fontSize: 12, marginBottom: 20 }}>
-          {currentPreset}
-        </p>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Button variant="ghost" size="sm" onClick={onCancel}>
-            {t('localEngine.storageConfirm.cancel')}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            style={{ background: 'var(--signal)' }}
-            onClick={onConfirm}
-          >
-            {t('localEngine.storageConfirm.confirm')}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <ConfirmModal
+      open
+      danger
+      title={t('localEngine.storageConfirm.title')}
+      body={body}
+      confirmLabel={t('localEngine.storageConfirm.confirm')}
+      cancelLabel={t('localEngine.storageConfirm.cancel')}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }

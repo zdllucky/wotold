@@ -27,7 +27,7 @@ export function Card({
   ]
     .filter(Boolean)
     .join(' ');
-  const compactStyle = compact ? { padding: 'var(--space-4)' } : undefined;
+  const compactStyle = compact ? { padding: 'var(--s4)' } : undefined;
   return (
     <div className={classes} style={{ ...compactStyle, ...style }} {...rest}>
       {children}
@@ -47,7 +47,7 @@ function CardHeader({ className, children, style, ...rest }: CardHeaderProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        gap: 'var(--space-3)',
+        gap: 'var(--s3)',
         ...style,
       }}
       {...rest}

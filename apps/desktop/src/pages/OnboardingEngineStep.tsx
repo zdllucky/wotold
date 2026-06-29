@@ -1,8 +1,9 @@
 // [M12.7.3] Onboarding step «Engine setup» — обязательный шаг для новых
 // macOS-юзеров между Owner (step 2) и Permissions+Consent (step 4).
 //
-// Design Gate alignment block — см. PR описание. Atelier v2 классы only:
-// .index-card, .dot--{success,accent,muted}, .btn--{primary,ghost,quiet},
+// Design Gate alignment block — см. PR описание. Wotold v2 (uikit) классы:
+// .panel (probe result card — content внутри родительского onboarding dialog,
+// не сам dialog), .dot--{success,accent,muted}, .btn--{primary,ghost,quiet},
 // .activity-strip pattern для progress.
 //
 // Flow (PRD §M12.7.3):
@@ -211,7 +212,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
       <div
         className="activity-strip"
         role="status"
-        style={{ marginBottom: 28, fontFamily: 'var(--font-sans)' }}
+        style={{ marginBottom: 28, fontFamily: 'var(--font)' }}
       >
         <div style={{ flex: 1 }}>
           <div className="small-caps" style={{ marginBottom: 4 }}>
@@ -219,13 +220,13 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
               id: progress?.modelId ?? '…',
             })}
           </div>
-          <div className="mono" style={{ fontSize: 13, color: 'var(--ink-2)' }}>
+          <div className="mono" style={{ fontSize: 13, color: 'var(--text-2)' }}>
             {mb} / {totalMb} MB · {pct.toFixed(0)}%
           </div>
           <div
             style={{
               height: 4,
-              background: 'var(--line)',
+              background: 'var(--border)',
               borderRadius: 2,
               marginTop: 8,
               overflow: 'hidden',
@@ -279,11 +280,11 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
       <>
         <p
           style={{
-            fontFamily: 'var(--font-mono)',
+            fontFamily: 'var(--mono)',
             fontSize: 9.5,
             textTransform: 'uppercase',
             letterSpacing: '0.1em',
-            color: 'var(--ink-3)',
+            color: 'var(--text-faint)',
             marginBottom: 6,
           }}
         >
@@ -291,7 +292,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         </p>
         <p
           style={{
-            fontFamily: 'var(--font-serif)',
+            fontFamily: 'var(--font)',
             fontSize: 20,
             letterSpacing: '-0.01em',
             marginBottom: 18,
@@ -301,8 +302,8 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         </p>
         <div
           style={{
-            background: 'var(--bg-2)',
-            borderRadius: 'var(--radius-lg)',
+            background: 'var(--sunken)',
+            borderRadius: 'var(--r-md)',
             padding: '14px 18px',
             marginBottom: 14,
           }}
@@ -359,8 +360,8 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         <p
           role="alert"
           style={{
-            color: 'var(--signal)',
-            fontFamily: 'var(--font-sans)',
+            color: 'var(--danger)',
+            fontFamily: 'var(--font)',
             marginBottom: 14,
           }}
         >
@@ -370,7 +371,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
 
       {/* Probe result card */}
       <div
-        className="index-card"
+        className="panel"
         style={{
           marginBottom: 24,
           padding: 18,
@@ -382,9 +383,9 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         <div className="small-caps">{t('onboarding.engine.probeEyebrow')}</div>
         <div
           style={{
-            fontFamily: 'var(--font-serif)',
+            fontFamily: 'var(--font)',
             fontSize: 18,
-            color: 'var(--ink)',
+            color: 'var(--text)',
             display: 'flex',
             alignItems: 'baseline',
             gap: 10,
@@ -400,9 +401,9 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         </div>
         <div
           style={{
-            fontFamily: 'var(--font-sans)',
+            fontFamily: 'var(--font)',
             fontSize: 14,
-            color: 'var(--ink-2)',
+            color: 'var(--text-2)',
             marginTop: 8,
           }}
         >
@@ -416,9 +417,9 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
             display: 'flex',
             flexDirection: 'column',
             gap: 4,
-            fontFamily: 'var(--font-sans)',
+            fontFamily: 'var(--font)',
             fontSize: 13,
-            color: 'var(--subtle)',
+            color: 'var(--text-faint)',
           }}
         >
           <li>— {t(`onboarding.engine.feat.${preset}.stt`)}</li>
@@ -441,9 +442,9 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
                   gap: 10,
                   padding: 8,
                   borderRadius: 6,
-                  border: `1px solid ${p === preset ? 'var(--accent)' : 'var(--line-soft)'}`,
+                  border: `1px solid ${p === preset ? 'var(--accent)' : 'var(--border-2)'}`,
                   cursor: 'pointer',
-                  fontFamily: 'var(--font-sans)',
+                  fontFamily: 'var(--font)',
                   fontSize: 13,
                 }}
               >
@@ -454,7 +455,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
                   onChange={() => setChosenPreset(p)}
                 />
                 <span style={{ flex: 1 }}>{t(`localEngine.preset.${p}`)}</span>
-                <span className="mono" style={{ fontSize: 11, color: 'var(--subtle)' }}>
+                <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
                   ~{PRESET_MODELS[p].sizeGb} GB
                 </span>
                 {hw.recommendation === p && (

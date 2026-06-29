@@ -483,6 +483,14 @@ pub fn run() {
                 make_widget_draggable_by_background(&widget);
             }
 
+            // [window] Скрываем нативные macOS-светофоры main-окна — рисуем
+            // свои кастомные кнопки (hover-reveal, src/ui/WindowControls.tsx).
+            // В fullscreen фронт вернёт их через set_main_traffic_lights_hidden(false).
+            #[cfg(target_os = "macos")]
+            if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
+                set_main_window_buttons_hidden(&main, true);
+            }
+
             // [S7] Persist floating-widget position when user drags it. We
             // debounce via a tokio task that resets a 400ms timer on each
             // `Moved` event — Tauri fires `Moved` ~per-frame during drag, and
@@ -577,6 +585,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_main_traffic_lights_hidden,
             commands::get_device_id,
             commands::get_owner_contact,
             commands::list_contacts,
@@ -707,9 +716,75 @@ fn make_widget_draggable_by_background(widget: &tauri::WebviewWindow) {
         log::warn!("widget ns_window is null");
         return;
     }
-    // SAFETY: NSWindow* lives as long as the widget window; setter is no-throw.
+    // SAFETY: (1) NSWindow* lives as long as the widget window (`widget` keeps it
+    // alive for this call). (2) setMovableByWindowBackground: is a no-throw AppKit
+    // setter. (3) Must run on the main thread — call sites are Tauri 2 setup() (runs
+    // on main) / window-setup, never a spawned thread; moving this onto a background
+    // thread would be unsound (AppKit is main-thread-only).
     unsafe {
         let ns_window = ns_window as *mut Object;
         let _: () = msg_send![ns_window, setMovableByWindowBackground: YES];
     }
+}
+
+/// Прячет/показывает три нативных macOS-кнопки main-окна (close/miniaturize/zoom).
+/// hidden=true — рисуем свой кастомный светофор (hover-reveal, WindowControls.tsx);
+/// hidden=false — возвращаем нативные (нужно в fullscreen, где их показывает
+/// нативная авто-плашка). NSWindowButton: Close=0, Miniaturize=1, Zoom=2.
+///
+/// # Safety
+///
+/// `ns_window` валиден от Tauri пока окно живёт; `standardWindowButton:` и
+/// `setHidden:` — простые AppKit-аксессоры без эксцепшнов / side effects.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn set_main_window_buttons_hidden(main: &tauri::WebviewWindow, hidden: bool) {
+    use objc::msg_send;
+    use objc::runtime::{Object, BOOL, NO, YES};
+    use objc::sel;
+    use objc::sel_impl;
+
+    let ns_window = match main.ns_window() {
+        Ok(ptr) => ptr,
+        Err(e) => {
+            log::warn!("main ns_window unavailable: {e}");
+            return;
+        }
+    };
+    if ns_window.is_null() {
+        log::warn!("main ns_window is null");
+        return;
+    }
+    let val: BOOL = if hidden { YES } else { NO };
+    // SAFETY: (1) NSWindow* lives as long as the main window (`main` keeps it alive
+    // for this call). (2) standardWindowButton: / setHidden: are no-throw AppKit
+    // accessors. (3) Must run on the main thread — call sites are Tauri 2 setup()
+    // (runs on main) and the #[tauri::command] path (wry's WKScriptMessageHandler
+    // is MainThreadOnly, so IPC fires on main); moving onto a spawned thread would
+    // be unsound (AppKit is main-thread-only).
+    unsafe {
+        let ns_window = ns_window as *mut Object;
+        // NSWindowButton — NSUInteger (= usize на всех целевых платформах).
+        for kind in 0usize..=2 {
+            let btn: *mut Object = msg_send![ns_window, standardWindowButton: kind];
+            if !btn.is_null() {
+                let _: () = msg_send![btn, setHidden: val];
+            }
+        }
+    }
+}
+
+/// Команда из фронта: переключить видимость нативных светофоров main-окна.
+/// JS зовёт на смене fullscreen — в fullscreen показываем нативные (там их
+/// плашка), иначе скрываем (берут верх кастомные WindowControls).
+#[tauri::command]
+fn set_main_traffic_lights_hidden(app: tauri::AppHandle, hidden: bool) {
+    #[cfg(target_os = "macos")]
+    if let Some(main) = tauri::Manager::get_webview_window(&app, "main") {
+        set_main_window_buttons_hidden(&main, hidden);
+    } else {
+        log::warn!("set_main_traffic_lights_hidden: main window not found");
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, hidden);
 }
