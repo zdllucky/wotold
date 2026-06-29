@@ -421,6 +421,20 @@
 >
 > **B18 a11y/cleanup follow-up** (из финального ревью; не блокеры — отложены отдельной задачей): (1) recording-state live-region объявление start/stop/pause для скринридеров (SC 4.1.3, + новые i18n-ключи); (2) тема-toggle IconBtn в Sidebar делит `aria-label` с Settings — нужен отдельный ключ; (3) toast dismiss-кнопка без per-toast контекста (SC 4.1.2); (4) capabilities least-privilege split (отдельный файл для `recording-widget`, чтобы он не имел доступа к `set_main_traffic_lights_hidden`/fullscreen main-окна); (5) ввести токен `--on-danger` (#fff) вместо raw `#fff` на danger/speaker-поверхностях (`var(--on-accent)` НЕ подходит — в dark тема near-black, сломает контраст); (6) проверить контраст `--wc-*` светофоров в dark-теме (SC 1.4.11); (7) dead i18n `home.*`/`calls.*` (остатки удалённых HomePage/CallsPage) — отдельная аккуратная зачистка с per-key верификацией.
 
+### B19 · UI bug-sweep (ревью юзера после v2)
+
+Полировка v2 по списку багов от юзера. Порядок строгий. Логика/i18n 1-в-1, design-gate (токены/wk/Icon).
+
+- [ ] **B19.1** Call-detail overscroll-баунс («улетают границы») → `overscroll-behavior:none` на `.doc-scroll` (+ `.app-main` `contain`→`none`).
+- [ ] **B19.2** Week/Month: date-jump дропдаун (год ◀▶ + сетка месяцев) — портнуть `CalHeader` month-picker из прототипа `wk-inbox.jsx`, завязать `onPickMonth` в `InboxWeek/Month`.
+- [ ] **B19.3** Фильтр периода «с … по …» — кастомный диапазон дат (`range{from,to}` facet + 2 date-инпута в Фильтр-дропдауне + `matchesFacets` + чип).
+- [ ] **B19.4** Оверлеи/дропдауны/попапы вылетают за край окна — `useAnchoredPosition` (flip-up + clamp-x) в `Menu`/`Select`; `max-height`+scroll для модалок/палитры.
+- [ ] **B19.5** Min-size окна 760×560 → **960×600** (тулбар обрезался).
+- [ ] **B19.6** Прерванная запись <30с не автоудаляется — на старте reconcile орфан-`recording` по длине частичного WAV: <30с → delete+cleanup, ≥30с → 'failed' (восстановимо); `sweep_stale_calls` → только 'processing'. (Нормальный стоп <30с уже удаляется, B18.12.)
+- [ ] **B19.7** Kebab в списке = заглушки → реальные Переработать (`reprocessCall`) / Экспорт (save-dialog + `exportCallMarkdown`) / Удалить (`ConfirmModal` + `deleteCall`) + тосты.
+- [ ] **B19.8** Карточный вид — некрасивые отступы контейнера → `padding: var(--s5)`.
+- [ ] **B19.9** Крошки звонка: сырой `←` в i18n → `<Icon name="chevronLeft">` (разделитель chevronRight уже по гайду).
+
 ### Контракты / backend (S2) — параллельно, по мере scope
 
 - [ ] `SavedView` persistence ✅в scope (Views = B18.2).
