@@ -573,6 +573,51 @@ pub(crate) async fn build_local_llm_provider(
     Ok((provider, preset))
 }
 
+/// [warm-up B1] Прогрев local-LLM при старте приложения: один крошечный
+/// `generate`, чтобы llama.cpp скомпилил Metal-шейдеры (~30с, разово после
+/// апгрейда бинаря) и загрузил модель в page-cache ДО первого рекапа. Иначе
+/// этот cold-start падал на первую пользовательскую генерацию. Best-effort:
+/// движок не Local / нет preset'а / нет модели / ошибка генерации — не фатально,
+/// только лог. Держит LLM-семафор на время вызова (короткий prompt).
+#[cfg(target_os = "macos")]
+pub async fn warm_up_local_llm(pool: &SqlitePool, app_data_dir: &Path, app: &AppHandle) {
+    use crate::providers::llm::{LlmProvider, LlmRequest};
+
+    let s = match PipelineSettings::load(pool).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("warm-up: settings load failed (skip): {e}");
+            return;
+        }
+    };
+    if s.engine != crate::local_engine::engine::EngineKind::Local {
+        return; // cloud-managed — llama не нужен, прогрев ни к чему
+    }
+    let (provider, preset) = match build_local_llm_provider(pool, app_data_dir, app, &s).await {
+        Ok(p) => p,
+        Err(e) => {
+            log::info!("warm-up: local LLM недоступен (skip): {e}");
+            return;
+        }
+    };
+    let started = std::time::Instant::now();
+    let request = LlmRequest {
+        model: None,
+        system: "You are a warm-up ping. Reply with a single empty JSON object.".to_string(),
+        input: "{}".to_string(),
+        max_tokens: Some(8),
+        grammar: None,
+        json_schema: None,
+    };
+    match provider.generate(request).await {
+        Ok(_) => log::info!(
+            "warm-up: local LLM прогрет (preset={preset:?}) за {}ms — Metal-шейдеры + модель в кэше",
+            started.elapsed().as_millis()
+        ),
+        Err(e) => log::info!("warm-up: прогрев завершился с ошибкой (не фатально): {e}"),
+    }
+}
+
 /// [Bug-fix] Local engine path для `regenerate_recap`. Mirror блока в
 /// `run_local_inner` (preset resolve → model presence check → LocalLlamaProvider
 /// build → local_orchestrator → persist_recap_from_json), но БЕЗ STT/merge
