@@ -24,7 +24,9 @@
 //! случаев hit, skip fuzzy. Fuzzy O(n·m) на 5K transcript × 100-char quote
 //! ≈ 500K char ops ≈ < 1ms.
 
-use crate::pipeline::summary_v2::CallSummaryV2;
+use std::collections::HashSet;
+
+use crate::pipeline::summary_v2::{CallSummaryV2, ParticipantV2};
 
 /// Default cosine-like threshold для substring fuzzy match. PRD §6.2
 /// validator step 3 указывает 0.90.
@@ -409,6 +411,38 @@ pub fn dedup_items(summary: &mut CallSummaryV2) {
         DEFAULT_DEDUP_THRESHOLD,
         |a, b| jaccard_token_overlap(&a.text, &b.text),
     );
+    dedup_participants(&mut summary.participants);
+}
+
+/// [recap-fix A3] Dedup участников. Слабая local-модель повторяет одно имя на
+/// нескольких speaker-тегах («Глеб Гусак» на speaker:0/1/unknown ×N) и дублит
+/// один тег (speaker:unknown ×3). Чистим по двум ключам, сохраняя порядок:
+///   1. уникальный `speaker_tag` (case-insensitive) — убирает дубли тега;
+///   2. уникальный НЕпустой `display_name` — одно имя = один человек (пустое
+///      имя / только-тег не коллапсим, иначе схлопнули бы всех безымянных).
+fn dedup_participants(participants: &mut Vec<ParticipantV2>) {
+    let mut seen_tags: HashSet<String> = HashSet::new();
+    let mut seen_names: HashSet<String> = HashSet::new();
+    let kept = std::mem::take(participants);
+    *participants = kept
+        .into_iter()
+        .filter(|p| {
+            if !seen_tags.insert(p.speaker_tag.trim().to_lowercase()) {
+                return false;
+            }
+            if let Some(name) = p
+                .display_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                if !seen_names.insert(name.to_lowercase()) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
 }
 
 #[allow(dead_code)] // [M14] Используется через `dedup_items`.
@@ -428,8 +462,16 @@ mod tests {
     use super::*;
     use crate::pipeline::summary_v2::{
         ActionItemCategory, ActionItemV2, CallSummaryV2, CallType, Decision, EvidenceAnchor,
-        OpenQuestion,
+        OpenQuestion, ParticipantV2,
     };
+
+    fn part(tag: &str, name: Option<&str>) -> ParticipantV2 {
+        ParticipantV2 {
+            speaker_tag: tag.into(),
+            display_name: name.map(Into::into),
+            role_hint: None,
+        }
+    }
 
     fn base_summary() -> CallSummaryV2 {
         CallSummaryV2 {
@@ -488,6 +530,39 @@ mod tests {
     fn case_difference_normalized() {
         let score = substring_fuzzy_score("Hello World", "alice: hello world back");
         assert!(score >= 0.99, "got {score}");
+    }
+
+    #[test]
+    fn dedup_participants_collapses_repeated_name_and_tag() {
+        // Реальный кейс из лога: одно имя на 5 тегах + speaker:unknown ×3.
+        let mut s = base_summary();
+        s.participants = vec![
+            part("speaker:1", Some("Глеб Гусак")),
+            part("speaker:unknown", Some("Глеб Гусак")),
+            part("owner", Some("Дамир")),
+            part("speaker:0", Some("Глеб Гусак")),
+            part("speaker:unknown", Some("Глеб Гусак")),
+            part("speaker:unknown", Some("Глеб Гусак")),
+        ];
+        dedup_items(&mut s);
+        // Остаётся первый «Глеб Гусак» + Дамир.
+        assert_eq!(s.participants.len(), 2);
+        assert_eq!(s.participants[0].speaker_tag, "speaker:1");
+        assert_eq!(s.participants[0].display_name.as_deref(), Some("Глеб Гусак"));
+        assert_eq!(s.participants[1].display_name.as_deref(), Some("Дамир"));
+    }
+
+    #[test]
+    fn dedup_participants_keeps_distinct_unnamed_tags() {
+        // Безымянные (только-тег) участники НЕ коллапсируются между собой.
+        let mut s = base_summary();
+        s.participants = vec![
+            part("speaker:0", None),
+            part("speaker:1", None),
+            part("speaker:0", None), // дубль тега → уходит
+        ];
+        dedup_items(&mut s);
+        assert_eq!(s.participants.len(), 2);
     }
 
     #[test]

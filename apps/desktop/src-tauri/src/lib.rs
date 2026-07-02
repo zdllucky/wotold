@@ -181,6 +181,22 @@ pub fn run() {
                 });
             }
 
+            // [warm-up B1] Прогрев local-LLM при старте: фоновый крошечный
+            // generate компилит Metal-шейдеры + греет модель в page-cache, чтобы
+            // первый рекап не ловил ~30с cold-start. No-op если движок не Local.
+            // Non-fatal, фоном (не блокирует показ окна).
+            #[cfg(target_os = "macos")]
+            {
+                let app_for_warmup = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let (pool, app_data_dir) = {
+                        let state = tauri::Manager::state::<state::AppState>(&app_for_warmup);
+                        (state.db.clone(), state.app_data_dir.clone())
+                    };
+                    crate::pipeline::warm_up_local_llm(&pool, &app_data_dir, &app_for_warmup).await;
+                });
+            }
+
             // [B16 audit P2] macOS app menu — без явного menu Tauri даёт только
             // basic App/Quit. Native Cut/Copy/Paste/SelectAll на webview без menu
             // не работают (стандартные ⌘C/⌘V). Add File/Edit/View/Window submenus.

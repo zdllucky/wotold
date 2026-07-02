@@ -148,6 +148,117 @@ pub(crate) const SUMMARY_V2_JSON_SCHEMA: &str = r#"{
   "required": ["schema_version","title","summary","key_points","language","call_type","call_type_confidence","action_items","decisions","open_questions"]
 }"#;
 
+/// [recap-fix] Map-шаг map-reduce (`map_reduce::build_map_prompt`). Раньше
+/// map-вызовы шли через generic outer-`{}` grammar (`gbnf::UNIVERSAL_…`) без
+/// формы → слабая Light-модель (1.5B) отдавала prose/обрезанный JSON →
+/// `extract_json_object` fail → чанк молча дропался → половина звонка терялась.
+/// Reduce уже жёстко констрейнится `SUMMARY_V2_JSON_SCHEMA` и на Light работает
+/// — значит и map надо схемой. Nullable-поля (speaker/owner_hint/…) заданы как
+/// НЕобязательный `string` (не union `["string","null"]`) — проще для
+/// llama `--json-schema-file` конвертера + модель просто опускает поле.
+pub(crate) const MAP_CHUNK_JSON_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "chunk_idx": { "type": "integer" },
+    "facts": { "type": "array", "items": { "type": "string" } },
+    "decisions_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "evidence_quote": { "type": "string" },
+          "speaker": { "type": "string" }
+        },
+        "required": ["text"]
+      }
+    },
+    "action_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "owner_hint": { "type": "string" },
+          "due": { "type": "string" },
+          "category": { "type": "string", "enum": ["commitment","proposal","idea"] },
+          "evidence_quote": { "type": "string" },
+          "speaker": { "type": "string" }
+        },
+        "required": ["text"]
+      }
+    },
+    "open_questions_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "raised_by": { "type": "string" },
+          "evidence_quote": { "type": "string" }
+        },
+        "required": ["text"]
+      }
+    },
+    "topic_tags": { "type": "array", "items": { "type": "string" } },
+    "participants_mentioned": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["facts","decisions_candidates","action_candidates","open_questions_candidates","topic_tags","participants_mentioned"]
+}"#;
+
+/// [recap-fix] Mid-reduce (level-2, `map_reduce::build_mid_reduce_prompt`) —
+/// та же форма что map-чанк, но `group_idx` вместо `chunk_idx`. Констрейним по
+/// той же причине что и map.
+pub(crate) const MID_REDUCE_JSON_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "group_idx": { "type": "integer" },
+    "facts": { "type": "array", "items": { "type": "string" } },
+    "decisions_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "evidence_quote": { "type": "string" },
+          "speaker": { "type": "string" }
+        },
+        "required": ["text"]
+      }
+    },
+    "action_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "owner_hint": { "type": "string" },
+          "due": { "type": "string" },
+          "category": { "type": "string", "enum": ["commitment","proposal","idea"] },
+          "evidence_quote": { "type": "string" },
+          "speaker": { "type": "string" }
+        },
+        "required": ["text"]
+      }
+    },
+    "open_questions_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "raised_by": { "type": "string" },
+          "evidence_quote": { "type": "string" }
+        },
+        "required": ["text"]
+      }
+    },
+    "topic_tags": { "type": "array", "items": { "type": "string" } },
+    "participants_mentioned": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["facts","decisions_candidates","action_candidates","open_questions_candidates","topic_tags","participants_mentioned"]
+}"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,5 +314,43 @@ mod tests {
         );
         // schema_version форсится в 2.
         assert_eq!(v["properties"]["schema_version"]["enum"][0], 2);
+    }
+
+    #[test]
+    fn map_chunk_schema_valid_json_requires_all_arrays() {
+        let v = parse(MAP_CHUNK_JSON_SCHEMA);
+        let req: Vec<&str> = v["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap())
+            .collect();
+        for f in [
+            "facts",
+            "decisions_candidates",
+            "action_candidates",
+            "open_questions_candidates",
+            "topic_tags",
+            "participants_mentioned",
+        ] {
+            assert!(req.contains(&f), "map schema required должно содержать {f}");
+        }
+        // category — enum commitment|proposal|idea.
+        let cat = &v["properties"]["action_candidates"]["items"]["properties"]["category"]["enum"];
+        assert_eq!(cat.as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn mid_reduce_schema_valid_json_same_shape_group_idx() {
+        let v = parse(MID_REDUCE_JSON_SCHEMA);
+        assert_eq!(v["properties"]["group_idx"]["type"], "integer");
+        let req: Vec<&str> = v["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap())
+            .collect();
+        assert!(req.contains(&"facts"));
+        assert!(req.contains(&"participants_mentioned"));
     }
 }
