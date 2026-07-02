@@ -753,6 +753,9 @@ export const kk: TranslationStrings = {
       active: 'белсенді',
     },
     presetLabel: 'Модель жиынтығы',
+    keepResidentLabel: 'Модельді белсенді ұстау',
+    keepResidentHint:
+      'Жергілікті модель бүкіл сессия бойы жедел жадыда қалады — генерация жылдамырақ (әр шақыруда қайта жүктелмейді), бірақ ~2–5 ГБ RAM алады. Әдепкіде өшірулі.',
     preset: {
       light: 'Жеңіл',
       balanced: 'Теңгерімді',

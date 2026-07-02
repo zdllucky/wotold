@@ -93,6 +93,7 @@ impl ChunkConfig {
 /// коррелируют с BPE-токенами устойчивее по разным алфавитам:
 ///   - ASCII/латиница: ~4 байта/char, ~4 char/token → ≈ реальным токенам.
 ///   - Кириллица: 2 байта/char, Qwen ~2 char/token → ~4 байта/token → тоже ≈.
+///
 /// Слегка консервативна для кириллицы (лучше разрезать раньше, чем overflow).
 pub(crate) fn estimate_tokens(transcript_md: &str) -> usize {
     transcript_md.len() / 4

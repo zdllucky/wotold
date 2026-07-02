@@ -417,6 +417,17 @@ pub fn run() {
                             return;
                         }
 
+                        // [B2] Гасим resident llama-server при реальном выходе —
+                        // иначе дочерний процесс осиротеет и продолжит держать
+                        // RAM + порт после закрытия приложения.
+                        #[cfg(target_os = "macos")]
+                        {
+                            let app_srv = app_for_event.clone();
+                            tauri::async_runtime::block_on(async move {
+                                crate::pipeline::stop_resident_server(&app_srv).await;
+                            });
+                        }
+
                         let state = tauri::Manager::state::<state::AppState>(&app_for_event);
                         let has_active = tauri::async_runtime::block_on(async {
                             state.recording.lock().await.is_some()
@@ -690,6 +701,10 @@ pub fn run() {
             commands::local_engine_set_active_engine,
             #[cfg(target_os = "macos")]
             commands::local_engine_storage_list,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_get_keep_resident,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_set_keep_resident,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
