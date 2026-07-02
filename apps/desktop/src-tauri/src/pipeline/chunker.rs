@@ -36,57 +36,71 @@
 
 use crate::local_engine::preset::LocalEnginePreset;
 
-/// Конфигурация chunk window'а per preset (PRD §3.3).
-/// ~4 chars/token эвристика. Phase B: hardcoded numbers per preset.
+/// [ctx-fix] Реальное ctx-окно sidecar'а = `llm::DEFAULT_CTX_SIZE` (8192),
+/// фиксировано `--ctx-size` для ВСЕХ presets (разные модели, одинаковый ctx).
+/// llama.cpp роняет sidecar (exit 1) если один только prompt > ctx-4 (~8188).
+///
+/// Резерв под system prompt (expert/main ~1.8K) + output (MAIN_MAX_TOKENS 1536)
+/// + служебные токены. Остаток = потолок transcript'а для single-pass.
+const PROMPT_OVERHEAD_TOKENS: usize = 3_400;
+
+/// Максимум токенов transcript'а для single-pass (иначе → map-reduce).
+/// 8192 − 3400 ≈ 4790, округляем вниз с запасом.
+const SINGLE_PASS_MAX_TOKENS: usize = 4_600;
+
+/// Целевой размер одного chunk'а (map-call) в токенах. Ниже single-pass —
+/// оставляем место map/reduce system-промпту + выводу.
+const MAX_TOKENS_PER_CHUNK: usize = 3_200;
+
+/// Continuity-overlap хвоста предыдущего chunk'а, в символах (≈256 токенов).
+const OVERLAP_CHARS: usize = 1_024;
+
+const _: () = assert!(SINGLE_PASS_MAX_TOKENS + PROMPT_OVERHEAD_TOKENS <= 8_192);
+
+/// Конфигурация chunk window'а. [ctx-fix] Единицы — ТОКЕНЫ (оценка через
+/// `estimate_tokens`), не chars: старая char-эвристика (4 chars/token)
+/// недооценивала кириллицу ~2× → русский transcript «влезал» под char-порог,
+/// но давал 9K токенов и ронял sidecar overflow'ом.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ChunkConfig {
-    /// Максимальный размер одного chunk'а в chars (включая overlap от предыдущего).
-    pub max_chars: usize,
+    /// Максимальный размер одного chunk'а в ТОКЕНАХ (est.).
+    pub max_tokens: usize,
     /// Сколько последних chars предыдущего chunk'а добавить к началу следующего.
     pub overlap_chars: usize,
-    /// Если transcript меньше — single-pass, без chunking.
-    pub trigger_threshold: usize,
+    /// Если transcript (в токенах) не больше — single-pass, без chunking.
+    pub trigger_tokens: usize,
 }
 
 impl ChunkConfig {
-    /// Per-preset config. PRD §3.3:
-    ///   - Light (1.5B, 8K effective ctx): chunk_tokens=3.2K → 12.8K chars
-    ///   - Balanced (3B, 12K effective ctx): chunk_tokens=4.8K → 19.2K chars
-    ///   - Quality (7B, 24K effective ctx): chunk_tokens=9.6K → 38.4K chars
-    ///
-    /// Overlap 10%, trigger_threshold = max_chars * 2 (chunking имеет смысл
-    /// только когда минимум 2 chunk'а получится).
+    /// [ctx-fix] Все presets сейчас запускаются с одним ctx (8192), поэтому
+    /// token-бюджеты preset-независимы. `match` оставлен как точка расширения
+    /// на случай per-preset ctx в будущем (тогда Balanced/Quality получат
+    /// больший `--ctx-size` и, соответственно, больше `trigger_tokens`).
     pub(crate) fn for_preset(preset: LocalEnginePreset) -> Self {
         match preset {
-            LocalEnginePreset::Light => Self {
-                max_chars: 12_800,
-                overlap_chars: 1_280,
-                trigger_threshold: 24_000,
-            },
-            LocalEnginePreset::Balanced => Self {
-                max_chars: 19_200,
-                overlap_chars: 1_920,
-                trigger_threshold: 38_400,
-            },
-            LocalEnginePreset::Quality => Self {
-                max_chars: 38_400,
-                overlap_chars: 3_840,
-                trigger_threshold: 76_800,
+            LocalEnginePreset::Light
+            | LocalEnginePreset::Balanced
+            | LocalEnginePreset::Quality => Self {
+                max_tokens: MAX_TOKENS_PER_CHUNK,
+                overlap_chars: OVERLAP_CHARS,
+                trigger_tokens: SINGLE_PASS_MAX_TOKENS,
             },
         }
     }
 }
 
-/// 4 chars per token эвристика для logging / decisions. Не точная — Qwen
-/// тоже использует BPE с variable-width, но для PRD-spec triggers
-/// достаточно (мы не считаем tokens, мы считаем chars и делим).
+/// [ctx-fix] Оценка токенов по UTF-8 БАЙТАМ (÷4), не по chars. Байты
+/// коррелируют с BPE-токенами устойчивее по разным алфавитам:
+///   - ASCII/латиница: ~4 байта/char, ~4 char/token → ≈ реальным токенам.
+///   - Кириллица: 2 байта/char, Qwen ~2 char/token → ~4 байта/token → тоже ≈.
+/// Слегка консервативна для кириллицы (лучше разрезать раньше, чем overflow).
 pub(crate) fn estimate_tokens(transcript_md: &str) -> usize {
-    transcript_md.chars().count() / 4
+    transcript_md.len() / 4
 }
 
-/// Нужно ли chunking для этого transcript'а под данный preset.
+/// Нужно ли chunking: оценка токенов transcript'а превышает single-pass потолок.
 pub(crate) fn needs_chunking(transcript_md: &str, cfg: &ChunkConfig) -> bool {
-    transcript_md.chars().count() > cfg.trigger_threshold
+    estimate_tokens(transcript_md) > cfg.trigger_tokens
 }
 
 /// Speaker turn boundary detection: line starts with `**` и содержит `]:` (после `[mm:ss]`).
@@ -102,8 +116,8 @@ fn is_speaker_header_line(line: &str) -> bool {
 /// Overlap всегда обрезается ровно по speaker boundary (никогда не посередине
 /// реплики).
 pub(crate) fn chunk_transcript(transcript_md: &str, cfg: &ChunkConfig) -> Vec<String> {
-    // Short circuit для коротких inputs.
-    if transcript_md.chars().count() <= cfg.max_chars {
+    // Short circuit для коротких inputs (по оценке токенов, не chars).
+    if estimate_tokens(transcript_md) <= cfg.max_tokens {
         return vec![transcript_md.to_string()];
     }
 
@@ -134,15 +148,15 @@ pub(crate) fn chunk_transcript(transcript_md: &str, cfg: &ChunkConfig) -> Vec<St
         return chunk_by_chars_fallback(transcript_md, cfg);
     }
 
-    // Greedy pack блоков в chunk'и ≤ max_chars.
+    // Greedy pack блоков в chunk'и ≤ max_tokens (оценка по байтам).
     let mut chunks: Vec<String> = Vec::new();
     let mut current_chunk = String::new();
     for block in blocks {
-        let block_len = block.chars().count();
-        let cur_len = current_chunk.chars().count();
-        // Если добавление этого block'а превысит max_chars И current_chunk
+        let block_len = estimate_tokens(&block);
+        let cur_len = estimate_tokens(&current_chunk);
+        // Если добавление этого block'а превысит max_tokens И current_chunk
         // непустой — flush, начнём следующий chunk с overlap.
-        if !current_chunk.is_empty() && cur_len + block_len + 1 > cfg.max_chars {
+        if !current_chunk.is_empty() && cur_len + block_len + 1 > cfg.max_tokens {
             let overlap = tail_overlap_at_speaker_boundary(&current_chunk, cfg.overlap_chars);
             chunks.push(std::mem::take(&mut current_chunk));
             current_chunk.push_str(&overlap);
@@ -214,13 +228,17 @@ fn tail_by_chars(s: &str, overlap_chars: usize) -> String {
 
 /// Fallback split: input не содержит speaker headers. Простой char-boundary
 /// split в `max_chars - overlap_chars` step'ах. Edge case, не production path.
+/// [ctx-fix] `max_chars` выводится из token-бюджета (~4 байта/token); для
+/// broken-format (обычно ASCII/латиница) байты ≈ chars, так что порог держит
+/// chunk ≈ `max_tokens`.
 fn chunk_by_chars_fallback(transcript_md: &str, cfg: &ChunkConfig) -> Vec<String> {
-    let step = cfg.max_chars.saturating_sub(cfg.overlap_chars).max(1);
+    let max_chars = cfg.max_tokens.saturating_mul(4).max(1);
+    let step = max_chars.saturating_sub(cfg.overlap_chars).max(1);
     let mut chunks: Vec<String> = Vec::new();
     let mut start_char = 0usize;
     let total = transcript_md.chars().count();
     while start_char < total {
-        let end_char = (start_char + cfg.max_chars).min(total);
+        let end_char = (start_char + max_chars).min(total);
         let start_byte = transcript_md
             .char_indices()
             .nth(start_char)
@@ -274,7 +292,7 @@ mod tests {
 
     #[test]
     fn needs_chunking_long_transcript_true() {
-        let cfg = light_cfg(); // trigger_threshold = 24_000
+        let cfg = light_cfg(); // trigger_tokens = SINGLE_PASS_MAX_TOKENS
         let long = "a".repeat(30_000);
         assert!(needs_chunking(&long, &cfg));
     }
@@ -340,10 +358,10 @@ mod tests {
         let broken = "a".repeat(30_000); // no speaker headers, > threshold
         let chunks = chunk_transcript(&broken, &cfg);
         assert!(chunks.len() >= 2);
-        // Каждый chunk ≤ max_chars.
+        // Каждый chunk ≤ token-бюджет в chars (fallback: max_tokens*4).
         for c in &chunks {
             assert!(
-                c.chars().count() <= cfg.max_chars,
+                c.chars().count() <= cfg.max_tokens * 4,
                 "chunk too large: {}",
                 c.chars().count()
             );
@@ -357,9 +375,9 @@ mod tests {
         let chunks = chunk_transcript(&long, &cfg);
         for (i, c) in chunks.iter().enumerate() {
             // Допускаем небольшое превышение из-за overlap'а
-            // (max_chars + overlap_chars worst-case).
+            // (max_tokens*4 chars + overlap_chars worst-case).
             assert!(
-                c.chars().count() <= cfg.max_chars + cfg.overlap_chars,
+                c.chars().count() <= cfg.max_tokens * 4 + cfg.overlap_chars,
                 "chunk {i} too large: {} chars",
                 c.chars().count()
             );
