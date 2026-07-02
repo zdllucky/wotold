@@ -664,6 +664,14 @@ pub(crate) fn recap_md_is_blank(md: &str) -> bool {
     })
 }
 
+/// [recap-rich] Плейсхолдер вместо имени от слабой модели — не рендерим.
+fn is_placeholder_name(s: &str) -> bool {
+    matches!(
+        s.to_lowercase().as_str(),
+        "unknown" | "null" | "none" | "n/a" | "не указано" | "неизвестно" | "белгісіз"
+    )
+}
+
 fn is_md_heading(trimmed: &str) -> bool {
     let hashes = trimmed.chars().take_while(|c| *c == '#').count();
     (1..=6).contains(&hashes)
@@ -737,10 +745,14 @@ fn render_recap_md_v2(
     if !summary.open_questions.is_empty() {
         out.push_str(&format!("## {}\n\n", labels.open_questions));
         for q in &summary.open_questions {
+            // [recap-rich] Слабая модель кладёт плейсхолдеры в raised_by
+            // («unknown» / «не указано») — не печатаем такой суффикс.
             let by_suffix = q
                 .raised_by
                 .as_deref()
-                .map(|b| format!(" ({})", b.trim()))
+                .map(str::trim)
+                .filter(|b| !b.is_empty() && !is_placeholder_name(b))
+                .map(|b| format!(" ({b})"))
                 .unwrap_or_default();
             out.push_str(&format!("- {}{}\n", q.text.trim(), by_suffix));
             if let Some(ev) = q.evidence.as_ref() {
