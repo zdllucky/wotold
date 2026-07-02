@@ -13,9 +13,11 @@
 //! потом `recording.lock()` / DB writes. Никаких nested ожиданий.
 
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use futures_util::FutureExt;
 use sqlx::SqlitePool;
 use tauri::async_runtime::JoinHandle;
 use tauri::AppHandle;
@@ -155,9 +157,25 @@ impl PipelineRunner {
             let bus = EventBus::new(Some(&app_handle));
             bus.pipeline_started(&call_id_for_task);
 
-            let result: Result<(), AppError> = match kind {
-                RegenKind::Recap => {
-                    pipeline::regenerate_recap(
+            // [regen panic-safety] Оборачиваем работу в catch_unwind: если
+            // future паникует (напр. sidecar/local-LLM путь), мы ВСЁ РАВНО
+            // обязаны эмитнуть pipeline:finished и снять handle из tasks.
+            // Иначе UI навсегда застревает на «Пересоздаём саммари…» (bgBusy
+            // не сбрасывается), а leak'нутый handle блокирует повторный regen
+            // с "call_already_processing". Паника → Err.
+            let work = async {
+                match kind {
+                    RegenKind::Recap => {
+                        pipeline::regenerate_recap(
+                            &pool,
+                            &app_data_dir,
+                            &device_id,
+                            &call_id_for_task,
+                            Some(&app_handle),
+                        )
+                        .await
+                    }
+                    RegenKind::Title => pipeline::title_regen::regenerate_title(
                         &pool,
                         &app_data_dir,
                         &device_id,
@@ -165,16 +183,14 @@ impl PipelineRunner {
                         Some(&app_handle),
                     )
                     .await
+                    .map(|_title| ()),
                 }
-                RegenKind::Title => pipeline::title_regen::regenerate_title(
-                    &pool,
-                    &app_data_dir,
-                    &device_id,
-                    &call_id_for_task,
-                    Some(&app_handle),
-                )
-                .await
-                .map(|_title| ()),
+            };
+            let result: Result<(), AppError> = match AssertUnwindSafe(work).catch_unwind().await {
+                Ok(r) => r,
+                Err(_) => Err(AppError::Other(
+                    "regen_panic: внутренняя ошибка генерации саммари".into(),
+                )),
             };
 
             let event = match &result {

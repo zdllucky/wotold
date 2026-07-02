@@ -347,6 +347,23 @@ async fn persist_summary_v2(
             }
         })
         .collect();
+
+    // [recap-blank guard] Рендерим recap.md заранее и проверяем на пустоту ДО
+    // любых DB-записей. Слабая локальная модель иногда возвращает summary со
+    // всеми пустыми полями → header-only recap («# Рекап\n\n»). Раньше такое
+    // молча персистилось как успех → пустой рекап «без контекста» и без
+    // recap_failed_reason (юзер не понимает что пошло не так). Теперь — ранний
+    // Err: caller выставит recap_failed_reason, UI покажет retry-баннер вместо
+    // пустышки. Idempotent — на успешном retry replace_* перезапишет.
+    // (Bulk-команда regenerate_empty_recaps остаётся для уборки старых пустых.)
+    let md = render_recap_md_v2(&summary, &contacts, &action_inputs);
+    if recap_md_is_blank(&md) {
+        log::warn!(
+            "recap {call_id}: LLM вернул пустое саммари (все секции empty) — не персистим, возвращаем Err"
+        );
+        return Err(AppError::Other("recap_blank_llm_output".into()));
+    }
+
     db::replace_action_items(pool, call_id, &action_inputs).await?;
 
     // 3. Decisions table.
@@ -405,8 +422,8 @@ async fn persist_summary_v2(
     )
     .await?;
 
-    // 7. Extended recap.md (## Decisions + ## Open Questions если non-empty).
-    let md = render_recap_md_v2(&summary, &contacts, &action_inputs);
+    // 7. Extended recap.md — `md` уже отрендерен и провалидирован на пустоту
+    // выше (recap-blank guard), просто пишем на диск.
     tokio::fs::write(call_dir.join("recap.md"), md).await?;
 
     Ok(())
