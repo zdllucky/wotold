@@ -64,6 +64,14 @@ const DEFAULT_CTX_SIZE: u32 = 8192;
 const DEFAULT_MAX_TOKENS: u32 = 4096;
 const DEFAULT_TEMP: f32 = 0.2;
 const DEFAULT_THREADS: u32 = 6;
+/// [recap-fix] Anti-repetition. Слабые модели (Qwen 1.5-3B) на extraction
+/// сваливаются в repeat-loop: одна и та же строка («…новая должность проектного
+/// инженера» ×80) льётся пока массив не закрыт → n-predict cap → обрезанный
+/// JSON → «no JSON object» → чанк теряется + впустую сожжён budget. repeat
+/// penalty + окно последних N токенов ломают петлю. 1.15 хватает, fluency не
+/// страдает; low temp (0.2) сам по себе усиливает loops, потому penalty нужен.
+const DEFAULT_REPEAT_PENALTY: f32 = 1.15;
+const DEFAULT_REPEAT_LAST_N: u32 = 256;
 
 /// Default timeout. Раньше 5 мин (M12.3.6 первоначально), но юзеры репортили
 /// `local_llm_timeout` на full recap regen: 4096 max_tokens плюс GBNF
@@ -290,6 +298,11 @@ impl LlmProvider for LocalLlamaProvider {
                 &model_path_str,
                 "--temp",
                 &format!("{DEFAULT_TEMP}"),
+                // [recap-fix] Anti-repetition — ломает degenerate loop на extraction.
+                "--repeat-penalty",
+                &format!("{DEFAULT_REPEAT_PENALTY}"),
+                "--repeat-last-n",
+                &format!("{DEFAULT_REPEAT_LAST_N}"),
                 "--ctx-size",
                 &format!("{DEFAULT_CTX_SIZE}"),
                 "--n-predict",

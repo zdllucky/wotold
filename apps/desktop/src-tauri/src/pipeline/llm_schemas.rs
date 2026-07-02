@@ -54,7 +54,7 @@ pub(crate) const SUMMARY_V2_JSON_SCHEMA: &str = r#"{
     "schema_version": { "type": "integer", "enum": [2] },
     "title": { "type": "string" },
     "summary": { "type": "string" },
-    "key_points": { "type": "array", "items": { "type": "string" } },
+    "key_points": { "type": "array", "maxItems": 20, "items": { "type": "string" } },
     "mom": { "type": "string" },
     "language": { "type": "string", "enum": ["ru","en","kk","mixed"] },
     "call_type": {
@@ -160,7 +160,7 @@ pub(crate) const MAP_CHUNK_JSON_SCHEMA: &str = r#"{
   "type": "object",
   "properties": {
     "chunk_idx": { "type": "integer" },
-    "facts": { "type": "array", "items": { "type": "string" } },
+    "facts": { "type": "array", "maxItems": 20, "items": { "type": "string" } },
     "decisions_candidates": {
       "type": "array",
       "items": {
@@ -200,8 +200,8 @@ pub(crate) const MAP_CHUNK_JSON_SCHEMA: &str = r#"{
         "required": ["text"]
       }
     },
-    "topic_tags": { "type": "array", "items": { "type": "string" } },
-    "participants_mentioned": { "type": "array", "items": { "type": "string" } }
+    "topic_tags": { "type": "array", "maxItems": 20, "items": { "type": "string" } },
+    "participants_mentioned": { "type": "array", "maxItems": 20, "items": { "type": "string" } }
   },
   "required": ["facts","decisions_candidates","action_candidates","open_questions_candidates","topic_tags","participants_mentioned"]
 }"#;
@@ -213,7 +213,7 @@ pub(crate) const MID_REDUCE_JSON_SCHEMA: &str = r#"{
   "type": "object",
   "properties": {
     "group_idx": { "type": "integer" },
-    "facts": { "type": "array", "items": { "type": "string" } },
+    "facts": { "type": "array", "maxItems": 20, "items": { "type": "string" } },
     "decisions_candidates": {
       "type": "array",
       "items": {
@@ -253,8 +253,8 @@ pub(crate) const MID_REDUCE_JSON_SCHEMA: &str = r#"{
         "required": ["text"]
       }
     },
-    "topic_tags": { "type": "array", "items": { "type": "string" } },
-    "participants_mentioned": { "type": "array", "items": { "type": "string" } }
+    "topic_tags": { "type": "array", "maxItems": 20, "items": { "type": "string" } },
+    "participants_mentioned": { "type": "array", "maxItems": 20, "items": { "type": "string" } }
   },
   "required": ["facts","decisions_candidates","action_candidates","open_questions_candidates","topic_tags","participants_mentioned"]
 }"#;
