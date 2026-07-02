@@ -45,6 +45,14 @@ pub(crate) const TITLE_JSON_SCHEMA: &str = r#"{
   "required": ["title"]
 }"#;
 
+/// [recap-rich] Нарратив-минутки — markdown внутри одного JSON-поля. Грамматика
+/// форсит валидный `{ "narrative": string }`, парсер извлекает строку.
+pub(crate) const NARRATIVE_JSON_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": { "narrative": { "type": "string" } },
+  "required": ["narrative"]
+}"#;
+
 /// Полная форма `CallSummaryV2`. Форсит v2-shape → больше нет v1-fallback'а на
 /// слабой local-модели. `evidence`/`id` опциональны; массивы могут быть пусты.
 /// Инлайн без `$ref` — llama `--json-schema-file` предупреждает про $refs.
@@ -142,6 +150,18 @@ pub(crate) const SUMMARY_V2_JSON_SCHEMA: &str = r#"{
           }
         },
         "required": ["text"]
+      }
+    },
+    "topics": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "points": { "type": "array", "maxItems": 6, "items": { "type": "string" } }
+        },
+        "required": ["title"]
       }
     }
   },

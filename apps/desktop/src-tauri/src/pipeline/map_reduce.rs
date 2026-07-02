@@ -37,12 +37,10 @@ const MAP_MAX_TOKENS: u32 = 1024;
 /// truncation до закрывающих скобок).
 const MAP_MAX_TOKENS_RETRY: u32 = 1280;
 /// Final reduce: full CallSummaryV2.
-/// [P8.2] Понижен с 4096 → 1536 — зеркало MAIN_MAX_TOKENS в
-/// `local_orchestrator`. Финальный reduce агрегирует mid-reduce'ы (которые
-/// уже compact) → JSON shape тот же что в single-pass main recap. 1500
-/// tokens достаточно для typical-length call. На очень длинных звонках
-/// (>2 час, >12 chunks) могут truncate'нуться details — known trade-off.
-const REDUCE_MAX_TOKENS: u32 = 1536;
+/// [recap-rich] Поднят 1536 → 2560: рекап теперь богаче (summary 3-5 предл.,
+/// 5-10 key_points, decisions/actions/questions/topics полностью) — компактного
+/// бюджета не хватало, детали обрезались. RAM не растёт (только длина вывода).
+const REDUCE_MAX_TOKENS: u32 = 2560;
 /// [M14 T-18 P2] Hierarchical pipeline trigger — когда `chunks.len()`
 /// больше этого порога, переключаемся на 3-level (map → mid-reduce per
 /// group → final reduce). Меньше — flat 2-level path (run_map_reduce).
@@ -73,7 +71,7 @@ pub(crate) fn build_map_prompt(lang_detected: Option<&str>, chunk_idx: usize) ->
 \n\
 {{\n\
   \"chunk_idx\": {chunk_idx},\n\
-  \"facts\": [string],                              // ≤25 words each, ≤10 items per chunk\n\
+  \"facts\": [string],                              // ≤25 words each, ≤15 items per chunk — извлекай ВСЕ значимые факты\n\
   \"decisions_candidates\": [{{\n\
     \"text\": string,\n\
     \"evidence_quote\": string,                     // verbatim 10-200 chars\n\
@@ -115,20 +113,20 @@ pub(crate) fn build_reduce_prompt(
     let type_hint = known_call_type
         .map(|t| {
             format!(
-                "\n\n## Classification hint (pre-determined)\nCall type already classified as `{}`. Set `call_type` to this value, use the matching TYPE GUIDE section, и populate `type_specific_block` соответственно.",
+                "\n\n## Classification hint (pre-determined)\nCall type already classified as `{}`. Set `call_type` to this value.",
                 t.as_str()
             )
         })
         .unwrap_or_default();
     format!(
-        "You are a senior meeting analyst для REDUCE step of a long call. You receive a JSON ARRAY of per-chunk MAP outputs (facts, decisions_candidates, action_candidates, open_questions_candidates, topic_tags, participants_mentioned). Your job: consolidate into ONE final `CallSummaryV2` JSON.\n\
+        "OUTPUT LANGUAGE = {lang}. EVERY string value MUST be written in {lang} (only call_type/category enums stay English).\n\
 \n\
-Output language: {lang}.\n\
+You are a senior meeting analyst для REDUCE step of a long call. You receive a JSON ARRAY of per-chunk MAP outputs (facts, decisions_candidates, action_candidates, open_questions_candidates, topic_tags, participants_mentioned). Consolidate into ONE final `CallSummaryV2` JSON — be COMPLETE: surface ALL distinct decisions/action_items/open_questions/topics present across the map outputs. Write a rich `summary` (3-5 sentences) and 5-10 `key_points`.\n\
 \n\
 ## ABSOLUTE RULES\n\
 \n\
 1. NEVER invent facts not present в MAP_OUTPUTS — only consolidate, dedupe, resolve speakers.\n\
-2. `decisions` / `open_questions` / `action_items` SHOULD keep `evidence.quote` verbatim from corresponding chunk MAP output's `evidence_quote`.\n\
+2. Keep `evidence.quote` verbatim from the chunk's `evidence_quote` when available; if none, set quote to null but KEEP the item. Never drop a real decision/action/question for lack of a quote.\n\
 3. Resolve speakers via Known participants block если присутствует; иначе оставь `**name**` или generic role.\n\
 4. Output ONLY ONE JSON object matching CallSummaryV2 schema. No prose, no markdown fences.\n\
 5. Dedupe: identical action_items от двух разных chunks (overlap'нутый turn) — keep one, prefer the one с более точным owner_hint.\n\
@@ -156,8 +154,7 @@ Output language: {lang}.\n\
   }}],\n\
   \"decisions\": [{{ \"id\": string, \"text\": string, \"evidence\": {{ \"quote\": string|null, \"speaker\": string|null }}, \"confidence\": number 0..1 }}],\n\
   \"open_questions\": [{{ \"id\": string, \"text\": string, \"raised_by\": string|null, \"evidence\": {{ \"quote\": string|null, \"speaker\": string|null }} }}],\n\
-  \"mom\": string (Markdown),\n\
-  \"type_specific_block\": object|null\n\
+  \"topics\": [{{ \"title\": string, \"points\": string[] }}]  // 2-5 обсуждённых тем, у каждой 1-4 под-пункта\n\
 }}{known_block}{type_hint}\n\
 \n\
 ## MAP_OUTPUTS (input — array of per-chunk extractions)\n\

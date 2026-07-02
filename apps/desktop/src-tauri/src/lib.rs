@@ -705,6 +705,8 @@ pub fn run() {
             commands::local_engine_get_keep_resident,
             #[cfg(target_os = "macos")]
             commands::local_engine_set_keep_resident,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_eval_recap,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

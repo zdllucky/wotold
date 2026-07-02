@@ -173,6 +173,14 @@ pub struct ParticipantV2 {
     pub role_hint: Option<String>,
 }
 
+/// [recap-rich] Обсуждённая тема с под-пунктами — секция «Темы» в рекапе.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopicV2 {
+    pub title: String,
+    #[serde(default)]
+    pub points: Vec<String>,
+}
+
 /// Полная V2 summary — то, что выдаёт pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallSummaryV2 {
@@ -195,6 +203,16 @@ pub struct CallSummaryV2 {
     pub action_items: Vec<ActionItemV2>,
     pub decisions: Vec<Decision>,
     pub open_questions: Vec<OpenQuestion>,
+    /// [recap-rich] Обсуждённые темы с под-пунктами. `skip_serializing_if` —
+    /// пустой массив не попадает в JSON (совместимость с golden-фикстурами +
+    /// не шумим). `default` — старые ответы без `topics` парсятся.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub topics: Vec<TopicV2>,
+    /// [recap-rich] Связный markdown-протокол встречи (нарратив-минутки),
+    /// генерится отдельным narrative-проходом после reduce (backend, не LLM v2
+    /// JSON). Пустой не сериализуется.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub narrative: String,
     /// JSON object с per-type structured data (pain_points для sales_discovery,
     /// per_person для standup и т.д.). `None` если call_type=Other.
     #[serde(default)]
@@ -329,6 +347,11 @@ mod tests {
                 raised_by: Some("speaker:0".into()),
                 evidence: None,
             }],
+            topics: vec![TopicV2 {
+                title: "Pricing".into(),
+                points: vec!["Enterprise tier at $499".into()],
+            }],
+            narrative: "На звонке обсудили тариф и следующие шаги.".into(),
             type_specific_block: Some(json!({
                 "pain_points": ["slow onboarding", "manual exports"],
                 "budget_signal": "approved $50K",

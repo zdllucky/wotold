@@ -80,3 +80,16 @@ export function localEngineGetKeepResident(): Promise<boolean> {
 export function localEngineSetKeepResident(enabled: boolean): Promise<void> {
   return invoke<void>('local_engine_set_keep_resident', { enabled });
 }
+
+/** [recap-rich] G-Eval dev-харнесс: оценка recap.md звонка по 4 осям. */
+export interface RecapEvalScores {
+  coherence: number;
+  faithfulness: number;
+  relevance: number;
+  conciseness: number;
+  average: number;
+  justification: string;
+}
+export function localEngineEvalRecap(callId: string): Promise<RecapEvalScores> {
+  return invoke<RecapEvalScores>('local_engine_eval_recap', { callId });
+}
