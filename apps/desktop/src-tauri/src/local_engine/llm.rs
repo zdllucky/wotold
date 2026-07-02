@@ -188,11 +188,7 @@ impl LocalLlamaProvider {
     /// [B2] HTTP-путь через resident `llama-server`. Тот же prompt (system +
     /// input) и та же per-request форма (json_schema/grammar), что one-shot,
     /// но без спавна процесса и перезагрузки модели.
-    async fn generate_via_server(
-        &self,
-        url: &str,
-        request: LlmRequest,
-    ) -> Result<Value, LlmError> {
+    async fn generate_via_server(&self, url: &str, request: LlmRequest) -> Result<Value, LlmError> {
         // Тот же семафор — сервер `--parallel 1`, держим FIFO как в CLI-пути.
         let _permit = LLM_SEMAPHORE
             .acquire()

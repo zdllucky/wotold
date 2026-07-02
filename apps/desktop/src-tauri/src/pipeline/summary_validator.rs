@@ -326,32 +326,33 @@ pub fn strip_unverified_evidence(
     transcript_text: &str,
     fuzzy_threshold: f32,
 ) -> (CallSummaryV2, usize) {
-    let mut dropped = 0_usize;
-    summary.action_items.retain(|ai| {
-        let keep =
-            ai.evidence.is_none() || evidence_ok(&ai.evidence, transcript_text, fuzzy_threshold);
-        if !keep {
-            dropped += 1;
+    // [recap-rich] НЕ дропаем пункт при недостоверной цитате — текст решения/
+    // задачи/вопроса реален, слабая local-модель лишь перефразирует цитату.
+    // Обнуляем только цитату (`evidence = None`), пункт остаётся. Дропаем лишь
+    // пункты с пустым `text` (мусор). Возвращаемое число = сколько цитат обнулено.
+    let mut stripped = 0_usize;
+    for ai in &mut summary.action_items {
+        if ai.evidence.is_some() && !evidence_ok(&ai.evidence, transcript_text, fuzzy_threshold) {
+            ai.evidence = None;
+            stripped += 1;
         }
-        keep
-    });
-    summary.decisions.retain(|d| {
-        let keep =
-            d.evidence.is_none() || evidence_ok(&d.evidence, transcript_text, fuzzy_threshold);
-        if !keep {
-            dropped += 1;
+    }
+    for d in &mut summary.decisions {
+        if d.evidence.is_some() && !evidence_ok(&d.evidence, transcript_text, fuzzy_threshold) {
+            d.evidence = None;
+            stripped += 1;
         }
-        keep
-    });
-    summary.open_questions.retain(|q| {
-        let keep =
-            q.evidence.is_none() || evidence_ok(&q.evidence, transcript_text, fuzzy_threshold);
-        if !keep {
-            dropped += 1;
+    }
+    for q in &mut summary.open_questions {
+        if q.evidence.is_some() && !evidence_ok(&q.evidence, transcript_text, fuzzy_threshold) {
+            q.evidence = None;
+            stripped += 1;
         }
-        keep
-    });
-    (summary, dropped)
+    }
+    summary.action_items.retain(|ai| !ai.text.trim().is_empty());
+    summary.decisions.retain(|d| !d.text.trim().is_empty());
+    summary.open_questions.retain(|q| !q.text.trim().is_empty());
+    (summary, stripped)
 }
 
 fn evidence_ok(
@@ -487,6 +488,8 @@ mod tests {
             action_items: vec![],
             decisions: vec![],
             open_questions: vec![],
+            topics: Vec::new(),
+            narrative: String::new(),
             type_specific_block: None,
         }
     }
@@ -548,7 +551,10 @@ mod tests {
         // Остаётся первый «Глеб Гусак» + Дамир.
         assert_eq!(s.participants.len(), 2);
         assert_eq!(s.participants[0].speaker_tag, "speaker:1");
-        assert_eq!(s.participants[0].display_name.as_deref(), Some("Глеб Гусак"));
+        assert_eq!(
+            s.participants[0].display_name.as_deref(),
+            Some("Глеб Гусак")
+        );
         assert_eq!(s.participants[1].display_name.as_deref(), Some("Дамир"));
     }
 
@@ -631,7 +637,9 @@ mod tests {
     // ──────── strip_unverified_evidence ────────
 
     #[test]
-    fn strip_drops_only_failing_items_keeps_rest() {
+    fn strip_nulls_bad_quote_but_keeps_item() {
+        // [recap-rich] Недостоверная цитата → пункт СОХРАНЯЕТСЯ, обнуляется
+        // только evidence. Раньше пункт дропался целиком → пустые секции.
         let mut s = base_summary();
         s.action_items
             .push(ai("good", "x", Some("I'll do it tomorrow")));
@@ -640,32 +648,37 @@ mod tests {
         s.action_items
             .push(ai("good2", "z", Some("call back next week")));
         let transcript = "Alice: I'll do it tomorrow. Bob: call back next week.";
-        let (stripped, dropped) = strip_unverified_evidence(s, transcript, DEFAULT_FUZZY_THRESHOLD);
-        assert_eq!(stripped.action_items.len(), 2);
-        assert_eq!(dropped, 1);
-        let ids: Vec<&str> = stripped
+        let (stripped, nulled) = strip_unverified_evidence(s, transcript, DEFAULT_FUZZY_THRESHOLD);
+        // Все 3 пункта на месте; у "bad" evidence обнулён.
+        assert_eq!(stripped.action_items.len(), 3);
+        assert_eq!(nulled, 1);
+        let bad = stripped
             .action_items
             .iter()
-            .map(|a| a.id.as_str())
-            .collect();
-        assert!(ids.contains(&"good"));
-        assert!(ids.contains(&"good2"));
+            .find(|a| a.id == "bad")
+            .unwrap();
+        assert!(bad.evidence.is_none(), "недостоверная цитата обнулена");
+        let good = stripped
+            .action_items
+            .iter()
+            .find(|a| a.id == "good")
+            .unwrap();
+        assert!(good.evidence.is_some(), "достоверная цитата сохранена");
     }
 
     #[test]
     fn strip_keeps_items_without_evidence() {
-        // [Fix A] v1→v2 promotion (Qwen local path) даёт items с evidence=None.
-        // Раньше strip удалял их все → 0 задач у каждого локального звонка.
-        // Теперь сохраняются; стрипается только present-but-not-found.
+        // Items с evidence=None (v1→v2 promotion) сохраняются как есть.
         let mut s = base_summary();
         s.action_items.push(ai("noev1", "x", None));
         s.action_items.push(ai("noev2", "y", None));
         s.action_items
             .push(ai("fabricated", "z", Some("quote nowhere in transcript")));
         let transcript = "Alice: unrelated chatter here.";
-        let (stripped, dropped) = strip_unverified_evidence(s, transcript, DEFAULT_FUZZY_THRESHOLD);
-        // Оба None-evidence сохранены; только фабрикованный удалён.
-        assert_eq!(dropped, 1, "только present-but-not-found стрипается");
+        let (stripped, nulled) = strip_unverified_evidence(s, transcript, DEFAULT_FUZZY_THRESHOLD);
+        // Все 3 пункта сохранены; у "fabricated" цитата обнулена.
+        assert_eq!(stripped.action_items.len(), 3);
+        assert_eq!(nulled, 1, "только present-but-not-found цитата обнуляется");
         let ids: Vec<&str> = stripped
             .action_items
             .iter()
@@ -673,7 +686,17 @@ mod tests {
             .collect();
         assert!(ids.contains(&"noev1"));
         assert!(ids.contains(&"noev2"));
-        assert!(!ids.contains(&"fabricated"));
+        assert!(ids.contains(&"fabricated"));
+    }
+
+    #[test]
+    fn strip_drops_empty_text_items() {
+        let mut s = base_summary();
+        s.action_items.push(ai("keep", "real task", None));
+        s.action_items.push(ai("empty", "   ", None));
+        let (stripped, _) = strip_unverified_evidence(s, "x", DEFAULT_FUZZY_THRESHOLD);
+        assert_eq!(stripped.action_items.len(), 1);
+        assert_eq!(stripped.action_items[0].id, "keep");
     }
 
     // ──────── validate_schema ────────

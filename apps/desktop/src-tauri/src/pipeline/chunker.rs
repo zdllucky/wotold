@@ -78,13 +78,13 @@ impl ChunkConfig {
     /// больший `--ctx-size` и, соответственно, больше `trigger_tokens`).
     pub(crate) fn for_preset(preset: LocalEnginePreset) -> Self {
         match preset {
-            LocalEnginePreset::Light
-            | LocalEnginePreset::Balanced
-            | LocalEnginePreset::Quality => Self {
-                max_tokens: MAX_TOKENS_PER_CHUNK,
-                overlap_chars: OVERLAP_CHARS,
-                trigger_tokens: SINGLE_PASS_MAX_TOKENS,
-            },
+            LocalEnginePreset::Light | LocalEnginePreset::Balanced | LocalEnginePreset::Quality => {
+                Self {
+                    max_tokens: MAX_TOKENS_PER_CHUNK,
+                    overlap_chars: OVERLAP_CHARS,
+                    trigger_tokens: SINGLE_PASS_MAX_TOKENS,
+                }
+            }
         }
     }
 }

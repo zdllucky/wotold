@@ -291,6 +291,8 @@ pub(crate) fn promote_legacy_to_v2(legacy: RecapJson) -> CallSummaryV2 {
         action_items,
         decisions: Vec::new(),
         open_questions: Vec::new(),
+        topics: Vec::new(),
+        narrative: String::new(),
         type_specific_block: None,
     }
 }
@@ -308,10 +310,10 @@ async fn persist_summary_v2(
     generation_ms: Option<i64>,
 ) -> Result<(), AppError> {
     // 1. Strip unverified evidence — drops items с фабрикованными quotes.
-    let (mut summary, dropped) =
+    let (mut summary, nulled) =
         strip_unverified_evidence(summary, transcript_md, DEFAULT_FUZZY_THRESHOLD);
-    if dropped > 0 {
-        log::info!("recap {call_id}: validator dropped {dropped} items с unverified evidence");
+    if nulled > 0 {
+        log::info!("recap {call_id}: обнулено {nulled} недостоверных цитат (пункты сохранены)");
     }
     // Dedup duplicates (same intent в разных chunk'ах).
     summary_validator::dedup_items(&mut summary);
@@ -516,12 +518,14 @@ pub(crate) fn build_v2_system_prompt(
     // backup) выдаёт CallSummaryV2 schema; backend парсит + validator drops
     // unverified evidence + persist в DB.
     format!(
-        "You are a senior meeting analyst for Wotold, a corporate call recording tool. Your job: produce a faithful, evidence-grounded JSON summary of a meeting transcript. Output language: {lang}.\n\
+        "OUTPUT LANGUAGE = {lang}. EVERY string value (title, summary, key_points, decisions/action_items/open_questions text, topics) MUST be written in {lang}. Only enum values (call_type, category) stay English.\n\
+\n\
+You are a senior meeting analyst for Wotold, a corporate call recording tool. Your job: produce a faithful, evidence-grounded, COMPLETE JSON summary of a meeting transcript.\n\
 \n\
 ## ABSOLUTE RULES (violations are bugs)\n\
 \n\
 1. NEVER invent facts, names, dates, numbers, or commitments not present in the transcript.\n\
-2. Every `action_items[i]`, `decisions[i]`, `open_questions[i]` SHOULD include `evidence.quote` — a verbatim substring (10-200 chars) copied from the transcript. If you cannot find a verbatim anchor, OMIT the item rather than fabricate.\n\
+2. Capture EVERY real decision, action item, and open question raised in the call — aim for COMPLETENESS (typical business call has several of each). Leave an array empty ONLY if the call genuinely had none. For each item add `evidence.quote` = a verbatim substring (10-200 chars) from the transcript WHEN you can copy one; if you cannot, set `evidence.quote` to null but ALWAYS KEEP the item (never drop a real point just because you lack a verbatim quote).\n\
 3. Owner attribution: only assign an owner if the transcript shows them explicitly accepting the task ('I'll do it', 'я возьму', 'I will take that'). Mere mention of a name is NOT enough. Set `owner_confidence`: 0.9+ only for explicit accept; 0.5 for inferred; 0.0 if no owner.\n\
 4. Categorize each action_item:\n\
    - `commitment` — explicit accept ('я сделаю', 'I'll send it')\n\
@@ -538,8 +542,8 @@ pub(crate) fn build_v2_system_prompt(
 {{\n\
   \"schema_version\": 2,\n\
   \"title\": string,                              // 3-7 слов, headline-style. Конкретика, без 'Звонок про'. Пример: 'Лонч в августе — Марина'.\n\
-  \"summary\": string,                            // 1-2 предложения TL;DR.\n\
-  \"key_points\": string[],                       // 3-7 пунктов. Конкретные факты с цифрами/датами/решениями.\n\
+  \"summary\": string,                            // 3-5 предложений: о чём встреча, главные итоги, контекст. НЕ одна фраза.\n\
+  \"key_points\": string[],                       // 5-10 конкретных пунктов с цифрами/датами/именами/решениями. Не общие фразы.\n\
   \"language\": \"ru\" | \"en\" | \"kk\" | \"mixed\",\n\
   \"call_type\": one of:\n\
     'sales_discovery' | 'sales_demo' | 'product_sync' | 'standup' |\n\
@@ -567,7 +571,8 @@ pub(crate) fn build_v2_system_prompt(
     \"text\": string,                            // Нерешённый вопрос поднятый в звонке\n\
     \"raised_by\": string|null,\n\
     \"evidence\": {{ \"quote\": string|null, \"speaker\": string|null }}\n\
-  }}]\n\
+  }}],\n\
+  \"topics\": [{{ \"title\": string, \"points\": string[] }}]  // 2-5 обсуждённых тем, у каждой 1-4 конкретных под-пункта\n\
 }}\n\
 \n\
 ## PRIVACY (one_on_one)\n\
@@ -677,8 +682,15 @@ fn render_recap_md_v2(
     let mut out = String::new();
     out.push_str(&format!("# {}\n\n", labels.title));
 
-    if !summary.summary.is_empty() {
-        out.push_str(summary.summary.trim());
+    // [recap-rich] Вверху — нарратив-минутки (prose) если есть; иначе короткий
+    // summary. Оба сразу не рендерим (нарратив уже включает суть).
+    let lead = if !summary.narrative.trim().is_empty() {
+        summary.narrative.trim()
+    } else {
+        summary.summary.trim()
+    };
+    if !lead.is_empty() {
+        out.push_str(lead);
         out.push_str("\n\n");
     }
 
@@ -688,6 +700,23 @@ fn render_recap_md_v2(
             out.push_str(&format!("- {}\n", kp.trim()));
         }
         out.push('\n');
+    }
+
+    // [recap-rich] Темы — обсуждённые темы с под-пунктами.
+    if !summary.topics.is_empty() {
+        out.push_str(&format!("## {}\n\n", labels.topics));
+        for t in &summary.topics {
+            if t.title.trim().is_empty() {
+                continue;
+            }
+            out.push_str(&format!("### {}\n", t.title.trim()));
+            for p in &t.points {
+                if !p.trim().is_empty() {
+                    out.push_str(&format!("- {}\n", p.trim()));
+                }
+            }
+            out.push('\n');
+        }
     }
 
     // [M14 T-02] Decisions section.
@@ -811,6 +840,7 @@ fn render_recap_md_v2(
 struct RecapLabels {
     title: &'static str,
     key_points: &'static str,
+    topics: &'static str,
     decisions: &'static str,
     open_questions: &'static str,
     tasks: &'static str,
@@ -824,6 +854,7 @@ impl RecapLabels {
             "en" => Self {
                 title: "Recap",
                 key_points: "Key points",
+                topics: "Topics",
                 decisions: "Decisions",
                 open_questions: "Open questions",
                 tasks: "Tasks",
@@ -833,6 +864,7 @@ impl RecapLabels {
             "kk" => Self {
                 title: "Қорытынды",
                 key_points: "Негізгі тармақтар",
+                topics: "Тақырыптар",
                 decisions: "Шешімдер",
                 open_questions: "Ашық сұрақтар",
                 tasks: "Тапсырмалар",
@@ -842,6 +874,7 @@ impl RecapLabels {
             _ => Self {
                 title: "Рекап",
                 key_points: "Ключевое",
+                topics: "Темы",
                 decisions: "Решения",
                 open_questions: "Открытые вопросы",
                 tasks: "Задачи",
@@ -1094,6 +1127,8 @@ mod tests {
             action_items: vec![],
             decisions: vec![],
             open_questions: vec![],
+            topics: Vec::new(),
+            narrative: String::new(),
             type_specific_block: None,
         }
     }

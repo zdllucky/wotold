@@ -25,6 +25,8 @@ use crate::{
 
 pub mod clusters;
 pub mod merge;
+/// [recap-rich] Нарратив-минутки — отдельный write-проход после structured reduce.
+pub mod narrative;
 pub mod recap;
 pub mod settings;
 pub mod stage;
@@ -670,7 +672,11 @@ async fn resolve_active_preset(
 /// гасит старый и стартует новый. Возвращает `true` при успехе (иначе caller
 /// продолжит на one-shot пути). Не фатально ни при какой ошибке.
 #[cfg(target_os = "macos")]
-pub async fn start_resident_server(app: &AppHandle, pool: &SqlitePool, app_data_dir: &Path) -> bool {
+pub async fn start_resident_server(
+    app: &AppHandle,
+    pool: &SqlitePool,
+    app_data_dir: &Path,
+) -> bool {
     use crate::local_engine::llm_server::LlamaServer;
     let Some(preset) = resolve_active_preset(pool).await else {
         log::info!("resident server: preset не выбран — skip");

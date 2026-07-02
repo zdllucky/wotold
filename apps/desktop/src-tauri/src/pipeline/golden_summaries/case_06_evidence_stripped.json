@@ -1,5 +1,5 @@
 {
-  "description": "Evidence stripping — action_item с evidence.quote NOT in transcript → item dropped",
+  "description": "Evidence stripping — action_item с evidence.quote NOT in transcript → цитата обнуляется, пункт СОХРАНЯЕТСЯ (recap-rich)",
   "transcript_md": "# Transcript\n\n**Alice** [0:00]:\nHi everyone, let's go through the demo today.\n\n**Bob** [0:15]:\nSure, I'll share my screen.\n",
   "llm_input": {
     "schema_version": 2,
@@ -72,6 +72,16 @@
           "start_ms": null,
           "end_ms": null
         }
+      },
+      {
+        "id": "ai-bad",
+        "text": "Fabricated commitment that has no transcript anchor",
+        "owner_hint": "Charlie",
+        "owner_confidence": 0.875,
+        "due": null,
+        "due_confidence": 0.0,
+        "category": "commitment",
+        "evidence": null
       }
     ],
     "decisions": [],
