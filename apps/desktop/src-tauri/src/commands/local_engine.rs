@@ -200,3 +200,35 @@ pub async fn local_engine_hw_probe(
     crate::db::set_setting(&state.db, SETTING_HW_REPORT, &json).await?;
     Ok(report)
 }
+
+/// [B2] Текущее состояние тумблера «держать модель активной».
+#[tauri::command]
+pub async fn local_engine_get_keep_resident(state: State<'_, AppState>) -> Result<bool, AppError> {
+    Ok(crate::pipeline::keep_resident_enabled(&state.db).await)
+}
+
+/// [B2] Переключить резидентный режим. Пишет настройку И применяет сразу:
+/// `on` → поднять resident `llama-server` (модель в RAM всю сессию),
+/// `off` → погасить. Старт best-effort: если движок не local либо модель не
+/// скачана — сервер не поднимется, но настройка сохранится и применится позже
+/// (на старте / смене движка).
+#[tauri::command]
+pub async fn local_engine_set_keep_resident(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), AppError> {
+    crate::db::set_setting(
+        &state.db,
+        crate::pipeline::SETTING_KEEP_RESIDENT,
+        if enabled { "1" } else { "0" },
+    )
+    .await?;
+    if enabled {
+        let app_data_dir = state.app_data_dir.clone();
+        crate::pipeline::start_resident_server(&app, &state.db, &app_data_dir).await;
+    } else {
+        crate::pipeline::stop_resident_server(&app).await;
+    }
+    Ok(())
+}

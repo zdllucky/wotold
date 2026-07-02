@@ -64,6 +64,7 @@
     "externalBin": [
       "binaries/wotold-audio",
       "binaries/wotold-llama",
+      "binaries/wotold-llama-server",
       "binaries/wotold-whisper"
     ],
     "icon": [

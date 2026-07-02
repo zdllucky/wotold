@@ -112,6 +112,10 @@ pub struct LocalLlamaProvider {
     /// arg. Когда file отсутствует — graceful skip (log warn) и fall back
     /// на non-speculative path.
     draft_model_path: Option<PathBuf>,
+    /// [B2] Если `Some(url)` — resident `llama-server` поднят; `generate()`
+    /// идёт HTTP `POST {url}/completion` вместо one-shot `llama-cli` спавна
+    /// (модель уже в RAM). `None` — обычный one-shot путь.
+    server_url: Option<String>,
 }
 
 impl LocalLlamaProvider {
@@ -123,7 +127,16 @@ impl LocalLlamaProvider {
             app: Mutex::new(None),
             tmp_dir: std::env::temp_dir(),
             draft_model_path: None,
+            server_url: None,
         }
+    }
+
+    /// [B2] Прикрепить URL живого resident-сервера. `Some` → HTTP-путь,
+    /// `None` → one-shot. Caller (build_local_llm_provider) читает handle из
+    /// AppState.
+    pub fn with_server(mut self, url: Option<String>) -> Self {
+        self.server_url = url;
+        self
     }
 
     /// [M14 T-16 P2] Set optional draft model для speculative decoding.
@@ -171,11 +184,79 @@ impl LocalLlamaProvider {
     pub fn timeout(&self) -> Duration {
         self.timeout
     }
+
+    /// [B2] HTTP-путь через resident `llama-server`. Тот же prompt (system +
+    /// input) и та же per-request форма (json_schema/grammar), что one-shot,
+    /// но без спавна процесса и перезагрузки модели.
+    async fn generate_via_server(
+        &self,
+        url: &str,
+        request: LlmRequest,
+    ) -> Result<Value, LlmError> {
+        // Тот же семафор — сервер `--parallel 1`, держим FIFO как в CLI-пути.
+        let _permit = LLM_SEMAPHORE
+            .acquire()
+            .await
+            .map_err(|e| LlmError::Provider(format!("llm semaphore closed: {e}")))?;
+
+        let prompt = build_prompt(&request);
+        let max_tokens = request
+            .max_tokens
+            .map(|n| n.clamp(256, 8192))
+            .unwrap_or(DEFAULT_MAX_TOKENS);
+        let mut body = serde_json::json!({
+            "prompt": prompt,
+            "n_predict": max_tokens,
+            "temperature": DEFAULT_TEMP,
+            "repeat_penalty": DEFAULT_REPEAT_PENALTY,
+            "repeat_last_n": DEFAULT_REPEAT_LAST_N,
+            "cache_prompt": false,
+        });
+        if let Some(schema) = request.json_schema.as_deref() {
+            match serde_json::from_str::<Value>(schema) {
+                Ok(v) => body["json_schema"] = v,
+                Err(e) => return Err(LlmError::Provider(format!("bad json_schema: {e}"))),
+            }
+        } else if let Some(grammar) = request.grammar.as_deref() {
+            body["grammar"] = Value::String(grammar.to_string());
+        }
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{url}/completion"))
+            .json(&body)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(|e| LlmError::Provider(format!("llama-server request: {e}")))?;
+        if !resp.status().is_success() {
+            return Err(LlmError::Provider(format!(
+                "llama-server HTTP {}",
+                resp.status()
+            )));
+        }
+        let json: Value = resp
+            .json()
+            .await
+            .map_err(|e| LlmError::Provider(format!("llama-server resp: {e}")))?;
+        let content = json.get("content").and_then(Value::as_str).unwrap_or("");
+        extract_json_object(content)
+            .ok_or_else(|| LlmError::Provider("no JSON object in llama-server output".into()))
+            .and_then(|json_str| {
+                serde_json::from_str::<Value>(&json_str)
+                    .map_err(|e| LlmError::Provider(format!("malformed JSON: {e}")))
+            })
+    }
 }
 
 #[async_trait]
 impl LlmProvider for LocalLlamaProvider {
     async fn generate(&self, request: LlmRequest) -> Result<Value, LlmError> {
+        // [B2] Resident-server путь: модель уже в RAM, шлём HTTP вместо спавна
+        // one-shot процесса. Не нужен AppHandle.
+        if let Some(url) = self.server_url.clone() {
+            return self.generate_via_server(&url, request).await;
+        }
         let app = {
             let guard = self.app.lock().await;
             guard.clone()

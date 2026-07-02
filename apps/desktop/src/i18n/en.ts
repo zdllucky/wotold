@@ -757,6 +757,9 @@ export const en: TranslationStrings = {
       active: 'active',
     },
     presetLabel: 'Model bundle',
+    keepResidentLabel: 'Keep model warm',
+    keepResidentHint:
+      'The local model stays in RAM for the whole session — generation is faster (no reload per call) but it holds ~2–5 GB of RAM. Off by default.',
     preset: {
       light: 'Light',
       balanced: 'Balanced',

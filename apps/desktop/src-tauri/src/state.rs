@@ -53,6 +53,11 @@ pub struct AppState {
     /// `regenerate_empty_recaps` проверяет его между звонками; `cancel_bulk_recap`
     /// взводит. Sequential по природе (local LLM semaphore=1).
     pub bulk_recap_cancel: Arc<std::sync::atomic::AtomicBool>,
+    /// [B2] Живой resident `llama-server` (настройка `local_engine.keep_resident`).
+    /// `Some` пока модель держится в RAM всю сессию; `None` — one-shot режим.
+    /// Поднимается на старте / по тумблеру, гасится на выходе / смене preset.
+    #[cfg(target_os = "macos")]
+    pub llm_server: Arc<Mutex<Option<crate::local_engine::llm_server::LlamaServer>>>,
 }
 
 pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
@@ -105,6 +110,8 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         orchestrator_pause_tx: Arc::new(Mutex::new(None)),
         orchestrator_stop_tx: Arc::new(Mutex::new(None)),
         bulk_recap_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        #[cfg(target_os = "macos")]
+        llm_server: Arc::new(Mutex::new(None)),
     })
 }
 
