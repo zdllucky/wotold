@@ -71,6 +71,19 @@ export const kk: TranslationStrings = {
     rowOpen: 'Ашу',
     rowReprocess: 'Қайта өңдеу',
     rowExport: 'Экспорт…',
+    calPrev: 'Артқа',
+    calNext: 'Алға',
+    yearPrev: 'Алдыңғы жыл',
+    yearNext: 'Келесі жыл',
+    periodCustom: 'Еркін кезең',
+    periodFrom: 'Бастап',
+    periodTo: 'Дейін',
+    reprocessStarted: 'Қайта өңдеу басталды',
+    exported: 'Экспортталды',
+    deleted: 'Қоңырау жойылды',
+    removeFilter: 'Сүзгіні алып тастау: {label}',
+    removeText: 'Іздеуді алып тастау: {q}',
+    removeRange: 'Кезеңді алып тастау',
   },
 
   common: {
@@ -93,7 +106,7 @@ export const kk: TranslationStrings = {
     ok: 'OK',
     next: 'Әрі қарай →',
     back: '← Артқа',
-    backAll: '← Барлық қоңыраулар',
+    backAll: 'Барлық қоңыраулар',
     skip: 'Өткізіп жіберу',
     done: 'Дайын',
     gotIt: 'Түсінікті ✓',
@@ -435,8 +448,6 @@ export const kk: TranslationStrings = {
     sectionLabs: 'Зертхана',
     sectionMaintenance: 'Қызмет көрсету',
     maintenanceTitle: 'Деректерге қызмет көрсету.',
-    maintenanceLede:
-      'Бұрын өңделген қоңыраулардың түйіні бос болуы мүмкін. Осындай барлық қоңыраулар үшін түйіндемені бір әрекетпен қайта жасауға болады.',
     bulkRecapStart: 'Бос түйіндемелерді қайта жасау',
     bulkRecapRunning: 'Өңделуде…',
     bulkRecapScanning: 'Бос түйіндер ізделуде…',
@@ -445,12 +456,6 @@ export const kk: TranslationStrings = {
     bulkRecapResult: 'Дайын: {regenerated} қайта жасалды, {failed} қатемен.',
     bulkRecapNoneEmpty: 'Бос түйіндер табылмады — бәрі орнында.',
     sectionPrivacy: 'Құпиялылық',
-    sectionProcessingSubtitle:
-      'Қоңырауларыңыз қайда өңделеді. Жергілікті — тегін, желісіз. Бұлт — жылдамырақ, дәлірек.',
-    sectionRecordingSubtitle:
-      'Жылдам пернелер, тілді тану, авто қоңырау анықтау.',
-    sectionSpeakersSubtitle:
-      'Сөйлеушілерді дауыс бойынша танып, аттарын өздігінен қойсын.',
     speakersAutoBindLabel: 'Сөйлеушілерді контактілерге автоматты байланыстыру',
     speakersAutoBindHint:
       'Тек жоғары сенімділікте — қоңырауда болғанда болдырмауға болады.',
@@ -462,8 +467,6 @@ export const kk: TranslationStrings = {
     micDiarizationInstall: '↓ Дауыс бөлу модулін орнату',
     micDiarizationInstalling: 'Модуль орнатылуда…',
     appearanceTitle: 'Сыртқы түрі.',
-    appearanceLede:
-      'Тақырып пен акцент бірден қолданылады — ауыстырып салыстырыңыз. Барлық экрандар бір уақытта жауап береді.',
     fieldTheme: 'Тақырып',
     fieldAccent: 'Акцент түсі',
     fieldLanguage: 'Интерфейс тілі',
@@ -476,11 +479,7 @@ export const kk: TranslationStrings = {
     accentPersian: 'Кобальт',
     accentInk: 'Графит',
     accountTitle: 'Аккаунт.',
-    accountLede:
-      'Бұлттық синхрондау жақын арада. Қазір кіру ештеңені ашпайды — Wotold логинсіз толық жергілікті жұмыс істейді.',
     permissionsTitle: 'Жүйелік рұқсаттар.',
-    permissionsLede:
-      'Wotold-қа екі macOS рұқсаты керек: микрофон және жүйелік дыбыс үшін экран жазу. Олсыз жазу басталмайды.',
     engineTitle: 'Тану қозғалтқышы.',
     engineLede:
       'Қоңырауларыңыз қайда өңделеді. Жергілікті — тегін, желісіз, бәрі құрылғыда. Бұлт — ең жақсы сапа, интернет қажет.',
@@ -563,11 +562,7 @@ export const kk: TranslationStrings = {
     voiceLede:
       'Wotold дауысты сәйкестендіру арқылы кім сөйлеп жатқанын ұсынуы мүмкін — бірақ биометриялық модельді жүктегеннен кейін ғана (25 МБ, қосымша). Соңғы растау сізде (паспорттың R2).',
     privacyTitle: 'Құпиялылық.',
-    privacyLede:
-      'Жергілікті деректерді толық тазалау. Құрылғыны басқа адамға бергенде немесе келісімді қайтарып алғанда пайдалы.',
     labsTitle: 'Зертхана.',
-    labsLede:
-      'Эксперименттік мүмкіндіктер. Әдепкі қосулы — бірдеңе бұзылса өшіріңіз.',
     summaryV2Label: 'Қорытындының жаңа форматы',
     summaryV2Hint:
       'Әдепкі қосулы. Қоңырау түрі, үзінділер немесе шешімдер бойынша мәселе туындаса өшіріңіз — қорытынды қарапайым форматқа қайтады.',
@@ -758,6 +753,9 @@ export const kk: TranslationStrings = {
       active: 'белсенді',
     },
     presetLabel: 'Модель жиынтығы',
+    keepResidentLabel: 'Модельді белсенді ұстау',
+    keepResidentHint:
+      'Жергілікті модель бүкіл сессия бойы жедел жадыда қалады — генерация жылдамырақ (әр шақыруда қайта жүктелмейді), бірақ ~2–5 ГБ RAM алады. Әдепкіде өшірулі.',
     preset: {
       light: 'Жеңіл',
       balanced: 'Теңгерімді',

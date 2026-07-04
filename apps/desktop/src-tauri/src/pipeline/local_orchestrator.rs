@@ -42,7 +42,7 @@ use crate::AppError;
 /// (title + summary 200-500 слов + 3-7 key_points + 0-3 action_items).
 /// Очень длинные звонки (>~80 мин / 8+ chunks) идут через map-reduce
 /// hierarchical path с собственными budget'ами (`REDUCE_MAX_TOKENS`).
-const MAIN_MAX_TOKENS: u32 = 1536;
+const MAIN_MAX_TOKENS: u32 = 2560;
 
 /// Контекст для одного оркестратор-runs'а.
 pub(crate) struct LocalOrchestratorCtx<'a> {
@@ -147,6 +147,20 @@ pub(crate) async fn run_v2_pipeline(
     )
     .await;
     summary_json = action_item_post_pass::merge_refined_action_items(summary_json, refined);
+
+    // 5. [recap-rich] Нарратив-минутки — отдельный write-проход из готовой
+    // структуры + головы транскрипта. Best-effort: пусто → секция опускается.
+    let narrative = crate::pipeline::narrative::generate_narrative(
+        provider,
+        &summary_json,
+        ctx.transcript_md,
+        ctx.lang_detected,
+    )
+    .await;
+    if !narrative.is_empty() {
+        summary_json["narrative"] = serde_json::Value::String(narrative);
+    }
+
     Ok(summary_json)
 }
 
@@ -233,7 +247,7 @@ mod tests {
         assert_eq!(result["call_type"], "standup");
 
         let systems = mock.captured_systems();
-        assert_eq!(systems.len(), 2, "expected 2 LLM calls (classifier + main)");
+        assert_eq!(systems.len(), 3, "classifier + main + narrative");
         // [M14 T-07 Phase C] Main call (index 1) теперь использует expert
         // prompt, не universal с Classification hint. Проверяем SPECIALIZED
         // GUIDE marker + standup slug present.
@@ -266,8 +280,8 @@ mod tests {
         assert_eq!(result["schema_version"], 2);
 
         let systems = mock.captured_systems();
-        // 1 classifier attempt + 1 main = 2 calls (vs 3 ранее с retry).
-        assert_eq!(systems.len(), 2);
+        // classifier + main + narrative = 3.
+        assert_eq!(systems.len(), 3);
         assert!(
             !systems[1].contains("Classification hint"),
             "main prompt should NOT contain hint on classifier failure"
@@ -325,7 +339,7 @@ mod tests {
         };
         run_v2_pipeline(&mock, ctx).await.unwrap();
         let systems = mock.captured_systems();
-        assert_eq!(systems.len(), 2);
+        assert_eq!(systems.len(), 3);
         let main_prompt = &systems[1];
         // [MoM cleanup] Expert path определяется по slug + SPECIALIZED GUIDE,
         // без MoM-заголовков / type_specific_block.
@@ -356,8 +370,8 @@ mod tests {
         let systems = mock.captured_systems();
         assert_eq!(
             systems.len(),
-            2,
-            "short transcript expects 2 calls (classifier + main), got {}",
+            3,
+            "short transcript: classifier + main + narrative, got {}",
             systems.len()
         );
         // Main call (index 1) — full v2 prompt, не reduce.
@@ -406,16 +420,16 @@ mod tests {
         assert_eq!(result["schema_version"], 2);
         let systems = mock.captured_systems();
         assert!(
-            systems.len() >= 4,
-            "long transcript should trigger map-reduce (≥4 calls), got {}",
+            systems.len() >= 5,
+            "long transcript: classifier + maps + reduce + narrative (≥5), got {}",
             systems.len()
         );
-        // Последний call — reduce, содержит MAP_OUTPUTS.
-        let last = systems.last().unwrap();
+        // Reduce присутствует (содержит MAP_OUTPUTS) — теперь не последний
+        // (последний = narrative-вызов).
         assert!(
-            last.contains("MAP_OUTPUTS"),
-            "last call should be reduce, got: {}",
-            &last[..200.min(last.len())]
+            systems.iter().any(|s| s.contains("MAP_OUTPUTS")),
+            "expected a reduce call with MAP_OUTPUTS among: {} calls",
+            systems.len()
         );
     }
 
@@ -477,8 +491,8 @@ mod tests {
         let result = run_v2_pipeline(&mock, ctx).await.unwrap();
         assert_eq!(
             mock.call_count(),
-            3,
-            "expected 3 calls (classifier + main + post-pass)"
+            4,
+            "expected 4 calls (classifier + main + post-pass + narrative)"
         );
         assert_eq!(result["action_items"], refined);
         // Other fields preserved from main response.
@@ -506,7 +520,7 @@ mod tests {
         let result = run_v2_pipeline(&mock, ctx).await.unwrap();
         // Post-pass crashed → original kept.
         assert_eq!(result["action_items"], original_items);
-        // classifier (1) + main (1) + post-pass (1) = 3 calls (vs 4 ранее с retry).
-        assert_eq!(mock.call_count(), 3);
+        // classifier (1) + main (1) + post-pass (1) + narrative (1) = 4 calls.
+        assert_eq!(mock.call_count(), 4);
     }
 }

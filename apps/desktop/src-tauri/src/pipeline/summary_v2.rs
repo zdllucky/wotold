@@ -173,6 +173,14 @@ pub struct ParticipantV2 {
     pub role_hint: Option<String>,
 }
 
+/// [recap-rich] Обсуждённая тема с под-пунктами — секция «Темы» в рекапе.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopicV2 {
+    pub title: String,
+    #[serde(default)]
+    pub points: Vec<String>,
+}
+
 /// Полная V2 summary — то, что выдаёт pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallSummaryV2 {
@@ -181,6 +189,7 @@ pub struct CallSummaryV2 {
     pub schema_version: u8,
     pub title: String,
     pub summary: String,
+    #[serde(default)]
     pub key_points: Vec<String>,
     /// [MoM cleanup] Deprecated — больше не запрашивается в промпте и не
     /// рендерится в recap.md (модель эхо-копировала схему сюда → мусор).
@@ -191,10 +200,29 @@ pub struct CallSummaryV2 {
     pub language: String,
     pub call_type: CallType,
     pub call_type_confidence: f32,
+    /// [recap-rich fix] `#[serde(default)]` на всех Vec — грамматика
+    /// SUMMARY_V2_JSON_SCHEMA НЕ требует `participants`, а раньше serde требовал
+    /// → модель опускала participants → v2-parse падал → fallback на
+    /// `promote_legacy_to_v2`, который стирал decisions/open_questions/topics/
+    /// narrative. Теперь пропущенное поле = пустой Vec, богатый вывод выживает.
+    #[serde(default)]
     pub participants: Vec<ParticipantV2>,
+    #[serde(default)]
     pub action_items: Vec<ActionItemV2>,
+    #[serde(default)]
     pub decisions: Vec<Decision>,
+    #[serde(default)]
     pub open_questions: Vec<OpenQuestion>,
+    /// [recap-rich] Обсуждённые темы с под-пунктами. `skip_serializing_if` —
+    /// пустой массив не попадает в JSON (совместимость с golden-фикстурами +
+    /// не шумим). `default` — старые ответы без `topics` парсятся.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub topics: Vec<TopicV2>,
+    /// [recap-rich] Связный markdown-протокол встречи (нарратив-минутки),
+    /// генерится отдельным narrative-проходом после reduce (backend, не LLM v2
+    /// JSON). Пустой не сериализуется.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub narrative: String,
     /// JSON object с per-type structured data (pain_points для sales_discovery,
     /// per_person для standup и т.д.). `None` если call_type=Other.
     #[serde(default)]
@@ -329,6 +357,11 @@ mod tests {
                 raised_by: Some("speaker:0".into()),
                 evidence: None,
             }],
+            topics: vec![TopicV2 {
+                title: "Pricing".into(),
+                points: vec!["Enterprise tier at $499".into()],
+            }],
+            narrative: "На звонке обсудили тариф и следующие шаги.".into(),
             type_specific_block: Some(json!({
                 "pain_points": ["slow onboarding", "manual exports"],
                 "budget_signal": "approved $50K",
@@ -366,5 +399,33 @@ mod tests {
         });
         let s: CallSummaryV2 = serde_json::from_value(minimal).unwrap();
         assert!(s.type_specific_block.is_none());
+    }
+
+    #[test]
+    fn v2_without_participants_still_parses_as_v2() {
+        // [recap-rich fix] Грамматика SUMMARY_V2 НЕ требует `participants`;
+        // раньше serde требовал → parse падал → fallback на legacy (стирал
+        // decisions/topics/narrative). Теперь пропущенное поле = пустой Vec,
+        // schema_version остаётся 2 → богатый вывод выживает.
+        let no_participants = json!({
+            "schema_version": 2,
+            "title": "Sync",
+            "summary": "Team sync.",
+            "key_points": ["a"],
+            "language": "ru",
+            "call_type": "product_sync",
+            "call_type_confidence": 0.8,
+            "action_items": [],
+            "decisions": [{ "text": "Ship Friday" }],
+            "open_questions": [],
+            "topics": [{ "title": "Roadmap", "points": ["Q4 plan"] }],
+            "narrative": "Обсудили роадмап."
+        });
+        let s: CallSummaryV2 = serde_json::from_value(no_participants).unwrap();
+        assert_eq!(s.schema_version, 2);
+        assert!(s.participants.is_empty());
+        assert_eq!(s.decisions.len(), 1);
+        assert_eq!(s.topics.len(), 1);
+        assert_eq!(s.narrative, "Обсудили роадмап.");
     }
 }

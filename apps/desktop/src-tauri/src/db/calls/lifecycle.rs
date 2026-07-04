@@ -501,12 +501,16 @@ pub async fn set_summary_metadata(
 /// финальном transcript'е.
 pub async fn sweep_stale_calls(pool: &SqlitePool) -> Result<u64, AppError> {
     let now = chrono::Utc::now().to_rfc3339();
+    // [B19.6] Только 'processing' (у них есть финализированное аудио → recoverable
+    // как 'failed'). Орфан-'recording' (краш во время записи) обрабатываются
+    // отдельно в `reconcile_orphan_recordings` — там по длине частичного WAV
+    // решается удалить (<30с) или пометить failed (≥30с).
     let res = sqlx::query(
         "UPDATE calls
          SET status = 'failed',
              ended_at = COALESCE(ended_at, ?1),
              updated_at = ?1
-         WHERE status IN ('recording', 'processing')",
+         WHERE status = 'processing'",
     )
     .bind(&now)
     .execute(pool)
@@ -550,6 +554,15 @@ pub async fn sweep_stale_calls(pool: &SqlitePool) -> Result<u64, AppError> {
         );
     }
     Ok(res.rows_affected())
+}
+
+/// [B19.6] id'шники всех строк, застрявших в status='recording' (краш/force-quit
+/// во время записи). `reconcile_orphan_recordings` решает их судьбу по длине WAV.
+pub async fn list_orphan_recording_ids(pool: &SqlitePool) -> Result<Vec<String>, AppError> {
+    let rows: Vec<(String,)> = sqlx::query_as("SELECT id FROM calls WHERE status = 'recording'")
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 /// Пометить запись как failed (sidecar сломался, тайм-аут и т.п.).
@@ -623,7 +636,8 @@ pub async fn delete_call_and_samples(pool: &SqlitePool, call_id: &str) -> Result
         .bind(call_id)
         .execute(&mut *tx)
         .await?;
-    // action_items + call_speakers идут по ON DELETE CASCADE (см. 0001_initial.sql).
+    // call_chunks (0013), action_items + call_speakers (0001) удаляются по
+    // ON DELETE CASCADE (foreign_keys=ON при init pool) — отдельный DELETE не нужен.
     sqlx::query("DELETE FROM calls WHERE id = ?1")
         .bind(call_id)
         .execute(&mut *tx)
@@ -754,27 +768,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sweep_stale_calls_marks_recording_and_processing_failed() {
+    async fn sweep_stale_calls_marks_only_processing_failed() {
+        // [B19.6] sweep handles ONLY 'processing' orphans (have finalized audio →
+        // recoverable as 'failed'). 'recording' orphans are left for
+        // reconcile_orphan_recordings (WAV-duration based delete/fail).
         let db = fresh_db().await;
-        let a = insert_recording(&db.pool, "managed").await.unwrap();
+        let a = insert_recording(&db.pool, "managed").await.unwrap(); // recording
         let b = insert_recording(&db.pool, "managed").await.unwrap();
-        finish_recording(&db.pool, &b.id, 5.0).await.unwrap();
+        finish_recording(&db.pool, &b.id, 5.0).await.unwrap(); // processing
         let c = insert_recording(&db.pool, "managed").await.unwrap();
         finish_recording(&db.pool, &c.id, 5.0).await.unwrap();
-        mark_call_ready(&db.pool, &c.id).await.unwrap();
+        mark_call_ready(&db.pool, &c.id).await.unwrap(); // ready
 
         let affected = sweep_stale_calls(&db.pool).await.unwrap();
-        assert_eq!(
-            affected, 2,
-            "a recording + b processing → failed; c ready unchanged"
-        );
+        assert_eq!(affected, 1, "only b (processing) → failed");
 
         let a_after = get_call(&db.pool, &a.id).await.unwrap().unwrap();
         let b_after = get_call(&db.pool, &b.id).await.unwrap().unwrap();
         let c_after = get_call(&db.pool, &c.id).await.unwrap().unwrap();
-        assert_eq!(a_after.status, "failed");
+        assert_eq!(a_after.status, "recording", "recording left for reconcile");
         assert_eq!(b_after.status, "failed");
         assert_eq!(c_after.status, "ready");
+    }
+
+    #[tokio::test]
+    async fn list_orphan_recording_ids_returns_only_recording() {
+        let db = fresh_db().await;
+        let a = insert_recording(&db.pool, "managed").await.unwrap(); // recording
+        let b = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &b.id, 5.0).await.unwrap(); // processing
+        let ids = list_orphan_recording_ids(&db.pool).await.unwrap();
+        assert_eq!(ids, vec![a.id], "only the recording-status orphan");
     }
 
     #[tokio::test]

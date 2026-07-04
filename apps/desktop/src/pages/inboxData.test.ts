@@ -66,3 +66,37 @@ describe('matchesFacets — person facet', () => {
     expect(matchesFacets(mkCall('c1'), f, '', undefined)).toBe(false);
   });
 });
+
+describe('matchesFacets — custom date range (B19.3)', () => {
+  // Call started June 15 2026 (local noon).
+  const onJun15 = mkCall('c', { started_at: new Date(2026, 5, 15, 12, 0, 0).toISOString() });
+  const range = (from: string | null, to: string | null) => ({
+    ...FACETS_EMPTY,
+    range: { from, to },
+  });
+
+  test('empty range is a no-op', () => {
+    expect(matchesFacets(onJun15, FACETS_EMPTY, '')).toBe(true);
+    expect(matchesFacets(onJun15, range(null, null), '')).toBe(true);
+  });
+
+  test('inside an inclusive from..to range passes', () => {
+    expect(matchesFacets(onJun15, range('2026-06-10', '2026-06-20'), '')).toBe(true);
+    // Boundary days are inclusive (00:00 from … 23:59 to).
+    expect(matchesFacets(onJun15, range('2026-06-15', '2026-06-15'), '')).toBe(true);
+  });
+
+  test('before `from` or after `to` is excluded', () => {
+    expect(matchesFacets(onJun15, range('2026-06-16', null), '')).toBe(false);
+    expect(matchesFacets(onJun15, range(null, '2026-06-14'), '')).toBe(false);
+  });
+
+  test('open-ended bounds (from-only / to-only)', () => {
+    expect(matchesFacets(onJun15, range('2026-06-01', null), '')).toBe(true);
+    expect(matchesFacets(onJun15, range(null, '2026-06-30'), '')).toBe(true);
+  });
+
+  test('an unparseable bound fails closed (excludes, not widens)', () => {
+    expect(matchesFacets(onJun15, range('not-a-date', null), '')).toBe(false);
+  });
+});
