@@ -124,11 +124,37 @@ pub async fn get_call_audio_path(
     let audio_kind = AudioKind::from_str(&kind)
         .ok_or_else(|| AppError::Other(format!("unknown audio kind: {kind}")))?;
     let path = state.store.audio_path(&call_id, audio_kind);
-    if !path.exists() {
-        return Err(AppError::Other(format!(
-            "audio file {} не найден для звонка {call_id}",
-            audio_kind.filename()
-        )));
+    if path.exists() {
+        return Ok(path.to_string_lossy().to_string());
     }
-    Ok(path.to_string_lossy().to_string())
+
+    // [M13 fix] Root WAV нет — chunked-запись пишет chunk 0 в chunks/0/, а root
+    // создаётся только merge'ем. Если pipeline упал ДО merge (напр. модель не
+    // найдена), плеер раньше показывал «audio not найден» хотя всё аудио лежит
+    // в chunks/{idx}/. Склеиваем chunks→root on-demand, чтобы плеер всегда имел
+    // полную дорожку. Fallback — chunks/0/ (частичное аудио лучше пустого).
+    let chunks_dir = state.store.chunks_dir(&call_id);
+    if chunks_dir.exists() {
+        let cd = chunks_dir.clone();
+        let call_dir = state.store.call_dir(&call_id);
+        let _ = tokio::task::spawn_blocking(move || {
+            crate::pipeline::audio_merger::merge_both_tracks(&cd, &call_dir);
+        })
+        .await;
+        if path.exists() {
+            return Ok(path.to_string_lossy().to_string());
+        }
+        let chunk0 = state
+            .store
+            .chunk_dir(&call_id, 0)
+            .join(audio_kind.filename());
+        if chunk0.exists() {
+            return Ok(chunk0.to_string_lossy().to_string());
+        }
+    }
+
+    Err(AppError::Other(format!(
+        "audio file {} не найден для звонка {call_id}",
+        audio_kind.filename()
+    )))
 }

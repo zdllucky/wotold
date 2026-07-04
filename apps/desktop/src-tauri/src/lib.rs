@@ -152,6 +152,15 @@ pub fn run() {
             let quitting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             tauri::Manager::manage(app, quitting.clone());
 
+            // [M13 fix / ops] Headless recovery: если env WOTOLD_RECOVER_CALL_ID
+            // задан — восстановить сломанную chunked-запись на старте (без GUI).
+            {
+                let app_for_recover = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    commands::maybe_headless_recover(app_for_recover).await;
+                });
+            }
+
             // [S2] Если CALL_DETECT_ENABLED == "1" с прошлой сессии — поднимаем
             // probe автоматически. Иначе sidecar спит до toggle'а юзером.
             #[cfg(target_os = "macos")]
@@ -663,6 +672,7 @@ pub fn run() {
             commands::get_active_pipeline_count,
             commands::list_call_chunks,
             commands::retry_chunk,
+            commands::recover_chunked_call,
             commands::list_call_decisions,
             commands::list_call_open_questions,
             commands::get_call_audio_path,

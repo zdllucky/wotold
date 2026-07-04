@@ -252,6 +252,23 @@ pub async fn delete_chunks_for_call(pool: &SqlitePool, call_id: &str) -> Result<
     Ok(res.rows_affected())
 }
 
+/// [M13 fix] Удалить одну chunk-строку (`call_id`, `chunk_idx`). Используется
+/// `chunk_recovery` чтобы сбросить stale non-done строку перед реинсертом с
+/// корректным `start_ms`. No-op если строки нет. Возвращает число удалённых.
+pub async fn delete_chunk(
+    pool: &SqlitePool,
+    call_id: &str,
+    chunk_idx: u32,
+) -> Result<u64, AppError> {
+    let res = sqlx::query("DELETE FROM call_chunks WHERE call_id = ?1 AND chunk_idx = ?2")
+        .bind(call_id)
+        .bind(chunk_idx)
+        .execute(pool)
+        .await
+        .map_err(AppError::from)?;
+    Ok(res.rows_affected())
+}
+
 /// [P11.1] Все chunks для звонка имеют status='done'. `false` если хотя бы
 /// один pending/processing/failed, либо если у звонка вообще нет chunks
 /// (cloud-managed / non-chunked path → caller должен использовать другую
