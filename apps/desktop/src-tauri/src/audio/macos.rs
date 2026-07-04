@@ -75,11 +75,22 @@ pub struct StopResult {
 /// Спавнит wotold-audio sidecar, шлёт start-команду, ждёт `started` с таймаутом.
 /// После started — spawn'ит background dispatcher что эмитит Tauri-события для
 /// frontend (`audio:level`) пока не придёт terminal event.
+///
+/// [M13 fix] `mic_path`/`system_path` — куда sidecar **физически пишет** первый
+/// chunk. `final_mic_path`/`final_system_path` — что кладётся в
+/// `RecordingSession` (цель финального merge + источник non-chunked STT). При
+/// chunked-режиме sidecar пишет в `chunks/0/`, а session указывает на root
+/// `mic.wav`/`system.wav` (куда audio_merger склеит все chunk'и на stop). В
+/// non-chunked режиме `final_* == mic_path/system_path` (root) — байт-в-байт
+/// прежнее поведение.
+#[allow(clippy::too_many_arguments)]
 pub async fn start(
     app: &AppHandle,
     call_id: String,
     mic_path: PathBuf,
     system_path: PathBuf,
+    final_mic_path: PathBuf,
+    final_system_path: PathBuf,
     orchestrator: Option<OrchestratorChannels>,
 ) -> Result<RecordingSession, AppError> {
     if let Some(parent) = mic_path.parent() {
@@ -142,8 +153,11 @@ pub async fn start(
 
             Ok(RecordingSession {
                 call_id,
-                mic_path,
-                system_path,
+                // [M13 fix] Session хранит final (root) paths — цель merge +
+                // non-chunked STT source. Sidecar пишет в mic_path/system_path
+                // (chunks/0/ при chunked), но это ephemeral write target.
+                mic_path: final_mic_path,
+                system_path: final_system_path,
                 started_at,
                 child,
                 terminal_rx,

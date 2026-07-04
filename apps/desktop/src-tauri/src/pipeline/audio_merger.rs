@@ -84,7 +84,7 @@ pub struct MergeReport {
 ///
 /// Layout: `chunks_dir/{idx}/{filename}`. `chunks_dir` typically
 /// `calls/{call_id}/chunks`.
-fn list_chunk_wavs(chunks_dir: &Path, kind: TrackKind) -> Vec<(u32, PathBuf)> {
+pub(crate) fn list_chunk_wavs(chunks_dir: &Path, kind: TrackKind) -> Vec<(u32, PathBuf)> {
     let entries = match fs::read_dir(chunks_dir) {
         Ok(e) => e,
         Err(_) => return Vec::new(),
@@ -106,39 +106,25 @@ fn list_chunk_wavs(chunks_dir: &Path, kind: TrackKind) -> Vec<(u32, PathBuf)> {
     found
 }
 
-/// Склеить все chunk WAV-файлы данного трека в один root WAV.
+/// [P6+P7] Promote root WAV → `chunks/0/` если `chunks/0/{filename}` отсутствует,
+/// но root WAV существует и есть **любой** `chunks/{N≥1}/{filename}`.
 ///
-/// - `chunks_dir` — `calls/{call_id}/chunks`.
-/// - `output_path` — куда писать merged WAV (обычно `calls/{call_id}/mic.wav`).
-/// - На пустую коллекцию (ни одного chunk'а) → `MergeError::NoChunks`.
-/// - На spec mismatch → `MergeError::SpecMismatch` (без partial write —
-///   удаляем недописанный файл).
-pub fn merge_track(
+/// **CRITICAL DATA-LOSS GUARD.** Sidecar пишет first chunk (0-10 мин до first
+/// rotate) в root `mic.wav`, не в `chunks/0/mic.wav`. Без promotion merge
+/// перезаписал бы root выходом из chunks/{1..N}/, уничтожив аудио первых 10
+/// минут (regression на call fd4b3380, 2026-05-25).
+///
+/// [Sentinel] `chunks/.merged` marker предотвращает double-promote на reprocess:
+/// после успешного merge root WAV содержит merged result (не original chunk 0).
+///
+/// [M13 fix] Вынесено из `merge_track` в отдельную функцию — `chunk_recovery`
+/// зовёт её ДО реконструкции `call_chunks` строк, чтобы chunk 0 оказался в
+/// `chunks/0/` и `run_chunk(0)` его нашёл. Возвращает `true` если promote сделан.
+pub(crate) fn promote_root_to_chunk0(
     chunks_dir: &Path,
     output_path: &Path,
     kind: TrackKind,
-) -> Result<MergeReport, MergeError> {
-    // [P6+P7] Promote root WAV → chunks/0/ on first merge. Sidecar пишет
-    // first chunk (0-10 мин до first rotate) в root `mic.wav`, не в
-    // `chunks/0/mic.wav` — иначе AudioScrubber играл бы пустой root до
-    // окончания pipeline. На rotate sidecar переключается на chunks/N/.
-    // audio_merger же сканирует chunks/{idx}/ → missing chunk 0 → output
-    // = chunks 1+2+3 only (player «21:55» вместо real 31:56).
-    //
-    // **CRITICAL DATA-LOSS GUARD.** Без promotion merge перезаписывает root
-    // WAV выходом из chunks/{1..N}/, уничтожая аудио первых 10 минут
-    // (reported regression на call fd4b3380, 2026-05-25).
-    //
-    // Fix: если chunks/0/{filename} отсутствует но root WAV существует
-    // и **любой** chunks/{N}/{filename} есть (N≥1) — move root →
-    // chunks/0/. [P7] прежняя версия требовала именно chunks/1/, что
-    // ломалось если первая ротация ушла в failed и DB row удалили.
-    //
-    // [Sentinel] `chunks/.merged` marker предотвращает data corruption на
-    // reprocess: после успешного merge root WAV содержит merged result
-    // (не original chunk 0). Без marker'а pre-promote повторно переименует
-    // root → chunks/0/ → double audio в следующем merge. Marker write'ится
-    // в самом конце успешного merge_track.
+) -> bool {
     let merged_sentinel = chunks_dir.join(".merged");
     let chunks_idx0 = chunks_dir.join("0").join(kind.filename());
     let has_any_other_chunk = list_chunk_wavs(chunks_dir, kind)
@@ -151,23 +137,47 @@ pub fn merge_track(
     {
         if let Err(e) = fs::create_dir_all(chunks_dir.join("0")) {
             log::warn!("audio_merger: failed to create chunks/0/: {e}");
+            false
         } else if let Err(e) = fs::rename(output_path, &chunks_idx0) {
             log::warn!(
                 "audio_merger: failed to promote root {} → chunks/0/: {e}",
                 output_path.display()
             );
+            false
         } else {
             log::info!(
                 "audio_merger: promoted root WAV → {} (first-merge fix)",
                 chunks_idx0.display()
             );
+            true
         }
-    } else if merged_sentinel.exists() {
-        log::debug!(
-            "audio_merger: skip pre-promote (.merged sentinel exists at {})",
-            merged_sentinel.display()
-        );
+    } else {
+        if merged_sentinel.exists() {
+            log::debug!(
+                "audio_merger: skip pre-promote (.merged sentinel exists at {})",
+                merged_sentinel.display()
+            );
+        }
+        false
     }
+}
+
+/// Склеить все chunk WAV-файлы данного трека в один root WAV.
+///
+/// - `chunks_dir` — `calls/{call_id}/chunks`.
+/// - `output_path` — куда писать merged WAV (обычно `calls/{call_id}/mic.wav`).
+/// - На пустую коллекцию (ни одного chunk'а) → `MergeError::NoChunks`.
+/// - На spec mismatch → `MergeError::SpecMismatch` (без partial write —
+///   удаляем недописанный файл).
+pub fn merge_track(
+    chunks_dir: &Path,
+    output_path: &Path,
+    kind: TrackKind,
+) -> Result<MergeReport, MergeError> {
+    // [P6+P7] Promote root WAV → chunks/0/ на first merge (см. doc-comment
+    // `promote_root_to_chunk0`). Sentinel `.merged` (пишется в конце) защищает
+    // от double-promote на reprocess.
+    promote_root_to_chunk0(chunks_dir, output_path, kind);
 
     let chunks = list_chunk_wavs(chunks_dir, kind);
     if chunks.is_empty() {
@@ -320,6 +330,14 @@ pub fn merge_both_tracks(
 ) -> (Option<MergeReport>, Option<MergeReport>) {
     let mic_out = call_dir.join("mic.wav");
     let sys_out = call_dir.join("system.wav");
+    // [M13 fix] Promote root→chunks/0 для ОБОИХ треков ДО первого merge_track.
+    // merge_track пишет shared `chunks/.merged` sentinel в конце успешного
+    // merge — если mic смержится первым, sentinel заблокирует promote system'а
+    // и его chunk-0 (первые ~10 мин собеседника) потеряется. Promote здесь
+    // (до любого merge, пока sentinel'а нет) фиксит это; внутренний promote в
+    // merge_track станет no-op (chunks/0 уже на месте).
+    promote_root_to_chunk0(chunks_dir, &mic_out, TrackKind::Mic);
+    promote_root_to_chunk0(chunks_dir, &sys_out, TrackKind::System);
     let mic_report = match merge_track(chunks_dir, &mic_out, TrackKind::Mic) {
         Ok(r) => {
             log::info!(

@@ -54,24 +54,29 @@ impl ChunkConfig {
     ///   - Balanced (3B, 12K effective ctx): chunk_tokens=4.8K → 19.2K chars
     ///   - Quality (7B, 24K effective ctx): chunk_tokens=9.6K → 38.4K chars
     ///
-    /// Overlap 10%, trigger_threshold = max_chars * 2 (chunking имеет смысл
-    /// только когда минимум 2 chunk'а получится).
+    /// Overlap 10%. [M13 fix] `trigger_threshold = max_chars` (было `* 2`):
+    /// single-pass (non-chunked) должен ВСЕГДА влезать в один map-window,
+    /// иначе он переполняет LLM-контекст. Наблюдалось на 25-мин русской записи:
+    /// 35.4K chars (< старого 38.4K trigger) → single-pass 9061 токенов > 8192
+    /// ctx Qwen → recap падал. Русский токенизируется плотнее (~3.9 chars/token
+    /// vs 4 предполагавшихся), а фактический ctx Balanced = 8192 (не 12K). При
+    /// `trigger = max_chars` всё что не влезает в один map-chunk → chunk'ается.
     pub(crate) fn for_preset(preset: LocalEnginePreset) -> Self {
         match preset {
             LocalEnginePreset::Light => Self {
                 max_chars: 12_800,
                 overlap_chars: 1_280,
-                trigger_threshold: 24_000,
+                trigger_threshold: 12_800,
             },
             LocalEnginePreset::Balanced => Self {
                 max_chars: 19_200,
                 overlap_chars: 1_920,
-                trigger_threshold: 38_400,
+                trigger_threshold: 19_200,
             },
             LocalEnginePreset::Quality => Self {
                 max_chars: 38_400,
                 overlap_chars: 3_840,
-                trigger_threshold: 76_800,
+                trigger_threshold: 38_400,
             },
         }
     }
@@ -274,7 +279,7 @@ mod tests {
 
     #[test]
     fn needs_chunking_long_transcript_true() {
-        let cfg = light_cfg(); // trigger_threshold = 24_000
+        let cfg = light_cfg(); // trigger_threshold = 12_800 (= max_chars)
         let long = "a".repeat(30_000);
         assert!(needs_chunking(&long, &cfg));
     }

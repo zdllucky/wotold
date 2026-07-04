@@ -99,6 +99,18 @@ pub struct OrchestratorSummary {
     pub rotate_errors: u32,
     /// Аналогично — enqueue errors (chunk_runner отказал).
     pub enqueue_errors: u32,
+    /// [M13 fix] Индекс chunk'а, ещё **открытого** на момент выхода из loop'а —
+    /// его rotated event так и не пришёл, значит он никогда не был enqueue'нут.
+    /// `stop_recording` обязан обработать его после `audio_macos::stop`
+    /// (финальный ≤10-мин сегмент). Для zero-rotation записи = 0.
+    pub final_chunk_idx: u32,
+    /// [M13 fix] `start_ms` открытого финального chunk'а (offset от начала
+    /// записи). Для chunk 0 = 0.
+    pub final_chunk_start_ms: u64,
+    /// [M13 fix] Последний известный RMS-timestamp = provisional `end_ms`
+    /// финального chunk'а. `stop_recording` предпочтёт authoritative
+    /// wall-clock total, но это разумный fallback.
+    pub final_chunk_last_ts_ms: u64,
 }
 
 /// Запустить orchestrator main loop. Возвращает `OrchestratorSummary` когда
@@ -298,6 +310,14 @@ where
             }
         }
     }
+
+    // [M13 fix] Запомнить координаты открытого (не-rotated) финального chunk'а
+    // ДО drain. Эти локалы уже отслеживаются: `chunk_idx` = текущий открытый
+    // chunk, `chunk_start_ms` = его начало, `last_rms_ts_ms` = последний RMS.
+    // `stop_recording` обработает его после финализации WAV в sidecar.
+    summary.final_chunk_idx = chunk_idx;
+    summary.final_chunk_start_ms = chunk_start_ms;
+    summary.final_chunk_last_ts_ms = last_rms_ts_ms;
 
     // [M13.2.2] Drain pending parallel enqueue tasks. Каждый — c timeout'ом
     // на случай зависшего whisper-cli. Counters обновляются поштучно.
@@ -583,6 +603,77 @@ mod tests {
         assert_eq!(calls_snap[0].0, 0);
         assert_eq!(calls_snap[1].0, 1);
         assert_eq!(calls_snap[2].0, 2);
+    }
+
+    /// [M13 fix] После N rotated events открытый финальный chunk = N с
+    /// корректным start_ms (сумма durations). stop_recording обработает его.
+    #[tokio::test]
+    async fn final_chunk_coords_reported_on_stop() {
+        let (_rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(10);
+        let (rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let rotate_count = Arc::new(AtomicU32::new(0));
+        let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
+
+        let handle = tokio::spawn(run(
+            test_config(),
+            rms_rx,
+            rotate_rx,
+            stop_rx,
+            pause_rx,
+            make_rotate_fn(rotate_count, rotated_back_tx, 0),
+            make_enqueue_fn(calls, "tail".into()),
+        ));
+
+        // 2 rotated events (dur 1.0s, 2.0s) → chunk_idx=2, chunk_start=3000ms.
+        for dur in [1.0, 2.0] {
+            rotate_tx
+                .send(serde_json::json!({
+                    "event": "rotated",
+                    "duration_sec": dur,
+                    "mic_bytes": 0,
+                    "system_bytes": 0,
+                }))
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+
+        let _ = stop_tx.send(());
+        let summary = handle.await.unwrap();
+        assert_eq!(summary.final_chunk_idx, 2, "открытый chunk после 2 ротаций");
+        assert_eq!(
+            summary.final_chunk_start_ms, 3000,
+            "start_ms = сумма chunk durations (1000+2000)"
+        );
+    }
+
+    /// [M13 fix] Без ротаций финальный (единственный открытый) chunk = 0.
+    #[tokio::test]
+    async fn final_chunk_coords_zero_when_no_rotations() {
+        let (_rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(10);
+        let (_rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let rotate_count = Arc::new(AtomicU32::new(0));
+        let (rotated_tx, _) = mpsc::channel::<Value>(1);
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
+
+        let handle = tokio::spawn(run(
+            test_config(),
+            rms_rx,
+            rotate_rx,
+            stop_rx,
+            pause_rx,
+            make_rotate_fn(rotate_count, rotated_tx, 1000),
+            make_enqueue_fn(Arc::new(Mutex::new(Vec::new())), "tail".into()),
+        ));
+
+        let _ = stop_tx.send(());
+        let summary = handle.await.unwrap();
+        assert_eq!(summary.final_chunk_idx, 0);
+        assert_eq!(summary.final_chunk_start_ms, 0);
     }
 
     #[tokio::test]
