@@ -28,6 +28,7 @@ import {
 } from 'react';
 
 import { useI18n } from '../i18n';
+import { useAnchoredPosition } from './useAnchoredPosition';
 
 export interface SelectOption<V extends string = string> {
   value: V;
@@ -90,6 +91,7 @@ export function Select<V extends string = string>({
   const [query, setQuery] = useState('');
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const place = useAnchoredPosition(open, triggerRef, panelRef);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const typeaheadRef = useRef<{ buf: string; t: number }>({ buf: '', t: 0 });
 
@@ -371,7 +373,7 @@ export function Select<V extends string = string>({
           aria-labelledby={triggerId}
           style={{
             position: 'absolute',
-            top: 'calc(100% + 6px)',
+            [place.up ? 'bottom' : 'top']: 'calc(100% + 6px)',
             left: 0,
             right: 0,
             zIndex: 30,
@@ -380,7 +382,7 @@ export function Select<V extends string = string>({
             borderRadius: 'var(--r-sm)',
             boxShadow: 'var(--shadow)',
             padding: 4,
-            maxHeight: 340,
+            maxHeight: Math.min(340, place.maxHeight ?? 340),
             overflowY: 'auto',
             outline: 'none',
           }}

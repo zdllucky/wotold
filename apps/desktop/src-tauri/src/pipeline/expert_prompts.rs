@@ -95,7 +95,7 @@ fn absolute_rules_block() -> &'static str {
     "## ABSOLUTE RULES (violations are bugs)\n\
 \n\
 1. NEVER invent facts, names, dates, numbers, or commitments not present in the transcript.\n\
-2. Every `action_items[i]`, `decisions[i]`, `open_questions[i]` SHOULD include `evidence.quote` — a verbatim substring (10-200 chars) copied from the transcript. If you cannot find a verbatim anchor, OMIT the item rather than fabricate.\n\
+2. Capture EVERY real decision, action item, and open question raised in the call — aim for COMPLETENESS (typical business call has several of each). Leave an array empty ONLY if the call genuinely had none. For each item add `evidence.quote` = a verbatim substring (10-200 chars) from the transcript WHEN you can copy one; if you cannot, set `evidence.quote` to null but ALWAYS KEEP the item (never drop a real point just because you lack a verbatim quote).\n\
 3. Owner attribution: only assign an owner if the transcript shows them explicitly accepting the task ('I'll do it', 'я возьму', 'I will take that'). Mere mention of a name is NOT enough. Set `owner_confidence`: 0.9+ only for explicit accept; 0.5 for inferred; 0.0 if no owner.\n\
 4. Categorize each action_item:\n   - `commitment` — explicit accept ('я сделаю', 'I'll send it')\n   - `proposal` — suggested но не accepted\n   - `idea` — raised, no clear action\n\
 5. Output ONLY ONE JSON object matching the schema. No prose, no markdown fences, no explanation.\n\
@@ -110,8 +110,8 @@ fn output_schema_block() -> &'static str {
 {\n\
   \"schema_version\": 2,\n\
   \"title\": string,                              // 3-7 слов, headline-style. Конкретика, без 'Звонок про'.\n\
-  \"summary\": string,                            // 1-2 предложения TL;DR.\n\
-  \"key_points\": string[],                       // 3-7 пунктов. Конкретные факты с цифрами/датами/решениями.\n\
+  \"summary\": string,                            // 3-5 предложений: о чём встреча, главные итоги, контекст. НЕ одна фраза.\n\
+  \"key_points\": string[],                       // 5-10 конкретных пунктов с цифрами/датами/именами/решениями. Не общие фразы.\n\
   \"language\": \"ru\" | \"en\" | \"kk\" | \"mixed\",\n\
   \"call_type\": one of: sales_discovery, sales_demo, product_sync, standup, customer_interview, one_on_one, strategy_brainstorm, status_update, other,\n\
   \"call_type_confidence\": number (0..1),\n\
@@ -127,7 +127,8 @@ fn output_schema_block() -> &'static str {
     \"evidence\": { \"quote\": string|null, \"speaker\": string|null }\n\
   }],\n\
   \"decisions\": [{ \"id\": string, \"text\": string, \"evidence\": { \"quote\": string|null, \"speaker\": string|null }, \"confidence\": number (0..1) }],\n\
-  \"open_questions\": [{ \"id\": string, \"text\": string, \"raised_by\": string|null, \"evidence\": { \"quote\": string|null, \"speaker\": string|null } }]\n\
+  \"open_questions\": [{ \"id\": string, \"text\": string, \"raised_by\": string|null, \"evidence\": { \"quote\": string|null, \"speaker\": string|null } }],\n\
+  \"topics\": [{ \"title\": string, \"points\": string[] }]  // 2-5 обсуждённых тем, у каждой 1-4 конкретных под-пункта\n\
 }"
 }
 
@@ -176,7 +177,9 @@ pub(crate) fn build_expert_system_prompt(
         .map(|s| format!("\n\n## Known participants\n\n{s}"))
         .unwrap_or_default();
     format!(
-        "You are a senior meeting analyst for Wotold specialized in {role}. Output language: {lang}.\n\
+        "OUTPUT LANGUAGE = {lang}. EVERY string value (title, summary, key_points, decisions/action_items/open_questions text, topics) MUST be written in {lang}. Only enum values (call_type, category) stay English.\n\
+\n\
+You are a senior meeting analyst for Wotold specialized in {role}.\n\
 \n\
 {rules}\n\
 \n\
@@ -210,9 +213,9 @@ pub(crate) fn build_expert_reduce_prompt(
         .map(|s| format!("\n\n## Known participants\n\n{s}"))
         .unwrap_or_default();
     format!(
-        "You are a senior meeting analyst для REDUCE step of a long {role} call. You receive a JSON ARRAY of per-chunk MAP outputs. Your job: consolidate into ONE final `CallSummaryV2` JSON focused на call_type `{slug}`.\n\
+        "OUTPUT LANGUAGE = {lang}. EVERY string value MUST be written in {lang} (only call_type/category enums stay English).\n\
 \n\
-Output language: {lang}.\n\
+You are a senior meeting analyst для REDUCE step of a long {role} call. You receive a JSON ARRAY of per-chunk MAP outputs. Your job: consolidate into ONE final `CallSummaryV2` JSON focused на call_type `{slug}`. Be COMPLETE — surface all decisions/action_items/open_questions/topics present in the MAP outputs.\n\
 \n\
 {rules}\n\
 \n\

@@ -1,0 +1,12 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Wotold v2 app icon: light squircle + two-bar graphite mark.
+       Brand mark geometry ported from AppSidebar Brand (viewBox 72x50).
+       Colors are the resolved light-theme token values (icon is fixed, not theme-switched):
+       text #1A1B23, text-3 #71747F. Regenerate the bundle set with `tauri icon`. -->
+  <rect x="0" y="0" width="1024" height="1024" rx="229" fill="#F4F4F6"/>
+  <rect x="6" y="6" width="1012" height="1012" rx="223" fill="none" stroke="#E2E3E8" stroke-width="6"/>
+  <g transform="translate(144.8,257) scale(10.2)">
+    <rect x="3" y="6" width="56" height="17" rx="8.5" fill="#1A1B23"/>
+    <rect x="13" y="27" width="56" height="17" rx="8.5" fill="#71747F"/>
+  </g>
+</svg>

@@ -70,3 +70,26 @@ export interface LocalEngineStorageRow {
 export function localEngineStorageList(): Promise<LocalEngineStorageRow[]> {
   return invoke<LocalEngineStorageRow[]>('local_engine_storage_list');
 }
+
+/** [B2] Держать ли локальную модель резидентно в RAM (persistent llama-server). */
+export function localEngineGetKeepResident(): Promise<boolean> {
+  return invoke<boolean>('local_engine_get_keep_resident');
+}
+
+/** [B2] Переключить резидентный режим. Пишет настройку + сразу поднимает/гасит сервер. */
+export function localEngineSetKeepResident(enabled: boolean): Promise<void> {
+  return invoke<void>('local_engine_set_keep_resident', { enabled });
+}
+
+/** [recap-rich] G-Eval dev-харнесс: оценка recap.md звонка по 4 осям. */
+export interface RecapEvalScores {
+  coherence: number;
+  faithfulness: number;
+  relevance: number;
+  conciseness: number;
+  average: number;
+  justification: string;
+}
+export function localEngineEvalRecap(callId: string): Promise<RecapEvalScores> {
+  return invoke<RecapEvalScores>('local_engine_eval_recap', { callId });
+}

@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { ask, save } from '@tauri-apps/plugin-dialog';
 
 import { humanError } from '../api/errors';
 import {
@@ -18,7 +19,12 @@ import {
   type Call,
   type CallProgressEvent,
 } from '../api/recording';
-import { listActiveCallIds } from '../api/calls';
+import {
+  deleteCall,
+  exportCallMarkdown,
+  listActiveCallIds,
+  reprocessCall,
+} from '../api/calls';
 import { listCallSpeakers } from '../api/speakers';
 import {
   Button,
@@ -31,6 +37,7 @@ import {
   MenuSep,
   Segmented,
   ViewHead,
+  useToast,
   type SegOption,
 } from '../ui';
 import { Icon, type IconName } from '../ui/Icon';
@@ -41,20 +48,24 @@ import { TableRow } from './inboxBits';
 import { InboxCards, InboxMonth, InboxWeek } from './InboxCalendarViews';
 import {
   FACETS_EMPTY,
+  STR_FACET_KEYS,
   declinePlural,
   facetCount,
   groupByMonth,
+  hasRange,
   initials,
   matchesFacets,
+  setRange,
   toggleFacet,
   type Facets,
+  type StrFacetKey,
 } from './inboxData';
 
 type TFn = ReturnType<typeof useI18n>['t'];
 type InboxViewMode = 'list' | 'cards' | 'week' | 'month';
 
 interface FacetDef {
-  key: keyof Facets;
+  key: StrFacetKey;
   label: string;
   icon: IconName;
   values: { v: string; label: string }[];
@@ -122,14 +133,12 @@ function OmniBar({ facets, setFacets, text, setText, defs, t }: OmniBarProps) {
   const [draft, setDraft] = useState('');
   const [focus, setFocus] = useState(false);
 
-  const labelOf = (k: keyof Facets, v: string) =>
+  const labelOf = (k: StrFacetKey, v: string) =>
     defs.find((d) => d.key === k)?.values.find((x) => x.v === v)?.label ?? v;
-  const iconOf = (k: keyof Facets) => defs.find((d) => d.key === k)?.icon ?? 'bolt';
+  const iconOf = (k: StrFacetKey) => defs.find((d) => d.key === k)?.icon ?? 'bolt';
 
-  const tokens: { k: keyof Facets; v: string }[] = [];
-  (Object.keys(facets) as (keyof Facets)[]).forEach((k) =>
-    (facets[k] as string[]).forEach((v) => tokens.push({ k, v })),
-  );
+  const tokens: { k: StrFacetKey; v: string }[] = [];
+  STR_FACET_KEYS.forEach((k) => facets[k].forEach((v) => tokens.push({ k, v })));
 
   const allTok = defs.flatMap((d) =>
     d.values.map((val) => ({ k: d.key, v: val.v, label: val.label, fl: d.label, icon: d.icon })),
@@ -142,12 +151,16 @@ function OmniBar({ facets, setFacets, text, setText, defs, t }: OmniBarProps) {
     .filter((x) => !(facets[x.k] as string[]).includes(x.v))
     .slice(0, 5);
 
-  const add = (tok: { k: keyof Facets; v: string }) => {
+  const add = (tok: { k: StrFacetKey; v: string }) => {
     setFacets(toggleFacet(facets, tok.k, tok.v));
     setDraft('');
   };
-  const rm = (k: keyof Facets, v: string) => setFacets(toggleFacet(facets, k, v));
-  const hasAny = tokens.length > 0 || !!text;
+  const rm = (k: StrFacetKey, v: string) => setFacets(toggleFacet(facets, k, v));
+  const rangeOn = hasRange(facets);
+  const hasAny = tokens.length > 0 || !!text || rangeOn;
+  const rangeChip = rangeOn
+    ? [facets.range.from, facets.range.to].filter(Boolean).join(' – ')
+    : '';
 
   return (
     <div
@@ -173,7 +186,7 @@ function OmniBar({ facets, setFacets, text, setText, defs, t }: OmniBarProps) {
                 rm(tok.k, tok.v);
               }}
               style={{ display: 'inline-flex', color: 'inherit' }}
-              aria-label={t('inbox.clearAll')}
+              aria-label={t('inbox.removeFilter', { label: labelOf(tok.k, tok.v) })}
             >
               <Icon name="x" size={11} />
             </button>
@@ -189,7 +202,24 @@ function OmniBar({ facets, setFacets, text, setText, defs, t }: OmniBarProps) {
                 setText('');
               }}
               style={{ display: 'inline-flex', color: 'inherit' }}
-              aria-label={t('inbox.clearAll')}
+              aria-label={t('inbox.removeText', { q: text })}
+            >
+              <Icon name="x" size={11} />
+            </button>
+          </span>
+        )}
+        {rangeOn && (
+          <span className="chip chip--accent" style={{ gap: 4, flex: '0 0 auto' }}>
+            <Icon name="calendar" size={11} />
+            {rangeChip}
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setFacets(setRange(facets, { from: null, to: null }));
+              }}
+              style={{ display: 'inline-flex', color: 'inherit' }}
+              aria-label={t('inbox.removeRange')}
             >
               <Icon name="x" size={11} />
             </button>
@@ -335,6 +365,37 @@ function FacetButton({ facets, setFacets, defs, t }: FacetButtonProps) {
           })}
         </div>
       ))}
+      <MenuSep />
+      {/* Custom date range — stopPropagation so the inputs don't close the menu. */}
+      <div style={{ padding: '2px 4px 4px' }} onClick={(e) => e.stopPropagation()}>
+        <MenuLabel>{t('inbox.periodCustom')}</MenuLabel>
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 8px', padding: '4px 8px 2px', alignItems: 'center' }}>
+          <span className="u-faint" style={{ fontSize: 12 }}>
+            {t('inbox.periodFrom')}
+          </span>
+          <input
+            type="date"
+            className="input"
+            data-size="sm"
+            value={facets.range.from ?? ''}
+            max={facets.range.to ?? undefined}
+            aria-label={t('inbox.periodFrom')}
+            onChange={(e) => setFacets(setRange(facets, { from: e.target.value || null }))}
+          />
+          <span className="u-faint" style={{ fontSize: 12 }}>
+            {t('inbox.periodTo')}
+          </span>
+          <input
+            type="date"
+            className="input"
+            data-size="sm"
+            value={facets.range.to ?? ''}
+            min={facets.range.from ?? undefined}
+            aria-label={t('inbox.periodTo')}
+            onChange={(e) => setFacets(setRange(facets, { to: e.target.value || null }))}
+          />
+        </div>
+      </div>
       {count > 0 && (
         <>
           <MenuSep />
@@ -412,6 +473,7 @@ export function InboxView({
   onPause,
 }: InboxViewProps) {
   const { locale, t } = useI18n();
+  const toast = useToast();
   const [calls, setCalls] = useState<Call[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState('');
@@ -426,6 +488,66 @@ export function InboxView({
     listCalls()
       .then(setCalls)
       .catch((e: unknown) => setError(humanError(e)));
+  };
+
+  // [B19.7] Row-menu actions — mirror CallDetailPage kebab (reprocess/export/delete).
+  const onRowReprocess = (call: Call) => {
+    void (async () => {
+      try {
+        await reprocessCall(call.id);
+        setActiveIds((prev) => new Set(prev).add(call.id));
+        toast.show({ tone: 'success', message: t('inbox.reprocessStarted') });
+      } catch (e) {
+        toast.show({ tone: 'danger', message: humanError(e) });
+      }
+    })();
+  };
+
+  const onRowExport = (call: Call) => {
+    void (async () => {
+      const base = call.title?.trim() || `wotold-${call.id.slice(0, 8)}`;
+      const defaultPath = `${base.replace(/[^\p{L}\p{N}_.-]/gu, '_')}.md`;
+      let dest: string | null = null;
+      try {
+        dest = (await save({
+          defaultPath,
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+          title: t('callDetail.exportTitle'),
+        })) as string | null;
+      } catch (e) {
+        toast.show({ tone: 'danger', message: humanError(e) });
+        return;
+      }
+      if (!dest) return; // cancelled
+      try {
+        await exportCallMarkdown(call.id, dest);
+        toast.show({ tone: 'success', message: t('inbox.exported') });
+      } catch (e) {
+        toast.show({ tone: 'danger', message: humanError(e) });
+      }
+    })();
+  };
+
+  const onRowDelete = (call: Call) => {
+    void (async () => {
+      const ok = await ask(
+        t('callDetail.deleteConfirmBody', { title: call.title ?? call.id.slice(0, 8) }),
+        {
+          title: 'Wotold',
+          kind: 'warning',
+          okLabel: t('callDetail.deleteConfirmOk'),
+          cancelLabel: t('common.cancel'),
+        },
+      );
+      if (!ok) return;
+      try {
+        await deleteCall(call.id);
+        refresh();
+        toast.show({ tone: 'success', message: t('inbox.deleted') });
+      } catch (e) {
+        toast.show({ tone: 'danger', message: humanError(e) });
+      }
+    })();
   };
 
   useEffect(() => {
@@ -671,6 +793,9 @@ export function InboxView({
                     key={c.id}
                     call={c}
                     onOpen={onOpen}
+                    onReprocess={onRowReprocess}
+                    onExport={onRowExport}
+                    onDelete={onRowDelete}
                     speakers={speakerInitials.get(c.id)}
                     isActive={activeIds.has(c.id)}
                     locale={locale}

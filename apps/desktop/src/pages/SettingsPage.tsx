@@ -252,40 +252,31 @@ export function SettingsPage() {
         )}
 
         {section === 'appearance' && (
-          <SectionShell title={t('settings.appearanceTitle')} lede={t('settings.appearanceLede')}>
+          <SectionShell title={t('settings.appearanceTitle')}>
             <AppearanceSection />
           </SectionShell>
         )}
 
         {section === 'account' && (
-          <SectionShell title={t('settings.accountTitle')} lede={t('settings.accountLede')}>
+          <SectionShell title={t('settings.accountTitle')}>
             <AccountSection />
           </SectionShell>
         )}
 
         {section === 'processing' && (
-          <SectionShell
-            title={t('settings.engineTitle')}
-            lede={t('settings.sectionProcessingSubtitle')}
-          >
+          <SectionShell title={t('settings.engineTitle')}>
             <LocalEngineSection />
           </SectionShell>
         )}
 
         {section === 'permissions' && (
-          <SectionShell
-            title={t('settings.permissionsTitle')}
-            lede={t('settings.permissionsLede')}
-          >
+          <SectionShell title={t('settings.permissionsTitle')}>
             <PermissionsSection />
           </SectionShell>
         )}
 
         {section === 'recording' && (
-          <SectionShell
-            title={t('settings.sttTitle')}
-            lede={t('settings.sectionRecordingSubtitle')}
-          >
+          <SectionShell title={t('settings.sttTitle')}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 540 }}>
               <div className="field">
                 <label className="field-label">{t('settings.sttLangLabel')}</label>
@@ -480,31 +471,25 @@ export function SettingsPage() {
         )}
 
         {section === 'speakers' && (
-          <SectionShell
-            title={t('settings.voiceTitle')}
-            lede={t('settings.sectionSpeakersSubtitle')}
-          >
+          <SectionShell title={t('settings.voiceTitle')}>
             <VoiceModelSection />
           </SectionShell>
         )}
 
         {section === 'labs' && (
-          <SectionShell title={t('settings.labsTitle')} lede={t('settings.labsLede')}>
+          <SectionShell title={t('settings.labsTitle')}>
             <LabsSection />
           </SectionShell>
         )}
 
         {section === 'maintenance' && (
-          <SectionShell
-            title={t('settings.maintenanceTitle')}
-            lede={t('settings.maintenanceLede')}
-          >
+          <SectionShell title={t('settings.maintenanceTitle')}>
             <BulkRecapSection />
           </SectionShell>
         )}
 
         {section === 'privacy' && (
-          <SectionShell title={t('settings.privacyTitle')} lede={t('settings.privacyLede')}>
+          <SectionShell title={t('settings.privacyTitle')}>
             <DeleteAllDataSection />
           </SectionShell>
         )}
@@ -515,23 +500,14 @@ export function SettingsPage() {
 }
 
 interface SectionShellProps {
+  /** Used only as the section's accessible name — no visible heading (the rail
+   *  NavItem already labels the section; a visible header here just duplicated it). */
   title: string;
-  lede: string;
   children: ReactNode;
 }
 
-function SectionShell({ title, lede, children }: SectionShellProps) {
-  return (
-    <>
-      <div className="set-display" style={{ marginBottom: 10, marginTop: 0 }}>
-        {title}
-      </div>
-      <p className="set-lead" style={{ maxWidth: 560, marginBottom: 32 }}>
-        {lede}
-      </p>
-      {children}
-    </>
-  );
+function SectionShell({ title, children }: SectionShellProps) {
+  return <section aria-label={title}>{children}</section>;
 }
 
 // [Bulk recap] Пересоздать пустые рекапы старых звонков (до schema-fix).

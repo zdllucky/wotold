@@ -1,13 +1,13 @@
 // [B18.2b] Inbox calendar/grid views — Карточки / Неделя / Месяц. Ports of
 // ~/Downloads/Wotold v2/wk-inbox.jsx (InboxCards/InboxWeek/InboxMonth/CalHeader).
 // Self-contained: render the already-filtered `calls` + speaker initials; no new
-// APIs. Today = real new Date(). Month/weekday labels via Intl. CalHeader's
-// month-picker Dropdown is deferred to B18.2c (kept to ‹ label › + Сегодня).
+// APIs. Today = real new Date(). Month/weekday labels via Intl. [B19.2] CalHeader
+// label is a Dropdown with year-nav + month-grid for quick jumps.
 
 import { useMemo, useState } from 'react';
 import { bcp47, useI18n } from '../i18n';
 import type { Call } from '../api/recording';
-import { Empty, IconBtn } from '../ui';
+import { Dropdown, Empty, IconBtn } from '../ui';
 import { Icon } from '../ui/Icon';
 import { callHasRecap, deriveCallState, formatDuration, inferSpeakers } from './inboxData';
 import { AvatarGroup, StatusCell, statusColor } from './inboxBits';
@@ -69,29 +69,142 @@ function speakersOf(c: Call, map: Map<string, string[]>): string[] {
   return s && s.length > 0 ? s : inferSpeakers(c);
 }
 
-// ── shared calendar header (simplified — no month-picker dropdown yet) ──
+// ── month-picker dropdown body (year nav + 3-col month grid) ──
+function MonthPicker({
+  curYear,
+  curMonth,
+  onPickMonth,
+  locale,
+  t,
+}: {
+  curYear: number;
+  curMonth: number;
+  onPickMonth: (year: number, month: number) => void;
+  locale: string;
+  t: TFn;
+}) {
+  // Local year-nav state. The Dropdown unmounts its body when closed, so this
+  // re-inits to the active year on each open — no effect-based resync needed
+  // (which would otherwise snap the user's in-picker year navigation back).
+  const [py, setPy] = useState(curYear);
+  const months = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, i) => {
+        const s = new Date(2024, i, 1).toLocaleDateString(bcp(locale), { month: 'short' });
+        return s.charAt(0).toUpperCase() + s.slice(1);
+      }),
+    [locale],
+  );
+  return (
+    <>
+      {/* Year nav — stopPropagation so the Dropdown stays open on ◀/▶. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '4px 6px 8px',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <IconBtn
+          icon="chevronLeft"
+          label={t('inbox.yearPrev')}
+          size="sm"
+          onClick={() => setPy((y) => y - 1)}
+        />
+        <span className="mono" style={{ fontWeight: 600 }}>
+          {py}
+        </span>
+        <IconBtn
+          icon="chevronRight"
+          label={t('inbox.yearNext')}
+          size="sm"
+          onClick={() => setPy((y) => y + 1)}
+        />
+      </div>
+      <div
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, padding: '0 6px 6px' }}
+      >
+        {months.map((m, i) => {
+          const on = py === curYear && i === curMonth;
+          return (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onPickMonth(py, i)}
+              style={{
+                height: 30,
+                borderRadius: 'var(--r-sm)',
+                fontSize: 12.5,
+                fontWeight: 550,
+                border: 'none',
+                cursor: 'pointer',
+                background: on ? 'var(--accent)' : 'transparent',
+                color: on ? 'var(--on-accent)' : 'var(--text-2)',
+              }}
+            >
+              {m}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// ── shared calendar header (label = month-picker dropdown) ──
 function CalHeader({
   label,
   onPrev,
   onNext,
   onToday,
+  curYear,
+  curMonth,
+  onPickMonth,
+  locale,
   t,
 }: {
   label: string;
   onPrev: () => void;
   onNext: () => void;
   onToday: () => void;
+  curYear: number;
+  curMonth: number;
+  onPickMonth: (year: number, month: number) => void;
+  locale: string;
   t: TFn;
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-      <IconBtn icon="chevronLeft" label="‹" size="sm" iconSize={16} onClick={onPrev} />
-      <span className="mono" style={{ fontWeight: 650, fontSize: 15 }}>
-        {label}
-      </span>
-      <IconBtn icon="chevronRight" label="›" size="sm" iconSize={16} onClick={onNext} />
+      <IconBtn icon="chevronLeft" label={t('inbox.calPrev')} size="sm" iconSize={16} onClick={onPrev} />
+      <Dropdown
+        width={244}
+        trigger={({ toggle }) => (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            data-size="sm"
+            onClick={toggle}
+            style={{ fontWeight: 650, fontSize: 15, gap: 6 }}
+          >
+            <span className="mono">{label}</span>
+            <Icon name="chevronDown" size={14} style={{ color: 'var(--text-faint)' }} />
+          </button>
+        )}
+      >
+        <MonthPicker
+          curYear={curYear}
+          curMonth={curMonth}
+          onPickMonth={onPickMonth}
+          locale={locale}
+          t={t}
+        />
+      </Dropdown>
+      <IconBtn icon="chevronRight" label={t('inbox.calNext')} size="sm" iconSize={16} onClick={onNext} />
       <div style={{ flex: 1 }} />
-      <button className="btn btn--default" data-size="sm" onClick={onToday}>
+      <button type="button" className="btn btn--default" data-size="sm" onClick={onToday}>
         <Icon name="calendar" size={14} />
         {t('inbox.todayBtn')}
       </button>
@@ -111,6 +224,7 @@ export function InboxCards({ calls, onOpen, speakerInitials, locale, t }: ViewPr
         gridTemplateColumns: 'repeat(auto-fill, minmax(252px, 1fr))',
         gap: 12,
         alignContent: 'start',
+        padding: 'var(--s5)',
       }}
     >
       {calls.map((c) => (
@@ -169,7 +283,7 @@ export function InboxCards({ calls, onOpen, speakerInitials, locale, t }: ViewPr
 // ── Неделя ──
 export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
   const [off, setOff] = useState(0);
-  const today = useMemo(() => new Date(), []);
+  const today = new Date(); // recomputed per render — stays correct past midnight
   const base = mondayOf(today);
   const start = new Date(base);
   start.setDate(base.getDate() + off * 7);
@@ -190,6 +304,13 @@ export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
         onPrev={() => setOff((o) => o - 1)}
         onNext={() => setOff((o) => o + 1)}
         onToday={() => setOff(0)}
+        curYear={start.getFullYear()}
+        curMonth={start.getMonth()}
+        onPickMonth={(y, m) => {
+          const wk = mondayOf(new Date(y, m, 1));
+          setOff(Math.round((+wk - +base) / 604800000));
+        }}
+        locale={locale}
         t={t}
       />
       <div
@@ -282,7 +403,7 @@ export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
 // ── Месяц ──
 export function InboxMonth({ calls, onOpen, locale, t }: ViewProps) {
   const [off, setOff] = useState(0);
-  const today = useMemo(() => new Date(), []);
+  const today = new Date(); // recomputed per render — stays correct past midnight
   const cur = new Date(today.getFullYear(), today.getMonth() + off, 1);
   const year = cur.getFullYear();
   const month = cur.getMonth();
@@ -307,6 +428,10 @@ export function InboxMonth({ calls, onOpen, locale, t }: ViewProps) {
         onPrev={() => setOff((o) => o - 1)}
         onNext={() => setOff((o) => o + 1)}
         onToday={() => setOff(0)}
+        curYear={year}
+        curMonth={month}
+        onPickMonth={(y, m) => setOff((y - today.getFullYear()) * 12 + (m - today.getMonth()))}
+        locale={locale}
         t={t}
       />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 6 }}>

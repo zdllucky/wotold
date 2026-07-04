@@ -17,6 +17,15 @@ each entry resolves to `<name>-<target-triple>` (e.g. `wotold-audio-aarch64-appl
   succeeds in CI without the heavyweight binary; replace with a real llama.cpp
   build before release.
 
+- `wotold-llama-server` — llama.cpp `llama-server` binary (B2). **Optional —
+  используется только при включённой настройке «Держать модель активной»
+  (`local_engine.keep_resident`).** HTTP-сервер держит модель в RAM всю сессию
+  (`POST /completion` с per-request `json_schema`), убирая перезагрузку модели
+  на каждый из ~6-7 вызовов рекапа. Тот же `libllama.dylib` runtime, что и
+  `wotold-llama`. Дефолт OFF → без настройки бинарь не запускается. Провижинится
+  так же (`cp $(readlink -f $(brew --prefix)/bin/llama-server)
+  binaries/wotold-llama-server-aarch64-apple-darwin`).
+
 - `wotold-whisper` — whisper.cpp `whisper-cli` binary (M12.1). **Required for
   Local engine STT.** sherpa-onnx Whisper requires encoder/decoder ONNX pair,
   but our model catalog targets ggerganov .bin format (Whisper SHA256
