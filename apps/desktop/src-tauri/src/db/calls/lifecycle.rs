@@ -333,6 +333,9 @@ pub async fn mark_call_ready(pool: &SqlitePool, call_id: &str) -> Result<(), App
     sqlx::query(
         "UPDATE calls
          SET status = 'ready',
+             -- [M13 fix] Успешный pipeline очищает stale failed_reason (иначе
+             -- recovered/reprocessed звонок показывал бы ready + старую ошибку).
+             failed_reason = NULL,
              pipeline_step = NULL,
              pipeline_pct = NULL,
              pipeline_eta_sec = NULL,

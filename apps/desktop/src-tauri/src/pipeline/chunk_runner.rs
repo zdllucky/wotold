@@ -722,4 +722,104 @@ mod tests {
         let sys = track("en", vec![("ok", "speaker:0")]);
         assert_eq!(pick_pinned_lang(&mic, Some(&sys)).as_deref(), Some("ru"));
     }
+
+    /// [M13 fix] End-to-end seam что должны были ловить M13.1.6/M13.2.4 (real
+    /// WAV smoke, отложены). Прогоняет rotated chunks 0,1 + финальный 2 через
+    /// **реальный** путь enqueue→run_chunk→assembly→merge со stub-провайдером +
+    /// tiny hound-WAV фикстурами. Ловит: run_chunk читает chunks/{idx}/ (не
+    /// root), assembly оффсетит все чанки, merge включает ВСЕ (включая chunk 0
+    /// и финальный) → root WAV полной длины.
+    #[tokio::test]
+    async fn e2e_chunks_to_assembly_and_merge_full_length() {
+        use crate::call_store::CallStore;
+        use crate::pipeline::{audio_merger, chunk_assembly};
+        use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
+
+        let db_t = fresh_db().await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = CallStore::new(dir.path().to_path_buf());
+
+        sqlx::query(
+            "INSERT INTO calls (id, started_at, status, path_label, created_at, updated_at)
+             VALUES ('c1', CURRENT_TIMESTAMP, 'processing', 'managed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .execute(&db_t.pool)
+        .await
+        .unwrap();
+
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: SampleFormat::Int,
+        };
+        let write_wav = |path: &Path, n: i16| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut w = WavWriter::create(path, spec).unwrap();
+            for i in 0..n {
+                w.write_sample(i).unwrap();
+            }
+            w.finalize().unwrap();
+        };
+
+        // chunks 0,1 (rotated) + 2 (финальный), разные длины сэмплов.
+        let counts: [i16; 3] = [3, 2, 4];
+        for (idx, &n) in counts.iter().enumerate() {
+            let idx = idx as u32;
+            write_wav(&store.chunk_mic_path("c1", idx), n);
+            write_wav(&store.chunk_system_path("c1", idx), n);
+            db::chunks::insert_chunk(
+                &db_t.pool,
+                "c1",
+                idx,
+                u64::from(idx) * 600_000,
+                &store.chunk_mic_path("c1", idx),
+                &store.chunk_system_path("c1", idx),
+            )
+            .await
+            .unwrap();
+            let mic = MockProvider::ok(fake_transcript(vec!["a"]));
+            let sys = MockProvider::ok(fake_transcript(vec!["b"]));
+            let inp = ChunkRunInput {
+                call_id: "c1".into(),
+                chunk_idx: idx,
+                start_ms: u64::from(idx) * 600_000,
+                end_ms: (u64::from(idx) + 1) * 600_000,
+                mic_path: store.chunk_mic_path("c1", idx),
+                system_path: store.chunk_system_path("c1", idx),
+                prev_prompt: None,
+                lang: "auto".into(),
+                app_data_dir: None,
+                app_handle: None,
+                mic_diarization: false,
+                mic_diarization_num_speakers: None,
+            };
+            run_chunk(&db_t.pool, &mic, &sys, inp).await.unwrap();
+        }
+
+        // Assembly: 3 chunk'а с offset'ами.
+        let (mic_t, _sys_t) = chunk_assembly::load_chunked_transcripts(&db_t.pool, "c1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            mic_t.segments.len(),
+            3,
+            "все 3 chunk'а собраны (не обрезано)"
+        );
+        // duration = max chunk end_ms = 1_800_000 → 1800s.
+        assert!((mic_t.duration_sec - 1800.0).abs() < 1e-9);
+
+        // Merge: root mic samples = сумма всех 3 chunk'ов (3+2+4=9), в порядке.
+        let (mic_r, _) =
+            audio_merger::merge_both_tracks(&store.chunks_dir("c1"), &store.call_dir("c1"));
+        let report = mic_r.expect("mic merge ok");
+        assert_eq!(report.total_samples, 9, "merge включает ВСЕ chunk'и");
+        let merged: Vec<i16> = WavReader::open(store.call_dir("c1").join("mic.wav"))
+            .unwrap()
+            .into_samples::<i16>()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(merged, vec![0, 1, 2, 0, 1, 0, 1, 2, 3]);
+    }
 }

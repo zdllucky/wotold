@@ -472,6 +472,61 @@ mod tests {
         assert!((sys_t.segments[0].start - 2.0).abs() < 1e-9);
     }
 
+    /// [M13 fix] duration_sec включает короткий финальный chunk (не обрезается
+    /// на предпоследней ротации). chunk0 10мин + chunk1 (final) 4:58 → 898s.
+    #[tokio::test]
+    async fn duration_includes_final_short_chunk() {
+        let db_t = fresh_db().await;
+        insert_call(&db_t.pool, "c1").await;
+        let mic0 = fake_transcript(0.0, 590.0, "a", "owner");
+        let mic1 = fake_transcript(0.0, 290.0, "b", "owner");
+        add_done_chunk(&db_t.pool, "c1", 0, 0, 600_000, &mic0, None).await;
+        // Финальный chunk короче 10 мин: end_ms=898_000.
+        add_done_chunk(&db_t.pool, "c1", 1, 600_000, 898_000, &mic1, None).await;
+
+        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            (mic_t.duration_sec - 898.0).abs() < 1e-9,
+            "duration = max chunk end_ms (898s), got {}",
+            mic_t.duration_sec
+        );
+    }
+
+    /// [M13 fix] Partial: failed chunk пропускается, собирается done-подмножество
+    /// (не total loss). Assembly фильтрует status="done".
+    #[tokio::test]
+    async fn partial_assembly_skips_failed_chunk() {
+        let db_t = fresh_db().await;
+        insert_call(&db_t.pool, "c1").await;
+        // chunk 0 done, chunk 1 failed (без транскрипта).
+        let mic0 = fake_transcript(0.0, 590.0, "first", "owner");
+        add_done_chunk(&db_t.pool, "c1", 0, 0, 600_000, &mic0, None).await;
+        db::chunks::insert_chunk(
+            &db_t.pool,
+            "c1",
+            1,
+            600_000,
+            &PathBuf::from("/m1"),
+            &PathBuf::from("/s1"),
+        )
+        .await
+        .unwrap();
+        db::chunks::mark_chunk_failed(&db_t.pool, "c1", 1, "stt boom")
+            .await
+            .unwrap();
+
+        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1")
+            .await
+            .unwrap()
+            .unwrap();
+        // Только chunk 0 сегмент — chunk 1 (failed) пропущен.
+        assert_eq!(mic_t.segments.len(), 1);
+        assert_eq!(mic_t.segments[0].text, "first");
+    }
+
     // ============================================================
     // [M13.2.1] Cross-chunk speaker re-clustering tests
     // ============================================================
