@@ -35,7 +35,7 @@ describe('ChunkProgressStrip', () => {
     // 2 done / 4 total = 50%.
     expect(container.querySelector('.proc-strip-pct')?.textContent).toBe('50%');
     const fill = container.querySelector(
-      '.proc-strip-rail .rail-fill',
+      '.proc-strip-rail .progress-rail-fill',
     ) as HTMLElement | null;
     expect(fill?.style.width).toBe('50%');
   });

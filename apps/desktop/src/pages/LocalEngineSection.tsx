@@ -30,7 +30,7 @@ import type {
 
 import { DeleteModelConfirm } from '../components/DeleteModelConfirm';
 import { RediscoveryChip } from '../components/RediscoveryChip';
-import { Icon, IconBtn, Skeleton } from '../ui';
+import { Icon, IconBtn, Skeleton, SettingRow, Switch } from '../ui';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import {
   localEngineGetActiveEngine,
@@ -40,8 +40,10 @@ import {
   localEngineModelDelete,
   localEngineModelDownload,
   localEngineModelStatus,
+  localEngineGetKeepResident,
   localEngineSetActiveEngine,
   localEngineSetActivePreset,
+  localEngineSetKeepResident,
   localEngineStorageList,
   type LocalEngineCatalogEntry,
   type LocalEngineStorageRow,
@@ -106,6 +108,8 @@ export function LocalEngineSection() {
   const { t } = useI18n();
   const [engine, setEngine] = useState<EngineKind | null>(null);
   const [preset, setPreset] = useState<PresetSpec | null>(null);
+  // [B2] Тумблер «держать модель активной» (resident llama-server).
+  const [keepResident, setKeepResident] = useState(false);
   const [catalog, setCatalog] = useState<LocalEngineCatalogEntry[]>([]);
   const [statuses, setStatuses] = useState<Record<string, ModelStatus>>({});
   const [progresses, setProgresses] = useState<Record<string, ModelProgress>>({});
@@ -142,18 +146,20 @@ export function LocalEngineSection() {
   const refreshAll = useCallback(async () => {
     setHwLoading(true);
     try {
-      const [e, p, c, h, rows] = await Promise.all([
+      const [e, p, c, h, rows, resident] = await Promise.all([
         localEngineGetActiveEngine(),
         localEngineGetActivePreset(),
         localEngineListCatalog(),
         localEngineHwProbe(false),
         localEngineStorageList().catch(() => [] as LocalEngineStorageRow[]),
+        localEngineGetKeepResident().catch(() => false),
       ]);
       setEngine(e);
       setPreset(p);
       setCatalog(c);
       setHw(h);
       setStorageRows(rows);
+      setKeepResident(resident);
       await refreshStatuses(c.map((m) => m.id));
       // [M12-v1.1] Rediscovery: show when not local + invite not dismissed.
       if (e !== 'local') {
@@ -535,6 +541,29 @@ export function LocalEngineSection() {
             {t('localEngine.reprobe')}
           </button>
         </div>
+      )}
+
+      {!hwLoading && engine === 'local' && (
+        <SettingRow
+          label={t('localEngine.keepResidentLabel')}
+          hint={t('localEngine.keepResidentHint')}
+          control={
+            <Switch
+              checked={keepResident}
+              label={t('localEngine.keepResidentLabel')}
+              style={{ marginTop: 2 }}
+              onChange={async (next) => {
+                setKeepResident(next); // optimistic
+                try {
+                  await localEngineSetKeepResident(next);
+                } catch (err) {
+                  setKeepResident(!next); // revert on failure
+                  setError(humanError(err));
+                }
+              }}
+            />
+          }
+        />
       )}
 
       {!hwLoading && engine === 'local' && (

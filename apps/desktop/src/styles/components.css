@@ -90,7 +90,7 @@
   padding: 34px 44px;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   background: var(--bg);
 }
 .btn--quiet { color: var(--text-3); padding: 6px 10px; }
@@ -335,21 +335,29 @@
 @media (prefers-reduced-motion: reduce) {
   .stat-tag-dot { animation: none !important; }
 }
-.rail-fill {
+/* [placard-fix] Прогресс-бар ProgressRail. Классы `.progress-rail*`, НЕ
+ * `.rail` — `.rail` в uikit (wk.css) занята боковой панелью (width
+ * var(--rail-w), panel bg, border). Коллизия имён рендерила «2px полоску»
+ * как большой тёмный блок (var(--text) fill на 256px sidebar). */
+.progress-rail {
+  height: 2px;
+  width: 100%;
+  background: var(--sunken);
+  border-radius: 1px;
+  overflow: hidden;
+}
+.progress-rail-fill {
   height: 100%;
   background: var(--text);
   border-radius: 1px;
   transition: width var(--base) cubic-bezier(0.16, 1, 0.3, 1);
 }
-.rail--indeterminate {
-  overflow: hidden;
-}
-.rail--indeterminate .rail-fill {
+.progress-rail--indeterminate .progress-rail-fill {
   width: 30%;
   animation: wt-rail-sweep 1.6s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .rail--indeterminate .rail-fill { animation: none; transform: none; width: 100%; opacity: 0.5; }
+  .progress-rail--indeterminate .progress-rail-fill { animation: none; transform: none; width: 100%; opacity: 0.5; }
 }
 .caret {
   display: inline-block;
@@ -515,7 +523,7 @@
   /* [V6.9] auto на колонку — rail сжимается на узких окнах */
   min-width: 80px;
 }
-.proc-strip-rail .rail { width: 130px; min-width: 60px; }
+.proc-strip-rail .progress-rail { width: 130px; min-width: 60px; }
 .proc-strip-pct {
   font-size: 11px;
   color: var(--text-3);

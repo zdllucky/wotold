@@ -25,19 +25,22 @@
 
 use crate::pipeline::expert_prompts;
 use crate::pipeline::gbnf;
+use crate::pipeline::llm_schemas;
 use crate::pipeline::summary_v2::CallType;
-use crate::providers::llm::{LlmProvider, LlmRequest};
+use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 use crate::AppError;
 
 /// Per-chunk map output: small max_tokens (~1024) — JSON компактнее full v2.
 const MAP_MAX_TOKENS: u32 = 1024;
+/// [recap-fix A2] Retry-budget map-чанка: если первая попытка обрезалась/дала
+/// garbage — второй заход с чуть большим лимитом (частая причина no-JSON —
+/// truncation до закрывающих скобок).
+const MAP_MAX_TOKENS_RETRY: u32 = 1280;
 /// Final reduce: full CallSummaryV2.
-/// [P8.2] Понижен с 4096 → 1536 — зеркало MAIN_MAX_TOKENS в
-/// `local_orchestrator`. Финальный reduce агрегирует mid-reduce'ы (которые
-/// уже compact) → JSON shape тот же что в single-pass main recap. 1500
-/// tokens достаточно для typical-length call. На очень длинных звонках
-/// (>2 час, >12 chunks) могут truncate'нуться details — known trade-off.
-const REDUCE_MAX_TOKENS: u32 = 1536;
+/// [recap-rich] Поднят 1536 → 2560: рекап теперь богаче (summary 3-5 предл.,
+/// 5-10 key_points, decisions/actions/questions/topics полностью) — компактного
+/// бюджета не хватало, детали обрезались. RAM не растёт (только длина вывода).
+const REDUCE_MAX_TOKENS: u32 = 2560;
 /// [M14 T-18 P2] Hierarchical pipeline trigger — когда `chunks.len()`
 /// больше этого порога, переключаемся на 3-level (map → mid-reduce per
 /// group → final reduce). Меньше — flat 2-level path (run_map_reduce).
@@ -68,7 +71,7 @@ pub(crate) fn build_map_prompt(lang_detected: Option<&str>, chunk_idx: usize) ->
 \n\
 {{\n\
   \"chunk_idx\": {chunk_idx},\n\
-  \"facts\": [string],                              // ≤25 words each, ≤10 items per chunk\n\
+  \"facts\": [string],                              // ≤25 words each, ≤15 items per chunk — извлекай ВСЕ значимые факты\n\
   \"decisions_candidates\": [{{\n\
     \"text\": string,\n\
     \"evidence_quote\": string,                     // verbatim 10-200 chars\n\
@@ -110,20 +113,20 @@ pub(crate) fn build_reduce_prompt(
     let type_hint = known_call_type
         .map(|t| {
             format!(
-                "\n\n## Classification hint (pre-determined)\nCall type already classified as `{}`. Set `call_type` to this value, use the matching TYPE GUIDE section, и populate `type_specific_block` соответственно.",
+                "\n\n## Classification hint (pre-determined)\nCall type already classified as `{}`. Set `call_type` to this value.",
                 t.as_str()
             )
         })
         .unwrap_or_default();
     format!(
-        "You are a senior meeting analyst для REDUCE step of a long call. You receive a JSON ARRAY of per-chunk MAP outputs (facts, decisions_candidates, action_candidates, open_questions_candidates, topic_tags, participants_mentioned). Your job: consolidate into ONE final `CallSummaryV2` JSON.\n\
+        "OUTPUT LANGUAGE = {lang}. EVERY string value MUST be written in {lang} (only call_type/category enums stay English).\n\
 \n\
-Output language: {lang}.\n\
+You are a senior meeting analyst для REDUCE step of a long call. You receive a JSON ARRAY of per-chunk MAP outputs (facts, decisions_candidates, action_candidates, open_questions_candidates, topic_tags, participants_mentioned). Consolidate into ONE final `CallSummaryV2` JSON — be COMPLETE: surface ALL distinct decisions/action_items/open_questions/topics present across the map outputs. Write a rich `summary` (3-5 sentences) and 5-10 `key_points`.\n\
 \n\
 ## ABSOLUTE RULES\n\
 \n\
 1. NEVER invent facts not present в MAP_OUTPUTS — only consolidate, dedupe, resolve speakers.\n\
-2. `decisions` / `open_questions` / `action_items` SHOULD keep `evidence.quote` verbatim from corresponding chunk MAP output's `evidence_quote`.\n\
+2. Keep `evidence.quote` verbatim from the chunk's `evidence_quote` when available; if none, set quote to null but KEEP the item. Never drop a real decision/action/question for lack of a quote.\n\
 3. Resolve speakers via Known participants block если присутствует; иначе оставь `**name**` или generic role.\n\
 4. Output ONLY ONE JSON object matching CallSummaryV2 schema. No prose, no markdown fences.\n\
 5. Dedupe: identical action_items от двух разных chunks (overlap'нутый turn) — keep one, prefer the one с более точным owner_hint.\n\
@@ -151,8 +154,7 @@ Output language: {lang}.\n\
   }}],\n\
   \"decisions\": [{{ \"id\": string, \"text\": string, \"evidence\": {{ \"quote\": string|null, \"speaker\": string|null }}, \"confidence\": number 0..1 }}],\n\
   \"open_questions\": [{{ \"id\": string, \"text\": string, \"raised_by\": string|null, \"evidence\": {{ \"quote\": string|null, \"speaker\": string|null }} }}],\n\
-  \"mom\": string (Markdown),\n\
-  \"type_specific_block\": object|null\n\
+  \"topics\": [{{ \"title\": string, \"points\": string[] }}]  // 2-5 обсуждённых тем, у каждой 1-4 под-пункта\n\
 }}{known_block}{type_hint}\n\
 \n\
 ## MAP_OUTPUTS (input — array of per-chunk extractions)\n\
@@ -173,27 +175,57 @@ pub(crate) async fn run_map_reduce(
     known_speakers: Option<&str>,
 ) -> Result<serde_json::Value, AppError> {
     // 1. Map step: per-chunk LLM call.
+    // [recap-fix A1] Констрейним каждый map-вызов `MAP_CHUNK_JSON_SCHEMA`
+    // (через --json-schema-file), НЕ generic outer-`{}` grammar. Слабые модели
+    // (Light 1.5B) без формы отдавали prose/обрезанный JSON → no-JSON → чанк
+    // молча дропался → терялась половина звонка. Reduce уже так делает.
+    // [recap-fix A2] + один retry с большим budget'ом; считаем потери.
     let mut map_outputs: Vec<serde_json::Value> = Vec::with_capacity(chunks.len());
+    let mut failed = 0usize;
     for (idx, chunk) in chunks.iter().enumerate() {
-        let request = LlmRequest {
-            model: None,
-            system: build_map_prompt(lang_detected, idx),
-            input: chunk.clone(),
-            max_tokens: Some(MAP_MAX_TOKENS),
-            grammar: None,
-            json_schema: None,
-        };
-        match gbnf::generate_with_grammar_fallback(provider, request).await {
-            Ok(json_value) => map_outputs.push(json_value),
-            Err(e) => {
-                log::warn!("map step chunk {idx} failed (skipping): {e}");
+        let mut last_err: Option<LlmError> = None;
+        for attempt in 0..2 {
+            let request = LlmRequest {
+                model: None,
+                system: build_map_prompt(lang_detected, idx),
+                input: chunk.clone(),
+                max_tokens: Some(if attempt == 0 {
+                    MAP_MAX_TOKENS
+                } else {
+                    MAP_MAX_TOKENS_RETRY
+                }),
+                grammar: None,
+                json_schema: None,
+            };
+            match gbnf::generate_with_schema(provider, request, llm_schemas::MAP_CHUNK_JSON_SCHEMA)
+                .await
+            {
+                Ok(json_value) => {
+                    map_outputs.push(json_value);
+                    last_err = None;
+                    break;
+                }
+                Err(e) => last_err = Some(e),
             }
+        }
+        if let Some(e) = last_err {
+            failed += 1;
+            log::warn!("map step chunk {idx} failed after retry (skipping): {e}");
         }
     }
     if map_outputs.is_empty() {
         return Err(AppError::Other(
             "map-reduce: all map calls failed, nothing to reduce".into(),
         ));
+    }
+    // [recap-fix A2] Деградация: потеряли ≥ половины чанков → reduce увидит
+    // огрызок, саммари будет неполным. Явный WARN (blank-guard в recap.rs ловит
+    // только полностью пустой вывод, не «половину контента»).
+    if failed * 2 >= chunks.len() {
+        log::warn!(
+            "map-reduce: DEGRADED — {failed}/{} чанков потеряно, recap будет неполным",
+            chunks.len()
+        );
     }
 
     // 2. Reduce step: consolidate map outputs.
@@ -290,7 +322,9 @@ async fn run_single_mid_reduce(
         grammar: None,
         json_schema: None,
     };
-    gbnf::generate_with_grammar_fallback(provider, request)
+    // [recap-fix A1] Констрейним схемой (как map/reduce) — иначе слабая модель
+    // на level-2 тоже отдаёт no-JSON и группа теряется.
+    gbnf::generate_with_schema(provider, request, llm_schemas::MID_REDUCE_JSON_SCHEMA)
         .await
         .map_err(|e| AppError::Other(format!("mid-reduce llm: {e}")))
 }
@@ -337,7 +371,10 @@ pub(crate) async fn run_pipeline(
             grammar: None,
             json_schema: None,
         };
-        match gbnf::generate_with_grammar_fallback(provider, request).await {
+        // [recap-fix A1] Schema-constrained (как flat-путь) — иначе no-JSON.
+        match gbnf::generate_with_schema(provider, request, llm_schemas::MAP_CHUNK_JSON_SCHEMA)
+            .await
+        {
             Ok(json_value) => map_outputs.push(json_value),
             Err(e) => log::warn!("hierarchical map chunk {idx} failed (skipping): {e}"),
         }
@@ -565,10 +602,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_map_reduce_skips_failed_map_continues_reduce() {
-        // [P8.3] gbnf wrapper больше не ретраит — single attempt per call.
+        // [recap-fix A2] Map теперь ретраит ОДИН раз перед skip → перманентно
+        // падающий чанк = 2 Err подряд. chunk0 ok(1) + chunk1 fail×2(2) +
+        // chunk2 ok(1) + reduce(1) = 5 calls.
         let mock = MockProvider::new(vec![
             Ok(minimal_map_json(0)),
             Err(LlmError::Provider("simulated map crash".into())),
+            Err(LlmError::Provider("simulated map crash (retry)".into())),
             Ok(minimal_map_json(2)),
             Ok(minimal_v2_json()),
         ]);
@@ -579,8 +619,7 @@ mod tests {
         assert_eq!(result["schema_version"], 2);
 
         let systems = mock.captured_systems();
-        // chunk0 (1) + chunk1 fail (1) + chunk2 (1) + reduce (1) = 4 calls.
-        assert_eq!(systems.len(), 4, "expected 4 calls (single attempt each)");
+        assert_eq!(systems.len(), 5, "expected 5 calls (chunk1 retried once)");
         // Reduce — последний, должен видеть только 2 map outputs (idx 0 и 2).
         let reduce_prompt = systems.last().unwrap();
         assert!(reduce_prompt.contains("fact from chunk 0"));

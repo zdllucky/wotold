@@ -25,6 +25,8 @@ use crate::{
 
 pub mod clusters;
 pub mod merge;
+/// [recap-rich] Нарратив-минутки — отдельный write-проход после structured reduce.
+pub mod narrative;
 pub mod recap;
 pub mod settings;
 pub mod stage;
@@ -617,7 +619,145 @@ pub(crate) async fn build_local_llm_provider(
         .await
         .with_draft_model(draft_path);
 
+    // [B2] Если resident llama-server поднят для ЭТОГО preset — provider пойдёт
+    // HTTP-путём (модель уже в RAM), без спавна one-shot процесса. Иначе None →
+    // обычный one-shot.
+    let server_url = {
+        let state = tauri::Manager::state::<crate::state::AppState>(app);
+        let guard = state.llm_server.lock().await;
+        guard
+            .as_ref()
+            .filter(|srv| srv.preset() == preset)
+            .map(|srv| srv.url().to_string())
+    };
+    let provider = provider.with_server(server_url);
+
     Ok((provider, preset))
+}
+
+/// [warm-up B1] Прогрев local-LLM при старте приложения: один крошечный
+/// `generate`, чтобы llama.cpp скомпилил Metal-шейдеры (~30с, разово после
+/// апгрейда бинаря) и загрузил модель в page-cache ДО первого рекапа. Иначе
+/// этот cold-start падал на первую пользовательскую генерацию. Best-effort:
+/// движок не Local / нет preset'а / нет модели / ошибка генерации — не фатально,
+/// только лог. Держит LLM-семафор на время вызова (короткий prompt).
+#[cfg(target_os = "macos")]
+pub async fn warm_up_local_llm(pool: &SqlitePool, app_data_dir: &Path, app: &AppHandle) {
+    use crate::providers::llm::{LlmProvider, LlmRequest};
+
+    let s = match PipelineSettings::load(pool).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("warm-up: settings load failed (skip): {e}");
+            return;
+        }
+    };
+    if s.engine != crate::local_engine::engine::EngineKind::Local {
+        return; // cloud-managed — llama не нужен, прогрев ни к чему
+    }
+    // [B2] Резидентный режим: вместо разового прогрева поднимаем llama-server —
+    // модель остаётся в RAM всю сессию (сам старт сервера и есть прогрев).
+    if keep_resident_enabled(pool).await {
+        start_resident_server(app, pool, app_data_dir).await;
+        return;
+    }
+    let (provider, preset) = match build_local_llm_provider(pool, app_data_dir, app, &s).await {
+        Ok(p) => p,
+        Err(e) => {
+            log::info!("warm-up: local LLM недоступен (skip): {e}");
+            return;
+        }
+    };
+    let started = std::time::Instant::now();
+    let request = LlmRequest {
+        model: None,
+        system: "You are a warm-up ping. Reply with a single empty JSON object.".to_string(),
+        input: "{}".to_string(),
+        max_tokens: Some(8),
+        grammar: None,
+        json_schema: None,
+    };
+    match provider.generate(request).await {
+        Ok(_) => log::info!(
+            "warm-up: local LLM прогрет (preset={preset:?}) за {}ms — Metal-шейдеры + модель в кэше",
+            started.elapsed().as_millis()
+        ),
+        Err(e) => log::info!("warm-up: прогрев завершился с ошибкой (не фатально): {e}"),
+    }
+}
+
+/// [B2] Settings-ключ тумблера «держать модель активной».
+#[cfg(target_os = "macos")]
+pub const SETTING_KEEP_RESIDENT: &str = "local_engine.keep_resident";
+
+/// [B2] Включена ли резидентная модель.
+#[cfg(target_os = "macos")]
+pub async fn keep_resident_enabled(pool: &SqlitePool) -> bool {
+    db::get_setting(pool, SETTING_KEEP_RESIDENT)
+        .await
+        .ok()
+        .flatten()
+        .as_deref()
+        == Some("1")
+}
+
+/// [B2] Резолв активного preset'а из settings (для запуска сервера).
+#[cfg(target_os = "macos")]
+async fn resolve_active_preset(
+    pool: &SqlitePool,
+) -> Option<crate::local_engine::preset::LocalEnginePreset> {
+    use crate::local_engine::preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET};
+    let s = db::get_setting(pool, SETTING_ACTIVE_PRESET)
+        .await
+        .ok()
+        .flatten()?;
+    LocalEnginePreset::from_str(&s)
+}
+
+/// [B2] Поднять resident `llama-server` и сохранить handle в AppState.
+/// Идемпотент: если уже поднят для того же preset — no-op. При смене preset —
+/// гасит старый и стартует новый. Возвращает `true` при успехе (иначе caller
+/// продолжит на one-shot пути). Не фатально ни при какой ошибке.
+#[cfg(target_os = "macos")]
+pub async fn start_resident_server(
+    app: &AppHandle,
+    pool: &SqlitePool,
+    app_data_dir: &Path,
+) -> bool {
+    use crate::local_engine::llm_server::LlamaServer;
+    let Some(preset) = resolve_active_preset(pool).await else {
+        log::info!("resident server: preset не выбран — skip");
+        return false;
+    };
+    let state = tauri::Manager::state::<crate::state::AppState>(app);
+    {
+        let guard = state.llm_server.lock().await;
+        if guard.as_ref().map(|s| s.preset()) == Some(preset) {
+            return true; // уже поднят для этого preset
+        }
+    }
+    // Не поднят либо другой preset — гасим старый и стартуем.
+    stop_resident_server(app).await;
+    match LlamaServer::start(app, app_data_dir, preset).await {
+        Ok(server) => {
+            *state.llm_server.lock().await = Some(server);
+            true
+        }
+        Err(e) => {
+            log::warn!("resident server start failed (fallback one-shot): {e}");
+            false
+        }
+    }
+}
+
+/// [B2] Остановить resident-сервер, если поднят.
+#[cfg(target_os = "macos")]
+pub async fn stop_resident_server(app: &AppHandle) {
+    let state = tauri::Manager::state::<crate::state::AppState>(app);
+    let prev = state.llm_server.lock().await.take();
+    if let Some(server) = prev {
+        server.shutdown();
+    }
 }
 
 /// [Bug-fix] Local engine path для `regenerate_recap`. Mirror блока в
