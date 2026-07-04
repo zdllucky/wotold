@@ -137,9 +137,21 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     };
     let orchestrator_channels = chunked_setup.as_ref().map(|s| s.channels.clone());
 
+    // [M13 fix] Chunk-0 layout: при chunked-режиме sidecar пишет первый chunk
+    // прямо в `chunks/0/` (не в root), чтобы `run_chunk(0)` находил его по
+    // `chunk_mic_path(0)`. Root `mic.wav`/`system.wav` — цель финального merge.
+    // В non-chunked режиме sidecar пишет в root (прежнее поведение).
+    let chunked = chunked_setup.is_some();
+    let (sidecar_mic, sidecar_system) = sidecar_write_paths(&state.store, &call.id, chunked);
+    if chunked {
+        state.store.ensure_chunk_dir(&call.id, 0).await?;
+    }
+
     match audio_macos::start(
         &app,
         call.id.clone(),
+        sidecar_mic,
+        sidecar_system,
         mic_path,
         system_path,
         orchestrator_channels,
@@ -301,20 +313,20 @@ pub async fn stop_recording(
         let _ = stop_tx.send(());
         log::debug!("orchestrator stop signal sent");
     }
-    // [M13.1.5c] Detach orchestrator handle. Task сам exit'ит через stop_rx
-    // (см. выше). Не await'им и не abort'им — иначе stop_recording завис бы
-    // на in-flight chunk_runner или прервали бы его (DB row остался бы в
-    // `processing`). Detach'нутый task finalize'ит в фоне.
-    if state.orchestrator.lock().await.take().is_some() {
-        log::debug!("orchestrator handle detached on stop");
-    }
+    // [M13 fix] Take orchestrator handle — раньше он детачился и summary
+    // терялся. Теперь background finalize task (ниже) await'ит его чтобы
+    // (а) дренировать все rotated-chunk `run_chunk` до assembly и
+    // (б) получить координаты открытого финального chunk'а (который никогда
+    // не rotated → никогда не enqueued) и обработать его. `Some` только при
+    // активном chunked-режиме.
+    let orch_handle = state.orchestrator.lock().await.take();
     // [M13.2.1] Drop pause_tx — recv() arm orchestrator'а получит None →
     // wildcard match → no-op. Stop сигнал выше уже триггерит break.
     state.orchestrator_pause_tx.lock().await.take();
 
     let result = audio_macos::stop(session).await;
 
-    let call = match result {
+    let (call, total_ms) = match result {
         Ok(_r) => {
             // [P6] Real total wall-clock duration. `_r.duration_sec` от sidecar
             // = только current chunk (per-rotate reset в Swift AudioRecorder
@@ -363,7 +375,8 @@ pub async fn stop_recording(
                 EventBus::new(Some(&app)).recording_state_changed();
                 return Ok(None);
             }
-            crate::db::finish_recording(&state.db, &call_id, total_sec).await?
+            let call = crate::db::finish_recording(&state.db, &call_id, total_sec).await?;
+            (call, (total_sec * 1000.0) as u64)
         }
         Err(e) => {
             let _ = crate::db::fail_recording(&state.db, &call_id).await;
@@ -374,22 +387,184 @@ pub async fn stop_recording(
 
     EventBus::new(Some(&app)).recording_state_changed();
 
-    // M2.4-2.5: транскрипция в фоне. Возвращаем клиенту calls row сразу
-    // (status=processing), статус подтянется через list_calls когда pipeline
-    // финишнет (status → ready или failed).
-    PipelineRunner::spawn_initial(
-        state.db.clone(),
-        state.store.clone(),
-        state.device_id.clone(),
-        app,
-        state.pipeline_tasks.clone(),
+    // [M13 fix] Background finalize: (1) await orchestrator (drain rotated
+    // chunks + получить final-chunk координаты) → (2) обработать открытый
+    // финальный chunk → (3) запустить pipeline. Всё в одном spawned task'е
+    // чтобы гарантировать порядок (финальный chunk done ДО assembly), но не
+    // блокировать Stop — команда возвращает calls row (status=processing)
+    // сразу, как раньше (M2.4-2.5).
+    spawn_finalize_and_pipeline(
+        &state,
+        &app,
         call_id,
         mic_path,
         system_path,
-    )
-    .await;
+        orch_handle,
+        total_ms,
+    );
 
     Ok(Some(call))
+}
+
+/// [M13 fix] Решение по открытому финальному chunk'у на stop — на основе его
+/// текущего DB-статуса. Pure + тестируемо. `Run` — вставить (если нет) и
+/// прогнать; `RunAfterReset` — `failed`→`pending` затем прогнать; `Skip` —
+/// уже `done`/`processing` (rotated event успел его обработать).
+#[derive(Debug, PartialEq, Eq)]
+enum FinalChunkAction {
+    Run,
+    RunAfterReset,
+    Skip,
+}
+
+fn plan_final_chunk(rows: &[db::chunks::ChunkRow], k: u32) -> FinalChunkAction {
+    match rows.iter().find(|r| r.chunk_idx == k) {
+        None => FinalChunkAction::Run,
+        Some(r) => match r.status.as_str() {
+            "pending" => FinalChunkAction::Run,
+            "failed" => FinalChunkAction::RunAfterReset,
+            // done / processing — rotated event уже enqueue'нул этот chunk.
+            _ => FinalChunkAction::Skip,
+        },
+    }
+}
+
+/// [M13 fix] Spawn'ит фоновый task: дренирует orchestrator, обрабатывает
+/// открытый финальный chunk, затем запускает pipeline. Не блокирует Stop.
+#[allow(clippy::too_many_arguments)]
+fn spawn_finalize_and_pipeline(
+    state: &State<'_, AppState>,
+    app: &AppHandle,
+    call_id: String,
+    mic_path: std::path::PathBuf,
+    system_path: std::path::PathBuf,
+    orch_handle: Option<tauri::async_runtime::JoinHandle<chunk_orchestrator::OrchestratorSummary>>,
+    total_ms: u64,
+) {
+    let db = state.db.clone();
+    let store = state.store.clone();
+    let device_id = state.device_id.clone();
+    let pipeline_tasks = state.pipeline_tasks.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let app = app.clone();
+
+    tokio::spawn(async move {
+        // 1. Chunked-режим: await orchestrator (дренирует rotated chunks +
+        //    возвращает координаты открытого финального chunk'а).
+        if let Some(handle) = orch_handle {
+            match handle.await {
+                Ok(summary) => {
+                    if let Err(e) = process_final_chunk(
+                        &db,
+                        &store,
+                        &app_data_dir,
+                        &app,
+                        &call_id,
+                        &summary,
+                        total_ms,
+                    )
+                    .await
+                    {
+                        log::warn!("final chunk processing failed for {call_id}: {e}");
+                    }
+                }
+                Err(e) => log::warn!("orchestrator join failed for {call_id}: {e}"),
+            }
+        }
+
+        // 2. Pipeline (assembly → merge → recap). Все chunk'и уже в DB.
+        PipelineRunner::spawn_initial(
+            db,
+            store,
+            device_id,
+            app,
+            pipeline_tasks,
+            call_id,
+            mic_path,
+            system_path,
+        )
+        .await;
+    });
+}
+
+/// [M13 fix] Обработать открытый финальный chunk (тот, чей rotated event так
+/// и не пришёл до stop). Читает координаты из `OrchestratorSummary`, проверяет
+/// FSM-статус + наличие аудио на диске, гоняет `run_chunk`. `end_ms` берётся
+/// из authoritative wall-clock total (точнее чем last RMS timestamp).
+async fn process_final_chunk(
+    db: &SqlitePool,
+    store: &Arc<CallStore>,
+    app_data_dir: &std::path::Path,
+    app: &AppHandle,
+    call_id: &str,
+    summary: &chunk_orchestrator::OrchestratorSummary,
+    total_ms: u64,
+) -> Result<(), AppError> {
+    let k = summary.final_chunk_idx;
+    let rows = db::chunks::list_chunks_by_call(db, call_id).await?;
+    let action = plan_final_chunk(&rows, k);
+    if action == FinalChunkAction::Skip {
+        log::debug!("final chunk {call_id}/{k}: skip (already tracked as done/processing)");
+        return Ok(());
+    }
+
+    let mic_path = store.chunk_mic_path(call_id, k);
+    let system_path = store.chunk_system_path(call_id, k);
+    if !mic_path.exists() {
+        log::warn!(
+            "final chunk {call_id}/{k}: no audio at {}, skip",
+            mic_path.display()
+        );
+        return Ok(());
+    }
+
+    let start_ms = summary.final_chunk_start_ms;
+    // [M13 fix] end_ms из реальной длины WAV финального chunk'а — точно и
+    // согласовано с audio + orchestrator-offset'ами. Раньше брали wall-clock
+    // total_ms (pause-SUBTRACTED), тогда как chunk_start_ms из sidecar-durations
+    // pause-INCLUSIVE → на паузах финальный chunk схлопывался в ноль. Fallback
+    // на total_ms.max(start) если WAV нечитаем.
+    let chunk_dur_ms = crate::pipeline::chunk_recovery::wav_duration_ms(&mic_path).unwrap_or(0);
+    let end_ms = if chunk_dur_ms > 0 {
+        start_ms + chunk_dur_ms
+    } else {
+        total_ms.max(start_ms)
+    };
+
+    // Гарантировать pending-строку перед run_chunk (он делает pending→processing).
+    match action {
+        FinalChunkAction::RunAfterReset => {
+            db::chunks::mark_chunk_pending(db, call_id, k).await?;
+        }
+        FinalChunkAction::Run => {
+            db::chunks::insert_chunk(db, call_id, k, start_ms, &mic_path, &system_path).await?;
+        }
+        FinalChunkAction::Skip => unreachable!(),
+    }
+
+    let providers = build_chunk_providers(db, app_data_dir, app).await?;
+    let input = ChunkRunInput {
+        call_id: call_id.to_string(),
+        chunk_idx: k,
+        start_ms,
+        end_ms,
+        mic_path,
+        system_path,
+        // Parallel-mode trade-off: prev_prompt None (тот же выбор что orchestrator).
+        prev_prompt: None,
+        lang: providers.lang.clone(),
+        app_data_dir: Some(app_data_dir.to_path_buf()),
+        app_handle: Some(app.clone()),
+        mic_diarization: providers.mic_diarization,
+        mic_diarization_num_speakers: providers.mic_diarization_num_speakers,
+    };
+    let out = chunk_runner::run_chunk(db, providers.mic.as_ref(), providers.system.as_ref(), input)
+        .await?;
+    log::info!(
+        "final chunk {call_id}/{k}: done, {} segments (start_ms={start_ms}, end_ms={end_ms})",
+        out.segment_count
+    );
+    Ok(())
 }
 
 /// [W2] Pause активную запись. DB-only: проставляет `paused_at = now()` чтобы
@@ -501,6 +676,112 @@ pub fn open_system_privacy_pane(pane: String) -> Result<(), AppError> {
 // [M13.1.5c] Chunked pipeline wiring helpers
 // ============================================================================
 
+/// [M13 fix] Выбор путей, в которые sidecar физически пишет первый chunk.
+/// chunked → `chunks/0/{mic,system}.wav`; non-chunked → root `{mic,system}.wav`.
+/// Pure (без side-effects); создание `chunks/0/` — на caller'е (ensure_chunk_dir).
+fn sidecar_write_paths(
+    store: &CallStore,
+    call_id: &str,
+    chunked: bool,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    if chunked {
+        (
+            store.chunk_mic_path(call_id, 0),
+            store.chunk_system_path(call_id, 0),
+        )
+    } else {
+        (store.mic_path(call_id), store.system_path(call_id))
+    }
+}
+
+/// [M13 fix] Собранные provider'ы + STT-настройки для одного chunk-прогона.
+/// Shared между `prepare_chunked_setup` (live orchestrator), `retry_chunk`,
+/// финальным-chunk путём на stop и recovery — чтобы все они STT'или chunk'и
+/// одинаково (тот же preset/lang/diarization).
+pub(crate) struct ChunkProviders {
+    pub mic: Arc<dyn TranscriptionProvider>,
+    pub system: Arc<dyn TranscriptionProvider>,
+    pub lang: String,
+    pub mic_diarization: bool,
+    pub mic_diarization_num_speakers: Option<i32>,
+}
+
+/// [M13 fix] Построить `ChunkProviders` из active preset + settings.
+/// НЕ проверяет engine (caller решает: `prepare_chunked_setup` возвращает
+/// `Ok(None)` при non-local, `retry_chunk`/recovery — `Err`). `Err` при
+/// отсутствии preset (модель не выбрана).
+pub(crate) async fn build_chunk_providers(
+    db: &SqlitePool,
+    app_data_dir: &std::path::Path,
+    app: &AppHandle,
+) -> Result<ChunkProviders, AppError> {
+    let preset = db::get_setting(db, SETTING_ACTIVE_PRESET)
+        .await?
+        .as_deref()
+        .and_then(LocalEnginePreset::from_str)
+        .ok_or_else(|| {
+            AppError::Other(
+                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings".into(),
+            )
+        })?;
+    let whisper_id = preset.whisper_model_id();
+    // TrackKind влияет на дефолтные speaker tags ("owner" для mic, "speaker:0"
+    // для system) — их потом переcassign'ает cluster pipeline.
+    let mic = LocalWhisperProvider::for_preset(app_data_dir, whisper_id, TrackKind::MicOwner)
+        .with_app(app.clone())
+        .await;
+    let system = LocalWhisperProvider::for_preset(app_data_dir, whisper_id, TrackKind::System)
+        .with_app(app.clone())
+        .await;
+    let mic: Arc<dyn TranscriptionProvider> = Arc::new(mic);
+    let system: Arc<dyn TranscriptionProvider> = Arc::new(system);
+
+    let lang = db::get_setting(db, "stt_lang")
+        .await?
+        .unwrap_or_else(|| "auto".to_string());
+    // [P-fix7] Mic diarization — Default OFF (mic = микрофон владельца, M2.4).
+    let mic_diarization = matches!(
+        db::get_setting(db, SETTING_MIC_DIARIZATION)
+            .await?
+            .as_deref(),
+        Some("1") | Some("true")
+    );
+    let mic_diarization_num_speakers = read_num_speakers_override(db).await?;
+
+    Ok(ChunkProviders {
+        mic,
+        system,
+        lang,
+        mic_diarization,
+        mic_diarization_num_speakers,
+    })
+}
+
+/// [M13 fix / test] Config для orchestrator. По умолчанию 10-мин chunks. Env
+/// `WOTOLD_CHUNK_WINDOW_MS=<ms>` (≥2000) ужимает окно для быстрой E2E-проверки
+/// (`window`/`tick`/`retention` масштабируются от target). Prod env не задаёт.
+fn orchestrator_config_from_env() -> ChunkOrchestratorConfig {
+    let base = ChunkOrchestratorConfig::default();
+    match std::env::var("WOTOLD_CHUNK_WINDOW_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+    {
+        Some(target) if target >= 2000 => {
+            let half = (target / 10).max(200);
+            log::warn!("chunk_orchestrator: WOTOLD_CHUNK_WINDOW_MS override → target={target}ms (test-only)");
+            ChunkOrchestratorConfig {
+                target_chunk_ms: target,
+                window_start_offset_ms: target.saturating_sub(half),
+                window_end_offset_ms: target + half,
+                tick_interval_ms: (target / 10).max(500),
+                rms_retention_ms: target * 2,
+                ..base
+            }
+        }
+        _ => base,
+    }
+}
+
 /// Owned bundle для setup chunked pipeline'а — channels + provider + stop_tx.
 /// Создаётся в `prepare_chunked_setup`, разбирается в `spawn_orchestrator`.
 struct ChunkedSetup {
@@ -559,48 +840,13 @@ async fn prepare_chunked_setup(
     }
 
     // Build LocalWhisperProvider mirror'ом логики pipeline::run.
-    let preset = db::get_setting(&state.db, SETTING_ACTIVE_PRESET)
-        .await?
-        .as_deref()
-        .and_then(LocalEnginePreset::from_str)
-        .ok_or_else(|| {
-            AppError::Other(
-                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings".into(),
-            )
-        })?;
-    let whisper_id = preset.whisper_model_id();
-    // [M13.1.5d] Два provider'а — для mic + system дорожек. TrackKind влияет
-    // на дефолтные speaker tags ("owner" для mic, "speaker:0" для system),
-    // которые потом cluster pipeline переcassign'ает в RecognizeSpeakers stage.
-    let mic_provider =
-        LocalWhisperProvider::for_preset(&state.app_data_dir, whisper_id, TrackKind::MicOwner)
-            .with_app(app.clone())
-            .await;
-    let system_provider =
-        LocalWhisperProvider::for_preset(&state.app_data_dir, whisper_id, TrackKind::System)
-            .with_app(app.clone())
-            .await;
-    let mic_provider: Arc<dyn TranscriptionProvider> = Arc::new(mic_provider);
-    let system_provider: Arc<dyn TranscriptionProvider> = Arc::new(system_provider);
-
-    // STT lang — auto по умолчанию (см. pipeline::run).
-    let stt_lang = db::get_setting(&state.db, "stt_lang")
-        .await?
-        .unwrap_or_else(|| "auto".to_string());
-
-    // [P-fix7] Mic diarization — Default OFF. Mic = микрофон владельца = один
-    // человек (M2.4). sortformer на нём овершутит и дробит единственный голос
-    // owner'а в speaker:unknown/N → речь владельца размазана по «СПИКЕР ?».
-    // Opt-in (explicit "1"/"true") только для редкого случая нескольких людей
-    // у одного микрофона.
-    let mic_on = matches!(
-        db::get_setting(&state.db, SETTING_MIC_DIARIZATION)
-            .await?
-            .as_deref(),
-        Some("1") | Some("true")
-    );
-    let mic_diarization = mic_on;
-    let mic_diarization_num_speakers = read_num_speakers_override(&state.db).await?;
+    let ChunkProviders {
+        mic: mic_provider,
+        system: system_provider,
+        lang: stt_lang,
+        mic_diarization,
+        mic_diarization_num_speakers,
+    } = build_chunk_providers(&state.db, &state.app_data_dir, app).await?;
 
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(256);
     let (rotate_tx, rotate_rx) = mpsc::channel::<serde_json::Value>(8);
@@ -673,7 +919,7 @@ async fn spawn_orchestrator(
 
     let handle = tauri::async_runtime::spawn(async move {
         let summary = chunk_orchestrator::run(
-            ChunkOrchestratorConfig::default(),
+            orchestrator_config_from_env(),
             rms_rx,
             rotate_rx,
             stop_rx,
@@ -843,38 +1089,14 @@ pub async fn retry_chunk(
         ));
     }
 
-    // 3. Build providers — mirror prepare_chunked_setup без orchestrator setup.
-    let preset = db::get_setting(&state.db, SETTING_ACTIVE_PRESET)
-        .await?
-        .as_deref()
-        .and_then(LocalEnginePreset::from_str)
-        .ok_or_else(|| {
-            AppError::Other("retry_chunk: preset не выбран (Settings → Локальный движок)".into())
-        })?;
-    let whisper_id = preset.whisper_model_id();
-    let mic_provider =
-        LocalWhisperProvider::for_preset(&state.app_data_dir, whisper_id, TrackKind::MicOwner)
-            .with_app(app.clone())
-            .await;
-    let system_provider =
-        LocalWhisperProvider::for_preset(&state.app_data_dir, whisper_id, TrackKind::System)
-            .with_app(app.clone())
-            .await;
-    let mic_provider: Arc<dyn TranscriptionProvider> = Arc::new(mic_provider);
-    let system_provider: Arc<dyn TranscriptionProvider> = Arc::new(system_provider);
-
-    let stt_lang = db::get_setting(&state.db, "stt_lang")
-        .await?
-        .unwrap_or_else(|| "auto".to_string());
-    // [P-fix7] Mic diarization default OFF (mic = владелец, см. start_recording).
-    let mic_on = matches!(
-        db::get_setting(&state.db, SETTING_MIC_DIARIZATION)
-            .await?
-            .as_deref(),
-        Some("1") | Some("true")
-    );
-    let mic_diarization = mic_on;
-    let mic_diarization_num_speakers = read_num_speakers_override(&state.db).await?;
+    // 3. Build providers — shared helper (mirror prepare_chunked_setup).
+    let ChunkProviders {
+        mic: mic_provider,
+        system: system_provider,
+        lang: stt_lang,
+        mic_diarization,
+        mic_diarization_num_speakers,
+    } = build_chunk_providers(&state.db, &state.app_data_dir, &app).await?;
 
     // 4. FSM gate failed → pending. После этого chunk_runner внутри сделает
     //    pending → processing → done|failed.
@@ -895,7 +1117,7 @@ pub async fn retry_chunk(
     let app_for_resume = app.clone();
     log::info!(
         "retry_chunk: spawning run_chunk for {call_id_clone}/{chunk_idx} \
-         (preset={preset:?}, start_ms={start_ms}, end_ms={end_ms})"
+         (start_ms={start_ms}, end_ms={end_ms})"
     );
     tokio::spawn(async move {
         let input = ChunkRunInput {
@@ -950,6 +1172,166 @@ pub async fn retry_chunk(
     });
 
     Ok(())
+}
+
+/// [M13 fix] Recovery сломанной chunked-записи (например записанной старым
+/// кодом с chunk-0-path-mismatch + пропущенным финальным chunk'ом).
+/// Реконструирует `call_chunks` из on-disk WAV'ов, STT'ит недостающие chunk'и,
+/// затем reprocess (assembly + merge + recap). Возвращается сразу — работа
+/// идёт в фоне (status=processing подтянется через list_calls).
+#[tauri::command]
+pub async fn recover_chunked_call(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<(), AppError> {
+    spawn_recover_chunked(
+        state.db.clone(),
+        state.store.clone(),
+        state.device_id.clone(),
+        state.pipeline_tasks.clone(),
+        state.app_data_dir.clone(),
+        app,
+        call_id,
+    )
+    .await
+}
+
+/// [M13 fix] Core recovery — shared by the Tauri command и headless
+/// `WOTOLD_RECOVER_CALL_ID` startup trigger (см. lib.rs setup). Валидирует
+/// call + engine, строит providers, spawn'ит фоновый task: reconstruct →
+/// STT недостающих chunk'ов → reprocess (assembly + merge + recap).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn spawn_recover_chunked(
+    pool: SqlitePool,
+    store: Arc<CallStore>,
+    device_id: Arc<str>,
+    tasks: crate::services::pipeline_runner::PipelineTasks,
+    app_data_dir: std::path::PathBuf,
+    app: AppHandle,
+    call_id: String,
+) -> Result<(), AppError> {
+    use crate::pipeline::chunk_recovery;
+
+    // 1. Валидируем существование звонка.
+    db::get_call(&pool, &call_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("call {call_id} not found")))?;
+
+    // 2. Engine=Local (chunked путь только локальный).
+    let engine = db::get_setting(&pool, SETTING_ACTIVE_ENGINE)
+        .await?
+        .as_deref()
+        .and_then(EngineKind::from_str);
+    if !matches!(engine, Some(EngineKind::Local)) {
+        return Err(AppError::Other(
+            "recover_chunked_call: требуется локальный движок (Cloud не chunked)".into(),
+        ));
+    }
+
+    // 3. Providers (fail fast если preset/модель не выбраны).
+    let providers = build_chunk_providers(&pool, &app_data_dir, &app).await?;
+
+    // 4. Клоны для фонового task'а.
+    let db_bg = pool;
+    let app_bg = app;
+
+    tokio::spawn(async move {
+        // a. Реконструкция строк из диска (promote root→chunks/0 + offsets).
+        let to_run = match chunk_recovery::reconstruct_chunk_rows(&db_bg, &store, &call_id).await {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("recover_chunked_call[{call_id}]: reconstruct failed: {e}");
+                return;
+            }
+        };
+        log::info!(
+            "recover_chunked_call[{call_id}]: {} chunk(s) to (re)transcribe",
+            to_run.len()
+        );
+
+        // b. STT каждого недостающего chunk'а. Partial ok — продолжаем на ошибке
+        //    (relaxed gate в run_local_inner соберёт что успело).
+        for rc in &to_run {
+            let mic_path = store.chunk_mic_path(&call_id, rc.idx);
+            let system_path = store.chunk_system_path(&call_id, rc.idx);
+            let input = ChunkRunInput {
+                call_id: call_id.clone(),
+                chunk_idx: rc.idx,
+                start_ms: rc.start_ms,
+                end_ms: rc.end_ms,
+                mic_path,
+                system_path,
+                prev_prompt: None,
+                lang: providers.lang.clone(),
+                app_data_dir: Some(app_data_dir.clone()),
+                app_handle: Some(app_bg.clone()),
+                mic_diarization: providers.mic_diarization,
+                mic_diarization_num_speakers: providers.mic_diarization_num_speakers,
+            };
+            if let Err(e) = chunk_runner::run_chunk(
+                &db_bg,
+                providers.mic.as_ref(),
+                providers.system.as_ref(),
+                input,
+            )
+            .await
+            {
+                log::warn!(
+                    "recover_chunked_call[{call_id}/{}]: run_chunk failed: {e}",
+                    rc.idx
+                );
+            }
+        }
+
+        // c. Finalize через spawn_initial (НЕ spawn_reprocess): reconstruct
+        //    промоутит root→chunks/0, поэтому root mic.wav больше нет — а
+        //    `reprocess_call` требует root WAV и упал бы. `spawn_initial` идёт
+        //    через `run_local_inner`, который сам мержит chunks→root, потом
+        //    assembly (chunks уже done → STT skip) + recap. Тот же путь, что и
+        //    у нормальной записи после stop.
+        let mic_path = store.mic_path(&call_id);
+        let system_path = store.system_path(&call_id);
+        PipelineRunner::spawn_initial(
+            db_bg,
+            store,
+            device_id,
+            app_bg,
+            tasks,
+            call_id.clone(),
+            mic_path,
+            system_path,
+        )
+        .await;
+    });
+
+    Ok(())
+}
+
+/// [M13 fix / ops] Headless recovery trigger. Если env `WOTOLD_RECOVER_CALL_ID`
+/// задан на старте — спавнит recovery для этого call_id без GUI. Dev/support-хук
+/// для восстановления записей, сломанных старым chunk-0-path-mismatch кодом.
+/// Prod окружение env не задаёт → no-op. Вызывается из `lib.rs::setup`.
+pub(crate) async fn maybe_headless_recover(app: AppHandle) {
+    let call_id = match std::env::var("WOTOLD_RECOVER_CALL_ID") {
+        Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
+        _ => return,
+    };
+    log::warn!("WOTOLD_RECOVER_CALL_ID set → headless recovery for {call_id}");
+    let state = tauri::Manager::state::<AppState>(&app);
+    if let Err(e) = spawn_recover_chunked(
+        state.db.clone(),
+        state.store.clone(),
+        state.device_id.clone(),
+        state.pipeline_tasks.clone(),
+        state.app_data_dir.clone(),
+        app.clone(),
+        call_id.clone(),
+    )
+    .await
+    {
+        log::error!("headless recovery for {call_id} failed to start: {e}");
+    }
 }
 
 /// [P11.1] После того как chunk_runner перевёл chunk failed→done в
@@ -1008,6 +1390,87 @@ async fn maybe_resume_pipeline_after_chunk(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use db::chunks::ChunkRow;
+
+    fn row(idx: u32, status: &str) -> ChunkRow {
+        ChunkRow {
+            call_id: "c1".into(),
+            chunk_idx: idx,
+            start_ms: 0,
+            end_ms: None,
+            mic_path: String::new(),
+            system_path: String::new(),
+            status: status.into(),
+            transcript_json: None,
+            system_transcript_json: None,
+            embeddings_json: None,
+        }
+    }
+
+    #[test]
+    fn plan_final_chunk_runs_when_absent() {
+        // K не в списке → Run (вставить + прогнать).
+        assert_eq!(
+            plan_final_chunk(&[row(0, "done")], 1),
+            FinalChunkAction::Run
+        );
+        assert_eq!(plan_final_chunk(&[], 0), FinalChunkAction::Run);
+    }
+
+    #[test]
+    fn plan_final_chunk_runs_when_pending() {
+        assert_eq!(
+            plan_final_chunk(&[row(2, "pending")], 2),
+            FinalChunkAction::Run
+        );
+    }
+
+    #[test]
+    fn plan_final_chunk_reset_when_failed() {
+        assert_eq!(
+            plan_final_chunk(&[row(2, "failed")], 2),
+            FinalChunkAction::RunAfterReset
+        );
+    }
+
+    #[test]
+    fn plan_final_chunk_skips_when_done_or_processing() {
+        // rotated event уже enqueue'нул этот chunk → не дублируем.
+        assert_eq!(
+            plan_final_chunk(&[row(1, "done")], 1),
+            FinalChunkAction::Skip
+        );
+        assert_eq!(
+            plan_final_chunk(&[row(1, "processing")], 1),
+            FinalChunkAction::Skip
+        );
+    }
+
+    #[test]
+    fn sidecar_write_paths_chunked_uses_chunk0() {
+        let store = CallStore::new(std::path::PathBuf::from("/data"));
+        let (mic, sys) = sidecar_write_paths(&store, "c1", true);
+        assert!(
+            mic.ends_with("chunks/0/mic.wav"),
+            "chunked mic → chunks/0/, got {}",
+            mic.display()
+        );
+        assert!(sys.ends_with("chunks/0/system.wav"));
+    }
+
+    #[test]
+    fn sidecar_write_paths_non_chunked_uses_root() {
+        let store = CallStore::new(std::path::PathBuf::from("/data"));
+        let (mic, sys) = sidecar_write_paths(&store, "c1", false);
+        assert!(
+            mic.ends_with("c1/mic.wav"),
+            "root mic, got {}",
+            mic.display()
+        );
+        assert!(!mic.to_string_lossy().contains("chunks"));
+        assert!(sys.ends_with("c1/system.wav"));
+    }
+
     use crate::db::test_support::fresh_db;
 
     /// Bytes of a minimal PCM WAV with `data_len` payload bytes. `data_size_field`

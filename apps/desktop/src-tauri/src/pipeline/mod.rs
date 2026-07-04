@@ -49,6 +49,8 @@ pub mod chunk_assembly;
 // [Tech-debt P0.1] Конкатенация per-chunk WAV файлов в root mic.wav/system.wav.
 // Без этого AudioScrubber играет только первый chunk вместо полной записи.
 pub mod audio_merger;
+// [M13 fix] Recovery сломанных chunked-записей из on-disk WAV'ов.
+pub mod chunk_recovery;
 /// [P1.3] Periodic `recap:progress` event emitter wrapper. Оборачивает
 /// local LLM future чтобы каждые 15s emit'ить elapsed_sec — UI рендерит
 /// «Пересоздаём… {sec}s».
@@ -213,6 +215,51 @@ pub(crate) async fn ensure_all_chunks_done(
         )));
     }
     Ok(())
+}
+
+/// [M13 fix] Готовность chunk'ов к сборке транскрипта. Мягче чем
+/// `ensure_all_chunks_done`: различает «часть готова» (partial — собираем
+/// done-подмножество) от «ничего не готово» (полный провал). Позволяет
+/// показать частичный транскрипт вместо total loss при провале одного chunk'а.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ChunkGate {
+    /// У звонка нет chunk-строк → non-chunked / full-file путь.
+    NoChunks,
+    /// Все chunk'и `done`.
+    AllDone,
+    /// Часть `done`, часть не готова — собираем partial транскрипт.
+    Partial {
+        done: usize,
+        total: usize,
+        failed: Vec<u32>,
+    },
+    /// Ни одного `done` — полный провал chunked-пути.
+    NoneDone { total: usize },
+}
+
+pub(crate) async fn chunks_ready(pool: &SqlitePool, call_id: &str) -> Result<ChunkGate, AppError> {
+    let chunks = db::chunks::list_chunks_by_call(pool, call_id).await?;
+    if chunks.is_empty() {
+        return Ok(ChunkGate::NoChunks);
+    }
+    let total = chunks.len();
+    let done = chunks.iter().filter(|c| c.status == "done").count();
+    let failed: Vec<u32> = chunks
+        .iter()
+        .filter(|c| c.status != "done")
+        .map(|c| c.chunk_idx)
+        .collect();
+    Ok(if failed.is_empty() {
+        ChunkGate::AllDone
+    } else if done == 0 {
+        ChunkGate::NoneDone { total }
+    } else {
+        ChunkGate::Partial {
+            done,
+            total,
+            failed,
+        }
+    })
 }
 
 /// [P-fix4] Язык звонка для пина обоих треков в auto-режиме full-file STT.
@@ -1016,7 +1063,54 @@ async fn run_local_inner(
     // 0 chunks → Ok (non-chunked path, halt не релевантен) — fall back на
     // full-file STT ниже. После retry failed chunks → P11.1 auto-resume
     // re-войдёт сюда + halt пройдёт.
-    ensure_all_chunks_done(pool, &ctx.call_id).await?;
+    // [M13 fix] Relaxed gate: partial транскрипт лучше total loss. Раньше
+    // `ensure_all_chunks_done` валил ВЕСЬ pipeline (и транскрипт, и merge)
+    // если хотя бы один chunk failed → плеер застревал на chunk 0 (~10 мин).
+    let gate = chunks_ready(pool, &ctx.call_id).await?;
+
+    // [Tech-debt P0.1 + M13 fix] Audio merge независим от полноты транскрипта:
+    // склеиваем chunk WAV'ы в root чтобы плеер получил полную длину даже при
+    // partial транскрипте. Sidecar пишет аудио в chunks/{idx}/*.wav; merge
+    // сканирует диск (не DB) и включает даже chunk'и с failed STT. NoChunks →
+    // skip (non-chunked full-file запись, chunks/ нет). Blocking pool — hound
+    // синхронен, для 1-часовой записи 16kHz mono ≈ 115 MB RAM + ~1-2s CPU.
+    if !matches!(gate, ChunkGate::NoChunks) {
+        let chunks_dir = ctx.call_dir.join("chunks");
+        let call_dir_clone = ctx.call_dir.clone();
+        let call_id_clone = ctx.call_id.clone();
+        tokio::task::spawn_blocking(move || {
+            let (mic_r, sys_r) = audio_merger::merge_both_tracks(&chunks_dir, &call_dir_clone);
+            if mic_r.is_none() && sys_r.is_none() {
+                log::warn!(
+                    "audio_merger: оба merge упали для call {call_id_clone} — \
+                     плеер будет играть старый root WAV (если есть)"
+                );
+            }
+        })
+        .await
+        .ok();
+    }
+
+    // Halt только если КАЖДЫЙ chunk провален (нечего собирать). Partial —
+    // предупреждаем и строим транскрипт из done-подмножества.
+    match &gate {
+        ChunkGate::NoneDone { total } => {
+            return Err(AppError::Other(format!(
+                "chunks_need_retry: 0 of {total} chunks done (все провалены — retry в UI)"
+            )));
+        }
+        ChunkGate::Partial {
+            done,
+            total,
+            failed,
+        } => {
+            log::warn!(
+                "call {}: partial transcript — {done}/{total} chunks done, failed idx {failed:?}",
+                ctx.call_id
+            );
+        }
+        _ => {}
+    }
 
     // [M13.1.5d] Если за время записи chunk_orchestrator насобирал per-chunk
     // транскрипты (CHUNKED_PIPELINE=ON в start_recording) — пропускаем
@@ -1029,27 +1123,7 @@ async fn run_local_inner(
                 "call {}: using chunked transcripts (skip full-file STT)",
                 ctx.call_id
             );
-            // [Tech-debt P0.1] Sidecar пишет аудио в chunks/{idx}/mic.wav, но
-            // root mic.wav/system.wav остаются от первого chunk'а. Плеер
-            // (AudioScrubber) играет только этот фрагмент. Склеиваем все
-            // chunk WAV'ы в root для полной длительности.
-            //
-            // Запускаем в blocking pool — hound load/save синхронен и для
-            // 1-часовой записи на 16kHz mono ≈ 115 MB RAM + ~1-2s CPU.
-            let chunks_dir = ctx.call_dir.join("chunks");
-            let call_dir_clone = ctx.call_dir.clone();
-            let call_id_clone = ctx.call_id.clone();
-            tokio::task::spawn_blocking(move || {
-                let (mic_r, sys_r) = audio_merger::merge_both_tracks(&chunks_dir, &call_dir_clone);
-                if mic_r.is_none() && sys_r.is_none() {
-                    log::warn!(
-                        "audio_merger: оба merge упали для call {call_id_clone} — \
-                         плеер будет играть старый root WAV (если есть)"
-                    );
-                }
-            })
-            .await
-            .ok();
+            // Audio уже merged выше (независимо от транскрипт-полноты).
             // UI ожидает progress на Stage::Transcribe — эмитим 100%
             // мгновенно чтобы прогресс-бар не висел.
             let step = Stage::Transcribe.step();
@@ -2151,6 +2225,83 @@ mod tests {
         assert!(msg.contains("chunks_need_retry"), "got: {msg}");
         assert!(msg.contains("1 of 3"), "got: {msg}");
         assert!(msg.contains("[2]"), "got: {msg}");
+    }
+
+    // [M13 fix] chunks_ready — relaxed gate variants.
+    #[tokio::test]
+    async fn chunks_ready_no_chunks() {
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        assert_eq!(
+            chunks_ready(&test_db.pool, "c1").await.unwrap(),
+            ChunkGate::NoChunks
+        );
+    }
+
+    #[tokio::test]
+    async fn chunks_ready_all_done() {
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        for idx in 0..2 {
+            insert_and_mark_done(&test_db.pool, "c1", idx).await;
+        }
+        assert_eq!(
+            chunks_ready(&test_db.pool, "c1").await.unwrap(),
+            ChunkGate::AllDone
+        );
+    }
+
+    #[tokio::test]
+    async fn chunks_ready_partial_when_some_failed() {
+        use std::path::PathBuf;
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        insert_and_mark_done(&test_db.pool, "c1", 0).await;
+        db::chunks::insert_chunk(
+            &test_db.pool,
+            "c1",
+            1,
+            600_000,
+            &PathBuf::from("/m1"),
+            &PathBuf::from("/s1"),
+        )
+        .await
+        .unwrap();
+        db::chunks::mark_chunk_failed(&test_db.pool, "c1", 1, "boom")
+            .await
+            .unwrap();
+        assert_eq!(
+            chunks_ready(&test_db.pool, "c1").await.unwrap(),
+            ChunkGate::Partial {
+                done: 1,
+                total: 2,
+                failed: vec![1]
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn chunks_ready_none_done_when_all_failed() {
+        use std::path::PathBuf;
+        let test_db = fresh_db().await;
+        insert_call_row(&test_db.pool, "c1").await;
+        db::chunks::insert_chunk(
+            &test_db.pool,
+            "c1",
+            0,
+            0,
+            &PathBuf::from("/m0"),
+            &PathBuf::from("/s0"),
+        )
+        .await
+        .unwrap();
+        db::chunks::mark_chunk_failed(&test_db.pool, "c1", 0, "boom")
+            .await
+            .unwrap();
+        assert_eq!(
+            chunks_ready(&test_db.pool, "c1").await.unwrap(),
+            ChunkGate::NoneDone { total: 1 }
+        );
     }
 
     #[tokio::test]

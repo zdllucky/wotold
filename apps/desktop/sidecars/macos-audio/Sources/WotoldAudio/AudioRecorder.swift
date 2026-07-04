@@ -173,15 +173,25 @@ final class AudioRecorder {
         flushTimer?.cancel()
         flushTimer = nil
 
+        // [M13 fix] Останавливаем tap ПЕРВЫМ (нет новых callback'ов), затем
+        // close()+nil делаем на `queue` через sync — как в rotate(). Иначе
+        // close() на calling-thread'е гонится с уже-dispatch'нутыми
+        // processBuffer'ами на queue (concurrent write/close одного FileHandle)
+        // + последние 1-2 буфера теряются → финальный chunk WAV обрезан/битый
+        // (тот самый файл, который M13 final-chunk шаг читает).
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
-        try wavWriter?.close()
 
-        let duration = startTime.map { Date().timeIntervalSince($0) } ?? 0
-        let bytes = bytesWritten
+        let (duration, bytes): (Double, UInt64) = try queue.sync { [weak self] in
+            guard let self = self else { return (0, 0) }
+            try self.wavWriter?.close()
+            let d = self.startTime.map { Date().timeIntervalSince($0) } ?? 0
+            let b = self.bytesWritten
+            self.wavWriter = nil
+            return (d, b)
+        }
 
         engine = nil
-        wavWriter = nil
         converter = nil
         outputFormat = nil
         inputFormat = nil

@@ -141,6 +141,23 @@ pub async fn reprocess_call(
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<(), AppError> {
+    // [M13 fix] Chunked-запись пишет chunk 0 в chunks/0/ — root mic.wav создаётся
+    // только успешным merge. `reprocess_call` (full re-STT) требует root WAV, а
+    // delete_chunks ниже уводит нас на full-file путь по root. Поэтому СНАЧАЛА
+    // склеиваем chunks→root (полная длина), иначе reprocess упрётся в missing-root
+    // guard и «Переобработать целиком» кирпичит chunked-звонок.
+    if !state.store.mic_path(&call_id).exists() {
+        let chunks_dir = state.store.chunks_dir(&call_id);
+        if chunks_dir.exists() {
+            let call_dir = state.store.call_dir(&call_id);
+            tokio::task::spawn_blocking(move || {
+                crate::pipeline::audio_merger::merge_both_tracks(&chunks_dir, &call_dir);
+            })
+            .await
+            .ok();
+        }
+    }
+
     // [P-fix4] Сбросить chunked-кэш → форсим re-STT. Чистим recap-fail reason.
     let deleted = db::chunks::delete_chunks_for_call(&state.db, &call_id).await?;
     if deleted > 0 {

@@ -557,9 +557,15 @@ async fn parse_whisper_json(
             let _ = tokio::fs::set_permissions(path, perms).await;
         }
     }
-    let raw = tokio::fs::read_to_string(path)
+    // [M13 fix] whisper.cpp иногда эмитит невалидный UTF-8 когда multibyte-токен
+    // (кириллица / CJK) режется на границе сегмента. Строгий `read_to_string`
+    // тогда падал с `stream did not contain valid UTF-8` → весь chunk (или весь
+    // звонок на full-file пути) терял расшифровку. Читаем байты + lossy-decode:
+    // повреждается максимум один символ (U+FFFD), а не вся дорожка.
+    let bytes = tokio::fs::read(path)
         .await
         .map_err(|e| TranscriptionError::Provider(format!("read whisper json: {e}")))?;
+    let raw = String::from_utf8_lossy(&bytes);
     let parsed: WhisperJsonFile = serde_json::from_str(&raw)
         .map_err(|e| TranscriptionError::Provider(format!("parse whisper json: {e}")))?;
     Ok(build_transcript(parsed, track))
@@ -971,5 +977,37 @@ mod tests {
             .await
             .expect_err("malformed → Err");
         assert!(matches!(err, TranscriptionError::Provider(_)));
+    }
+
+    /// [M13 fix] whisper.cpp может вставить невалидный UTF-8 байт когда режет
+    /// кириллический токен на границе сегмента. Раньше `read_to_string` падал
+    /// на весь chunk. Теперь lossy-decode сохраняет валидные сегменты, портит
+    /// максимум один символ.
+    #[tokio::test]
+    async fn parse_whisper_json_survives_invalid_utf8() {
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("out.json");
+        // Валидный JSON, но с сырым байтом 0xFF внутри строки (invalid UTF-8).
+        // ASCII-каркас — byte-string; кириллица — через .as_bytes() (byte-string
+        // литералы не принимают non-ASCII).
+        let mut body: Vec<u8> = Vec::new();
+        body.extend_from_slice(br#"{"result":{"language":"ru"},"transcription":[{"text":""#);
+        body.extend_from_slice("Привет ".as_bytes());
+        body.push(0xFF); // lone invalid byte (whisper.cpp split-token artifact)
+        body.extend_from_slice("мир".as_bytes());
+        body.extend_from_slice(br#"","offsets":{"from":0,"to":500}}]}"#);
+        tokio::fs::write(&path, &body).await.unwrap();
+
+        let t = parse_whisper_json(&path, TrackKind::System)
+            .await
+            .expect("lossy decode должен спасти chunk, не падать");
+        assert_eq!(t.lang_detected.as_deref(), Some("ru"));
+        assert_eq!(t.segments.len(), 1, "сегмент сохранён несмотря на bad byte");
+        assert!(
+            t.segments[0].text.starts_with("Привет"),
+            "текст до bad byte цел: {}",
+            t.segments[0].text
+        );
     }
 }
