@@ -18,6 +18,7 @@ import {
   reprocessCall,
 } from '../api/calls';
 import { retryChunk } from '../api/recording';
+import { localEngineEvalRecap } from '../api/local-engine';
 import { humanError } from '../api/errors';
 import { engineLabelHuman } from '../utils/engineLabel';
 import { Dropdown, Icon, IconBtn, MenuItem, MenuSep, Tabs } from '../ui';
@@ -303,6 +304,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           type="button"
           onClick={onBack}
           style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
             background: 'none',
             border: 'none',
             cursor: 'pointer',
@@ -317,6 +321,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             e.currentTarget.style.color = 'var(--text-3)';
           }}
         >
+          <Icon name="chevronLeft" size={14} />
           {t('common.backAll')}
         </button>
         <Icon name="chevronRight" size={13} style={{ color: 'var(--text-faint)' }} />
@@ -373,6 +378,22 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           >
             {exporting ? t('callDetail.exporting') : t('callDetail.exportMd')}
           </MenuItem>
+          {import.meta.env.DEV && (
+            <MenuItem
+              icon="sparkle"
+              onClick={() => {
+                void localEngineEvalRecap(call.id)
+                  .then((s) =>
+                    window.alert(
+                      `g-eval avg ${s.average.toFixed(2)}\ncoherence ${s.coherence} · faithfulness ${s.faithfulness} · relevance ${s.relevance} · conciseness ${s.conciseness}\n\n${s.justification}`,
+                    ),
+                  )
+                  .catch((e) => setError(humanError(e)));
+              }}
+            >
+              g-eval (dev)
+            </MenuItem>
+          )}
           <MenuSep />
           <MenuItem
             icon="trash"

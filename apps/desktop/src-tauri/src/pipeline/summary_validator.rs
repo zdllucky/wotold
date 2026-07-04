@@ -24,7 +24,9 @@
 //! случаев hit, skip fuzzy. Fuzzy O(n·m) на 5K transcript × 100-char quote
 //! ≈ 500K char ops ≈ < 1ms.
 
-use crate::pipeline::summary_v2::CallSummaryV2;
+use std::collections::HashSet;
+
+use crate::pipeline::summary_v2::{CallSummaryV2, ParticipantV2};
 
 /// Default cosine-like threshold для substring fuzzy match. PRD §6.2
 /// validator step 3 указывает 0.90.
@@ -324,32 +326,33 @@ pub fn strip_unverified_evidence(
     transcript_text: &str,
     fuzzy_threshold: f32,
 ) -> (CallSummaryV2, usize) {
-    let mut dropped = 0_usize;
-    summary.action_items.retain(|ai| {
-        let keep =
-            ai.evidence.is_none() || evidence_ok(&ai.evidence, transcript_text, fuzzy_threshold);
-        if !keep {
-            dropped += 1;
+    // [recap-rich] НЕ дропаем пункт при недостоверной цитате — текст решения/
+    // задачи/вопроса реален, слабая local-модель лишь перефразирует цитату.
+    // Обнуляем только цитату (`evidence = None`), пункт остаётся. Дропаем лишь
+    // пункты с пустым `text` (мусор). Возвращаемое число = сколько цитат обнулено.
+    let mut stripped = 0_usize;
+    for ai in &mut summary.action_items {
+        if ai.evidence.is_some() && !evidence_ok(&ai.evidence, transcript_text, fuzzy_threshold) {
+            ai.evidence = None;
+            stripped += 1;
         }
-        keep
-    });
-    summary.decisions.retain(|d| {
-        let keep =
-            d.evidence.is_none() || evidence_ok(&d.evidence, transcript_text, fuzzy_threshold);
-        if !keep {
-            dropped += 1;
+    }
+    for d in &mut summary.decisions {
+        if d.evidence.is_some() && !evidence_ok(&d.evidence, transcript_text, fuzzy_threshold) {
+            d.evidence = None;
+            stripped += 1;
         }
-        keep
-    });
-    summary.open_questions.retain(|q| {
-        let keep =
-            q.evidence.is_none() || evidence_ok(&q.evidence, transcript_text, fuzzy_threshold);
-        if !keep {
-            dropped += 1;
+    }
+    for q in &mut summary.open_questions {
+        if q.evidence.is_some() && !evidence_ok(&q.evidence, transcript_text, fuzzy_threshold) {
+            q.evidence = None;
+            stripped += 1;
         }
-        keep
-    });
-    (summary, dropped)
+    }
+    summary.action_items.retain(|ai| !ai.text.trim().is_empty());
+    summary.decisions.retain(|d| !d.text.trim().is_empty());
+    summary.open_questions.retain(|q| !q.text.trim().is_empty());
+    (summary, stripped)
 }
 
 fn evidence_ok(
@@ -409,6 +412,38 @@ pub fn dedup_items(summary: &mut CallSummaryV2) {
         DEFAULT_DEDUP_THRESHOLD,
         |a, b| jaccard_token_overlap(&a.text, &b.text),
     );
+    dedup_participants(&mut summary.participants);
+}
+
+/// [recap-fix A3] Dedup участников. Слабая local-модель повторяет одно имя на
+/// нескольких speaker-тегах («Глеб Гусак» на speaker:0/1/unknown ×N) и дублит
+/// один тег (speaker:unknown ×3). Чистим по двум ключам, сохраняя порядок:
+///   1. уникальный `speaker_tag` (case-insensitive) — убирает дубли тега;
+///   2. уникальный НЕпустой `display_name` — одно имя = один человек (пустое
+///      имя / только-тег не коллапсим, иначе схлопнули бы всех безымянных).
+fn dedup_participants(participants: &mut Vec<ParticipantV2>) {
+    let mut seen_tags: HashSet<String> = HashSet::new();
+    let mut seen_names: HashSet<String> = HashSet::new();
+    let kept = std::mem::take(participants);
+    *participants = kept
+        .into_iter()
+        .filter(|p| {
+            if !seen_tags.insert(p.speaker_tag.trim().to_lowercase()) {
+                return false;
+            }
+            if let Some(name) = p
+                .display_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                if !seen_names.insert(name.to_lowercase()) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
 }
 
 #[allow(dead_code)] // [M14] Используется через `dedup_items`.
@@ -428,8 +463,16 @@ mod tests {
     use super::*;
     use crate::pipeline::summary_v2::{
         ActionItemCategory, ActionItemV2, CallSummaryV2, CallType, Decision, EvidenceAnchor,
-        OpenQuestion,
+        OpenQuestion, ParticipantV2,
     };
+
+    fn part(tag: &str, name: Option<&str>) -> ParticipantV2 {
+        ParticipantV2 {
+            speaker_tag: tag.into(),
+            display_name: name.map(Into::into),
+            role_hint: None,
+        }
+    }
 
     fn base_summary() -> CallSummaryV2 {
         CallSummaryV2 {
@@ -445,6 +488,8 @@ mod tests {
             action_items: vec![],
             decisions: vec![],
             open_questions: vec![],
+            topics: Vec::new(),
+            narrative: String::new(),
             type_specific_block: None,
         }
     }
@@ -488,6 +533,42 @@ mod tests {
     fn case_difference_normalized() {
         let score = substring_fuzzy_score("Hello World", "alice: hello world back");
         assert!(score >= 0.99, "got {score}");
+    }
+
+    #[test]
+    fn dedup_participants_collapses_repeated_name_and_tag() {
+        // Реальный кейс из лога: одно имя на 5 тегах + speaker:unknown ×3.
+        let mut s = base_summary();
+        s.participants = vec![
+            part("speaker:1", Some("Глеб Гусак")),
+            part("speaker:unknown", Some("Глеб Гусак")),
+            part("owner", Some("Дамир")),
+            part("speaker:0", Some("Глеб Гусак")),
+            part("speaker:unknown", Some("Глеб Гусак")),
+            part("speaker:unknown", Some("Глеб Гусак")),
+        ];
+        dedup_items(&mut s);
+        // Остаётся первый «Глеб Гусак» + Дамир.
+        assert_eq!(s.participants.len(), 2);
+        assert_eq!(s.participants[0].speaker_tag, "speaker:1");
+        assert_eq!(
+            s.participants[0].display_name.as_deref(),
+            Some("Глеб Гусак")
+        );
+        assert_eq!(s.participants[1].display_name.as_deref(), Some("Дамир"));
+    }
+
+    #[test]
+    fn dedup_participants_keeps_distinct_unnamed_tags() {
+        // Безымянные (только-тег) участники НЕ коллапсируются между собой.
+        let mut s = base_summary();
+        s.participants = vec![
+            part("speaker:0", None),
+            part("speaker:1", None),
+            part("speaker:0", None), // дубль тега → уходит
+        ];
+        dedup_items(&mut s);
+        assert_eq!(s.participants.len(), 2);
     }
 
     #[test]
@@ -556,7 +637,9 @@ mod tests {
     // ──────── strip_unverified_evidence ────────
 
     #[test]
-    fn strip_drops_only_failing_items_keeps_rest() {
+    fn strip_nulls_bad_quote_but_keeps_item() {
+        // [recap-rich] Недостоверная цитата → пункт СОХРАНЯЕТСЯ, обнуляется
+        // только evidence. Раньше пункт дропался целиком → пустые секции.
         let mut s = base_summary();
         s.action_items
             .push(ai("good", "x", Some("I'll do it tomorrow")));
@@ -565,32 +648,37 @@ mod tests {
         s.action_items
             .push(ai("good2", "z", Some("call back next week")));
         let transcript = "Alice: I'll do it tomorrow. Bob: call back next week.";
-        let (stripped, dropped) = strip_unverified_evidence(s, transcript, DEFAULT_FUZZY_THRESHOLD);
-        assert_eq!(stripped.action_items.len(), 2);
-        assert_eq!(dropped, 1);
-        let ids: Vec<&str> = stripped
+        let (stripped, nulled) = strip_unverified_evidence(s, transcript, DEFAULT_FUZZY_THRESHOLD);
+        // Все 3 пункта на месте; у "bad" evidence обнулён.
+        assert_eq!(stripped.action_items.len(), 3);
+        assert_eq!(nulled, 1);
+        let bad = stripped
             .action_items
             .iter()
-            .map(|a| a.id.as_str())
-            .collect();
-        assert!(ids.contains(&"good"));
-        assert!(ids.contains(&"good2"));
+            .find(|a| a.id == "bad")
+            .unwrap();
+        assert!(bad.evidence.is_none(), "недостоверная цитата обнулена");
+        let good = stripped
+            .action_items
+            .iter()
+            .find(|a| a.id == "good")
+            .unwrap();
+        assert!(good.evidence.is_some(), "достоверная цитата сохранена");
     }
 
     #[test]
     fn strip_keeps_items_without_evidence() {
-        // [Fix A] v1→v2 promotion (Qwen local path) даёт items с evidence=None.
-        // Раньше strip удалял их все → 0 задач у каждого локального звонка.
-        // Теперь сохраняются; стрипается только present-but-not-found.
+        // Items с evidence=None (v1→v2 promotion) сохраняются как есть.
         let mut s = base_summary();
         s.action_items.push(ai("noev1", "x", None));
         s.action_items.push(ai("noev2", "y", None));
         s.action_items
             .push(ai("fabricated", "z", Some("quote nowhere in transcript")));
         let transcript = "Alice: unrelated chatter here.";
-        let (stripped, dropped) = strip_unverified_evidence(s, transcript, DEFAULT_FUZZY_THRESHOLD);
-        // Оба None-evidence сохранены; только фабрикованный удалён.
-        assert_eq!(dropped, 1, "только present-but-not-found стрипается");
+        let (stripped, nulled) = strip_unverified_evidence(s, transcript, DEFAULT_FUZZY_THRESHOLD);
+        // Все 3 пункта сохранены; у "fabricated" цитата обнулена.
+        assert_eq!(stripped.action_items.len(), 3);
+        assert_eq!(nulled, 1, "только present-but-not-found цитата обнуляется");
         let ids: Vec<&str> = stripped
             .action_items
             .iter()
@@ -598,7 +686,17 @@ mod tests {
             .collect();
         assert!(ids.contains(&"noev1"));
         assert!(ids.contains(&"noev2"));
-        assert!(!ids.contains(&"fabricated"));
+        assert!(ids.contains(&"fabricated"));
+    }
+
+    #[test]
+    fn strip_drops_empty_text_items() {
+        let mut s = base_summary();
+        s.action_items.push(ai("keep", "real task", None));
+        s.action_items.push(ai("empty", "   ", None));
+        let (stripped, _) = strip_unverified_evidence(s, "x", DEFAULT_FUZZY_THRESHOLD);
+        assert_eq!(stripped.action_items.len(), 1);
+        assert_eq!(stripped.action_items[0].id, "keep");
     }
 
     // ──────── validate_schema ────────

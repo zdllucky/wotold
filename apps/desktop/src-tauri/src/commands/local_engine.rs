@@ -200,3 +200,94 @@ pub async fn local_engine_hw_probe(
     crate::db::set_setting(&state.db, SETTING_HW_REPORT, &json).await?;
     Ok(report)
 }
+
+/// [B2] Текущее состояние тумблера «держать модель активной».
+#[tauri::command]
+pub async fn local_engine_get_keep_resident(state: State<'_, AppState>) -> Result<bool, AppError> {
+    Ok(crate::pipeline::keep_resident_enabled(&state.db).await)
+}
+
+/// [B2] Переключить резидентный режим. Пишет настройку И применяет сразу:
+/// `on` → поднять resident `llama-server` (модель в RAM всю сессию),
+/// `off` → погасить. Старт best-effort: если движок не local либо модель не
+/// скачана — сервер не поднимется, но настройка сохранится и применится позже
+/// (на старте / смене движка).
+#[tauri::command]
+pub async fn local_engine_set_keep_resident(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), AppError> {
+    crate::db::set_setting(
+        &state.db,
+        crate::pipeline::SETTING_KEEP_RESIDENT,
+        if enabled { "1" } else { "0" },
+    )
+    .await?;
+    if enabled {
+        let app_data_dir = state.app_data_dir.clone();
+        crate::pipeline::start_resident_server(&app, &state.db, &app_data_dir).await;
+    } else {
+        crate::pipeline::stop_resident_server(&app).await;
+    }
+    Ok(())
+}
+
+/// [recap-rich Phase 3] G-Eval dev-харнесс: судья по 4 осям (coherence/
+/// faithfulness/relevance/conciseness) оценивает recap.md звонка против его
+/// transcript.md через локальную модель. Логирует + возвращает баллы. Для
+/// объективного сравнения «стало ли информативнее» до/после prompt-правок.
+#[derive(Serialize)]
+pub struct RecapEvalDto {
+    pub coherence: u8,
+    pub faithfulness: u8,
+    pub relevance: u8,
+    pub conciseness: u8,
+    pub average: f32,
+    pub justification: String,
+}
+
+#[tauri::command]
+pub async fn local_engine_eval_recap(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<RecapEvalDto, AppError> {
+    let call_dir = state.app_data_dir.join("calls").join(&call_id);
+    let recap = tokio::fs::read_to_string(call_dir.join("recap.md"))
+        .await
+        .map_err(|e| AppError::Other(format!("recap.md read: {e}")))?;
+    let transcript = tokio::fs::read_to_string(call_dir.join("transcript.md"))
+        .await
+        .map_err(|e| AppError::Other(format!("transcript.md read: {e}")))?;
+    let call = crate::db::get_call(&state.db, &call_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
+    let s = crate::pipeline::settings::PipelineSettings::load(&state.db).await?;
+    let (provider, _preset) =
+        crate::pipeline::build_local_llm_provider(&state.db, &state.app_data_dir, &app, &s).await?;
+    let scores = crate::pipeline::g_eval::evaluate_summary(
+        &provider,
+        &transcript,
+        &serde_json::Value::String(recap),
+        call.lang_detected.as_deref(),
+    )
+    .await?;
+    log::info!(
+        "g-eval {call_id}: coherence={} faithfulness={} relevance={} conciseness={} avg={:.2} — {}",
+        scores.coherence,
+        scores.faithfulness,
+        scores.relevance,
+        scores.conciseness,
+        scores.average(),
+        scores.justification,
+    );
+    Ok(RecapEvalDto {
+        coherence: scores.coherence,
+        faithfulness: scores.faithfulness,
+        relevance: scores.relevance,
+        conciseness: scores.conciseness,
+        average: scores.average(),
+        justification: scores.justification,
+    })
+}

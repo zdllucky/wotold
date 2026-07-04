@@ -181,6 +181,22 @@ pub fn run() {
                 });
             }
 
+            // [warm-up B1] Прогрев local-LLM при старте: фоновый крошечный
+            // generate компилит Metal-шейдеры + греет модель в page-cache, чтобы
+            // первый рекап не ловил ~30с cold-start. No-op если движок не Local.
+            // Non-fatal, фоном (не блокирует показ окна).
+            #[cfg(target_os = "macos")]
+            {
+                let app_for_warmup = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let (pool, app_data_dir) = {
+                        let state = tauri::Manager::state::<state::AppState>(&app_for_warmup);
+                        (state.db.clone(), state.app_data_dir.clone())
+                    };
+                    crate::pipeline::warm_up_local_llm(&pool, &app_data_dir, &app_for_warmup).await;
+                });
+            }
+
             // [B16 audit P2] macOS app menu — без явного menu Tauri даёт только
             // basic App/Quit. Native Cut/Copy/Paste/SelectAll на webview без menu
             // не работают (стандартные ⌘C/⌘V). Add File/Edit/View/Window submenus.
@@ -303,11 +319,12 @@ pub fn run() {
 
                 let quitting_for_menu = quitting.clone();
                 let _tray = TrayIconBuilder::with_id("wotold-tray")
-                    .icon(
-                        app.default_window_icon()
-                            .cloned()
-                            .ok_or_else(|| std::io::Error::other("default_window_icon missing"))?,
-                    )
+                    // Dedicated monochrome TEMPLATE mark (black + alpha) — macOS tints it
+                    // for the light/dark menu bar. Не переиспользуем цветную bundle-иконку
+                    // (её альфа в template-режиме дала бы силуэт-кляксу).
+                    .icon(tauri::image::Image::from_bytes(include_bytes!(
+                        "../icons/tray.png"
+                    ))?)
                     .icon_as_template(true)
                     .menu(&tray_menu)
                     .show_menu_on_left_click(false)
@@ -398,6 +415,17 @@ pub fn run() {
                                 }
                             }
                             return;
+                        }
+
+                        // [B2] Гасим resident llama-server при реальном выходе —
+                        // иначе дочерний процесс осиротеет и продолжит держать
+                        // RAM + порт после закрытия приложения.
+                        #[cfg(target_os = "macos")]
+                        {
+                            let app_srv = app_for_event.clone();
+                            tauri::async_runtime::block_on(async move {
+                                crate::pipeline::stop_resident_server(&app_srv).await;
+                            });
                         }
 
                         let state = tauri::Manager::state::<state::AppState>(&app_for_event);
@@ -673,6 +701,12 @@ pub fn run() {
             commands::local_engine_set_active_engine,
             #[cfg(target_os = "macos")]
             commands::local_engine_storage_list,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_get_keep_resident,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_set_keep_resident,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_eval_recap,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

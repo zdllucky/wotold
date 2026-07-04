@@ -53,6 +53,11 @@ pub struct AppState {
     /// `regenerate_empty_recaps` проверяет его между звонками; `cancel_bulk_recap`
     /// взводит. Sequential по природе (local LLM semaphore=1).
     pub bulk_recap_cancel: Arc<std::sync::atomic::AtomicBool>,
+    /// [B2] Живой resident `llama-server` (настройка `local_engine.keep_resident`).
+    /// `Some` пока модель держится в RAM всю сессию; `None` — one-shot режим.
+    /// Поднимается на старте / по тумблеру, гасится на выходе / смене preset.
+    #[cfg(target_os = "macos")]
+    pub llm_server: Arc<Mutex<Option<crate::local_engine::llm_server::LlamaServer>>>,
 }
 
 pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
@@ -69,10 +74,9 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
     let owner = db::ensure_owner_contact(&pool).await?;
     log::info!("owner contact: {}", owner.id);
 
-    // Подметаем зависшие recording/processing с прошлой сессии (краш,
-    // force-quit). Альтернатива была бы попытка резюмировать pipeline,
-    // но raw_stt.json не гарантирован — проще пометить failed чтобы
-    // юзер видел чёткое состояние.
+    // Подметаем зависшие 'processing' с прошлой сессии (краш, force-quit) →
+    // 'failed' (есть финализированное аудио, юзер сможет переобработать).
+    // Орфан-'recording' обрабатываются ниже в reconcile_orphan_recordings.
     let swept = db::sweep_stale_calls(&pool).await?;
     if swept > 0 {
         log::warn!("sweep_stale_calls: {swept} зависших звонков → failed");
@@ -84,6 +88,15 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
     migrate_byo_to_managed(&pool).await?;
 
     let store = Arc::new(CallStore::new(app_data_dir.clone()));
+
+    // [B19.6] Прерванные записи (орфан-'recording'): <30с → удалить, ≥30с → failed.
+    // Startup продолжается даже при ошибке reconcile (app должен подняться);
+    // error-level, т.к. это сбой startup-задачи, а не штатный warn.
+    match crate::commands::recording::reconcile_orphan_recordings(&pool, &store).await {
+        Ok(n) if n > 0 => log::warn!("reconcile_orphan_recordings: {n} прерванных записей"),
+        Ok(_) => {}
+        Err(e) => log::error!("reconcile_orphan_recordings failed: {e}"),
+    }
 
     Ok(AppState {
         db: pool,
@@ -97,6 +110,8 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         orchestrator_pause_tx: Arc::new(Mutex::new(None)),
         orchestrator_stop_tx: Arc::new(Mutex::new(None)),
         bulk_recap_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        #[cfg(target_os = "macos")]
+        llm_server: Arc::new(Mutex::new(None)),
     })
 }
 

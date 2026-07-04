@@ -30,6 +30,7 @@ pub mod diarization;
 pub mod engine;
 pub mod hw_probe;
 pub mod llm;
+pub mod llm_server;
 #[allow(dead_code)]
 pub mod merge;
 pub mod models;

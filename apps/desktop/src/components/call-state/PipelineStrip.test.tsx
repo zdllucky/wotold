@@ -24,7 +24,7 @@ describe('PipelineStrip', () => {
     // → ((3-1) + 0.64)/5 * 100 = 52.8% → rounded 53.
     expect(container.querySelector('.proc-strip-pct')?.textContent).toBe('53%');
     const fill = container.querySelector(
-      '.proc-strip-rail .rail-fill',
+      '.proc-strip-rail .progress-rail-fill',
     ) as HTMLElement | null;
     expect(fill?.style.width).toBe('53%');
   });

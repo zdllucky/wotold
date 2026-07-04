@@ -30,6 +30,10 @@
             { "validator": "^[A-Za-z0-9._/ \\-]+$" },
             "--temp",
             { "validator": "^[0-9]+(\\.[0-9]+)?$" },
+            "--repeat-penalty",
+            { "validator": "^[0-9]+(\\.[0-9]+)?$" },
+            "--repeat-last-n",
+            { "validator": "^[0-9]+$" },
             "--ctx-size",
             { "validator": "^[0-9]+$" },
             "--n-predict",
@@ -55,6 +59,30 @@
             { "validator": "^[A-Za-z0-9._/ \\-]+$" },
             "--model-draft",
             { "validator": "^[A-Za-z0-9._/ \\-]+$" }
+          ]
+        },
+        {
+          "name": "binaries/wotold-llama-server",
+          "sidecar": true,
+          "args": [
+            "-m",
+            { "validator": "^[A-Za-z0-9._/ \\-]+$" },
+            "--host",
+            { "validator": "^127\\.0\\.0\\.1$" },
+            "--port",
+            { "validator": "^[0-9]+$" },
+            "--ctx-size",
+            { "validator": "^[0-9]+$" },
+            "-ngl",
+            { "validator": "^[0-9]+$" },
+            "-fa",
+            { "validator": "^(on|off|auto)$" },
+            "-ctk",
+            { "validator": "^(q8_0|q4_0|f16)$" },
+            "-ctv",
+            { "validator": "^(q8_0|q4_0|f16)$" },
+            "--parallel",
+            { "validator": "^[0-9]+$" }
           ]
         },
         {

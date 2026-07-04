@@ -17,8 +17,8 @@
         "title": "Wotold",
         "width": 980,
         "height": 720,
-        "minWidth": 760,
-        "minHeight": 560,
+        "minWidth": 960,
+        "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
         "titleBarStyle": "Overlay",
@@ -64,6 +64,7 @@
     "externalBin": [
       "binaries/wotold-audio",
       "binaries/wotold-llama",
+      "binaries/wotold-llama-server",
       "binaries/wotold-whisper"
     ],
     "icon": [
