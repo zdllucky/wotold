@@ -15,8 +15,8 @@
 //!
 //! - `local_orchestrator::run_v2_pipeline` short path → когда classifier
 //!   даёт `known_call_type=Some(t)` → `build_expert_system_prompt(t)`.
-//! - `map_reduce::run_map_reduce` reduce step → когда есть known_call_type →
-//!   `build_expert_reduce_prompt(t, map_outputs_json)`.
+//! - `refine_chain` [F1] → `type_role_hint` + `type_guide_block` для
+//!   refine-промпта; initial-шаг чейна использует `build_expert_system_prompt`.
 //! - Universal prompt остаётся для (a) cloud path (passes None), (b)
 //!   fallback на classifier failure.
 //!
@@ -99,7 +99,7 @@ fn absolute_rules_block() -> &'static str {
 3. Owner attribution: only assign an owner if the transcript shows them explicitly accepting the task ('I'll do it', 'я возьму', 'I will take that'). Mere mention of a name is NOT enough. Set `owner_confidence`: 0.9+ only for explicit accept; 0.5 for inferred; 0.0 if no owner.\n\
 4. Categorize each action_item:\n   - `commitment` — explicit accept ('я сделаю', 'I'll send it')\n   - `proposal` — suggested но не accepted\n   - `idea` — raised, no clear action\n\
 5. Output ONLY ONE JSON object matching the schema. No prose, no markdown fences, no explanation.\n\
-6. NEVER use raw 'Speaker 0', 'Speaker 1', 'owner' tags inside `summary`/`key_points`/`action_items.text`. Resolve to names via:\n   (a) Known participants block — exact name.\n   (b) Self-introduction in transcript.\n   (c) Generic role: 'клиент', 'представитель вендора', 'коллега'. NEVER 'Спикер 1'."
+6. NEVER use raw 'Speaker 0', 'Speaker 1', 'owner' tags inside `summary`/`key_points`/`action_items.text`. Resolve to names via:\n   (a) Known participants block — exact name. Confirmed participants ALREADY appear under their real names in transcript headers (`**Alice** [MM:SS]:`); identical names = the SAME person even across distant parts of the call.\n   (b) Self-introduction in transcript.\n   (c) Generic role: 'клиент', 'представитель вендора', 'коллега'. NEVER 'Спикер 1'."
 }
 
 /// Shared OUTPUT SCHEMA block (CallSummaryV2) — strict schema for both universal + expert.
@@ -200,45 +200,14 @@ You are a senior meeting analyst for Wotold specialized in {role}.\n\
     )
 }
 
-/// Expert reduce prompt — focused per-type aggregation of MAP_OUTPUTS.
-pub(crate) fn build_expert_reduce_prompt(
-    call_type: CallType,
-    lang_detected: Option<&str>,
-    known_speakers: Option<&str>,
-    map_outputs_json: &str,
-) -> String {
-    let lang = lang_detected.unwrap_or("ru");
-    let cfg = type_config(call_type);
-    let known_block = known_speakers
-        .map(|s| format!("\n\n## Known participants\n\n{s}"))
-        .unwrap_or_default();
-    format!(
-        "OUTPUT LANGUAGE = {lang}. EVERY string value MUST be written in {lang} (only call_type/category enums stay English).\n\
-\n\
-You are a senior meeting analyst для REDUCE step of a long {role} call. You receive a JSON ARRAY of per-chunk MAP outputs. Your job: consolidate into ONE final `CallSummaryV2` JSON focused на call_type `{slug}`. Be COMPLETE — surface all decisions/action_items/open_questions/topics present in the MAP outputs.\n\
-\n\
-{rules}\n\
-\n\
-{schema}\n\
-\n\
-{guide}\n\
-\n\
-{evidence}{known}\n\
-\n\
-## MAP_OUTPUTS (input — array of per-chunk extractions)\n\
-\n\
-{map}\n\
-\n\
-Output ONLY the final CallSummaryV2 JSON object. No prose. Set `call_type` to `{slug}`.",
-        role = cfg.role_hint,
-        slug = cfg.slug,
-        rules = absolute_rules_block(),
-        schema = output_schema_block(),
-        guide = specialized_guide_block(&cfg),
-        evidence = evidence_rules_block(),
-        known = known_block,
-        map = map_outputs_json,
-    )
+/// [F1] Role-hint типа звонка — для refine-промпта (без полного expert prompt'а).
+pub(crate) fn type_role_hint(call_type: CallType) -> &'static str {
+    type_config(call_type).role_hint
+}
+
+/// [F1] SPECIALIZED GUIDE блок типа звонка — для refine-промпта.
+pub(crate) fn type_guide_block(call_type: CallType) -> String {
+    specialized_guide_block(&type_config(call_type))
 }
 
 #[cfg(test)]
@@ -322,22 +291,14 @@ mod tests {
     }
 
     #[test]
-    fn expert_reduce_prompt_embeds_map_outputs() {
-        let map_outputs = serde_json::json!([
-            { "chunk_idx": 0, "facts": ["alice committed to ship by Friday"] },
-            { "chunk_idx": 1, "facts": ["bob agreed to review"] }
-        ]);
-        let json_str = serde_json::to_string(&map_outputs).unwrap();
-        let p = build_expert_reduce_prompt(CallType::Standup, Some("en"), None, &json_str);
+    fn type_helpers_expose_role_and_guide() {
+        // [F1] refine-чейн собирает промпт из этих кирпичей.
         assert!(
-            p.contains(&json_str),
-            "reduce prompt missing MAP_OUTPUTS body"
+            type_role_hint(CallType::Standup).contains("standup")
+                || !type_role_hint(CallType::Standup).is_empty()
         );
-        assert!(p.contains("MAP_OUTPUTS"));
-        // Reduce should still set call_type explicitly.
-        assert!(p.contains("`standup`"));
-        // [MoM cleanup] no MoM headers / type_specific_block в reduce-промпте.
-        assert!(!p.contains("## Yesterday"));
-        assert!(!p.contains("type_specific_block"));
+        let guide = type_guide_block(CallType::Standup);
+        assert!(guide.contains("SPECIALIZED GUIDE"));
+        assert!(guide.contains("`standup`"));
     }
 }

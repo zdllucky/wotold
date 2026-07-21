@@ -115,9 +115,16 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
         other => return Err(AppError::Other(format!("unknown provider_path: {other}"))),
     };
 
-    // Собрать known speakers: подтверждённые привязки speaker_tag → contact.
-    // Это даст LLM контекст «owner = Damir», «Speaker 0 = Ivan Petrov (Acme)».
-    let known_speakers = build_known_speakers_block(pool, ctx.call_id).await?;
+    // [F2] Переписать заголовки подтверждённых спикеров на имена контактов
+    // (несколько тегов одного контакта → одно имя) + person-level Known
+    // participants блок. LLM видит одного человека, а не speaker:0/speaker:3.
+    let (prompt_transcript, known_speakers) =
+        crate::pipeline::speaker_prompt_ctx::build_prompt_transcript(
+            pool,
+            ctx.call_id,
+            ctx.transcript_md,
+        )
+        .await?;
 
     // [M14 T-14] Branch prompt по feature flag. OFF → legacy v1 markdown-only
     // (минимальный JSON, парсится через existing promote_legacy_to_v2 fallback).
@@ -132,7 +139,7 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
     let request = LlmRequest {
         model: ctx.model_override.map(str::to_string),
         system: system_prompt,
-        input: ctx.transcript_md.to_string(),
+        input: prompt_transcript.clone(),
         max_tokens: Some(4096),
         grammar: None,
         json_schema: None,
@@ -151,9 +158,12 @@ pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
         ctx.call_dir,
         json_value,
         ctx.engine_label,
-        ctx.transcript_md,
+        // [F2] Evidence-валидатор должен матчить против текста, который видел
+        // LLM (заголовки уже переписаны на имена контактов).
+        &prompt_transcript,
         Some(generation_ms),
         Some(ctx.summary_v2_enabled),
+        "one_shot",
     )
     .await
 }
@@ -181,6 +191,8 @@ pub async fn persist_recap_from_json(
     transcript_md: &str,
     generation_ms: Option<i64>,
     flag_state: Option<bool>,
+    // [F1] `one_shot` | `refine_chain` → calls.summary_pipeline_mode.
+    pipeline_mode: &str,
 ) -> Result<(), AppError> {
     // [M14 T-14] Capture original schema_version из LLM-JSON ДО promote'а —
     // telemetry хочет знать «v1 или v2 produced by LLM», не финальную DB-форму
@@ -199,6 +211,7 @@ pub async fn persist_recap_from_json(
         engine_label,
         transcript_md,
         generation_ms,
+        pipeline_mode,
     )
     .await?;
 
@@ -300,6 +313,7 @@ pub(crate) fn promote_legacy_to_v2(legacy: RecapJson) -> CallSummaryV2 {
 /// [M14 T-02] Единый persist путь для CallSummaryV2 — applies validator,
 /// пишет action_items + decisions + open_questions + summary metadata в DB +
 /// расширенный recap.md на диск.
+#[allow(clippy::too_many_arguments)] // internal persist path; structured args = backlog
 async fn persist_summary_v2(
     pool: &SqlitePool,
     call_id: &str,
@@ -308,6 +322,7 @@ async fn persist_summary_v2(
     engine_label: &str,
     transcript_md: &str,
     generation_ms: Option<i64>,
+    pipeline_mode: &str,
 ) -> Result<(), AppError> {
     // 1. Strip unverified evidence — drops items с фабрикованными quotes.
     let (mut summary, nulled) =
@@ -415,7 +430,7 @@ async fn persist_summary_v2(
             schema_version: 2,
             call_type: Some(summary.call_type.as_str()),
             call_type_confidence: Some(summary.call_type_confidence),
-            pipeline_mode: "one_shot",
+            pipeline_mode,
             generation_ms,
             input_tokens: None,
             output_tokens: None,
@@ -533,7 +548,7 @@ You are a senior meeting analyst for Wotold, a corporate call recording tool. Yo
    - `idea` — raised, no clear action\n\
 5. Output ONLY ONE JSON object matching the schema. No prose, no markdown fences, no explanation.\n\
 6. NEVER use raw 'Speaker 0', 'Speaker 1', 'owner' tags inside `summary`/`key_points`/`action_items.text`. Resolve to names via:\n\
-   (a) Known participants block — exact name.\n\
+   (a) Known participants block — exact name. Confirmed participants ALREADY appear under their real names in transcript headers (`**Alice** [MM:SS]:`); identical names = the SAME person even across distant parts of the call.\n\
    (b) Self-introduction in transcript.\n\
    (c) Generic role: 'клиент', 'представитель вендора', 'коллега'. NEVER 'Спикер 1'.\n\
 \n\
@@ -598,53 +613,6 @@ You are a senior meeting analyst for Wotold, a corporate call recording tool. Yo
 - Короткий транскрипт (<5 реплик) или пустой → `summary` = 'Запись не содержит обсуждения по существу.' + empty arrays + call_type=other.\n\
 - Если transcript на kk: используй kazakh terms, keep technical English as-is.{known_block}{type_hint}",
     )
-}
-
-/// Собирает «Known participants» блок для LLM-контекста: для каждой
-/// подтверждённой привязки speaker_tag → contact выводит строку с display_name
-/// + опц. org/role. Если привязок нет — None (блок не добавляется).
-pub(crate) async fn build_known_speakers_block(
-    pool: &SqlitePool,
-    call_id: &str,
-) -> Result<Option<String>, AppError> {
-    let speakers = db::list_call_speakers(pool, call_id).await?;
-    let confirmed: Vec<_> = speakers
-        .iter()
-        .filter(|s| s.confirmed && s.contact_id.is_some() && s.contact_display_name.is_some())
-        .collect();
-    if confirmed.is_empty() {
-        return Ok(None);
-    }
-
-    // Подтянем дополнительный контекст (org/role) из contacts table.
-    let contacts = db::list_contacts(pool).await?;
-    let by_id: std::collections::HashMap<&str, &db::Contact> =
-        contacts.iter().map(|c| (c.id.as_str(), c)).collect();
-
-    let mut lines = Vec::new();
-    for s in confirmed {
-        let cid = s.contact_id.as_deref().unwrap_or("");
-        let name = s.contact_display_name.as_deref().unwrap_or("");
-        let extras = by_id
-            .get(cid)
-            .map(|c| {
-                let mut bits = Vec::new();
-                if let Some(role) = c.role.as_deref().filter(|s| !s.is_empty()) {
-                    bits.push(role.to_string());
-                }
-                if let Some(org) = c.org.as_deref().filter(|s| !s.is_empty()) {
-                    bits.push(org.to_string());
-                }
-                if bits.is_empty() {
-                    String::new()
-                } else {
-                    format!(" ({})", bits.join(", "))
-                }
-            })
-            .unwrap_or_default();
-        lines.push(format!("- {} = {}{}", s.speaker_tag, name, extras));
-    }
-    Ok(Some(lines.join("\n")))
 }
 
 /// [M14 T-02] Расширенный render для CallSummaryV2 — добавляет
@@ -1017,6 +985,7 @@ mod tests {
             "transcript stub",
             Some(1234),
             Some(true),
+            "one_shot",
         )
         .await
         .unwrap();
@@ -1025,6 +994,12 @@ mod tests {
             .unwrap();
         assert_eq!(v1, 0);
         assert_eq!(v2, 1);
+        // [F1] pipeline_mode прописывается в calls.summary_pipeline_mode.
+        let stored = crate::db::get_call(&db.pool, &call.id)
+            .await
+            .unwrap()
+            .expect("call row exists");
+        assert_eq!(stored.summary_pipeline_mode.as_deref(), Some("one_shot"));
     }
 
     /// [M14 T-14] flag_state=None (local path до T-04..T-10) → telemetry
@@ -1059,6 +1034,7 @@ mod tests {
             "stub",
             None,
             None,
+            "refine_chain",
         )
         .await
         .unwrap();

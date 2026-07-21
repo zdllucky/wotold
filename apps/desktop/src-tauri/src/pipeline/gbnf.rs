@@ -23,7 +23,7 @@
 //! Во всех **local-side** LLM call sites:
 //! - `classifier::classify_call`
 //! - `local_orchestrator::run_v2_pipeline` (single-pass main)
-//! - `map_reduce::run_map_reduce` (per-chunk map + final reduce)
+//! - `refine_chain::run_refine_chain` (initial + refine шаги) [F1]
 //! - `action_item_post_pass::refine_action_items`
 //!
 //! Cloud (`recap::run` + `AnthropicProvider`) не использует — proxy

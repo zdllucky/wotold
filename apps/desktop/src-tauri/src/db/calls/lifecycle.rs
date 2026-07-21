@@ -45,7 +45,8 @@ pub struct Call {
     pub summary_schema_version: Option<i64>,
     /// [M14 T-02] cloud-managed | local-qwen-{1.5b|3b|7b}. NULL для legacy.
     pub summary_engine: Option<String>,
-    /// [M14 T-02] one_shot | map_reduce | hierarchical.
+    /// [M14 T-02 / F1] one_shot | refine_chain. (map_reduce/hierarchical
+    /// в БД не встречаются — режим раньше хардкодился в one_shot.)
     pub summary_pipeline_mode: Option<String>,
     pub created_at: String,
     pub updated_at: String,
