@@ -201,6 +201,19 @@ const ruInternal = {
     bgBusyStripElapsed: 'Пересоздаём саммари… {sec}s',
     generatingRecap: 'Генерируется саммари…',
     generatingTranscript: 'Распознаётся речь…',
+    // [F3] Thinking-блок живых шагов генерации рекапа (RecapThinking).
+    think: {
+      title: 'Ход генерации',
+      preview: 'Промежуточный результат',
+      classify: 'Определяем тип звонка',
+      refine: 'Обрабатываем часть {no} из {total}',
+      generate: 'Генерируем саммари',
+      postPass: 'Уточняем задачи',
+      narrative: 'Пишем нарратив',
+      finalize: 'Проверяем и сохраняем',
+      inProgress: 'Выполняется',
+      stepFailed: 'Пропущено',
+    },
     regenerateNoTranscript: 'Нет транскрипта для регенерации',
     // [M14 T-17] Title-only regen — отдельный lightweight LLM-call.
     regenerateTitle: '↻ Пересоздать название',
@@ -1006,6 +1019,20 @@ const ruInternal = {
   },
 
   // ── [V6.1] Async pipeline states (CallStateTag, PipelineStrip etc) ──────
+  // [Q] Монитор очередей тяжёлых ресурсов (QueueMonitor + queued-строка).
+  queue: {
+    monitor: 'Очереди обработки',
+    res: {
+      stt: 'Распознавание речи',
+      diarization: 'Разделение голосов',
+      llm: 'Генерация саммари',
+    },
+    free: 'СВОБОДЕН',
+    busy: 'В РАБОТЕ',
+    systemTask: 'Служебная задача',
+    empty: 'Очередь пуста',
+    callWaiting: 'В очереди: {resource} — сейчас обрабатывается другой звонок (позиция {pos})',
+  },
   callState: {
     // Badge labels
     live: 'идёт запись',

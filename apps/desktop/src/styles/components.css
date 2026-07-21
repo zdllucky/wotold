@@ -1085,3 +1085,201 @@ html.recording-widget .rec-float {
     animation: none;
   }
 }
+
+/* ── [F3] RecapThinking — thinking-блок генерации рекапа ─────────────────
+   [UI-fix D] Inline в потоке тела таба (стиль «размышлений» Claude/ChatGPT):
+   без рамки/панели — приглушённая строка-саммари с шевроном, шаги компактной
+   колонкой с левой направляющей. Живёт только во время генерации. */
+.recap-think {
+  margin: 0 0 var(--s4);
+}
+.recap-think-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) 0;
+  user-select: none;
+}
+.recap-think-summary::-webkit-details-marker { display: none; }
+.recap-think-chevron {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  transition: transform var(--fast) var(--ease);
+}
+.recap-think[open] > .recap-think-summary .recap-think-chevron {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .recap-think-chevron { transition: none; }
+}
+.recap-think-title {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text-3);
+  letter-spacing: -0.005em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.recap-think-count {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.recap-think-steps {
+  padding: var(--s1) 0 var(--s1) var(--s3);
+  margin-left: 5px;
+  border-left: 2px solid var(--border-2);
+  gap: var(--s2);
+}
+.recap-think-preview {
+  margin: -2px 0 6px 42px;
+}
+.recap-think-preview > summary {
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  user-select: none;
+}
+.recap-think-preview > summary::-webkit-details-marker { display: none; }
+.recap-think-preview-body {
+  font-size: 13px;
+  color: var(--text-3);
+  border-left: 2px solid var(--border-2);
+  padding: 4px 0 4px 10px;
+  margin-top: 6px;
+}
+.recap-think-preview-body strong { color: var(--text-2); }
+.recap-think-preview-body ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.recap-think-preview-body li { margin: 2px 0; }
+
+/* ── [UI-fix C] Inbox week — Outlook-style time-grid ─────────────────────
+   Часовой gutter + 7 колонок; события абсолютно позиционированы по времени
+   (top/height от weekGrid.ts), перекрытия делят ширину кластера. Часовые
+   линии — repeating-gradient (без DOM). Высота = часы × 48px, скроллит
+   родительский .scroll; sticky — только строка дней. */
+.cal-week {
+  display: flex;
+  flex-direction: column;
+  padding: var(--s5);
+}
+.cal-week-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 56px repeat(7, 1fr);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+.cal-week-day {
+  text-align: center;
+  min-width: 0;
+}
+.cal-week-daynum {
+  width: 28px;
+  height: 28px;
+  margin: 5px auto 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+.cal-week-day.is-today .cal-week-daynum {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.cal-week-grid {
+  display: grid;
+  grid-template-columns: 56px repeat(7, 1fr);
+  position: relative;
+}
+.cal-hour-gutter {
+  position: relative;
+}
+.cal-hour-label {
+  position: absolute;
+  right: 8px;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.cal-hour-gutter .cal-hour-label:first-child {
+  transform: none;
+}
+.cal-week-col {
+  position: relative;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--border-2) 0,
+    var(--border-2) 1px,
+    transparent 1px,
+    transparent 48px
+  );
+}
+.cal-week-col:last-child {
+  border-right: 1px solid var(--border);
+}
+.cal-week-col.is-today {
+  background-color: var(--accent-soft);
+}
+.cal-event {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-start;
+  overflow: hidden;
+  text-align: left;
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  border-left: 2.5px solid var(--border-strong);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  min-width: 0;
+  transition: box-shadow var(--fast);
+}
+.cal-event:hover {
+  box-shadow: var(--shadow);
+  z-index: 2;
+}
+.cal-event:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  z-index: 2;
+}
+.cal-event--compact {
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+.cal-event-time {
+  font-size: 10px;
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+.cal-event-title {
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.3;
+  color: var(--text);
+  max-width: 100%;
+}

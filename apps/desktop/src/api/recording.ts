@@ -149,6 +149,28 @@ export interface RecapProgressEvent {
 }
 export const RECAP_PROGRESS_EVENT = 'recap:progress';
 
+/** [F3] Усечённое превью промежуточного результата refine-шага —
+ *  разворачивается в thinking-блоке RecapThinking. */
+export interface RecapStepPreview {
+  title: string;
+  key_points: string[];
+}
+
+/** [F3] Один шаг генерации рекапа (`recap:step`). UI upsert'ит по `step_idx`
+ *  и рендерит thinking-блок; блок скрывается насовсем на `pipeline:finished`.
+ *  `total_steps=0` = «ещё неизвестно» (до подсчёта чанков). */
+export interface RecapStepEvent {
+  call_id: string;
+  step_idx: number;
+  total_steps: number;
+  kind: 'classify' | 'refine' | 'post_pass' | 'narrative' | 'finalize' | 'generate';
+  status: 'started' | 'done' | 'failed';
+  chunk_no: number | null;
+  chunk_total: number | null;
+  preview: RecapStepPreview | null;
+}
+export const RECAP_STEP_EVENT = 'recap:step';
+
 /** [P5.2] Live duration update во время recording — fires на каждый
  *  sidecar `rotated` event (~раз в 10 мин). HomePage / CallDetailPage
  *  patch'ат `call.duration_sec` чтобы не показывать stale «1:56» для
