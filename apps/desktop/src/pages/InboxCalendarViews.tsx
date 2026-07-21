@@ -11,6 +11,7 @@ import { Dropdown, Empty, IconBtn } from '../ui';
 import { Icon } from '../ui/Icon';
 import { callHasRecap, deriveCallState, formatDuration, inferSpeakers } from './inboxData';
 import { AvatarGroup, StatusCell, statusColor } from './inboxBits';
+import { callToDayEvent, hourRange, HOUR_PX, packDayEvents } from './weekGrid';
 
 type TFn = ReturnType<typeof useI18n>['t'];
 
@@ -280,7 +281,11 @@ export function InboxCards({ calls, onOpen, speakerInitials, locale, t }: ViewPr
   );
 }
 
-// ── Неделя ──
+// ── Неделя — Outlook-style time-grid ─────────────────────────────────────
+// [UI-fix C] Часовая ось слева, события позиционируются по времени начала,
+// высота — по длительности (мин. слот 40 мин). Перекрытия делят ширину
+// колонки поровну внутри кластера (weekGrid.packDayEvents). Sticky —
+// только строка дней; высокая сетка скроллится родительским .scroll.
 export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
   const [off, setOff] = useState(0);
   const today = new Date(); // recomputed per render — stays correct past midnight
@@ -297,8 +302,17 @@ export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
       .filter((c) => sameDay(new Date(c.started_at), d))
       .sort((a, b) => +new Date(a.started_at) - +new Date(b.started_at));
 
+  // Единый часовой диапазон на всю видимую неделю — общий gutter.
+  const weekCalls = days.map((d) => onDay(d));
+  const allEvents = weekCalls.flat().map(callToDayEvent);
+  const { startHour, endHour } = hourRange(allEvents);
+  const gridH = (endHour - startHour) * HOUR_PX;
+  const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
+  const fmtHour = (h: number) =>
+    new Date(2024, 0, 1, h).toLocaleTimeString(bcp(locale), { hour: '2-digit', minute: '2-digit' });
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className="cal-week">
       <CalHeader
         label={rangeLabel(start, days[6]!, locale)}
         onPrev={() => setOff((o) => o - 1)}
@@ -313,85 +327,65 @@ export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
         locale={locale}
         t={t}
       />
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
-          gap: 8,
-          minHeight: 'min(62vh, 540px)',
-        }}
-      >
+      {/* Строка дней — sticky при скролле сетки. */}
+      <div className="cal-week-head">
+        <span aria-hidden="true" />
         {days.map((d) => {
           const isT = sameDay(d, today);
           return (
-            <div
-              key={d.toISOString()}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                minWidth: 0,
-                borderRadius: 'var(--r)',
-                background: isT ? 'var(--accent-soft)' : 'transparent',
-                padding: 4,
-              }}
-            >
+            <div key={d.toISOString()} className={`cal-week-day${isT ? ' is-today' : ''}`}>
               <div
-                style={{
-                  textAlign: 'center',
-                  paddingBottom: 8,
-                  borderBottom: '1px solid var(--border)',
-                  marginBottom: 8,
-                }}
+                className="u-faint"
+                style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 }}
               >
-                <div
-                  className="u-faint"
-                  style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 }}
-                >
-                  {weekdayShort(d, locale)}
-                </div>
-                <div
-                  style={{
-                    width: 28,
-                    height: 28,
-                    margin: '5px auto 0',
-                    borderRadius: '50%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 600,
-                    fontSize: 14,
-                    background: isT ? 'var(--accent)' : 'transparent',
-                    color: isT ? 'var(--on-accent)' : 'var(--text)',
-                  }}
-                >
-                  {d.getDate()}
-                </div>
+                {weekdayShort(d, locale)}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                {onDay(d).map((c) => (
+              <div className="cal-week-daynum">{d.getDate()}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="cal-week-grid" style={{ height: gridH }}>
+        {/* Часовой gutter — только визуальная шкала. */}
+        <div className="cal-hour-gutter" aria-hidden="true">
+          {hours.map((h) => (
+            <span key={h} className="cal-hour-label" style={{ top: (h - startHour) * HOUR_PX }}>
+              {fmtHour(h)}
+            </span>
+          ))}
+        </div>
+        {days.map((d, di) => {
+          const isT = sameDay(d, today);
+          const positioned = packDayEvents(weekCalls[di]!.map(callToDayEvent));
+          const byId = new Map(positioned.map((p) => [p.id, p]));
+          return (
+            <div key={d.toISOString()} className={`cal-week-col${isT ? ' is-today' : ''}`}>
+              {weekCalls[di]!.map((c) => {
+                const p = byId.get(c.id);
+                if (!p) return null;
+                const top = ((p.startMin - startHour * 60) / 60) * HOUR_PX;
+                const height = ((p.effEndMin - p.startMin) / 60) * HOUR_PX - 2;
+                const laneW = 100 / p.laneCount;
+                const compact = height < 44;
+                return (
                   <button
                     key={c.id}
                     type="button"
+                    className={`cal-event${compact ? ' cal-event--compact' : ''}`}
                     onClick={() => onOpen(c.id)}
                     style={{
-                      textAlign: 'left',
-                      borderRadius: 7,
-                      padding: '6px 7px',
-                      cursor: 'pointer',
-                      background: 'var(--panel)',
-                      borderLeft: `2.5px solid ${statusColor(deriveCallState(c))}`,
-                      boxShadow: 'var(--shadow-sm)',
+                      top,
+                      height,
+                      left: `calc(${p.laneIdx * laneW}% + 2px)`,
+                      width: `calc(${laneW}% - 4px)`,
+                      borderLeftColor: statusColor(deriveCallState(c)),
                     }}
                   >
-                    <div className="mono u-faint" style={{ fontSize: 10 }}>
-                      {fmtTime(c.started_at, locale)}
-                    </div>
-                    <div className="u-trunc" style={{ fontSize: 12, fontWeight: 550, lineHeight: 1.3 }}>
-                      {c.title ?? c.id.slice(0, 8)}
-                    </div>
+                    <span className="cal-event-time mono">{fmtTime(c.started_at, locale)}</span>
+                    <span className="cal-event-title u-trunc">{c.title ?? c.id.slice(0, 8)}</span>
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
           );
         })}
@@ -422,7 +416,9 @@ export function InboxMonth({ calls, onOpen, locale, t }: ViewProps) {
   const wdHeader = Array.from({ length: 7 }, (_, i) => weekdayShort(new Date(2024, 0, 1 + i), locale));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    // [UI-fix B] padding: паритет с InboxCards и прототипом wk-inbox.jsx —
+    // порт потерял его, header/grid прижимались к краям.
+    <div style={{ display: 'flex', flexDirection: 'column', padding: 'var(--s5)' }}>
       <CalHeader
         label={monthYear(cur, locale)}
         onPrev={() => setOff((o) => o - 1)}
@@ -454,7 +450,7 @@ export function InboxMonth({ calls, onOpen, locale, t }: ViewProps) {
           gap: 1,
           background: 'var(--border)',
           border: '1px solid var(--border)',
-          borderRadius: 10,
+          borderRadius: 'var(--r-md)',
           overflow: 'hidden',
         }}
       >
