@@ -1,11 +1,13 @@
-// #48 (M7.5 follow-up): секция "Использование" в Settings.
+// #48 (M7.5 follow-up), B21: «Дневная квота» внутри Обработка → cloud.
 //
-// Полит /v1/usage один раз при mount + при manual refresh. Offline-safe:
-// если прокси недоступен — показывает explanation, не блокирует UI.
+// Канон SecProcessing quota-блок (wk-settings.jsx :203-207): строка label +
+// mono used/limit справа + .progress трек. Legacy Card/Badge/UsageBar выпилены.
+// Полит /v1/usage один раз при mount + manual refresh. Offline-safe: если
+// прокси недоступен — показывает explanation, не блокирует UI.
 
 import { useCallback, useEffect, useState } from 'react';
 import type { UsageResponse } from '@wotold/contracts';
-import { Badge, Button, Card, UsageBar } from '../ui';
+import { Chip, IconBtn, Progress } from '../ui';
 import { fetchUsage } from '../api/usage';
 import { bcp47, useI18n } from '../i18n';
 
@@ -39,6 +41,39 @@ function formatSeconds(n: number, t: TFn): string {
   return secs === 0 ? t('usage.minAbbr', { n: mins }) : t('usage.minSecAbbr', { m: mins, s: secs });
 }
 
+function QuotaRow({
+  label,
+  used,
+  limit,
+  format,
+}: {
+  label: string;
+  used: number;
+  limit: number | null;
+  format: (n: number) => string;
+}) {
+  const pct = limit && limit > 0 ? (used / limit) * 100 : 0;
+  return (
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 12.5,
+          marginBottom: 6,
+        }}
+      >
+        <span>{label}</span>
+        <span className="mono muted">
+          {format(used)}
+          {limit != null ? ` / ${format(limit)}` : ''}
+        </span>
+      </div>
+      <Progress value={pct} ariaLabel={label} />
+    </div>
+  );
+}
+
 export function UsageSection() {
   const { locale, t } = useI18n();
   const [state, setState] = useState<State>({ kind: 'idle' });
@@ -59,58 +94,49 @@ export function UsageSection() {
   }, [load]);
 
   return (
-    <Card>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 8 }}>
-          {state.kind === 'ready' && (
-            <Badge tone="success">{t('usage.tier', { name: state.data.tier })}</Badge>
-          )}
-        </div>
-        <Button
-          variant="ghost"
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        {state.kind === 'ready' && (
+          <Chip tone="ok" size="sm">
+            {t('usage.tier', { name: state.data.tier })}
+          </Chip>
+        )}
+        <span style={{ flex: 1 }} />
+        <IconBtn
+          icon="refresh"
           size="sm"
+          label={t('usage.refreshLabel')}
           onClick={() => void load()}
           disabled={state.kind === 'loading'}
-        >
-          {state.kind === 'loading' ? t('usage.refreshing') : t('usage.refreshLabel')}
-        </Button>
+        />
       </div>
 
       {(state.kind === 'idle' || state.kind === 'loading') && (
-        <p className="muted">{t('usage.loading')}</p>
+        <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+          {t('usage.loading')}
+        </p>
       )}
 
       {state.kind === 'error' && (
         <div>
-          <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
             {t('usage.errorIntro')}
           </p>
-          <p
-            className="subtle mono"
-            style={{ fontSize: 11, margin: 0, wordBreak: 'break-all' }}
-          >
+          <p className="subtle mono" style={{ fontSize: 11, margin: 0, wordBreak: 'break-all' }}>
             {state.message}
           </p>
         </div>
       )}
 
       {state.kind === 'ready' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <UsageBar
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 420 }}>
+          <QuotaRow
             label={t('usage.sttLabel')}
             used={state.data.sttSecondsUsed}
             limit={state.data.sttSecondsLimit}
             format={(n) => formatSeconds(n, t)}
           />
-          <UsageBar
+          <QuotaRow
             label={t('usage.llmLabel')}
             used={state.data.llmTokensUsed}
             limit={state.data.llmTokensLimit}
@@ -125,6 +151,6 @@ export function UsageSection() {
           </p>
         </div>
       )}
-    </Card>
+    </div>
   );
 }

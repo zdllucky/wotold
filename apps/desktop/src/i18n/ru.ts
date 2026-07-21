@@ -477,17 +477,15 @@ const ruInternal = {
   // ── Settings — sections + interior content ─────────────────────────────
   settings: {
     title: 'Настройки',
-    breadcrumb: 'Настройки · {section}',
     saved: '✓ Сохранено',
     sectionAppearance: 'Внешний вид',
     sectionAccount: 'Учётная запись',
     sectionPermissions: 'Разрешения',
-    sectionProcessing: 'Обработка звонков',
+    sectionProcessing: 'Обработка',
     sectionRecording: 'Запись',
     sectionSpeakers: 'Спикеры',
     sectionLabs: 'Лаборатория',
     sectionMaintenance: 'Обслуживание',
-    maintenanceTitle: 'Обслуживание данных.',
     bulkRecapStart: 'Пересоздать пустые саммари',
     bulkRecapRunning: 'Обрабатываем…',
     bulkRecapScanning: 'Ищем пустые рекапы…',
@@ -495,7 +493,7 @@ const ruInternal = {
     bulkRecapStop: 'Остановить',
     bulkRecapResult: 'Готово: {regenerated} пересоздано, {failed} с ошибкой.',
     bulkRecapNoneEmpty: 'Пустых рекапов не найдено — всё на месте.',
-    sectionPrivacy: 'Конфиденциальность',
+    sectionPrivacy: 'Приватность',
     speakersAutoBindLabel: 'Автоматически привязывать спикеров к контактам',
     speakersAutoBindHint:
       'Только при высокой уверенности — можно отменить прямо в звонке.',
@@ -506,52 +504,57 @@ const ruInternal = {
       'Для разделения голосов нужен дополнительный модуль (~6 МБ). Без него Wotold не делит голоса даже когда переключатель включён.',
     micDiarizationInstall: '↓ Установить модуль разделения голосов',
     micDiarizationInstalling: 'Устанавливаем модуль…',
-    appearanceTitle: 'Внешний вид.',
     fieldTheme: 'Тема',
-    fieldAccent: 'Акцентный цвет',
     fieldLanguage: 'Язык интерфейса',
     languageHint: 'Язык всех меток, кнопок и подсказок. Контент звонков остаётся как есть.',
     themeLight: 'Светлая',
     themeDark: 'Тёмная',
     themeSystem: 'Системная',
-    accentBordeaux: 'Бордо',
-    accentPersian: 'Кобальт',
-    accentInk: 'Графит',
-    accountTitle: 'Аккаунт.',
-    permissionsTitle: 'Разрешения системы.',
-    engineTitle: 'Движок распознавания.',
     engineLede:
       'Где обрабатываются ваши звонки. Локальный — бесплатно и без сети, всё на устройстве. Облачный — лучшее качество, требуется интернет.',
-    sttTitle: 'Распознавание речи.',
     sttLede:
       'Поставщик STT и язык вывода для рекапа. Auto переключается между Soniox и Gladia при сбоях.',
-    sttProviderLabel: 'Провайдер',
-    sttProviderAuto: 'Auto (Soniox → Gladia)',
-    sttLangLabel: 'Язык распознавания (STT)',
+    sttLangLabel: 'Распознавание речи',
     sttLangHint:
       "Язык речи для распознавания. 'Автоопределение' обычно норм, но на тихом микрофоне whisper иногда путает язык — для русских звонков надёжнее выбрать «Русский».",
-    sttRecapLangLabel: 'Язык рекапа и задач',
+    sttRecapLangLabel: 'Рекап и задачи',
     sttRecapLangHint:
       "На каком языке писать рекап и задачи. 'Авто' = язык распознанной речи. Не влияет на сам STT.",
-    sttModelLabel: 'LLM-модель (опционально)',
-    sttModelPlaceholder: 'auto (определяется бэкендом)',
-    sttModelHint:
-      'Пусто = прокси сам выбирает по LLM_BACKEND. Override только если знаешь что делаешь.',
     // [V7] Auto-bind speaker по биометрии. R2 паспорта — opt-in only, default OFF.
-    autoBindLabel: 'Авто-привязка собеседников по голосу',
-    autoBindCheckboxLabel:
-      'Автоматически привязывать собеседника к контакту при высоком совпадении голоса. Требует ≥ 2 голосовых семплов и согласия контакта на биометрию.',
-    autoBindHint:
-      'Если выключено — Wotold только предлагает кандидата, окончательное подтверждение за тобой (рекомендуется).',
     autoBindThresholdLabel: 'Порог совпадения',
     autoBindThresholdOption: '{n}%',
     autoBindThresholdHint:
       'Чем выше порог, тем меньше ошибок, но и реже срабатывает. 95% — баланс по умолчанию.',
     // [W1] Configurable hotkeys для recording.
-    hotkeyToggleLabel: 'Горячая клавиша · старт/стоп',
+    hotkeyToggleLabel: 'Старт / стоп',
+    hotkeyChange: 'Изменить',
+    hotkeyCancel: 'Отмена (Esc)',
+    hotkeyNeedModifier: 'Нужен модификатор (⌘/⌃/⌥) или F-клавиша',
+    hotkeyReserved: '{combo} зарезервирована системой — выберите другую',
+    hotkeyCurrentAria: 'Текущая горячая клавиша',
+    hotkeyCapturingAria: 'Записываем комбинацию…',
+    ledeAppearance: 'Тема применяется сразу.',
+    ledeAccount: 'Вход не обязателен — Wotold работает локально.',
+    ledeProcessing: 'Где расшифровываются звонки.',
+    ledePermissions: 'Без доступа к микрофону и системному звуку запись не начнётся.',
+    ledeRecording: 'Языки, горячие клавиши, авто-определение.',
+    ledeSpeakers: 'Распознавание собеседников по голосу.',
+    ledeLabs: 'Экспериментальные функции.',
+    ledeMaintenance: 'Операции над накопленными данными.',
+    ledePrivacy: 'Полная очистка локальных данных.',
+    groupLanguages: 'Языки',
+    groupHotkeys: 'Горячие клавиши',
+    groupAutoDetect: 'Авто-определение',
+    callDetectRowLabel: 'Предлагать запись',
+    callDetectCooldownRowLabel: 'Не предлагать снова',
+    bulkRecapRowLabel: 'Пустые саммари',
+    bulkRecapRowHint: 'Пересоздать саммари для звонков, обработанных раньше, у которых рекап не сформировался.',
+    bulkRecapDoneShort: '{n} готово',
+    wipeRowHint: 'Записи, контакты, образцы голоса, сессия и ключи. Необратимо.',
+    wipeDoneChip: 'удалено',
     hotkeyToggleHint:
-      'Нажми «Записать» и сразу зажми комбинацию (например ⌘⇧R). Esc — отмена. Системные комбинации (⌘W, ⌘C…) недоступны.',
-    hotkeyPauseLabel: 'Горячая клавиша · пауза/продолжить',
+      'Нажми «Изменить» и сразу зажми комбинацию (например ⌘⇧R). Esc — отмена. Системные комбинации (⌘W, ⌘C…) недоступны.',
+    hotkeyPauseLabel: 'Пауза / продолжить',
     hotkeyPauseHint:
       'Срабатывает только во время активной записи. По умолчанию ⌘⇧P.',
     // [S1] Auto-detect (R3 deviation, opt-in).
@@ -564,50 +567,12 @@ const ruInternal = {
     callDetectCooldownOption: '{n} мин',
     callDetectCooldownHint:
       'Если ты закрыл предложение — для того же приложения не покажем минимум столько. Cooldown сбрасывается на каждом перезапуске Wotold.',
-    pathTitle: 'Источник сервисов.',
-    pathLede:
-      'По умолчанию Wotold ходит через прокси с дневной бесплатной квотой. Подключи свои ключи — и запросы пойдут напрямую, без лимитов.',
-    pathManagedExplain:
-      'Через Wotold — managed-режим. Все запросы STT/LLM идут через наш прокси. Бесплатный тир: 60 минут STT и 50 тыс. токенов LLM в день. Превышение — мягкий отказ, без списаний.',
-    pathByoExplain:
-      'Свои ключи — BYO-режим. Wotold ходит напрямую к Soniox/Gladia/Anthropic с твоими ключами. Ключи хранятся в системном Keychain, не в БД и не в логах.',
-    pathByoToggle: 'Свои ключи',
-    pathManagedToggle: 'Через прокси',
-    pathTogglePath: 'Путь',
-    pathKeychainNote: 'Ключи хранятся в системном Keychain',
-    keysTitle: 'Свои ключи API.',
-    keysLede:
-      'Подключи ключи Soniox · Gladia · Anthropic — Wotold пойдёт напрямую, мимо нашего прокси. Ключи живут в Keychain macOS.',
-    keysStored: 'Ключи хранятся в системном Keychain. Не пишутся в БД, логи или телеметрию.',
-    keysEmptyAll:
-      '⚠ Ни один ключ не задан. Записи будут падать с ошибкой авторизации — либо добавь ключи, либо переключись на «Через Wotold» в выборе режима.',
-    keysSomeMissing:
-      'ⓘ Не заданы: {names}. Без них часть pipeline (STT primary / fallback / recap) работать не будет.',
-    keyConnected: '● подключён',
-    keyEmpty: '● пусто',
-    keyReplacePlaceholder: '••••• (введи, чтобы заменить)',
-    keyNeedValue: 'Введи значение ключа.',
-    keySonioxHint: 'STT primary. Получить ключ — soniox.com/console.',
-    keyGladiaHint: 'STT fallback. Получить ключ — app.gladia.io/api.',
-    keyAnthropicHint: 'LLM рекап. Получить ключ — console.anthropic.com.',
-    proxyTitle: 'Сервер Wotold.',
-    proxyLede:
-      'Managed-прокси — общий endpoint для STT/LLM. Можно подменить URL на staging или self-hosted, если знаешь что делаешь.',
-    proxyEndpointLabel: 'Endpoint:',
-    proxyDefaultMark: ' · default',
-    proxyCustomLabel: 'Custom Proxy URL',
-    proxyCustomHint:
-      'Override для staging или self-hosted прокси. Оставь пустым для default.',
-    proxyInvalidUrl: 'URL должен быть http:// или https://',
     usageTitle: 'Использование.',
     usageLede:
       'Дневная квота managed-режима — STT-минуты и LLM-токены. Сбрасывается каждые 24 часа. В BYO-режиме счётчик не действует.',
-    voiceTitle: 'Распознавание голоса.',
     voiceLede:
       'Wotold может предлагать кто говорит на основе совпадения голоса — но только после скачивания биометрической модели (25 МБ, опционально). Финальное подтверждение всегда за тобой (R2 паспорта).',
-    privacyTitle: 'Конфиденциальность.',
     // [M14 T-14] Labs section — experimental flags.
-    labsTitle: 'Лаборатория.',
     summaryV2Label: 'Новый формат саммари',
     summaryV2Hint:
       'Включено по умолчанию. Выключите если возникли проблемы с типом звонка, цитатами или решениями — рекапы вернутся к простому формату.',
@@ -624,7 +589,7 @@ const ruInternal = {
     },
     wipeBtn: 'Удалить все данные',
     wipeBusy: 'Удаляем…',
-    wipeConfirmTitle: 'Wotold — Полная очистка',
+    wipeConfirmTitle: 'Полная очистка',
     wipeConfirmBody:
       'УДАЛИТЬ ВСЕ ДАННЫЕ?\n\nЭто навсегда сотрёт:\n  • все записи звонков и аудио\n  • все контакты и voice samples\n  • сессию входа и BYO API-ключи\n\nДействие необратимо.',
     wipeConfirmOk: 'Удалить всё',
@@ -690,6 +655,7 @@ const ruInternal = {
     errorIntro:
       'Не удалось получить данные использования. Это нормально если ты offline или прокси не настроен.',
     tier: 'tier: {name}',
+    quotaTitle: 'Дневная квота',
     sttLabel: 'STT (распознавание речи)',
     llmLabel: 'LLM (рекапы, нудж-вопросы)',
     secAbbr: '{n} сек',

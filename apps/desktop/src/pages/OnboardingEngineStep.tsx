@@ -30,6 +30,7 @@ import {
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
 import { EngineChip } from '../components/EngineChip';
+import { Button, OptionCard, Progress } from '../ui';
 
 const PRESETS: LocalEnginePreset[] = ['light', 'balanced', 'quality'];
 
@@ -204,6 +205,18 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
     onAdvance();
   }, [onAdvance, progress]);
 
+  // [Review HIGH-3] Non-macOS auto-skip нельзя дёргать в render — это вызовет
+  // `setStep` в родителе во время рендера ребёнка (React warning + риск
+  // infinite re-render). Переносим в useEffect.
+  // [B21] Хук обязан стоять ДО любого early-return (Rules of Hooks): раньше
+  // он объявлялся после `if (downloading) return …` — первый же старт
+  // загрузки менял число вызванных хуков → React crash.
+  useEffect(() => {
+    if (hw && hw.os !== 'macos') {
+      onAdvance();
+    }
+  }, [hw, onAdvance]);
+
   if (downloading) {
     const pct = progress?.pct ?? 0;
     const mb = progress ? (progress.bytesDone / 1024 / 1024).toFixed(0) : '0';
@@ -223,45 +236,15 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
           <div className="mono" style={{ fontSize: 13, color: 'var(--text-2)' }}>
             {mb} / {totalMb} MB · {pct.toFixed(0)}%
           </div>
-          <div
-            style={{
-              height: 4,
-              background: 'var(--border)',
-              borderRadius: 2,
-              marginTop: 8,
-              overflow: 'hidden',
-            }}
-            aria-hidden
-          >
-            <div
-              style={{
-                width: `${Math.min(100, Math.max(0, pct))}%`,
-                height: '100%',
-                background: 'var(--accent)',
-                transition: 'width 200ms ease',
-              }}
-            />
-          </div>
+          {/* [B21] Канонный .progress вместо самописного бара. */}
+          <Progress value={pct} style={{ marginTop: 8 }} />
         </div>
-        <button
-          type="button"
-          className="btn btn--quiet btn--sm"
-          onClick={() => void cancelDownload()}
-        >
+        <Button variant="ghost" size="sm" onClick={() => void cancelDownload()}>
           {t('onboarding.engine.cancelDownloadCta')}
-        </button>
+        </Button>
       </div>
     );
   }
-
-  // [Review HIGH-3] Non-macOS auto-skip нельзя дёргать в render — это вызовет
-  // `setStep` в родителе во время рендера ребёнка (React warning + риск
-  // infinite re-render). Переносим в useEffect.
-  useEffect(() => {
-    if (hw && hw.os !== 'macos') {
-      onAdvance();
-    }
-  }, [hw, onAdvance]);
 
   if (!hw || hw.os !== 'macos') {
     return (
@@ -278,22 +261,13 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
   if (previewMode) {
     return (
       <>
-        <p
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: 9.5,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            color: 'var(--text-faint)',
-            marginBottom: 6,
-          }}
-        >
+        <p className="set-eyebrow" style={{ marginBottom: 6 }}>
           {t('onboarding.engine.previewEyebrow')}
         </p>
         <p
           style={{
             fontFamily: 'var(--font)',
-            fontSize: 20,
+            fontSize: 'var(--t-20)',
             letterSpacing: '-0.01em',
             marginBottom: 18,
           }}
@@ -306,14 +280,13 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
             borderRadius: 'var(--r-md)',
             padding: '14px 18px',
             marginBottom: 14,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
           }}
         >
           {[1, 2, 3, 4].map((n) => (
-            <div
-              key={n}
-              className="transcript-row"
-              style={{ fontSize: 13, lineHeight: 1.6 }}
-            >
+            <div key={n} style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-2)' }}>
               {t(`onboarding.engine.previewTranscript${n}` as 'onboarding.engine.previewTranscript1')}
             </div>
           ))}
@@ -332,23 +305,18 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
           </span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button
-            type="button"
-            className="btn btn--primary"
+          <Button
+            variant="primary"
             onClick={() => {
               setPreviewMode(false);
               void startDownload();
             }}
           >
             {t('onboarding.engine.previewInstall', { size: models.sizeGb })}
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() => setPreviewMode(false)}
-          >
+          </Button>
+          <Button variant="ghost" onClick={() => setPreviewMode(false)}>
             {t('onboarding.engine.previewBack')}
-          </button>
+          </Button>
         </div>
       </>
     );
@@ -428,49 +396,27 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         </ul>
       </div>
 
-      {/* Picker (collapsible) */}
+      {/* Picker (collapsible) — [B21] OptionCard radio, как в Настройках. */}
       {pickerOpen && (
-        <div className="field" style={{ marginBottom: 20 }}>
-          <label className="field-label">{t('localEngine.presetLabel')}</label>
-          <div role="radiogroup" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {PRESETS.map((p) => (
-              <label
+        <div style={{ marginBottom: 20 }}>
+          <div
+            role="radiogroup"
+            aria-label={t('localEngine.presetLabel')}
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+          >
+            {PRESETS.map((p, qi) => (
+              <OptionCard
                 key={p}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: 8,
-                  borderRadius: 6,
-                  border: `1px solid ${p === preset ? 'var(--accent)' : 'var(--border-2)'}`,
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font)',
-                  fontSize: 13,
-                }}
-              >
-                <input
-                  type="radio"
-                  name="onboarding-preset"
-                  checked={p === preset}
-                  onChange={() => setChosenPreset(p)}
-                />
-                <span style={{ flex: 1 }}>{t(`localEngine.preset.${p}`)}</span>
-                <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-                  ~{PRESET_MODELS[p].sizeGb} GB
-                </span>
-                {hw.recommendation === p && (
-                  <span
-                    className="small-caps"
-                    style={{
-                      fontSize: 10,
-                      color: 'var(--accent)',
-                      marginLeft: 6,
-                    }}
-                  >
-                    {t('onboarding.engine.recommendedTag')}
-                  </span>
-                )}
-              </label>
+                radio
+                active={p === preset}
+                title={t(`localEngine.preset.${p}`)}
+                badge={
+                  hw.recommendation === p ? t('onboarding.engine.recommendedTag') : undefined
+                }
+                quality={qi + 1}
+                meta={<span className="mono">~{PRESET_MODELS[p].sizeGb} GB</span>}
+                onClick={() => setChosenPreset(p)}
+              />
             ))}
           </div>
         </div>
@@ -484,36 +430,20 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
           marginBottom: 32,
         }}
       >
-        <button
-          type="button"
-          className="btn btn--primary"
-          onClick={() => void startDownload()}
-        >
+        <Button variant="primary" onClick={() => void startDownload()}>
           {t('onboarding.engine.downloadCta', { size: models.sizeGb })}
-        </button>
-        <button
-          type="button"
-          className="btn btn--ghost"
-          onClick={() => setPreviewMode(true)}
-        >
+        </Button>
+        <Button variant="ghost" onClick={() => setPreviewMode(true)}>
           {t('onboarding.engine.previewCta')}
-        </button>
-        <button
-          type="button"
-          className="btn btn--ghost"
-          onClick={() => setPickerOpen((v) => !v)}
-        >
+        </Button>
+        <Button variant="ghost" onClick={() => setPickerOpen((v) => !v)}>
           {pickerOpen
             ? t('onboarding.engine.collapsePickerCta')
             : t('onboarding.engine.chooseAnotherCta')}
-        </button>
-        <button
-          type="button"
-          className="btn btn--quiet"
-          onClick={() => void useCloudInstead()}
-        >
+        </Button>
+        <Button variant="ghost" onClick={() => void useCloudInstead()}>
           {t('onboarding.engine.useCloudCta')}
-        </button>
+        </Button>
       </div>
     </>
   );

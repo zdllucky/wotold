@@ -26,6 +26,8 @@ export { Panel } from './Panel';
 export { Avatar, AvatarGroup } from './Avatar';
 export { Chip } from './Chip';
 export { SettingRow } from './SettingRow';
+export { Progress } from './Progress';
+export { GroupLabel } from './GroupLabel';
 export { OptionCard, QualityDots } from './OptionCard';
 export { Modal } from './Modal';
 export { Dropdown, MenuItem, MenuLabel, MenuSep } from './Menu';

@@ -30,8 +30,8 @@ use crate::{
 
 /// [M13.1.5c] Settings key для feature flag. См. PRD §M13.1.5.
 const SETTING_CHUNKED_PIPELINE: &str = "recording.chunked_pipeline";
-/// [M13 follow-up] Mic diarization toggle. Default ON. См. api/settings.ts
-/// `MIC_DIARIZATION_ENABLED`.
+/// [M13 follow-up, P-fix7] Mic diarization toggle. Default OFF (включается
+/// только явным '1'/'true'). См. api/settings.ts `MIC_DIARIZATION_ENABLED`.
 const SETTING_MIC_DIARIZATION: &str = "mic_diarization_enabled";
 /// [P1.2] Labs: «Force N speakers» override для sortformer's `num_clusters`.
 /// `None` (или невалидное значение) = auto-detect. Допустимые: "2" | "3" | "4"

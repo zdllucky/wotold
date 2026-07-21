@@ -1,7 +1,8 @@
-// [B18.5a] Appearance — theme (Segmented) + interface language. Accent picker
-// removed: Wotold v2 is mono-graphite (B18.0 decision); accent is fixed `ink`.
+// [B18.5a, B21] Appearance — theme (Segmented) + interface language, плотными
+// SettingRow (канон SecAppearance). Accent picker removed: Wotold v2 is
+// mono-graphite (B18.0 decision); accent is fixed `ink`.
 
-import { Segmented, Select, type SegOption } from '../ui';
+import { Segmented, Select, SettingRow, type SegOption } from '../ui';
 import { SUPPORTED_LOCALES, useI18n, type Locale } from '../i18n';
 import { useTheme, type Theme } from '../theme/useTheme';
 
@@ -17,19 +18,15 @@ export function AppearanceSection() {
 
   return (
     <div>
-      <div className="field" style={{ marginBottom: 24 }}>
-        <label className="field-label">{t('settings.fieldTheme')}</label>
+      <SettingRow label={t('settings.fieldTheme')}>
         <Segmented<Theme>
           options={themeOptions}
           value={theme}
           onChange={setTheme}
           ariaLabel={t('settings.fieldTheme')}
-          style={{ marginTop: 8 }}
         />
-      </div>
-
-      <div className="field" style={{ maxWidth: 320 }}>
-        <label className="field-label">{t('settings.fieldLanguage')}</label>
+      </SettingRow>
+      <SettingRow label={t('settings.fieldLanguage')} hint={t('settings.languageHint')} last>
         <Select<Locale>
           value={locale}
           options={SUPPORTED_LOCALES.map((l) => ({
@@ -38,10 +35,7 @@ export function AppearanceSection() {
           }))}
           onChange={(v) => setLocale(v)}
         />
-        <span style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
-          {t('settings.languageHint')}
-        </span>
-      </div>
+      </SettingRow>
     </div>
   );
 }

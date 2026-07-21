@@ -52,22 +52,16 @@ export const SETTINGS_KEYS = {
    *  Если пусто — fallback на top-right primary monitor. */
   RECORDING_WIDGET_X: 'recording.widget.x',
   RECORDING_WIDGET_Y: 'recording.widget.y',
-  /** [M12.7.5] One-time announcement баннер для existing users о local engine.
-   *  '1' = баннер закрыт (либо принят → переход в Settings, либо dismiss). */
-  LOCAL_ENGINE_ANNOUNCEMENT_SEEN: 'local_engine_announcement_seen',
-  /** [M12-v1.1] ISO timestamp когда баннер был dismiss-нут. Позволяет
-   *  показывать повторно через 7 дней (в отличие от one-shot _SEEN). */
-  LOCAL_ENGINE_ANNOUNCEMENT_DISMISSED_AT: 'local_engine_announcement_dismissed_at',
   /** [M12-v1.1] Permanent dismiss редискавери-чипа: '1' = не показывать. */
   LOCAL_ENGINE_INVITE_DISMISSED: 'local_engine_invite_dismissed',
   /** [M13.1.5] Feature flag для chunked pipelined transcription. '1' = ON.
    *  Default OFF — Phase 1 behind-flag rollout (см. M13_CHUNKING_PRD.md §6). */
   CHUNKED_PIPELINE: 'recording.chunked_pipeline',
-  /** [M13 follow-up] Прогнать sortformer и по mic-дорожке, чтобы поймать
-   *  гостевые голоса записанные через тот же микрофон. Owner-голос
+  /** [M13 follow-up, P-fix7] Прогнать sortformer и по mic-дорожке, чтобы
+   *  поймать гостевые голоса записанные через тот же микрофон. Owner-голос
    *  определяется через voice biometric match против voice_samples
-   *  владельца (fallback: primary-speaker heuristic). Default ON.
-   *  '0'/'false' = выключено; остальное → ON. */
+   *  владельца (fallback: primary-speaker heuristic). Default OFF —
+   *  backend включает только на явное '1'/'true'. */
   MIC_DIARIZATION_ENABLED: 'mic_diarization_enabled',
   /** [M14 T-14] Feature flag для v2 cloud_universal prompt. '1' = ON
    *  (default — текущий v2 path с decisions/open_questions/evidence).
@@ -83,14 +77,22 @@ export const SETTINGS_KEYS = {
   MIC_DIARIZATION_NUM_SPEAKERS: 'mic_diarization_num_speakers',
 } as const;
 
+// [B21] Rust-owned ключи settings-таблицы, НАМЕРЕННО отсутствующие в этом
+// реестре (persist/read только на стороне src-tauri; UI дёргает их через
+// dedicated Tauri-команды, не через get/set_setting):
+//   'local_engine.active'        — EngineKind (local_engine/engine.rs)
+//   'local_engine.active_preset' — preset (local_engine/preset.rs)
+//   'local_engine.keep_resident' — keep-resident флаг (pipeline/mod.rs)
+//   'local_engine.hw_report'     — кеш hardware probe (commands/local_engine.rs)
+
 export const SETTINGS_DEFAULTS = {
   STT_PROVIDER: 'auto' as SttProvider,
   PROVIDER_PATH: 'managed' as ProviderPath,
   /** Пусто → прокси использует свой default (LLM_BACKEND-зависимый).
-   *  Override на конкретную модель через Settings → LLM section. */
+   *  UI-override нет (сознательно спрятан) — только ручной DB-write. */
   LLM_MODEL: '',
   /** Default proxy URL — dev-сборка целится на staging, prod на production.
-   *  User override через Settings → Прокси → Advanced. */
+   *  UI-override нет (сознательно спрятан) — только ручной DB-write. */
   PROXY_BASE_URL: import.meta.env.DEV
     ? 'https://wotold-proxy-staging.animereader.workers.dev'
     : 'https://wotold-proxy.animereader.workers.dev',
@@ -102,9 +104,10 @@ export const SETTINGS_DEFAULTS = {
   /** [S1] Call-detect default OFF (R3 deviation opt-in). */
   CALL_DETECT_ENABLED: false,
   CALL_DETECT_COOLDOWN_MIN: '5' as CallDetectCooldown,
-  /** [P-fix7] Mic diarization — default OFF. Mic = микрофон владельца = один
-   *  человек (M2.4); sortformer овершутит и дробит голос owner'а в «СПИКЕР ?».
-   *  Opt-in только для нескольких людей у одного микрофона. */
+  /** [P-fix7, B21] Mic diarization — default OFF (истина = backend
+   *  `matches!(Some("1")|Some("true"))` в recording.rs / pipeline/mod.rs:
+   *  missing = OFF). Mic = микрофон владельца = один человек (M2.4);
+   *  sortformer овершутит и дробит голос owner'а в «СПИКЕР ?». Opt-in. */
   MIC_DIARIZATION_ENABLED: false,
   /** [M14 T-14] Summary v2 default ON. OFF — emergency disable, recap
    *  падает на legacy v1 markdown-only prompt. */
