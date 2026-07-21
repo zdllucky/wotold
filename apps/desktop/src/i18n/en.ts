@@ -454,14 +454,6 @@ export const en: TranslationStrings = {
     sectionRecording: 'Recording',
     sectionSpeakers: 'Speakers',
     sectionLabs: 'Labs',
-    sectionMaintenance: 'Maintenance',
-    bulkRecapStart: 'Regenerate empty summaries',
-    bulkRecapRunning: 'Processing…',
-    bulkRecapScanning: 'Scanning for empty recaps…',
-    bulkRecapProgress: 'Regenerating {done} of {total}…',
-    bulkRecapStop: 'Stop',
-    bulkRecapResult: 'Done: {regenerated} regenerated, {failed} failed.',
-    bulkRecapNoneEmpty: 'No empty recaps found — all good.',
     sectionPrivacy: 'Privacy',
     speakersAutoBindLabel: 'Auto-bind speakers to contacts',
     speakersAutoBindHint:
@@ -475,8 +467,6 @@ export const en: TranslationStrings = {
     micDiarizationInstalling: 'Installing module…',
     fieldTheme: 'Theme',
     fieldLanguage: 'Interface language',
-    languageHint:
-      'Language for all labels, buttons and hints. Call content stays as is.',
     themeLight: 'Light',
     themeDark: 'Dark',
     themeSystem: 'System',
@@ -485,11 +475,9 @@ export const en: TranslationStrings = {
     sttLede:
       'STT provider and recap language. Auto switches between Soniox and Gladia on failure.',
     sttLangLabel: 'Speech recognition',
-    sttLangHint:
-      "Speech language for recognition. 'Auto-detect' is usually fine, but with a quiet mic whisper sometimes mis-detects the language — for Russian calls it's safer to pick the explicit language.",
+    sttLangHint: 'On a quiet microphone, Russian calls are safer with “Russian” selected.',
     sttRecapLangLabel: 'Recap and tasks',
-    sttRecapLangHint:
-      "Language used for recap and tasks. 'Auto' = detected speech language. Does not affect STT itself.",
+    sttRecapLangHint: 'Auto — the recognized speech language.',
     autoBindThresholdLabel: 'Match threshold',
     autoBindThresholdOption: '{n}%',
     autoBindThresholdHint:
@@ -501,39 +489,21 @@ export const en: TranslationStrings = {
     hotkeyReserved: '{combo} is reserved by the OS — pick another',
     hotkeyCurrentAria: 'Current hotkey',
     hotkeyCapturingAria: 'Capturing combination…',
-    ledeAppearance: 'Theme applies immediately.',
-    ledeAccount: 'Sign-in is optional — Wotold works locally.',
-    ledeProcessing: 'Where calls get transcribed.',
-    ledePermissions: 'Recording will not start without microphone and system-audio access.',
-    ledeRecording: 'Languages, hotkeys, auto-detection.',
-    ledeSpeakers: 'Recognizing participants by voice.',
-    ledeLabs: 'Experimental features.',
-    ledeMaintenance: 'Operations over accumulated data.',
-    ledePrivacy: 'Full wipe of local data.',
     groupLanguages: 'Languages',
     groupHotkeys: 'Hotkeys',
     groupAutoDetect: 'Auto-detection',
     callDetectRowLabel: 'Suggest recording',
     callDetectCooldownRowLabel: 'Do not suggest again',
-    bulkRecapRowLabel: 'Empty recaps',
-    bulkRecapRowHint: 'Regenerate summaries for previously processed calls that ended up without a recap.',
-    bulkRecapDoneShort: '{n} done',
     wipeRowHint: 'Recordings, contacts, voice samples, session and keys. Irreversible.',
     wipeDoneChip: 'wiped',
-    hotkeyToggleHint:
-      'Click "Capture" and press your combo (e.g. ⌘⇧R). Esc cancels. System shortcuts (⌘W, ⌘C…) are blocked.',
+    hotkeyToggleHint: 'Esc cancels. System shortcuts (⌘W, ⌘C…) are unavailable.',
     hotkeyPauseLabel: 'Pause / resume',
     hotkeyPauseHint:
       'Only active during recording. Default ⌘⇧P.',
     callDetectLabel: 'Auto-suggest recording',
-    callDetectCheckboxLabel:
-      'When the system detects a call (microphone is in use by another app + Zoom/Teams/Meet/FaceTime/Discord/Telegram is frontmost), Wotold shows a "Record?" notification. Works even when the window is minimized. Uses macOS Core Audio + app list only; no other app’s audio stream is read.',
-    callDetectHint:
-      'When off, Wotold never suggests recording on its own — only via ⌘⇧R or click. Disabled is recommended for privacy (R3 of passport).',
+    callDetectHint: '“Record?” notification when a call is detected. Off by default for privacy.',
     callDetectCooldownLabel: 'Do not suggest again for',
     callDetectCooldownOption: '{n} min',
-    callDetectCooldownHint:
-      'If you dismiss a suggestion, the same app won’t prompt again for at least this long. Cooldown resets on each Wotold restart.',
     usageTitle: 'Usage.',
     usageLede:
       'Daily quota for managed mode — STT minutes and LLM tokens. Resets every 24 hours. BYO mode is uncounted.',
@@ -754,6 +724,8 @@ export const en: TranslationStrings = {
       qwenMedium: 'Summary module · M',
       qwenLarge: 'Summary module · L',
       diarization: 'Diarization module · basic',
+      qwenDraft: 'Summary booster · 0.5B',
+      vad: 'Speech detector',
     },
     statusInstalled: 'installed',
     statusDownloading: 'downloading…',

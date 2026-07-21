@@ -628,7 +628,7 @@ export function LocalEngineSection() {
               <span role="columnheader" style={{ flex: '0 0 64px' }}>
                 {t('localEngine.colSize')}
               </span>
-              <span role="columnheader" style={{ flex: '0 0 84px' }}>
+              <span role="columnheader" style={{ flex: '0 0 70px' }}>
                 {t('localEngine.colLastUsed')}
               </span>
               <span role="columnheader" style={{ flex: '0 0 96px' }}>
@@ -642,13 +642,18 @@ export function LocalEngineSection() {
               const dot = dotStyleForStatus(status, progress ?? null);
               return (
                 <div key={row.id} className="set-trow" role="row">
-                  <div style={{ flex: '1 1 auto', minWidth: 0, color: 'var(--text)' }}>
+                  {/* [B22] u-trunc: имя не переносится и не наезжает на колонки. */}
+                  <div
+                    className="u-trunc"
+                    title={modelLabel(row.id, t)}
+                    style={{ flex: '1 1 auto', minWidth: 0, color: 'var(--text)' }}
+                  >
                     {modelLabel(row.id, t)}
                   </div>
                   <span className="mono" style={{ flex: '0 0 64px', color: 'var(--text-3)' }}>
                     {formatGB(row.size_bytes)}
                   </span>
-                  <span className="mono" style={{ flex: '0 0 84px', color: 'var(--text-3)' }}>
+                  <span className="mono" style={{ flex: '0 0 70px', color: 'var(--text-3)' }}>
                     {row.last_used_at ? formatLastUsed(row.last_used_at) : '—'}
                   </span>
                   <div style={{ flex: '0 0 96px', display: 'flex', alignItems: 'center', gap: 6 }}>

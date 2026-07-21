@@ -485,14 +485,6 @@ const ruInternal = {
     sectionRecording: 'Запись',
     sectionSpeakers: 'Спикеры',
     sectionLabs: 'Лаборатория',
-    sectionMaintenance: 'Обслуживание',
-    bulkRecapStart: 'Пересоздать пустые саммари',
-    bulkRecapRunning: 'Обрабатываем…',
-    bulkRecapScanning: 'Ищем пустые рекапы…',
-    bulkRecapProgress: 'Пересоздаём {done} из {total}…',
-    bulkRecapStop: 'Остановить',
-    bulkRecapResult: 'Готово: {regenerated} пересоздано, {failed} с ошибкой.',
-    bulkRecapNoneEmpty: 'Пустых рекапов не найдено — всё на месте.',
     sectionPrivacy: 'Приватность',
     speakersAutoBindLabel: 'Автоматически привязывать спикеров к контактам',
     speakersAutoBindHint:
@@ -506,7 +498,6 @@ const ruInternal = {
     micDiarizationInstalling: 'Устанавливаем модуль…',
     fieldTheme: 'Тема',
     fieldLanguage: 'Язык интерфейса',
-    languageHint: 'Язык всех меток, кнопок и подсказок. Контент звонков остаётся как есть.',
     themeLight: 'Светлая',
     themeDark: 'Тёмная',
     themeSystem: 'Системная',
@@ -515,11 +506,9 @@ const ruInternal = {
     sttLede:
       'Поставщик STT и язык вывода для рекапа. Auto переключается между Soniox и Gladia при сбоях.',
     sttLangLabel: 'Распознавание речи',
-    sttLangHint:
-      "Язык речи для распознавания. 'Автоопределение' обычно норм, но на тихом микрофоне whisper иногда путает язык — для русских звонков надёжнее выбрать «Русский».",
+    sttLangHint: 'На тихом микрофоне для русских звонков надёжнее выбрать «Русский».',
     sttRecapLangLabel: 'Рекап и задачи',
-    sttRecapLangHint:
-      "На каком языке писать рекап и задачи. 'Авто' = язык распознанной речи. Не влияет на сам STT.",
+    sttRecapLangHint: 'Авто — язык распознанной речи.',
     // [V7] Auto-bind speaker по биометрии. R2 паспорта — opt-in only, default OFF.
     autoBindThresholdLabel: 'Порог совпадения',
     autoBindThresholdOption: '{n}%',
@@ -533,40 +522,22 @@ const ruInternal = {
     hotkeyReserved: '{combo} зарезервирована системой — выберите другую',
     hotkeyCurrentAria: 'Текущая горячая клавиша',
     hotkeyCapturingAria: 'Записываем комбинацию…',
-    ledeAppearance: 'Тема применяется сразу.',
-    ledeAccount: 'Вход не обязателен — Wotold работает локально.',
-    ledeProcessing: 'Где расшифровываются звонки.',
-    ledePermissions: 'Без доступа к микрофону и системному звуку запись не начнётся.',
-    ledeRecording: 'Языки, горячие клавиши, авто-определение.',
-    ledeSpeakers: 'Распознавание собеседников по голосу.',
-    ledeLabs: 'Экспериментальные функции.',
-    ledeMaintenance: 'Операции над накопленными данными.',
-    ledePrivacy: 'Полная очистка локальных данных.',
     groupLanguages: 'Языки',
     groupHotkeys: 'Горячие клавиши',
     groupAutoDetect: 'Авто-определение',
     callDetectRowLabel: 'Предлагать запись',
     callDetectCooldownRowLabel: 'Не предлагать снова',
-    bulkRecapRowLabel: 'Пустые саммари',
-    bulkRecapRowHint: 'Пересоздать саммари для звонков, обработанных раньше, у которых рекап не сформировался.',
-    bulkRecapDoneShort: '{n} готово',
     wipeRowHint: 'Записи, контакты, образцы голоса, сессия и ключи. Необратимо.',
     wipeDoneChip: 'удалено',
-    hotkeyToggleHint:
-      'Нажми «Изменить» и сразу зажми комбинацию (например ⌘⇧R). Esc — отмена. Системные комбинации (⌘W, ⌘C…) недоступны.',
+    hotkeyToggleHint: 'Esc — отмена. Системные комбинации (⌘W, ⌘C…) недоступны.',
     hotkeyPauseLabel: 'Пауза / продолжить',
     hotkeyPauseHint:
       'Срабатывает только во время активной записи. По умолчанию ⌘⇧P.',
     // [S1] Auto-detect (R3 deviation, opt-in).
     callDetectLabel: 'Авто-предложение записи',
-    callDetectCheckboxLabel:
-      'Когда система детектит звонок (микрофон активен другим приложением + видны Zoom/Teams/Meet/FaceTime/Discord/Telegram), Wotold показывает уведомление «Записать?». Работает даже если окно свёрнуто. Опираемся на macOS Core Audio + список приложений; никакая аудио-дорожка чужого приложения не читается.',
-    callDetectHint:
-      'Если выключено — Wotold никогда не предлагает запись сам, только по ⌘⇧R или клику. Рекомендуется выключено для приватности (R3 паспорта).',
+    callDetectHint: 'Уведомление «Записать?» при обнаружении звонка. По умолчанию выключено для приватности.',
     callDetectCooldownLabel: 'Не предлагать снова в течение',
     callDetectCooldownOption: '{n} мин',
-    callDetectCooldownHint:
-      'Если ты закрыл предложение — для того же приложения не покажем минимум столько. Cooldown сбрасывается на каждом перезапуске Wotold.',
     usageTitle: 'Использование.',
     usageLede:
       'Дневная квота managed-режима — STT-минуты и LLM-токены. Сбрасывается каждые 24 часа. В BYO-режиме счётчик не действует.',
@@ -798,6 +769,8 @@ const ruInternal = {
       qwenMedium: 'Модуль саммари · M',
       qwenLarge: 'Модуль саммари · L',
       diarization: 'Модуль разделения · базовый',
+      qwenDraft: 'Ускоритель саммари · 0.5B',
+      vad: 'Детектор речи',
     },
     statusInstalled: 'установлено',
     statusDownloading: 'качаем…',
