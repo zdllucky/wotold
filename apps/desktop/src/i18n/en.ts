@@ -193,6 +193,19 @@ export const en: TranslationStrings = {
     bgBusyStripElapsed: 'Regenerating summary… {sec}s',
     generatingRecap: 'Generating summary…',
     generatingTranscript: 'Transcribing speech…',
+    // [F3] Live generation steps (RecapThinking).
+    think: {
+      title: 'Generation progress',
+      preview: 'Intermediate result',
+      classify: 'Detecting call type',
+      refine: 'Processing part {no} of {total}',
+      generate: 'Generating summary',
+      postPass: 'Refining action items',
+      narrative: 'Writing narrative',
+      finalize: 'Validating and saving',
+      inProgress: 'In progress',
+      stepFailed: 'Skipped',
+    },
     regenerateNoTranscript: 'No transcript to regenerate from',
     regenerateTitle: '↻ Regenerate title',
     regeneratingTitle: 'Regenerating title…',
@@ -946,6 +959,20 @@ export const en: TranslationStrings = {
     suggestDismiss: 'Dismiss',
   },
 
+  // [Q] Heavy-resource queue monitor (QueueMonitor + queued line).
+  queue: {
+    monitor: 'Processing queues',
+    res: {
+      stt: 'Speech recognition',
+      diarization: 'Voice separation',
+      llm: 'Summary generation',
+    },
+    free: 'IDLE',
+    busy: 'BUSY',
+    systemTask: 'System task',
+    empty: 'Queue is empty',
+    callWaiting: 'Queued: {resource} — another call is being processed (position {pos})',
+  },
   callState: {
     live: 'recording',
     uploading: 'uploading',

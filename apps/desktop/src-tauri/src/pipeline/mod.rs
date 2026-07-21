@@ -5,6 +5,9 @@ use serde_json::json;
 use sqlx::SqlitePool;
 use tauri::AppHandle;
 
+// [F3] Трейт в скоупе ради `.emit` на BusStepSink (cloud generate-шаги).
+use recap_steps::RecapStepSink as _;
+
 use crate::{
     db,
     embeddings::{self, StubEmbedder},
@@ -85,14 +88,23 @@ pub mod summary_validator;
 pub(crate) mod classifier;
 
 // [M14 T-05 Phase B] Split transcript.md на token-windows по speaker-turn
-// boundaries для map-reduce на длинных звонках.
+// boundaries для chunked-генерации на длинных звонках.
 pub(crate) mod chunker;
 
-// [M14 T-06 Phase B] Map-reduce orchestration: per-chunk map → final reduce.
-pub(crate) mod map_reduce;
+// [F1] Refine-чейн для длинных transcripts: chunk 0 → первичный рекап,
+// каждый следующий чанк расширяет/правит накопленный CallSummaryV2.
+// Заменил map-reduce (map-шаги были контекстно-слепы между чанками).
+pub(crate) mod refine_chain;
+
+// [F3] Sink пошаговых событий генерации рекапа (`recap:step`) — thinking-блок.
+pub(crate) mod recap_steps;
+
+// [Q] Per-resource очереди тяжёлых local-ресурсов (stt/diarization/llm,
+// concurrency=1) + `queue:state` снапшоты для QueueMonitor.
+pub mod resource_queue;
 
 // [M14 T-07 Phase C] Per-call-type focused prompts (8+1 specialized vs
-// universal v2). Используется orchestrator + map_reduce когда classifier
+// universal v2). Используется orchestrator + refine_chain когда classifier
 // даёт known_call_type.
 pub(crate) mod expert_prompts;
 
@@ -106,6 +118,11 @@ pub(crate) mod action_item_post_pass;
 // `--grammar-file <universal_json.gbnf>` который констрейнит output до
 // valid JSON object.
 pub(crate) mod gbnf;
+
+// [F2] Унификация спикеров одного контакта на этапе сборки промпта:
+// rewrite `**speaker:N**` заголовков → display_name подтверждённого контакта
+// + person-level Known participants блок (дедуп по contact_id).
+pub(crate) mod speaker_prompt_ctx;
 
 // [M14 T-17] Lightweight title-only LLM regeneration (kebab menu action).
 // Separate path от regenerate_recap — отдельный LLM-call ~150 max_tokens.
@@ -123,7 +140,7 @@ mod golden_eval;
 pub(crate) mod g_eval;
 
 // [M14 T-10] Local engine orchestrator — chain classifier + main v2 gen.
-// Phase A skeleton; Phase B/C/D добавят chunking, map-reduce, expert prompts.
+// Короткий transcript → single-pass; длинный → [F1] refine-чейн.
 pub(crate) mod local_orchestrator;
 
 // [M14 follow-up] JSON Schemas для schema-constrained local generation —
@@ -536,13 +553,21 @@ pub async fn regenerate_recap(
         summary_v2_enabled: s.summary_v2_enabled,
     };
 
+    // [F3] Cloud regen — единственный generate-шаг thinking-блока.
+    let step_sink = recap_steps::BusStepSink {
+        app: app.cloned(),
+        call_id: call_id.to_string(),
+    };
+    step_sink.emit(recap_steps::step_event(0, 1, "generate", "started"));
     match recap::run(pool, recap_ctx).await {
         Ok(()) => {
+            step_sink.emit(recap_steps::step_event(0, 1, "generate", "done"));
             // [B16]: clear recap_failed_reason после успешной регенерации.
             let _ = db::set_recap_failed_reason(pool, call_id, None).await;
             Ok(())
         }
         Err(e) => {
+            step_sink.emit(recap_steps::step_event(0, 1, "generate", "failed"));
             // Persist для UI + пробросываем (regenerate explicit user-action,
             // надо показать ошибку прямо в кнопке).
             // [P5.1] Engine label = "cloud-managed" — banner badge ↔ reason
@@ -592,8 +617,10 @@ pub(crate) async fn build_local_llm_provider(
         })?;
     let llm_id = preset.llm_model_id();
 
-    // Проверяем что LLM модель на диске + SHA OK.
-    let status = models::check_status(app_data_dir, llm_id.as_str()).await?;
+    // Проверяем что LLM модель на диске (exact-size). [perf] Полный SHA —
+    // только на download-пути (M12.4); ежепрогонный хеш 2-4GB давал десятки
+    // секунд задержки перед каждым регеном.
+    let status = models::check_status_fast(app_data_dir, llm_id.as_str()).await?;
     if !matches!(status, ModelStatus::Present { .. }) {
         return Err(AppError::Other(format!(
             "local_engine_model_missing: модель {} не установлена, скачайте в Settings → Движок",
@@ -783,6 +810,8 @@ async fn regenerate_recap_local(
     }
 
     let (provider, preset) = build_local_llm_provider(pool, app_data_dir, app, s).await?;
+    // [Q] call_id → LLM-очередь (QueueMonitor видит чей звонок у llama).
+    let provider = provider.with_call(call_id);
     let llm_id = preset.llm_model_id();
     log::info!(
         "regenerate_recap_local: call_id={} preset={:?} llm_id={} whisper_id={}",
@@ -792,22 +821,34 @@ async fn regenerate_recap_local(
         preset.whisper_model_id().as_str(),
     );
 
-    // Known speakers context для prompt'а (подтверждённые bindings).
-    let known_speakers = recap::build_known_speakers_block(pool, call_id)
-        .await
-        .ok()
-        .flatten();
+    // [F2] Переписать заголовки подтверждённых спикеров на имена контактов +
+    // person-level Known participants блок. На DB-ошибке — fallback на сырой
+    // транскрипт без блока (recap важнее идентификации).
+    let (prompt_transcript, known_speakers) =
+        match speaker_prompt_ctx::build_prompt_transcript(pool, call_id, transcript_md).await {
+            Ok(pair) => pair,
+            Err(e) => {
+                log::warn!("speaker_prompt_ctx failed (fallback to raw tags): {e}");
+                (transcript_md.to_string(), None)
+            }
+        };
 
+    // [F3] Step-события для thinking-блока UI.
+    let step_sink = recap_steps::BusStepSink {
+        app: Some(app.clone()),
+        call_id: call_id.to_string(),
+    };
     let orch_ctx = local_orchestrator::LocalOrchestratorCtx {
-        transcript_md,
+        transcript_md: &prompt_transcript,
         lang_detected,
         known_speakers: known_speakers.as_deref(),
         preset,
+        steps: &step_sink,
     };
     // [P1.3] Wrap LLM future в periodic recap:progress emitter. UI рендерит
     // «Пересоздаём… {sec}s»; на completion (success / fail / timeout) ticker
     // аборт'ится через JoinHandle::abort внутри helper'а.
-    let json_value = recap_progress::with_recap_progress_emitter(
+    let outcome = recap_progress::with_recap_progress_emitter(
         Some(app.clone()),
         call_id.to_string(),
         local_orchestrator::run_v2_pipeline(&provider, orch_ctx),
@@ -825,11 +866,13 @@ async fn regenerate_recap_local(
         pool,
         call_id,
         call_dir,
-        json_value,
+        outcome.summary_json,
         local_engine_label,
-        transcript_md,
+        // [F2] Evidence-валидатор матчит против текста, который видел LLM.
+        &prompt_transcript,
         None,
         Some(s.summary_v2_enabled),
+        outcome.pipeline_mode,
     )
     .await?;
 
@@ -980,7 +1023,19 @@ async fn run_inner(
     // сохранён, рекап можно регенерировать вручную (M4.5).
     let recap_step = Stage::Recap.step();
     emit_progress(pool, app, &ctx.call_id, recap_step, 0, None, None).await;
-    stage_recap(pool, ctx, &s, &merged, lang_detected.as_deref()).await;
+    // [F3] Cloud one-shot — единственный generate-шаг thinking-блока.
+    let step_sink = recap_steps::BusStepSink {
+        app: app.cloned(),
+        call_id: ctx.call_id.clone(),
+    };
+    step_sink.emit(recap_steps::step_event(0, 1, "generate", "started"));
+    let recap_ok = stage_recap(pool, ctx, &s, &merged, lang_detected.as_deref()).await;
+    step_sink.emit(recap_steps::step_event(
+        0,
+        1,
+        "generate",
+        if recap_ok { "done" } else { "failed" },
+    ));
     emit_progress(pool, app, &ctx.call_id, recap_step, 100, None, None).await;
 
     Ok(())
@@ -1032,9 +1087,12 @@ async fn run_local_inner(
     let whisper_id = preset.whisper_model_id();
     let llm_id = preset.llm_model_id();
 
-    // 2. Проверяем что обе модели на диске + SHA OK.
+    // 2. Проверяем что обе модели на диске (exact-size против каталога).
+    //    [perf] Полный SHA — только на download-пути (M12.4); ежепрогонное
+    //    хеширование whisper+LLM (~1.5-6GB) держало UI на «Сохраняем аудио»
+    //    десятки секунд при каждом звонке/reprocess.
     for id in [whisper_id, llm_id] {
-        let status = models::check_status(&ctx.app_data_dir, id.as_str()).await?;
+        let status = models::check_status_fast(&ctx.app_data_dir, id.as_str()).await?;
         if !matches!(status, ModelStatus::Present { .. }) {
             return Err(AppError::Other(format!(
                 "local_engine_model_missing: модель {} не установлена, скачайте в Settings → Движок",
@@ -1136,10 +1194,12 @@ async fn run_local_inner(
                 whisper_id,
                 TrackKind::MicOwner,
             )
+            .with_call(ctx.call_id.clone())
             .with_app(app.clone())
             .await;
             let sys_stt =
                 LocalWhisperProvider::for_preset(&ctx.app_data_dir, whisper_id, TrackKind::System)
+                    .with_call(ctx.call_id.clone())
                     .with_app(app.clone())
                     .await;
             let opts = TranscriptionOpts {
@@ -1231,6 +1291,7 @@ async fn run_local_inner(
         &ctx.system_path,
         sys_t,
         num_speakers_override,
+        &ctx.call_id,
     )
     .await;
 
@@ -1260,6 +1321,7 @@ async fn run_local_inner(
             &ctx.mic_path,
             mic_t,
             num_speakers_override,
+            &ctx.call_id,
         )
         .await;
         relabel_owner_on_mic_full_file(
@@ -1324,19 +1386,26 @@ async fn run_local_inner(
     let recap_step = Stage::Recap.step();
     emit_progress(pool, Some(app), &ctx.call_id, recap_step, 0, None, None).await;
 
-    let known_speakers = recap::build_known_speakers_block(pool, &ctx.call_id)
-        .await
-        .ok()
-        .flatten();
-
     // Transcript.md обязан существовать — `stage_merge_artifacts` его пишет.
     // Если файл недоступен (race / disk issue), recap должен fail с явным
     // reason, а не silently дёрнуть LLM на пустом входе (получится пустой recap).
     let transcript_md_read = tokio::fs::read_to_string(ctx.call_dir.join("transcript.md")).await;
-    let transcript_for_evidence = transcript_md_read
-        .as_ref()
-        .map(|s| s.clone())
-        .unwrap_or_default();
+
+    // [F2] Переписать заголовки подтверждённых спикеров на имена контактов +
+    // person-level Known participants блок. На DB-ошибке — fallback на сырой
+    // транскрипт. Evidence-валидатор дальше матчит против переписанного текста
+    // (тот, что реально видел LLM).
+    let (prompt_transcript, known_speakers) = match &transcript_md_read {
+        Ok(md) => match speaker_prompt_ctx::build_prompt_transcript(pool, &ctx.call_id, md).await {
+            Ok(pair) => pair,
+            Err(e) => {
+                log::warn!("speaker_prompt_ctx failed (fallback to raw tags): {e}");
+                (md.clone(), None)
+            }
+        },
+        Err(_) => (String::new(), None),
+    };
+    let transcript_for_evidence = prompt_transcript.clone();
     // [M14 T-04 + T-10 Phase A] Local engine orchestrator: classifier (lightweight
     // ~256 tokens) → main v2 generation с known_call_type hint. На classifier
     // failure orchestrator делает fallback на single-pass без hint.
@@ -1360,17 +1429,25 @@ async fn run_local_inner(
                 };
             // [P1.3] Per-preset timeout (Light 5min / Balanced 10min / Quality 15min).
             let provider = LocalLlamaProvider::for_preset(&ctx.app_data_dir, llm_id)
+                .with_call(ctx.call_id.clone())
                 .with_timeout(crate::local_engine::llm::timeout_for_preset(preset))
                 .with_app(app.clone())
                 .await
                 .with_draft_model(draft_path);
+            // [F3] Step-события для thinking-блока UI.
+            let step_sink = recap_steps::BusStepSink {
+                app: Some(app.clone()),
+                call_id: ctx.call_id.clone(),
+            };
             let orch_ctx = local_orchestrator::LocalOrchestratorCtx {
-                transcript_md: &transcript_md,
+                // [F2] Переписанный транскрипт — LLM видит имена контактов.
+                transcript_md: &prompt_transcript,
                 lang_detected: lang_detected.as_deref(),
                 known_speakers: known_speakers.as_deref(),
                 // [M14 T-05/T-06 Phase B] Pass active preset для chunker config —
-                // длинные transcripts автоматически идут map-reduce.
+                // длинные transcripts автоматически идут chunked-path.
                 preset,
+                steps: &step_sink,
             };
             // [P1.3] Wrap LLM future в periodic recap:progress emitter
             // (mirror regenerate_recap_local). UI рендерит «Пересоздаём… {sec}s».
@@ -1400,7 +1477,7 @@ async fn run_local_inner(
     };
 
     match llm_result {
-        Ok(json_value) => {
+        Ok(outcome) => {
             // [M14 T-02] persist_recap_from_json теперь требует engine_label +
             // transcript_md (для evidence validator) + generation_ms (None
             // на local path; в T-04+ доделаем).
@@ -1408,13 +1485,14 @@ async fn run_local_inner(
                 pool,
                 &ctx.call_id,
                 &ctx.call_dir,
-                json_value,
+                outcome.summary_json,
                 local_engine_label,
                 &transcript_for_evidence,
                 None,
                 // [M14 T-04 Phase A] Local path теперь emit'ит telemetry —
                 // classifier + main v2 pipeline через local_orchestrator.
                 Some(s.summary_v2_enabled),
+                outcome.pipeline_mode,
             )
             .await
             {
@@ -1467,8 +1545,17 @@ async fn diarize_system_track(
     system_path: &Path,
     sys_t: DiarizedTranscript,
     num_speakers: Option<i32>,
+    call_id: &str,
 ) -> DiarizedTranscript {
-    diarize_track(app_data_dir, system_path, sys_t, "system", num_speakers).await
+    diarize_track(
+        app_data_dir,
+        system_path,
+        sys_t,
+        "system",
+        num_speakers,
+        call_id,
+    )
+    .await
 }
 
 /// [M13 follow-up] Mirror `diarize_system_track` для mic-дорожки. Применяется
@@ -1484,8 +1571,9 @@ pub(crate) async fn diarize_mic_track(
     mic_path: &Path,
     mic_t: DiarizedTranscript,
     num_speakers: Option<i32>,
+    call_id: &str,
 ) -> DiarizedTranscript {
-    diarize_track(app_data_dir, mic_path, mic_t, "mic", num_speakers).await
+    diarize_track(app_data_dir, mic_path, mic_t, "mic", num_speakers, call_id).await
 }
 
 /// [M13 follow-up] Non-chunked path post-processing: после `diarize_mic_track`
@@ -1571,6 +1659,7 @@ async fn diarize_track(
     transcript: DiarizedTranscript,
     track_kind: &'static str,
     num_speakers: Option<i32>,
+    call_id: &str,
 ) -> DiarizedTranscript {
     use crate::local_engine::{
         diarization::{Diarizer, SortformerDiarizer},
@@ -1579,9 +1668,11 @@ async fn diarize_track(
     };
 
     // 1. Pyannote segmentation: catalog entry должен быть present.
+    //    [perf] fast-чек (exact-size) — на chunked-пути диаризация зовётся
+    //    на каждый чанк; SHA здесь мелкий (~6MB), но незачем.
     let seg_path = models::model_path(app_data_dir, ModelId::PYANNOTE_SEGMENTATION.as_str());
     let seg_present = matches!(
-        models::check_status(app_data_dir, ModelId::PYANNOTE_SEGMENTATION.as_str()).await,
+        models::check_status_fast(app_data_dir, ModelId::PYANNOTE_SEGMENTATION.as_str()).await,
         Ok(ModelStatus::Present { .. })
     );
     if !seg_present {
@@ -1609,7 +1700,9 @@ async fn diarize_track(
     // 3-5. Diarize + merge. Любая ошибка → fall back (degraded).
     // [P1.2] `with_num_speakers` clamp'ит override к 1..=MAX_LOCAL_SPEAKERS;
     // None = sherpa-onnx auto (default `-1`).
-    let diarizer = SortformerDiarizer::with_num_speakers(seg_path, emb_path, num_speakers);
+    // [Q] call_id → очередь диаризации (QueueMonitor видит чей звонок).
+    let diarizer =
+        SortformerDiarizer::with_num_speakers(seg_path, emb_path, num_speakers).with_call(call_id);
     if let Some(n) = num_speakers {
         log::info!("diarize_track[{track_kind}]: forcing num_clusters={n} (Labs override)");
     }
@@ -1744,14 +1837,15 @@ async fn stage_recognize_speakers(
 
 /// [Phase 3 R2] Stage 5 — LLM recap. Ошибки НЕ пробрасываются (non-fatal):
 /// persist'им reason в DB для UI banner. Pipeline всегда заканчивается Ok
-/// если транскрипт сохранён.
+/// если транскрипт сохранён. Возвращает true при успешном рекапе — [F3]
+/// caller эмитит done/failed step-событие.
 async fn stage_recap(
     pool: &SqlitePool,
     ctx: &PipelineCtx,
     s: &PipelineSettings,
     merged: &[TranscriptSegment],
     lang_detected: Option<&str>,
-) {
+) -> bool {
     let transcript_md = render_transcript_md(merged);
     let effective_lang = s.effective_recap_lang(lang_detected);
     let recap_ctx = recap::RecapCtx {
@@ -1771,6 +1865,7 @@ async fn stage_recap(
         Ok(()) => {
             // Очищаем если был старый recap_failed_reason (например после reprocess).
             let _ = db::set_recap_failed_reason(pool, &ctx.call_id, None).await;
+            true
         }
         Err(e) => {
             let reason = e.to_string();
@@ -1784,6 +1879,7 @@ async fn stage_recap(
             {
                 log::error!("set_recap_failure {} failed: {e2}", ctx.call_id);
             }
+            false
         }
     }
 }

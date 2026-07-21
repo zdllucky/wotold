@@ -118,6 +118,13 @@ pub async fn list_active_call_ids(state: State<'_, AppState>) -> Result<Vec<Stri
     Ok(state.pipeline_tasks.lock().await.keys().cloned().collect())
 }
 
+/// [Q] Снапшот очередей тяжёлых ресурсов (stt/diarization/llm) — initial
+/// state для QueueMonitor; дальнейшие обновления через событие `queue:state`.
+#[tauri::command]
+pub fn get_queue_state() -> crate::pipeline::resource_queue::QueueStateEvent {
+    crate::pipeline::resource_queue::snapshot()
+}
+
 /// Перезапустить полный pipeline (STT + recap) для существующего звонка —
 /// «Переобработать целиком». Применяется к failed | ready | processing.
 ///

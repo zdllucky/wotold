@@ -145,6 +145,11 @@ pub fn run() {
             let state = tauri::async_runtime::block_on(state::init(handle.clone()))?;
             tauri::Manager::manage(app, state);
 
+            // [Q] Подключить эмиссию `queue:state` (очереди stt/diarization/
+            // llm) — до warm-up spawn'а, чтобы первый transition был виден
+            // QueueMonitor'у.
+            pipeline::resource_queue::set_app(handle.clone());
+
             // [S9] Shared flag: "пользователь явно нажал Выход через tray-меню /
             // ⌘Q / app menu". Без этого CloseRequested от красного крестика
             // сворачивает окно в трей; с флагом — даёт нашему graceful-stop
@@ -668,6 +673,7 @@ pub fn run() {
             commands::regenerate_empty_recaps,
             commands::cancel_bulk_recap,
             commands::is_call_processing,
+            commands::get_queue_state,
             commands::list_active_call_ids,
             commands::get_active_pipeline_count,
             commands::list_call_chunks,

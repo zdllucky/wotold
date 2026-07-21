@@ -9,6 +9,8 @@ export { ProcessingPanel } from './ProcessingPanel';
 export { ReprocessBanner } from './ReprocessBanner';
 // [call-detail] Recap = Wotold v2 прототип-макет (rich/markdown toggle).
 export { RecapView } from './RecapView';
+// [F3] Thinking-блок живых шагов генерации рекапа.
+export { RecapThinking } from './RecapThinking';
 // [M14 T-11] V2 UI components.
 export { CallTypeBadge } from './CallTypeBadge';
 export { PrivacyDisclaimer } from './PrivacyDisclaimer';

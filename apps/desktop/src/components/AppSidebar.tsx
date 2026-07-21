@@ -9,7 +9,9 @@ import { IconBtn, Kbd, NavItem } from '../ui';
 import { StatusCell } from '../pages/inboxBits';
 import { formatElapsed } from '../recording/RecordingContext';
 import { LiveRecEq } from '../recording/LiveRecEq';
+import { QueueMonitor } from './QueueMonitor';
 import type { Call } from '../api/recording';
+import type { QueueState } from '../api/queue';
 import { useI18n } from '../i18n';
 
 export type RailView = 'inbox' | 'call' | 'contacts' | 'settings' | 'ds';
@@ -26,7 +28,6 @@ interface RailHandlers {
   onSearch: () => void;
   onCollapse: () => void;
   onExpand: () => void;
-  onToggleTheme: () => void;
   onResizeStart: (e: React.MouseEvent) => void;
 }
 
@@ -43,7 +44,8 @@ interface RailProps extends RailHandlers {
   /** Currently-open call id (view==='call') — highlights its recent row. */
   activeCallId: string | null;
   isDev: boolean;
-  resolvedTheme: 'light' | 'dark';
+  /** [Q] Снапшот очередей ресурсов для QueueMonitor (null до первого фетча). */
+  queue: QueueState | null;
 }
 
 function fmtDur(sec: number | null): string {
@@ -94,14 +96,13 @@ export function Sidebar(props: RailProps) {
     contactsCount,
     activeCallId,
     isDev,
-    resolvedTheme,
+    queue,
     onRecord,
     onPause,
     onNav,
     onOpenCall,
     onSearch,
     onCollapse,
-    onToggleTheme,
     onResizeStart,
   } = props;
   const recording = recKind !== 'idle';
@@ -271,14 +272,9 @@ export function Sidebar(props: RailProps) {
               onClick={() => onNav('ds')}
             />
           )}
-          <IconBtn
-            icon={resolvedTheme === 'dark' ? 'sun' : 'moon'}
-            size="sm"
-            iconSize={16}
-            label={t('nav.settings')}
-            title={resolvedTheme === 'dark' ? 'Light' : 'Dark'}
-            onClick={onToggleTheme}
-          />
+          {/* [Q] Монитор очередей ресурсов — занял место theme-toggle
+              (тема переключается в Настройки → Оформление). */}
+          <QueueMonitor queue={queue} calls={recent} />
         </div>
       </div>
       <div
@@ -297,14 +293,14 @@ export function MiniRail(props: RailProps) {
     recKind,
     elapsed,
     busy,
+    recent,
+    queue,
     onRecord,
     onPause,
     onNav,
     onSearch,
     onExpand,
-    onToggleTheme,
     onResizeStart,
-    resolvedTheme,
   } = props;
   const recording = recKind !== 'idle';
   const paused = recKind === 'paused';
@@ -383,12 +379,8 @@ export function MiniRail(props: RailProps) {
         onClick={() => onNav('contacts')}
       />
       <div className="mr-spacer" />
-      <IconBtn
-        icon={resolvedTheme === 'dark' ? 'sun' : 'moon'}
-        iconSize={18}
-        label="Theme"
-        onClick={onToggleTheme}
-      />
+      {/* [Q] Монитор очередей — вместо theme-toggle (тема в Настройках). */}
+      <QueueMonitor queue={queue} calls={recent} iconSize={18} />
       <IconBtn
         icon="settings"
         iconSize={18}

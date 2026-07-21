@@ -8,10 +8,10 @@
 
 import { useRef } from 'react';
 import type { CallAudioHandle } from '../hooks/useCallAudio';
+import { useElementWidth } from '../hooks/useElementWidth';
 import { useI18n } from '../i18n';
+import { DEFAULT_WAVE_BARS, waveBarCount } from '../lib/waveBars';
 import { Icon } from '../ui';
-
-const BARS = 130;
 
 interface AudioScrubberProps {
   audio: CallAudioHandle;
@@ -24,8 +24,13 @@ interface AudioScrubberProps {
 export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProps) {
   const { t } = useI18n();
   const waveRef = useRef<HTMLDivElement | null>(null);
+  // [UI-fix A] Адаптивное число баров от реальной ширины дорожки — фикс.
+  // count на резиновом контейнере давал суб-пиксельные бары при ресайзе.
+  // 0 (нет замера / jsdom) → DEFAULT_WAVE_BARS. Хук ДО early-returns.
+  const waveWidth = useElementWidth(waveRef);
   if (!enabled) return null;
   if (audio.bothMissing) return null;
+  const barCount = waveWidth > 0 ? waveBarCount(waveWidth) : DEFAULT_WAVE_BARS;
 
   const pct =
     audio.duration > 0
@@ -56,10 +61,10 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
   // Высота баров: реальные peaks (combined mic+system, 0..1) либо
   // детерминированный fallback от seed (звонок узнаваем, но не загружен).
   const peaks = audio.peaks;
-  const bars = Array.from({ length: BARS }, (_, i) => {
+  const bars = Array.from({ length: barCount }, (_, i) => {
     const v =
       peaks && peaks.length > 0
-        ? peaks[Math.floor((i / BARS) * peaks.length)] ?? 0
+        ? peaks[Math.floor((i / barCount) * peaks.length)] ?? 0
         : ((i * 53 + seed) % 18) / 18;
     return 4 + Math.round(v * 18);
   });
@@ -114,7 +119,7 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
               style={{
                 height: h,
                 background:
-                  i / BARS <= pct ? 'var(--accent)' : 'var(--border-strong)',
+                  i / barCount <= pct ? 'var(--accent)' : 'var(--border-strong)',
               }}
             />
           ))}

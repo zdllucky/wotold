@@ -259,18 +259,39 @@ pub enum ModelStatus {
     },
 }
 
-/// Быстрая проверка: файл есть на диске + ненулевой размер → `Present`, иначе
-/// `Absent`. Без SHA256 — для списков/UI где скорость важнее верификации.
-/// SHA256-проверка (corruption) делается только в `check_status` перед реальным
-/// использованием модели.
+/// Быстрая проверка без SHA256: файл есть + размер ТОЧНО равен каталожному →
+/// `Present`; размер иной → `Corrupted` (обрубок докачки / чужой файл);
+/// нет файла → `Absent`.
+///
+/// [perf] Используется и в UI-списках, и в горячем пути пайплайна
+/// (`run_local_inner` / `build_local_llm_provider` / `diarize_track`):
+/// полный SHA256 на 1.5-6GB моделей при каждом прогоне давал десятки секунд
+/// «Сохраняем аудио». Криптографическая верификация (подмена HF-релиза,
+/// M12.4/W5) остаётся на download-пути (`check_status` после скачивания) —
+/// exact-size ловит битые докачки, но не подмену с тем же размером.
+///
+/// Placeholder-энтри каталога (`sha256 = "PLACEHOLDER_…"`, точный размер
+/// неизвестен) деградируют к прежней семантике «len > 0 → Present».
 pub async fn check_status_fast(app_data_dir: &Path, id: &str) -> Result<ModelStatus, AppError> {
     let entry = lookup(id).ok_or_else(|| AppError::Other(format!("unknown model id: {id}")))?;
     let path = model_path(app_data_dir, id);
+    let size_is_authoritative = !entry.sha256.starts_with("PLACEHOLDER");
     let meta = tokio::fs::metadata(&path).await;
     match meta {
-        Ok(m) if m.len() > 0 => Ok(ModelStatus::Present {
+        Ok(m) if m.len() == entry.size_bytes => Ok(ModelStatus::Present {
             id: id.to_string(),
             bytes_total: m.len(),
+        }),
+        Ok(m) if m.len() > 0 && !size_is_authoritative => Ok(ModelStatus::Present {
+            id: id.to_string(),
+            bytes_total: m.len(),
+        }),
+        Ok(m) if m.len() > 0 => Ok(ModelStatus::Corrupted {
+            id: id.to_string(),
+            bytes_done: m.len(),
+            bytes_total: entry.size_bytes,
+            expected: format!("size {}", entry.size_bytes),
+            got: format!("size {}", m.len()),
         }),
         _ => Ok(ModelStatus::Absent {
             id: id.to_string(),
@@ -665,7 +686,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_status_fast_present_when_file_exists_nonzero() {
+    async fn check_status_fast_present_when_exact_catalog_size() {
+        // [perf] Точный размер по каталогу → Present (pyannote самый мелкий
+        // authoritative-энтри, ~6MB — ок для теста).
+        let dir = tempdir().unwrap();
+        let id = ModelId::PYANNOTE_SEGMENTATION.as_str();
+        let expected = lookup(id).unwrap().size_bytes;
+        let p = model_path(dir.path(), id);
+        fs::create_dir_all(p.parent().unwrap()).await.unwrap();
+        fs::write(&p, vec![0u8; expected as usize]).await.unwrap();
+        let status = check_status_fast(dir.path(), id).await.unwrap();
+        match status {
+            ModelStatus::Present { bytes_total, .. } => assert_eq!(bytes_total, expected),
+            s => panic!("expected Present, got {s:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_status_fast_corrupted_on_size_mismatch() {
+        // Обрубок докачки: размер не совпал с каталожным → Corrupted.
         let dir = tempdir().unwrap();
         let p = model_path(dir.path(), "whisper-small");
         fs::create_dir_all(p.parent().unwrap()).await.unwrap();
@@ -674,12 +713,30 @@ mod tests {
             .await
             .unwrap();
         match status {
-            ModelStatus::Present { id, bytes_total } => {
-                assert_eq!(id, "whisper-small");
-                assert_eq!(bytes_total, 10);
+            ModelStatus::Corrupted {
+                bytes_done,
+                bytes_total,
+                ..
+            } => {
+                assert_eq!(bytes_done, 10);
+                assert!(bytes_total > 10);
             }
-            s => panic!("expected Present, got {s:?}"),
+            s => panic!("expected Corrupted, got {s:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn check_status_fast_placeholder_entry_falls_back_to_nonzero() {
+        // Placeholder-энтри каталога (silero-vad) — размер не авторитетен,
+        // прежняя семантика len>0 → Present.
+        let dir = tempdir().unwrap();
+        let id = ModelId::SILERO_VAD.as_str();
+        assert!(lookup(id).unwrap().sha256.starts_with("PLACEHOLDER"));
+        let p = model_path(dir.path(), id);
+        fs::create_dir_all(p.parent().unwrap()).await.unwrap();
+        fs::write(&p, b"tiny").await.unwrap();
+        let status = check_status_fast(dir.path(), id).await.unwrap();
+        assert!(matches!(status, ModelStatus::Present { .. }));
     }
 
     #[tokio::test]
@@ -720,16 +777,16 @@ mod tests {
 
     #[tokio::test]
     async fn check_status_fast_does_not_compute_sha256() {
-        // Если бы fast-path делал SHA256, то «не-валидный» payload вернул
-        // бы Corrupted (как делает обычный check_status). Fast возвращает
-        // Present игнорируя содержимое.
+        // Мусорный payload ТОЧНОГО каталожного размера → Present: fast-путь
+        // сверяет только размер, содержимое не хеширует (иначе был бы
+        // Corrupted как в полном check_status).
         let dir = tempdir().unwrap();
-        let p = model_path(dir.path(), "whisper-small");
+        let id = ModelId::PYANNOTE_SEGMENTATION.as_str();
+        let expected = lookup(id).unwrap().size_bytes;
+        let p = model_path(dir.path(), id);
         fs::create_dir_all(p.parent().unwrap()).await.unwrap();
-        fs::write(&p, b"not-a-real-model-payload").await.unwrap();
-        let status = check_status_fast(dir.path(), "whisper-small")
-            .await
-            .unwrap();
+        fs::write(&p, vec![0xAB; expected as usize]).await.unwrap();
+        let status = check_status_fast(dir.path(), id).await.unwrap();
         assert!(matches!(status, ModelStatus::Present { .. }));
     }
 

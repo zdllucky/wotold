@@ -208,6 +208,7 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
                         &mic_path,
                         mic_transcript,
                         mic_diarization_num_speakers,
+                        &call_id,
                     )
                     .await
                 }

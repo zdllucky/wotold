@@ -19,10 +19,11 @@ import { ToastProvider, useToast, WindowControls } from './ui';
 import { CommandPalette } from './components/CommandPalette';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useFocusTrap } from './hooks/useFocusTrap';
+import { useQueueState } from './hooks/useQueueState';
 import { I18nProvider, useI18n } from './i18n';
 import { RecordingProvider, useRecording } from './recording/RecordingContext';
 import { SuggestBanner } from './recording/SuggestBanner';
-import { ThemeProvider, useTheme } from './theme/useTheme';
+import { ThemeProvider } from './theme/useTheme';
 import {
   DEFAULT_PAUSE_HOTKEY,
   DEFAULT_TOGGLE_HOTKEY,
@@ -64,7 +65,8 @@ function AppShell() {
   const { t } = useI18n();
   const rec = useRecording();
   const toast = useToast();
-  const { resolvedTheme, setTheme } = useTheme();
+  // [Q] Живой снапшот очередей ресурсов — для QueueMonitor в рейле.
+  const queue = useQueueState();
 
   const [bootstrap, setBootstrap] = useState<Bootstrap>('loading');
   const [view, setView] = useState<RailView>(initialView);
@@ -442,9 +444,6 @@ function AppShell() {
     setDetailCallId(id);
     setView('call');
   }, []);
-  const onToggleTheme = useCallback(() => {
-    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
-  }, [resolvedTheme, setTheme]);
 
   if (bootstrap === 'loading') {
     return (
@@ -469,7 +468,7 @@ function AppShell() {
     contactsCount,
     activeCallId: view === 'call' ? detailCallId : null,
     isDev: IS_DEV,
-    resolvedTheme,
+    queue,
     onRecord: onRecordToggle,
     onPause: onPauseToggle,
     onNav,
@@ -477,7 +476,6 @@ function AppShell() {
     onSearch: () => setPaletteOpen(true),
     onCollapse: () => setCollapsed(true),
     onExpand: () => setCollapsed(false),
-    onToggleTheme,
     onResizeStart: collapsed ? onExpandResize : onResizeStart,
   } as const;
 
