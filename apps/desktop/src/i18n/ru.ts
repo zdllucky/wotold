@@ -175,13 +175,14 @@ const ruInternal = {
     // [B18.3a] Right rail (CallRail).
     railProperties: 'Свойства',
     railStatus: 'Статус',
-    railEngine: 'Движок',
     railDate: 'Дата',
     railDuration: 'Длительность',
     railParticipants: 'Участники',
     railUndefined: '{n} не определено',
     railNoSpeakers: 'Участники появятся после обработки.',
     railSpeakerUnknown: 'Говорящий',
+    railVoicesCount: 'Голосов в записи: {n}',
+    railVoicesMenu: 'Голоса участника',
     railIdentify: 'Определить',
     railActions: 'Действия',
     railExport: 'Экспортировать рекап',
@@ -204,7 +205,6 @@ const ruInternal = {
     // [F3] Thinking-блок живых шагов генерации рекапа (RecapThinking).
     think: {
       title: 'Ход генерации',
-      preview: 'Промежуточный результат',
       classify: 'Определяем тип звонка',
       refine: 'Обрабатываем часть {no} из {total}',
       generate: 'Генерируем саммари',
@@ -234,11 +234,6 @@ const ruInternal = {
     recapFailBadge: '⚠ Не удалось создать саммари',
     // [Bug-fix] Engine label для recap-fail баннера — показывает какой движок
     // обслуживал последнюю попытку. Помогает понять stale vs свежее падение.
-    engineCloud: 'облако (Wotold proxy)',
-    engineLocalLight: 'локальный Qwen 1.5B (Light)',
-    engineLocalBalanced: 'локальный Qwen 3B (Balanced)',
-    engineLocalQuality: 'локальный Qwen 7B (Quality)',
-    engineLocalGeneric: 'локальный движок',
     retry: 'Попробовать ещё раз',
     retrying: 'Перезапускаем…',
     emptyRecap: 'Саммари ещё не сгенерировано.',
@@ -394,6 +389,7 @@ const ruInternal = {
     play: 'Воспроизведение',
     pause: 'Пауза',
     progressAria: 'Аудио прогресс',
+    jumpToCurrent: 'К текущему участку',
     speakerJumpTitle: 'Перейти к блоку «{name}» в расшифровке',
     pausedItalic: 'пауза',
     trackGroup: 'Дорожка',

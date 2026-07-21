@@ -50,4 +50,30 @@ describe('AudioScrubber', () => {
     );
     expect(container.firstChild).toBeNull();
   });
+
+  // [B20.8] Follow-кнопка «к текущему участку».
+  test('no jump button without onJump', () => {
+    render(<AudioScrubber audio={mockAudio()} seed={7} />);
+    expect(document.querySelector('[aria-pressed]')).toBeNull();
+  });
+
+  test('jump button fires onJump and reflects follow state', () => {
+    const onJump = vi.fn();
+    render(
+      <AudioScrubber audio={mockAudio()} seed={7} onJump={onJump} followActive />,
+    );
+    const btn = document.querySelector<HTMLButtonElement>('[aria-pressed]');
+    expect(btn).toBeTruthy();
+    expect(btn!.getAttribute('aria-pressed')).toBe('true');
+    expect(btn!.getAttribute('data-active')).toBe('true');
+    btn!.click();
+    expect(onJump).toHaveBeenCalledOnce();
+  });
+
+  test('jump button inactive state without followActive', () => {
+    render(<AudioScrubber audio={mockAudio()} seed={7} onJump={() => {}} />);
+    const btn = document.querySelector<HTMLButtonElement>('[aria-pressed]');
+    expect(btn!.getAttribute('aria-pressed')).toBe('false');
+    expect(btn!.getAttribute('data-active')).toBeNull();
+  });
 });

@@ -510,16 +510,18 @@ function AppShell() {
           </p>
         )}
 
-        {view === 'inbox' && (
-          <InboxView
-            onOpen={onOpenCall}
-            onRecord={onRecordToggle}
-            recording={rec.status.kind === 'recording' || rec.status.kind === 'paused'}
-            paused={rec.status.kind === 'paused'}
-            elapsed={rec.elapsedSec}
-            onPause={onPauseToggle}
-          />
-        )}
+        {/* [B20.4] Keep-alive: InboxView всегда mounted (default-экран), при
+            уходе скрывается display:none — вид/поиск/фасеты/offset'ы/скролл
+            переживают открытие звонка и возврат. */}
+        <InboxView
+          active={view === 'inbox'}
+          onOpen={onOpenCall}
+          onRecord={onRecordToggle}
+          recording={rec.status.kind === 'recording' || rec.status.kind === 'paused'}
+          paused={rec.status.kind === 'paused'}
+          elapsed={rec.elapsedSec}
+          onPause={onPauseToggle}
+        />
         {view === 'call' && detailCallId && (
           <CallDetailPage
             callId={detailCallId}

@@ -296,6 +296,68 @@ describe('InteractiveTranscript — active row', () => {
       expect(row.classList.contains('turn--active')).toBe(false);
     }
   });
+
+  // [B20.9] Смежная граница резолвится в СЛЕДУЮЩУЮ реплику (off-by-one фикс).
+  test('shared boundary highlights the next turn, not the previous', () => {
+    render(
+      <InteractiveTranscript
+        rawSttJson={BASIC_RAW}
+        fallbackMd={null}
+        currentTime={3} // граница owner(0..3) / S1(3..6) → S1
+      />,
+    );
+    const rows = document.querySelectorAll('.turn') as NodeListOf<HTMLElement>;
+    expect(rows[0]!.classList.contains('turn--active')).toBe(false);
+    expect(rows[1]!.classList.contains('turn--active')).toBe(true);
+  });
+});
+
+// ─── [B20.8] Follow-режим ────────────────────────────────────────────────────
+
+describe('InteractiveTranscript — follow mode', () => {
+  // setup.ts стабит scrollIntoView на HTMLElement.prototype — спаим его же.
+  const spyScroll = () => vi.spyOn(window.HTMLElement.prototype, 'scrollIntoView');
+
+  test('autoscrolls active row when follow=true (default)', () => {
+    const spy = spyScroll();
+    render(
+      <InteractiveTranscript rawSttJson={BASIC_RAW} fallbackMd={null} currentTime={1} />,
+    );
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  test('does not autoscroll when follow=false', () => {
+    const spy = spyScroll();
+    render(
+      <InteractiveTranscript
+        rawSttJson={BASIC_RAW}
+        fallbackMd={null}
+        currentTime={1}
+        follow={false}
+      />,
+    );
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  test('scrollToActive via ref works regardless of follow', () => {
+    const spy = spyScroll();
+    const ref = { current: null as null | { scrollToActive: () => void } };
+    render(
+      <InteractiveTranscript
+        ref={ref}
+        rawSttJson={BASIC_RAW}
+        fallbackMd={null}
+        currentTime={1}
+        follow={false}
+      />,
+    );
+    expect(spy).not.toHaveBeenCalled();
+    ref.current!.scrollToActive();
+    expect(spy).toHaveBeenCalledOnce();
+    spy.mockRestore();
+  });
 });
 
 // ─── Malformed segments ───────────────────────────────────────────────────────

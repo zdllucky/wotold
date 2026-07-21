@@ -6,21 +6,12 @@
 import { bcp47, useI18n } from '../../i18n';
 import type { Call } from '../../api/recording';
 import type { CallSpeakerView } from '../../api/speakers';
-import { EngineChip } from '../EngineChip';
+import type { SpeakerSample } from '../SpeakerCard';
 import { Icon } from '../../ui/Icon';
+import { splitParticipants } from './participantGroups';
+import { ParticipantRow } from './ParticipantRow';
 
 const SP = ['var(--sp1)', 'var(--sp2)', 'var(--sp3)', 'var(--sp4)', 'var(--sp5)'];
-
-function initials(name: string): string {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase() ?? '')
-      .join('') || '·'
-  );
-}
 
 function fmtDate(iso: string, locale: string): string {
   try {
@@ -59,13 +50,28 @@ interface CallRailProps {
   speakers: CallSpeakerView[];
   /** Open the speaker-confirm modal for an unconfirmed speaker tag. */
   onIdentify: (tag: string) => void;
+  /** [B20.7] Сэмплы голосов (по speaker_tag) для прослушивания в dropdown. */
+  samplesByTag: Map<string, SpeakerSample | null>;
+  /** [B20.7] Отвязать конкретный голос (call_speaker id) от контакта. */
+  onUnbind: (callSpeakerId: string) => void;
   onExport: () => void;
   exporting: boolean;
 }
 
-export function CallRail({ call, speakers, onIdentify, onExport, exporting }: CallRailProps) {
+export function CallRail({
+  call,
+  speakers,
+  onIdentify,
+  samplesByTag,
+  onUnbind,
+  onExport,
+  exporting,
+}: CallRailProps) {
   const { t, locale } = useI18n();
-  const undef = speakers.filter((s) => !s.confirmed).length;
+  // [B20.6] Несколько голосов одного контакта → одна строка участника.
+  const { confirmed, unconfirmed } = splitParticipants(speakers);
+  const undef = unconfirmed.length;
+  const peopleCount = confirmed.length + unconfirmed.length;
 
   const statusChip =
     call.status === 'ready' ? (
@@ -95,14 +101,7 @@ export function CallRail({ call, speakers, onIdentify, onExport, exporting }: Ca
           <span className="prop-k">{t('callDetail.railStatus')}</span>
           <span>{statusChip}</span>
         </div>
-        {call.processing_via && (
-          <div className="prop">
-            <span className="prop-k">{t('callDetail.railEngine')}</span>
-            <span>
-              <EngineChip kind={call.processing_via} variant="inline" />
-            </span>
-          </div>
-        )}
+        {/* [B20.10] Строка «Движок» убрана — engine-инфо только в Настройках. */}
         <div className="prop">
           <span className="prop-k">
             <Icon name="calendar" size={13} />
@@ -125,7 +124,7 @@ export function CallRail({ call, speakers, onIdentify, onExport, exporting }: Ca
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
         >
           <span>
-            {t('callDetail.railParticipants')} · {speakers.length}
+            {t('callDetail.railParticipants')} · {peopleCount}
           </span>
           {undef > 0 && (
             <span className="chip chip--warn" data-size="sm">
@@ -138,42 +137,44 @@ export function CallRail({ call, speakers, onIdentify, onExport, exporting }: Ca
             {t('callDetail.railNoSpeakers')}
           </div>
         )}
-        {speakers.map((s, i) => {
-          const confirmed = s.confirmed;
-          const name =
-            confirmed && s.contact_display_name
-              ? s.contact_display_name
-              : t('callDetail.railSpeakerUnknown');
-          const color = confirmed ? SP[i % SP.length] : 'var(--text-faint)';
-          return (
-            <div className="lrow" key={s.speaker_tag} style={{ padding: '5px 0', gap: 10 }}>
-              <span
-                className="avatar"
-                style={{ width: 28, height: 28, background: color, fontSize: 11, flex: '0 0 auto' }}
-              >
-                {confirmed ? initials(name) : '?'}
-              </span>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div
-                  className="u-trunc"
-                  style={{ fontWeight: 550, color: confirmed ? 'var(--text)' : 'var(--text-2)' }}
-                >
-                  {name}
-                </div>
+        {confirmed.map((g, i) => (
+          <ParticipantRow
+            key={g.key}
+            group={g}
+            color={SP[i % SP.length]!}
+            samplesByTag={samplesByTag}
+            onUnbind={onUnbind}
+          />
+        ))}
+        {unconfirmed.map((s) => (
+          <div className="lrow" key={s.speaker_tag} style={{ padding: '5px 0', gap: 10 }}>
+            <span
+              className="avatar"
+              style={{
+                width: 28,
+                height: 28,
+                background: 'var(--text-faint)',
+                fontSize: 11,
+                flex: '0 0 auto',
+              }}
+            >
+              ?
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="u-trunc" style={{ fontWeight: 550, color: 'var(--text-2)' }}>
+                {t('callDetail.railSpeakerUnknown')}
               </div>
-              {!confirmed && (
-                <button
-                  type="button"
-                  className="btn btn--soft"
-                  data-size="sm"
-                  onClick={() => onIdentify(s.speaker_tag)}
-                >
-                  {t('callDetail.railIdentify')}
-                </button>
-              )}
             </div>
-          );
-        })}
+            <button
+              type="button"
+              className="btn btn--soft"
+              data-size="sm"
+              onClick={() => onIdentify(s.speaker_tag)}
+            >
+              {t('callDetail.railIdentify')}
+            </button>
+          </div>
+        ))}
 
         <div className="rrail-sec">{t('callDetail.railActions')}</div>
         <div style={{ display: 'grid', gap: 6 }}>

@@ -99,6 +99,9 @@ pub(crate) mod refine_chain;
 // [F3] Sink пошаговых событий генерации рекапа (`recap:step`) — thinking-блок.
 pub(crate) mod recap_steps;
 
+// [B20.3] Render-side bold известных имён в recap.md (детерминированно).
+pub(crate) mod recap_md;
+
 // [Q] Per-resource очереди тяжёлых local-ресурсов (stt/diarization/llm,
 // concurrency=1) + `queue:state` снапшоты для QueueMonitor.
 pub mod resource_queue;

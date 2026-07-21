@@ -238,6 +238,13 @@ const ICONS = {
       <path d="M8 11V8a4 4 0 0 1 8 0v3" />
     </>
   ),
+  // [B20.8] Crosshair «к текущему участку» — follow-кнопка плеера.
+  locate: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;

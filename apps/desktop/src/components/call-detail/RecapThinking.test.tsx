@@ -1,5 +1,6 @@
-// [F3] RecapThinking — smoke RTL: лейблы по kind, состояния шагов,
-// разворачиваемое превью, a11y (aria-live), пустой steps → null.
+// [F3, B20.1] RecapThinking — smoke RTL: reasoning-stream без кружков/галок,
+// лейблы по kind, инлайн-превью только при наличии данных, a11y (aria-live),
+// пустой steps → null.
 
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -49,7 +50,21 @@ describe('RecapThinking', () => {
     expect(labels.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('marks failed step with step--failed class', () => {
+  it('renders no circled bullets, numbers or checkmarks (reasoning-stream)', () => {
+    const { container } = render(
+      <RecapThinking
+        steps={[
+          step({ step_idx: 0, status: 'done' }),
+          step({ step_idx: 1, kind: 'generate', status: 'started' }),
+        ]}
+      />,
+    );
+    expect(container.querySelector('.step-bullet')).toBeNull();
+    expect(container.querySelector('.steps')).toBeNull();
+    expect(container.textContent).not.toContain('✓');
+  });
+
+  it('marks failed step with rthink-line--failed and skip note', () => {
     const { container } = render(
       <RecapThinking
         steps={[
@@ -63,10 +78,11 @@ describe('RecapThinking', () => {
         ]}
       />,
     );
-    expect(container.querySelector('.step--failed')).toBeTruthy();
+    expect(container.querySelector('.rthink-line--failed')).toBeTruthy();
+    expect(container.querySelector('.rthink-skip')).toBeTruthy();
   });
 
-  it('renders expandable preview with title and key points', () => {
+  it('renders inline preview with title and key points when present', () => {
     const { container } = render(
       <RecapThinking
         steps={[
@@ -81,10 +97,31 @@ describe('RecapThinking', () => {
         ]}
       />,
     );
-    expect(container.querySelector('.recap-think-preview')).toBeTruthy();
+    expect(container.querySelector('.rthink-preview')).toBeTruthy();
+    // Инлайн, не вложенный <details>.
+    expect(container.querySelectorAll('details').length).toBe(1);
     expect(screen.getByText('После части 2')).toBeTruthy();
-    expect(screen.getByText('точка А')).toBeTruthy();
-    expect(screen.getByText('точка Б')).toBeTruthy();
+    expect(screen.getByText(/точка А/)).toBeTruthy();
+    expect(screen.getByText(/точка Б/)).toBeTruthy();
+  });
+
+  it('renders only the label line when preview is null (no empty affordance)', () => {
+    const { container } = render(
+      <RecapThinking
+        steps={[
+          step({ step_idx: 1, kind: 'refine', status: 'started', chunk_no: 2, chunk_total: 5 }),
+          step({ step_idx: 0, kind: 'classify', status: 'done', preview: null }),
+        ]}
+      />,
+    );
+    expect(container.querySelector('.rthink-preview')).toBeNull();
+  });
+
+  it('marks active step line with rthink-line--active', () => {
+    const { container } = render(
+      <RecapThinking steps={[step({ step_idx: 0, status: 'started' })]} />,
+    );
+    expect(container.querySelector('.rthink-line--active')).toBeTruthy();
   });
 
   it('renders rotating chevron marker in the summary (inline style)', () => {
@@ -94,7 +131,7 @@ describe('RecapThinking', () => {
     expect(container.querySelector('.recap-think-chevron')).toBeTruthy();
   });
 
-  it('has aria-live polite on step list and counts done steps', () => {
+  it('has aria-live polite on stream and counts done steps', () => {
     const { container } = render(
       <RecapThinking
         steps={[

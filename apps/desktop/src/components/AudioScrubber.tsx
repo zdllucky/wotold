@@ -19,9 +19,20 @@ interface AudioScrubberProps {
   seed: number;
   /** Скрыть плеер если false. */
   enabled?: boolean;
+  /** [B20.8] Кнопка «к текущему участку»: скроллит транскрипт к активной
+   *  реплике и снова включает follow. Не рендерится если undefined. */
+  onJump?: () => void;
+  /** Follow-режим активен → кнопка в active-стейте. */
+  followActive?: boolean;
 }
 
-export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProps) {
+export function AudioScrubber({
+  audio,
+  seed,
+  enabled = true,
+  onJump,
+  followActive,
+}: AudioScrubberProps) {
   const { t } = useI18n();
   const waveRef = useRef<HTMLDivElement | null>(null);
   // [UI-fix A] Адаптивное число баров от реальной ширины дорожки — фикс.
@@ -81,6 +92,19 @@ export function AudioScrubber({ audio, seed, enabled = true }: AudioScrubberProp
         >
           <Icon name={audio.playing ? 'pause' : 'play'} size={16} />
         </button>
+        {onJump && (
+          <button
+            type="button"
+            className="iconbtn"
+            data-size="sm"
+            data-active={followActive || undefined}
+            aria-pressed={!!followActive}
+            aria-label={t('scrubber.jumpToCurrent')}
+            onClick={onJump}
+          >
+            <Icon name="locate" size={14} />
+          </button>
+        )}
         <span
           className="mono"
           style={{
