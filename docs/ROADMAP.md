@@ -110,6 +110,14 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B21.5** Гигиена: 49 dead i18n ×3 локали, dead `LOCAL_ENGINE_ANNOUNCEMENT_*`, useTheme → SETTINGS_KEYS, mic-diarization default выровнен на backend-истину (OFF, тумблер больше не врёт), Rust-owned keys doc-блок в settings.ts.
 - [ ] **B21.6** Follow-up: roving-tabindex / стрелки для OptionCard-radiogroup (WAI-ARIA APG); WeSpeaker-строка в хранилище моделей.
 
+## B22 · Settings polish (фидбек юзера после B21, 2026-07-21)
+
+- [x] **B22.1** Rail секций 300 → 220px (+скелетон) — верстка справа больше не ломается.
+- [x] **B22.2** Lede-абзацы секций убраны (SectionShell = aria-label + ширина); `settings.lede*` удалены ×3 локали.
+- [x] **B22.3** Хинты сокращены до осмысленных: убраны languageHint / privacy-простыня call-detect / cooldownHint; sttLang/sttRecapLang/hotkeyToggle/callDetect — короткие редакции.
+- [x] **B22.4** «Обслуживание» (bulk recap) удалено из UI; Rust-команды `regenerate_empty_recaps`/`cancel_bulk_recap` и события `recap:bulk_*` остаются без фронт-потребителя (вернём при надобности).
+- [x] **B22.5** Таблица хранилища: имя модели `.u-trunc`+title (конец наездов), lastUsed 84→70; человеческие лейблы для `qwen25-0_5b` («Ускоритель саммари · 0.5B») и `silero-vad-v5` («Детектор речи»).
+
 ---
 
 ## Уверенно НЕ делаем

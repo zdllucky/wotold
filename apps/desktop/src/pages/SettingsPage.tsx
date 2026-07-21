@@ -10,15 +10,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { humanError } from '../api/errors';
-import {
-  regenerateEmptyRecaps,
-  cancelBulkRecap,
-  type BulkRecapProgress,
-  type BulkRecapDone,
-} from '../api/calls';
-
 import {
   CALL_DETECT_COOLDOWNS,
   getSetting,
@@ -30,7 +22,7 @@ import {
   type CallDetectCooldown,
   type PreferredLanguage,
 } from '../api/settings';
-import { useI18n, type TranslationKey } from '../i18n';
+import { useI18n } from '../i18n';
 import {
   Button,
   Chip,
@@ -41,7 +33,6 @@ import {
   SettingRow,
   Skeleton,
   Switch,
-  Wave,
 } from '../ui';
 import { type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
@@ -54,6 +45,8 @@ import { LocalEngineSection } from './LocalEngineSection';
 import { PermissionsSection } from './PermissionsSection';
 import { VoiceModelSection } from './VoiceModelSection';
 
+// [B22] «Обслуживание» (bulk recap) удалено по фидбеку юзера — Rust-команды
+// regenerate_empty_recaps/cancel_bulk_recap остаются без UI-потребителя.
 type SectionId =
   | 'account'
   | 'appearance'
@@ -62,7 +55,6 @@ type SectionId =
   | 'recording'
   | 'speakers'
   | 'labs'
-  | 'maintenance'
   | 'privacy';
 
 interface SectionMeta {
@@ -81,21 +73,7 @@ const SECTION_ICONS: Record<SectionId, IconName> = {
   recording: 'mic',
   speakers: 'users',
   labs: 'bolt',
-  maintenance: 'refresh',
   privacy: 'lock',
-};
-
-// [B21] Muted-lede на секцию (канон SET_HEAD).
-const SECTION_LEDES: Record<SectionId, TranslationKey> = {
-  appearance: 'settings.ledeAppearance',
-  account: 'settings.ledeAccount',
-  processing: 'settings.ledeProcessing',
-  permissions: 'settings.ledePermissions',
-  recording: 'settings.ledeRecording',
-  speakers: 'settings.ledeSpeakers',
-  labs: 'settings.ledeLabs',
-  maintenance: 'settings.ledeMaintenance',
-  privacy: 'settings.ledePrivacy',
 };
 
 export function SettingsPage() {
@@ -168,7 +146,7 @@ export function SettingsPage() {
     // [V8.1] Rail (300px, 9 строк) + content shimmer mimics Settings layout.
     return (
       <section
-        style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 32 }}
+        style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 32 }}
         aria-busy="true"
       >
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -204,8 +182,6 @@ export function SettingsPage() {
     { id: 'speakers', label: t('settings.sectionSpeakers') },
     // [M14 T-14] «Лаборатория» — experimental feature flags.
     { id: 'labs', label: t('settings.sectionLabs') },
-    // [Bulk recap] «Обслуживание» — пересоздать пустые рекапы старых звонков.
-    { id: 'maintenance', label: t('settings.sectionMaintenance') },
     { id: 'privacy', label: t('settings.sectionPrivacy') },
   ];
 
@@ -235,11 +211,12 @@ export function SettingsPage() {
         </span>
       </div>
       <div className="view-body">
-        {/* [B21] v2 inner settings rail — канон aside 300px + .scroll pad 8. */}
+        {/* [B21, B22] v2 inner settings rail — 220px (300 из прототипа ломал
+            верстку контента справа на узких окнах). */}
         <aside
           style={{
-            width: 300,
-            flex: '0 0 300px',
+            width: 220,
+            flex: '0 0 220px',
             borderRight: '1px solid var(--border)',
             display: 'flex',
             minHeight: 0,
@@ -275,7 +252,7 @@ export function SettingsPage() {
             </p>
           )}
 
-          <SectionShell label={activeMeta.label} lede={t(SECTION_LEDES[section])}>
+          <SectionShell label={activeMeta.label}>
             {section === 'appearance' && <AppearanceSection />}
             {section === 'account' && <AccountSection />}
             {section === 'processing' && <LocalEngineSection />}
@@ -299,7 +276,6 @@ export function SettingsPage() {
             )}
             {section === 'speakers' && <VoiceModelSection />}
             {section === 'labs' && <LabsSection />}
-            {section === 'maintenance' && <BulkRecapSection />}
             {section === 'privacy' && <DeleteAllDataSection />}
           </SectionShell>
         </div>
@@ -311,17 +287,14 @@ export function SettingsPage() {
 interface SectionShellProps {
   /** Accessible name секции — совпадает с nav-лейблом (фикс рассинхрона). */
   label: string;
-  /** [B21] Видимый muted-lede (канон SecHead). */
-  lede: string;
   children: ReactNode;
 }
 
-function SectionShell({ label, lede, children }: SectionShellProps) {
+// [B22] Lede-абзацы убраны по фидбеку юзера («поясняющие текста сверху не
+// нужны») — остаётся только aria-label + ширина.
+function SectionShell({ label, children }: SectionShellProps) {
   return (
     <section aria-label={label} style={{ maxWidth: 560 }}>
-      <p className="muted" style={{ fontSize: 13, lineHeight: 1.5, margin: '0 0 18px' }}>
-        {lede}
-      </p>
       {children}
     </section>
   );
@@ -421,11 +394,7 @@ function RecordingSection({
       <GroupLabel>{t('settings.groupAutoDetect')}</GroupLabel>
       <SettingRow
         label={t('settings.callDetectRowLabel')}
-        hint={
-          <>
-            {t('settings.callDetectCheckboxLabel')} {t('settings.callDetectHint')}
-          </>
-        }
+        hint={t('settings.callDetectHint')}
         align="top"
         last={!callDetectEnabled}
       >
@@ -451,12 +420,7 @@ function RecordingSection({
         />
       </SettingRow>
       {callDetectEnabled && (
-        <SettingRow
-          label={t('settings.callDetectCooldownRowLabel')}
-          hint={t('settings.callDetectCooldownHint')}
-          align="top"
-          last
-        >
+        <SettingRow label={t('settings.callDetectCooldownRowLabel')} last>
           <Select<CallDetectCooldown>
             value={callDetectCooldown}
             options={CALL_DETECT_COOLDOWNS.map((n) => ({
@@ -478,131 +442,6 @@ function RecordingSection({
           />
         </SettingRow>
       )}
-    </div>
-  );
-}
-
-// [Bulk recap, B21] «Обслуживание» — один Row «Пустые саммари» с инлайн-
-// состояниями (канон SecMaintenance): idle → кнопка; working → Wave + N/M +
-// Стоп; done → ok-иконка + счёт.
-function BulkRecapSection() {
-  const { t } = useI18n();
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<BulkRecapProgress | null>(null);
-  const [result, setResult] = useState<BulkRecapDone | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let unsubs: UnlistenFn[] = [];
-    const attach = async () => {
-      try {
-        unsubs.push(
-          await listen<BulkRecapProgress>('recap:bulk_progress', (e) => {
-            setProgress(e.payload);
-          }),
-        );
-        unsubs.push(
-          await listen<BulkRecapDone>('recap:bulk_done', (e) => {
-            setResult(e.payload);
-            setRunning(false);
-            setProgress(null);
-          }),
-        );
-      } catch (err) {
-        console.warn('bulk recap listeners failed:', err);
-      }
-    };
-    void attach();
-    return () => {
-      for (const u of unsubs) u();
-    };
-  }, []);
-
-  const start = async () => {
-    setError(null);
-    setResult(null);
-    setRunning(true);
-    try {
-      const total = await regenerateEmptyRecaps();
-      if (total === 0) {
-        setRunning(false);
-        setResult({ regenerated: 0, failed: 0, cancelled: false });
-      } else {
-        setProgress({ done: 0, total, call_id: '' });
-      }
-    } catch (e) {
-      setError(humanError(e));
-      setRunning(false);
-    }
-  };
-
-  const stop = async () => {
-    try {
-      await cancelBulkRecap();
-    } catch (e) {
-      console.warn('cancel bulk recap:', e);
-    }
-  };
-
-  const control = running ? (
-    <span
-      role="status"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 8,
-        color: 'var(--accent-text)',
-        fontSize: 12.5,
-      }}
-    >
-      <Wave />
-      {progress
-        ? t('settings.bulkRecapProgress', { done: progress.done + 1, total: progress.total })
-        : t('settings.bulkRecapScanning')}
-      <Button variant="ghost" size="sm" onClick={() => void stop()}>
-        {t('settings.bulkRecapStop')}
-      </Button>
-    </span>
-  ) : result ? (
-    <span
-      role="status"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        color: result.failed > 0 ? 'var(--text-2)' : 'var(--ok)',
-        fontSize: 12.5,
-      }}
-    >
-      <Icon name="checkCircle" size={15} />
-      {result.regenerated === 0 && result.failed === 0 && !result.cancelled
-        ? t('settings.bulkRecapNoneEmpty')
-        : t('settings.bulkRecapResult', {
-            regenerated: result.regenerated,
-            failed: result.failed,
-          })}
-    </span>
-  ) : (
-    <Button variant="default" size="sm" leading={<Icon name="refresh" size={14} />} onClick={() => void start()}>
-      {t('settings.bulkRecapStart')}
-    </Button>
-  );
-
-  return (
-    <div>
-      {error && (
-        <p role="alert" style={{ color: 'var(--danger)', marginBottom: 12 }}>
-          {error}
-        </p>
-      )}
-      <SettingRow
-        label={t('settings.bulkRecapRowLabel')}
-        hint={t('settings.bulkRecapRowHint')}
-        align="top"
-        last
-      >
-        {control}
-      </SettingRow>
     </div>
   );
 }

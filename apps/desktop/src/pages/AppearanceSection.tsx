@@ -26,7 +26,7 @@ export function AppearanceSection() {
           ariaLabel={t('settings.fieldTheme')}
         />
       </SettingRow>
-      <SettingRow label={t('settings.fieldLanguage')} hint={t('settings.languageHint')} last>
+      <SettingRow label={t('settings.fieldLanguage')} last>
         <Select<Locale>
           value={locale}
           options={SUPPORTED_LOCALES.map((l) => ({
