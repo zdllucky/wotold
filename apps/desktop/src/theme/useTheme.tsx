@@ -23,7 +23,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { getSetting, setSetting } from '../api/settings';
+import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 
 export type Theme = 'light' | 'dark' | 'system';
 // [B18.0] Wotold v2 = моно-графит (ink), один акцент. Тип сохраняем чтобы не
@@ -31,8 +31,9 @@ export type Theme = 'light' | 'dark' | 'system';
 // no-op (в tokens.css нет [data-accent] блоков).
 export type Accent = 'bordeaux' | 'persian' | 'ink';
 
-const KEY_THEME = 'ui.theme';
-const KEY_ACCENT = 'ui.accent';
+// [B21] Реестр-ключи вместо дублированных литералов (drift-guard).
+const KEY_THEME = SETTINGS_KEYS.UI_THEME;
+const KEY_ACCENT = SETTINGS_KEYS.UI_ACCENT;
 const DEFAULT_THEME: Theme = 'system';
 const DEFAULT_ACCENT: Accent = 'ink';
 

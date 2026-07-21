@@ -99,6 +99,17 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B20.9** Fix off-by-one: общая граница смежных реплик резолвится в следующую (`lib/transcriptActive.ts`, exclusive end + SEEK_EPS).
 - [x] **B20.10** Движок/локальность убраны из call-detail UI (header-чип, строка «Движок», engine-label в fail-баннере; dead `engineLabel.ts` удалён). Остались Settings + Onboarding. Тип звонка остался.
 
+## B21 · Settings standardization (2026-07-21)
+
+> Аудит нашёл 66 расхождений (3 layout-грамматики, 4 стиля хинтов, 3 самописных прогресс-бара, битые классы, dead i18n). Канон — `wk-settings.jsx` прототипа.
+
+- [x] **B21.1** Примитивы: `.setting-row` → канон Row (13px + divider + data-align/last/disabled), `ui/Progress` (первый потребитель `.progress`), `ui/GroupLabel`, Button += `danger-ghost`, OptionCard += `radio`, HotkeyCapture (i18n + `.hotkey-readout` + Esc-cancel фикс).
+- [x] **B21.2** Shell: aside-rail 300, иконки shield/lock по канону, видимый lede на секцию (`settings.lede.*`), aria-label = nav-label, единый max-width 560, копирайт-синк («Обработка»/«Приватность»/«Полная очистка»).
+- [x] **B21.3** Секции на Row-идиоме: Appearance, Account (danger-ghost выход), Processing (OptionCard local-first + sunken hw-plate + GroupLabel'ы + канон-статусы set-table + квота на Progress вместо legacy Card/Badge/UsageBar), Permissions (Chip у лейбла, primary «Запросить», IconBtn'ы, глиф ↻ выпилен), Запись (3 группы Row), Спикеры (компакт-Panel модуля + ⊕ threshold-Select `AUTO_BIND_THRESHOLD` + pyannote-прогресс), Labs, Maintenance (один Row c inline-состояниями), Privacy (Row + Chip «удалено»).
+- [x] **B21.4** Onboarding engine-step: OptionCard-пресеты, Progress, Button (битые btn--quiet/btn--sm убраны), hooks-order фикс (crash при старте загрузки).
+- [x] **B21.5** Гигиена: 49 dead i18n ×3 локали, dead `LOCAL_ENGINE_ANNOUNCEMENT_*`, useTheme → SETTINGS_KEYS, mic-diarization default выровнен на backend-истину (OFF, тумблер больше не врёт), Rust-owned keys doc-блок в settings.ts.
+- [ ] **B21.6** Follow-up: roving-tabindex / стрелки для OptionCard-radiogroup (WAI-ARIA APG); WeSpeaker-строка в хранилище моделей.
+
 ---
 
 ## Уверенно НЕ делаем

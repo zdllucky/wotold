@@ -1,13 +1,12 @@
-// SettingsPage — Wotold v2 (uikit) settings shell + 9 sections (B18.5).
+// SettingsPage — Wotold v2 (uikit) settings shell + 9 sections (B18.5, B21).
 //
-// Inner 220px rail (Настройки nav) + flex content with per-section layout:
-//   - Eyebrow "Настройки · {section.label}"
-//   - .display 40 headline
-//   - .subtitle lede
-//   - Section content
+// Канон wk-settings.jsx: breadcrumb view-head + «✓ Сохранено», левый aside-rail
+// 300px c NavItem, контент-колонка max-width 560. Каждая секция: SecLede
+// (muted-абзац), группы GroupLabel (.rrail-sec) и плотные SettingRow
+// (label+hint слева, контрол справа, divider между строками).
 //
-// "Источник сервисов" — rounded-pill 2-button path toggle с italic right hint.
-// "Ключи" — field-label + ●подключён/●пусто mono caps right + .input + italic hint.
+// BYO path / proxy URL override спрятаны сознательно: path хардкодим =
+// 'managed', usage встроен в Processing (cloud branch).
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -31,8 +30,19 @@ import {
   type CallDetectCooldown,
   type PreferredLanguage,
 } from '../api/settings';
-import { useI18n } from '../i18n';
-import { Icon, NavItem, Select, Skeleton, Switch } from '../ui';
+import { useI18n, type TranslationKey } from '../i18n';
+import {
+  Button,
+  Chip,
+  GroupLabel,
+  Icon,
+  NavItem,
+  Select,
+  SettingRow,
+  Skeleton,
+  Switch,
+  Wave,
+} from '../ui';
 import { type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -61,17 +71,31 @@ interface SectionMeta {
   hidden?: boolean;
 }
 
-// [B18.5a] v2 rail icon per section.
+// [B18.5a] v2 rail icon per section (канон wk-settings.jsx SET_SECS:
+// permissions=shield, privacy=lock).
 const SECTION_ICONS: Record<SectionId, IconName> = {
   appearance: 'sun',
   account: 'user',
   processing: 'cpu',
-  permissions: 'lock',
+  permissions: 'shield',
   recording: 'mic',
   speakers: 'users',
   labs: 'bolt',
   maintenance: 'refresh',
-  privacy: 'shield',
+  privacy: 'lock',
+};
+
+// [B21] Muted-lede на секцию (канон SET_HEAD).
+const SECTION_LEDES: Record<SectionId, TranslationKey> = {
+  appearance: 'settings.ledeAppearance',
+  account: 'settings.ledeAccount',
+  processing: 'settings.ledeProcessing',
+  permissions: 'settings.ledePermissions',
+  recording: 'settings.ledeRecording',
+  speakers: 'settings.ledeSpeakers',
+  labs: 'settings.ledeLabs',
+  maintenance: 'settings.ledeMaintenance',
+  privacy: 'settings.ledePrivacy',
 };
 
 export function SettingsPage() {
@@ -141,20 +165,18 @@ export function SettingsPage() {
   }, [savedTick]);
 
   if (loading) {
-    // [V8.1] Inner rail (220px) + content shimmer mimics Settings layout.
+    // [V8.1] Rail (300px, 9 строк) + content shimmer mimics Settings layout.
     return (
       <section
-        style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 32 }}
+        style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 32 }}
         aria-busy="true"
       >
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {Array.from({ length: 7 }, (_, i) => (
+          {Array.from({ length: 9 }, (_, i) => (
             <Skeleton key={i} width="80%" height="1em" />
           ))}
         </aside>
         <div>
-          <Skeleton width="14ch" height="0.7em" style={{ marginBottom: 12 }} />
-          <Skeleton width="20ch" height="2rem" style={{ marginBottom: 8 }} />
           <Skeleton width="36ch" height="0.85em" style={{ marginBottom: 28 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
             {Array.from({ length: 4 }, (_, i) => (
@@ -169,17 +191,16 @@ export function SettingsPage() {
     );
   }
 
-  // Sidebar — 7 sections. BYO path, proxy URL override, и usage спрятаны в UI:
-  // path хардкодим = 'managed', usage встроен в Processing (cloud branch).
+  // Sidebar — 9 sections (канонный порядок wk-settings.jsx).
   const NAV: SectionMeta[] = [
     { id: 'appearance', label: t('settings.sectionAppearance') },
     { id: 'account', label: t('settings.sectionAccount') },
-    // «Обработка звонков» — объединяет engine choice + (для cloud) usage.
+    // «Обработка» — engine choice + (для cloud) дневная квота.
     { id: 'processing', label: t('settings.sectionProcessing') },
     { id: 'permissions', label: t('settings.sectionPermissions') },
-    // «Запись» — recap language, hotkeys, call-detect probe.
+    // «Запись» — языки, hotkeys, call-detect probe.
     { id: 'recording', label: t('settings.sectionRecording') },
-    // «Спикеры» — voice biometric model + auto-bind toggle.
+    // «Спикеры» — voice biometric model + auto-bind.
     { id: 'speakers', label: t('settings.sectionSpeakers') },
     // [M14 T-14] «Лаборатория» — experimental feature flags.
     { id: 'labs', label: t('settings.sectionLabs') },
@@ -214,285 +235,73 @@ export function SettingsPage() {
         </span>
       </div>
       <div className="view-body">
-        {/* [B18.5a] v2 inner settings rail */}
-        <div
+        {/* [B21] v2 inner settings rail — канон aside 300px + .scroll pad 8. */}
+        <aside
           style={{
-            width: 250,
-            padding: '26px 10px 10px',
+            width: 300,
+            flex: '0 0 300px',
             borderRight: '1px solid var(--border)',
-            flexShrink: 0,
-            overflowY: 'auto',
+            display: 'flex',
+            minHeight: 0,
           }}
         >
-          {NAV.filter((s) => !s.hidden).map((s) => (
-            <NavItem
-              key={s.id}
-              icon={SECTION_ICONS[s.id]}
-              label={s.label}
-              active={section === s.id}
-              current={section === s.id}
-              onClick={() => setSection(s.id)}
-            />
-          ))}
-        </div>
+          <div className="scroll" style={{ flex: 1, minHeight: 0, padding: 8 }}>
+            {NAV.filter((s) => !s.hidden).map((s) => (
+              <NavItem
+                key={s.id}
+                icon={SECTION_ICONS[s.id]}
+                label={s.label}
+                active={section === s.id}
+                current={section === s.id}
+                onClick={() => setSection(s.id)}
+              />
+            ))}
+          </div>
+        </aside>
 
-        {/* Content */}
-        <div style={{ flex: 1, padding: '32px 44px', overflowY: 'auto' }}>
-        {error && (
-          <p
-            role="alert"
-            style={{
-              color: 'var(--danger)',
-              fontFamily: 'var(--font)',
-              marginBottom: 14,
-            }}
-          >
-            {error}
-          </p>
-        )}
+        {/* Content — канон: paddingTop 28, bottom 80, ширина .set-group 560. */}
+        <div className="scroll" style={{ flex: 1, minHeight: 0, padding: '28px 44px 80px' }}>
+          {error && (
+            <p
+              role="alert"
+              style={{
+                color: 'var(--danger)',
+                fontFamily: 'var(--font)',
+                marginBottom: 14,
+                maxWidth: 560,
+              }}
+            >
+              {error}
+            </p>
+          )}
 
-        {section === 'appearance' && (
-          <SectionShell title={t('settings.appearanceTitle')}>
-            <AppearanceSection />
+          <SectionShell label={activeMeta.label} lede={t(SECTION_LEDES[section])}>
+            {section === 'appearance' && <AppearanceSection />}
+            {section === 'account' && <AccountSection />}
+            {section === 'processing' && <LocalEngineSection />}
+            {section === 'permissions' && <PermissionsSection />}
+            {section === 'recording' && (
+              <RecordingSection
+                sttLang={sttLang}
+                setSttLang={setSttLang}
+                preferredLanguage={preferredLanguage}
+                setPreferredLanguage={setPreferredLanguage}
+                toggleHotkey={toggleHotkey}
+                setToggleHotkey={setToggleHotkey}
+                pauseHotkey={pauseHotkey}
+                setPauseHotkey={setPauseHotkey}
+                callDetectEnabled={callDetectEnabled}
+                setCallDetectEnabled={setCallDetectEnabled}
+                callDetectCooldown={callDetectCooldown}
+                setCallDetectCooldown={setCallDetectCooldown}
+                persist={persist}
+              />
+            )}
+            {section === 'speakers' && <VoiceModelSection />}
+            {section === 'labs' && <LabsSection />}
+            {section === 'maintenance' && <BulkRecapSection />}
+            {section === 'privacy' && <DeleteAllDataSection />}
           </SectionShell>
-        )}
-
-        {section === 'account' && (
-          <SectionShell title={t('settings.accountTitle')}>
-            <AccountSection />
-          </SectionShell>
-        )}
-
-        {section === 'processing' && (
-          <SectionShell title={t('settings.engineTitle')}>
-            <LocalEngineSection />
-          </SectionShell>
-        )}
-
-        {section === 'permissions' && (
-          <SectionShell title={t('settings.permissionsTitle')}>
-            <PermissionsSection />
-          </SectionShell>
-        )}
-
-        {section === 'recording' && (
-          <SectionShell title={t('settings.sttTitle')}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 540 }}>
-              <div className="field">
-                <label className="field-label">{t('settings.sttLangLabel')}</label>
-                <Select<PreferredLanguage>
-                  value={sttLang}
-                  options={STT_LANGUAGES.map((l) => ({
-                    value: l.code,
-                    label: l.label,
-                  }))}
-                  onChange={(v) => {
-                    setSttLang(v);
-                    void persist(SETTINGS_KEYS.STT_LANG, v);
-                  }}
-                />
-                <span style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 2 }}>
-                  {t('settings.sttLangHint')}
-                </span>
-              </div>
-
-              <div className="field">
-                <label className="field-label">{t('settings.sttRecapLangLabel')}</label>
-                <Select<PreferredLanguage>
-                  value={preferredLanguage}
-                  options={PREFERRED_LANGUAGES.map((l) => ({
-                    value: l.code,
-                    label: l.label,
-                  }))}
-                  onChange={(v) => {
-                    setPreferredLanguage(v);
-                    void persist(SETTINGS_KEYS.PREFERRED_LANGUAGE, v);
-                  }}
-                />
-                <span style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 2 }}>
-                  {t('settings.sttRecapLangHint')}
-                </span>
-              </div>
-
-              {/* [W1] Configurable recording hotkeys. */}
-              <div
-                style={{
-                  marginTop: 8,
-                  paddingTop: 18,
-                  borderTop: '1px solid var(--border-2)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 18,
-                }}
-              >
-                <div className="field">
-                  <label className="field-label">
-                    {t('settings.hotkeyToggleLabel')}
-                  </label>
-                  <HotkeyCapture
-                    value={toggleHotkey}
-                    defaultHotkey={DEFAULT_TOGGLE_HOTKEY}
-                    onChange={(v) => {
-                      setToggleHotkey(v);
-                      void persist(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE, v);
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--text-faint)',
-                      marginTop: 6,
-                    }}
-                  >
-                    {t('settings.hotkeyToggleHint')}
-                  </span>
-                </div>
-                <div className="field">
-                  <label className="field-label">
-                    {t('settings.hotkeyPauseLabel')}
-                  </label>
-                  <HotkeyCapture
-                    value={pauseHotkey}
-                    defaultHotkey={DEFAULT_PAUSE_HOTKEY}
-                    onChange={(v) => {
-                      setPauseHotkey(v);
-                      void persist(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE, v);
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--text-faint)',
-                      marginTop: 6,
-                    }}
-                  >
-                    {t('settings.hotkeyPauseHint')}
-                  </span>
-                </div>
-              </div>
-
-              {/* [S1] Auto-detect call popup — opt-in R3 deviation. */}
-              <div
-                style={{
-                  marginTop: 8,
-                  paddingTop: 18,
-                  borderTop: '1px solid var(--border-2)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 18,
-                }}
-              >
-                <div className="field">
-                  <label className="field-label">
-                    {t('settings.callDetectLabel')}
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <Switch
-                      checked={callDetectEnabled}
-                      label={t('settings.callDetectCheckboxLabel')}
-                      style={{ marginTop: 2, flex: '0 0 auto' }}
-                      onChange={(v) => {
-                        setCallDetectEnabled(v);
-                        void persist(
-                          SETTINGS_KEYS.CALL_DETECT_ENABLED,
-                          v ? '1' : '0',
-                        );
-                        // [S2] Поднять/потушить probe сразу же.
-                        if (v) {
-                          void invoke('enable_call_detect', {
-                            cooldownMin: Number.parseInt(callDetectCooldown, 10),
-                          }).catch((err) => {
-                            console.warn('enable_call_detect failed', err);
-                          });
-                        } else {
-                          void invoke('disable_call_detect').catch((err) => {
-                            console.warn('disable_call_detect failed', err);
-                          });
-                        }
-                      }}
-                    />
-                    <span style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.5 }}>
-                      {t('settings.callDetectCheckboxLabel')}
-                    </span>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--text-faint)',
-                      marginTop: 6,
-                      fontStyle: 'italic',
-                    }}
-                  >
-                    {t('settings.callDetectHint')}
-                  </span>
-                </div>
-                {callDetectEnabled && (
-                  <div className="field">
-                    <label className="field-label">
-                      {t('settings.callDetectCooldownLabel')}
-                    </label>
-                    <Select<CallDetectCooldown>
-                      value={callDetectCooldown}
-                      options={CALL_DETECT_COOLDOWNS.map((n) => ({
-                        value: n,
-                        label: t('settings.callDetectCooldownOption', { n }),
-                      }))}
-                      onChange={(v) => {
-                        setCallDetectCooldown(v);
-                        void persist(
-                          SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN,
-                          v,
-                        );
-                        // [S2] Если probe уже работает — пере-enable с новым
-                        // cooldown'ом (controller сохранит value, без перезапуска).
-                        if (callDetectEnabled) {
-                          void invoke('enable_call_detect', {
-                            cooldownMin: Number.parseInt(v, 10),
-                          }).catch((err) => {
-                            console.warn('enable_call_detect (refresh) failed', err);
-                          });
-                        }
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: 'var(--text-faint)',
-                        marginTop: 2,
-                      }}
-                    >
-                      {t('settings.callDetectCooldownHint')}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </SectionShell>
-        )}
-
-        {section === 'speakers' && (
-          <SectionShell title={t('settings.voiceTitle')}>
-            <VoiceModelSection />
-          </SectionShell>
-        )}
-
-        {section === 'labs' && (
-          <SectionShell title={t('settings.labsTitle')}>
-            <LabsSection />
-          </SectionShell>
-        )}
-
-        {section === 'maintenance' && (
-          <SectionShell title={t('settings.maintenanceTitle')}>
-            <BulkRecapSection />
-          </SectionShell>
-        )}
-
-        {section === 'privacy' && (
-          <SectionShell title={t('settings.privacyTitle')}>
-            <DeleteAllDataSection />
-          </SectionShell>
-        )}
         </div>
       </div>
     </div>
@@ -500,17 +309,182 @@ export function SettingsPage() {
 }
 
 interface SectionShellProps {
-  /** Used only as the section's accessible name — no visible heading (the rail
-   *  NavItem already labels the section; a visible header here just duplicated it). */
-  title: string;
+  /** Accessible name секции — совпадает с nav-лейблом (фикс рассинхрона). */
+  label: string;
+  /** [B21] Видимый muted-lede (канон SecHead). */
+  lede: string;
   children: ReactNode;
 }
 
-function SectionShell({ title, children }: SectionShellProps) {
-  return <section aria-label={title}>{children}</section>;
+function SectionShell({ label, lede, children }: SectionShellProps) {
+  return (
+    <section aria-label={label} style={{ maxWidth: 560 }}>
+      <p className="muted" style={{ fontSize: 13, lineHeight: 1.5, margin: '0 0 18px' }}>
+        {lede}
+      </p>
+      {children}
+    </section>
+  );
 }
 
-// [Bulk recap] Пересоздать пустые рекапы старых звонков (до schema-fix).
+// ── [B21] «Запись» — языки / горячие клавиши / авто-определение (канон
+// SecRecording: GroupLabel + плотные SettingRow). Логика persist/invoke 1-в-1.
+interface RecordingSectionProps {
+  sttLang: PreferredLanguage;
+  setSttLang: (v: PreferredLanguage) => void;
+  preferredLanguage: PreferredLanguage;
+  setPreferredLanguage: (v: PreferredLanguage) => void;
+  toggleHotkey: string;
+  setToggleHotkey: (v: string) => void;
+  pauseHotkey: string;
+  setPauseHotkey: (v: string) => void;
+  callDetectEnabled: boolean;
+  setCallDetectEnabled: (v: boolean) => void;
+  callDetectCooldown: CallDetectCooldown;
+  setCallDetectCooldown: (v: CallDetectCooldown) => void;
+  persist: (key: string, value: string) => Promise<void>;
+}
+
+function RecordingSection({
+  sttLang,
+  setSttLang,
+  preferredLanguage,
+  setPreferredLanguage,
+  toggleHotkey,
+  setToggleHotkey,
+  pauseHotkey,
+  setPauseHotkey,
+  callDetectEnabled,
+  setCallDetectEnabled,
+  callDetectCooldown,
+  setCallDetectCooldown,
+  persist,
+}: RecordingSectionProps) {
+  const { t } = useI18n();
+  return (
+    <div>
+      <GroupLabel top={2}>{t('settings.groupLanguages')}</GroupLabel>
+      <SettingRow label={t('settings.sttLangLabel')} hint={t('settings.sttLangHint')} align="top">
+        <Select<PreferredLanguage>
+          value={sttLang}
+          options={STT_LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
+          onChange={(v) => {
+            setSttLang(v);
+            void persist(SETTINGS_KEYS.STT_LANG, v);
+          }}
+        />
+      </SettingRow>
+      <SettingRow
+        label={t('settings.sttRecapLangLabel')}
+        hint={t('settings.sttRecapLangHint')}
+        align="top"
+        last
+      >
+        <Select<PreferredLanguage>
+          value={preferredLanguage}
+          options={PREFERRED_LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
+          onChange={(v) => {
+            setPreferredLanguage(v);
+            void persist(SETTINGS_KEYS.PREFERRED_LANGUAGE, v);
+          }}
+        />
+      </SettingRow>
+
+      {/* [W1] Configurable recording hotkeys. */}
+      <GroupLabel>{t('settings.groupHotkeys')}</GroupLabel>
+      <SettingRow label={t('settings.hotkeyToggleLabel')} hint={t('settings.hotkeyToggleHint')}>
+        <HotkeyCapture
+          value={toggleHotkey}
+          defaultHotkey={DEFAULT_TOGGLE_HOTKEY}
+          onChange={(v) => {
+            setToggleHotkey(v);
+            void persist(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE, v);
+          }}
+        />
+      </SettingRow>
+      <SettingRow
+        label={t('settings.hotkeyPauseLabel')}
+        hint={t('settings.hotkeyPauseHint')}
+        last
+      >
+        <HotkeyCapture
+          value={pauseHotkey}
+          defaultHotkey={DEFAULT_PAUSE_HOTKEY}
+          onChange={(v) => {
+            setPauseHotkey(v);
+            void persist(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE, v);
+          }}
+        />
+      </SettingRow>
+
+      {/* [S1] Auto-detect call popup — opt-in R3 deviation. */}
+      <GroupLabel>{t('settings.groupAutoDetect')}</GroupLabel>
+      <SettingRow
+        label={t('settings.callDetectRowLabel')}
+        hint={
+          <>
+            {t('settings.callDetectCheckboxLabel')} {t('settings.callDetectHint')}
+          </>
+        }
+        align="top"
+        last={!callDetectEnabled}
+      >
+        <Switch
+          checked={callDetectEnabled}
+          label={t('settings.callDetectRowLabel')}
+          onChange={(v) => {
+            setCallDetectEnabled(v);
+            void persist(SETTINGS_KEYS.CALL_DETECT_ENABLED, v ? '1' : '0');
+            // [S2] Поднять/потушить probe сразу же.
+            if (v) {
+              void invoke('enable_call_detect', {
+                cooldownMin: Number.parseInt(callDetectCooldown, 10),
+              }).catch((err) => {
+                console.warn('enable_call_detect failed', err);
+              });
+            } else {
+              void invoke('disable_call_detect').catch((err) => {
+                console.warn('disable_call_detect failed', err);
+              });
+            }
+          }}
+        />
+      </SettingRow>
+      {callDetectEnabled && (
+        <SettingRow
+          label={t('settings.callDetectCooldownRowLabel')}
+          hint={t('settings.callDetectCooldownHint')}
+          align="top"
+          last
+        >
+          <Select<CallDetectCooldown>
+            value={callDetectCooldown}
+            options={CALL_DETECT_COOLDOWNS.map((n) => ({
+              value: n,
+              label: t('settings.callDetectCooldownOption', { n }),
+            }))}
+            onChange={(v) => {
+              setCallDetectCooldown(v);
+              void persist(SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN, v);
+              // [S2] Если probe уже работает — пере-enable с новым cooldown'ом.
+              if (callDetectEnabled) {
+                void invoke('enable_call_detect', {
+                  cooldownMin: Number.parseInt(v, 10),
+                }).catch((err) => {
+                  console.warn('enable_call_detect (refresh) failed', err);
+                });
+              }
+            }}
+          />
+        </SettingRow>
+      )}
+    </div>
+  );
+}
+
+// [Bulk recap, B21] «Обслуживание» — один Row «Пустые саммари» с инлайн-
+// состояниями (канон SecMaintenance): idle → кнопка; working → Wave + N/M +
+// Стоп; done → ok-иконка + счёт.
 function BulkRecapSection() {
   const { t } = useI18n();
   const [running, setRunning] = useState(false);
@@ -570,86 +544,71 @@ function BulkRecapSection() {
     }
   };
 
+  const control = running ? (
+    <span
+      role="status"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        color: 'var(--accent-text)',
+        fontSize: 12.5,
+      }}
+    >
+      <Wave />
+      {progress
+        ? t('settings.bulkRecapProgress', { done: progress.done + 1, total: progress.total })
+        : t('settings.bulkRecapScanning')}
+      <Button variant="ghost" size="sm" onClick={() => void stop()}>
+        {t('settings.bulkRecapStop')}
+      </Button>
+    </span>
+  ) : result ? (
+    <span
+      role="status"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        color: result.failed > 0 ? 'var(--text-2)' : 'var(--ok)',
+        fontSize: 12.5,
+      }}
+    >
+      <Icon name="checkCircle" size={15} />
+      {result.regenerated === 0 && result.failed === 0 && !result.cancelled
+        ? t('settings.bulkRecapNoneEmpty')
+        : t('settings.bulkRecapResult', {
+            regenerated: result.regenerated,
+            failed: result.failed,
+          })}
+    </span>
+  ) : (
+    <Button variant="default" size="sm" leading={<Icon name="refresh" size={14} />} onClick={() => void start()}>
+      {t('settings.bulkRecapStart')}
+    </Button>
+  );
+
   return (
-    <div style={{ maxWidth: 560 }}>
+    <div>
       {error && (
-        <p role="alert" style={{ color: 'var(--danger)', marginBottom: 16 }}>
+        <p role="alert" style={{ color: 'var(--danger)', marginBottom: 12 }}>
           {error}
         </p>
       )}
-
-      {running && progress ? (
-        <div
-          className="panel"
-          role="status"
-          style={{
-            background: 'var(--accent-soft)',
-            borderColor: 'transparent',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 14,
-            padding: '12px 16px',
-            marginBottom: 16,
-          }}
-        >
-          <span className="wave" style={{ color: 'var(--accent)' }}>
-            {[0, 1, 2, 3, 4].map((i) => (
-              <i key={i} style={{ animationDelay: i * 0.1 + 's' }} />
-            ))}
-          </span>
-          <span style={{ flex: '1 1 auto', color: 'var(--text-2)' }}>
-            {t('settings.bulkRecapProgress', {
-              done: progress.done + 1,
-              total: progress.total,
-            })}
-          </span>
-          <button
-            type="button"
-            className="btn btn--ghost"
-            data-size="sm"
-            onClick={() => void stop()}
-          >
-            {t('settings.bulkRecapStop')}
-          </button>
-        </div>
-      ) : running ? (
-        <p style={{ color: 'var(--text-3)', marginBottom: 16 }} role="status">
-          {t('settings.bulkRecapScanning')}
-        </p>
-      ) : null}
-
-      {result && !running && (
-        <p
-          role="status"
-          style={{
-            fontSize: 16,
-            color: 'var(--text)',
-            marginBottom: 16,
-            maxWidth: 560,
-          }}
-        >
-          {result.regenerated === 0 && result.failed === 0 && !result.cancelled
-            ? t('settings.bulkRecapNoneEmpty')
-            : t('settings.bulkRecapResult', {
-                regenerated: result.regenerated,
-                failed: result.failed,
-              })}
-        </p>
-      )}
-
-      <button
-        type="button"
-        className="btn btn--primary"
-        onClick={() => void start()}
-        disabled={running}
+      <SettingRow
+        label={t('settings.bulkRecapRowLabel')}
+        hint={t('settings.bulkRecapRowHint')}
+        align="top"
+        last
       >
-        {running ? t('settings.bulkRecapRunning') : t('settings.bulkRecapStart')}
-      </button>
+        {control}
+      </SettingRow>
     </div>
   );
 }
 
-// [B16 audit P2 / GDPR Art. 17] Полное удаление данных.
+// [B16 audit P2 / GDPR Art. 17, B21] «Приватность» — Row «Удалить все данные»
+// + danger-ghost sm; done → Chip «удалено» (канон SecPrivacy).
 function DeleteAllDataSection() {
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
@@ -657,42 +616,35 @@ function DeleteAllDataSection() {
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  if (done) {
-    return (
-      <p
-        style={{
-          fontSize: 16,
-          color: 'var(--text)',
-          margin: 0,
-          maxWidth: 560,
-        }}
-      >
-        {t('settings.wipeDone')}
-      </p>
-    );
-  }
-
   return (
-    <div style={{ maxWidth: 560 }}>
+    <div>
       {error && (
-        <p
-          role="alert"
-          style={{
-            color: 'var(--danger)',
-            marginBottom: 12,
-          }}
-        >
+        <p role="alert" style={{ color: 'var(--danger)', marginBottom: 12 }}>
           {error}
         </p>
       )}
-      <button
-        type="button"
-        className="btn btn--danger-ghost"
-        onClick={() => setConfirmOpen(true)}
-        disabled={busy}
+      <SettingRow
+        label={t('settings.wipeBtn')}
+        hint={done ? t('settings.wipeDone') : t('settings.wipeRowHint')}
+        align="top"
+        last
       >
-        {busy ? t('settings.wipeBusy') : t('settings.wipeBtn')}
-      </button>
+        {done ? (
+          <Chip tone="ok" size="sm" icon="check">
+            {t('settings.wipeDoneChip')}
+          </Chip>
+        ) : (
+          <Button
+            variant="danger-ghost"
+            size="sm"
+            leading={<Icon name="trash" size={14} />}
+            onClick={() => setConfirmOpen(true)}
+            disabled={busy}
+          >
+            {busy ? t('settings.wipeBusy') : t('common.delete')}
+          </Button>
+        )}
+      </SettingRow>
       <ConfirmModal
         open={confirmOpen}
         title={t('settings.wipeConfirmTitle')}
