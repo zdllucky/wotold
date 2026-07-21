@@ -35,9 +35,12 @@ interface ProcessingPanelProps {
   chunks?: CallChunk[];
   /** Callback retry failed chunk. Прокидывается в ChunkFailureAccordion. */
   onRetryChunk?: (chunkIdx: number) => void;
+  /** [Q] Звонок ждёт тяжёлый ресурс в очереди (другой звонок в работе).
+   *  resource — id ресурса, position — позиция в FIFO (1-based). */
+  queued?: { resource: 'stt' | 'diarization' | 'llm'; position: number };
 }
 
-export function ProcessingPanel({ call, chunks, onRetryChunk }: ProcessingPanelProps) {
+export function ProcessingPanel({ call, chunks, onRetryChunk, queued }: ProcessingPanelProps) {
   const { t } = useI18n();
 
   // Step может быть NULL до первого emit_progress — показываем step=1 (upload).
@@ -61,6 +64,32 @@ export function ProcessingPanel({ call, chunks, onRetryChunk }: ProcessingPanelP
       <PipelineStrip progress={progress} chunks={chunks} />
       {hasFailedChunks && onRetryChunk && chunks && (
         <ChunkFailureAccordion chunks={chunks} onRetryChunk={onRetryChunk} />
+      )}
+      {/* [Q] Этап стоит в очереди тяжёлого ресурса — другой звонок в работе. */}
+      {queued && (
+        <p
+          role="status"
+          style={{
+            fontFamily: 'var(--font)',
+            fontSize: 13,
+            color: 'var(--text-3)',
+            marginTop: 10,
+            marginBottom: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+          }}
+        >
+          <span
+            className="dot"
+            aria-hidden="true"
+            style={{ background: 'var(--text-faint)', flex: '0 0 auto' }}
+          />
+          {t('queue.callWaiting', {
+            resource: t(`queue.res.${queued.resource}`),
+            pos: queued.position,
+          })}
+        </p>
       )}
       <p
         className="muted"

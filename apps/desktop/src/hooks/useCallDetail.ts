@@ -41,12 +41,14 @@ import {
 import {
   listCallChunks,
   RECAP_PROGRESS_EVENT,
+  RECAP_STEP_EVENT,
   RECORDING_DURATION_EVENT,
   type Call,
   type CallChunk,
   type CallProgressEvent,
   type ChunkDoneEvent,
   type RecapProgressEvent,
+  type RecapStepEvent,
   type RecordingDurationEvent,
 } from '../api/recording';
 import { humanError } from '../api/errors';
@@ -77,6 +79,10 @@ export interface UseCallDetailResult {
    *  Resets на `null` когда `regenerating` flips false в CallDetailPage. */
   recapElapsedSec: number | null;
   setRecapElapsedSec: (v: number | null) => void;
+  /** [F3] Живые шаги генерации рекапа (`recap:step`, upsert по step_idx).
+   *  Очищается насовсем при смене звонка и на pipeline:finished/cancelled —
+   *  thinking-блок существует только во время генерации. */
+  recapSteps: RecapStepEvent[];
   /** [Global regen] Активна ли фон-задача (reprocess / regen) для звонка —
    *  из backend pipeline_tasks registry, переживает навигацию. */
   bgBusy: boolean;
@@ -107,6 +113,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   const [systemSrc, setSystemSrc] = useState<string | null>(null);
   // [P1.3] Elapsed timer для recap regen UI. См. JSDoc на интерфейсе.
   const [recapElapsedSec, setRecapElapsedSec] = useState<number | null>(null);
+  // [F3] Шаги thinking-блока генерации рекапа.
+  const [recapSteps, setRecapSteps] = useState<RecapStepEvent[]>([]);
   // [Global regen] Активна ли фон-задача (reprocess / regen) для звонка.
   // Источник правды — backend pipeline_tasks registry (через isCallProcessing
   // + pipeline:started/finished события), а не component-local флаг → переживает
@@ -118,8 +126,10 @@ export function useCallDetail(callId: string): UseCallDetailResult {
 
   // [P-fix10] Сброс one-shot reveal-флага при смене звонка — чтобы переход на
   // другой (уже готовый) звонок не запускал typewriter.
+  // [F3] + очистка thinking-шагов: блок не пересекает границы звонков.
   useEffect(() => {
     setJustGenerated(false);
+    setRecapSteps([]);
   }, [callId]);
 
   // Adapter that supports either a value or an updater callback — mirrors
@@ -246,6 +256,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
           (e) => {
             if (e.payload.call_id !== callId) return;
             setBgBusy(false);
+            // [F3] Генерация закончилась → thinking-блок исчезает насовсем.
+            setRecapSteps([]);
             // [P-fix10] One-shot «только что сгенерировано» → typewriter-reveal.
             // Авто-сброс позже длительности анимации, чтобы навигация не реанимировала.
             setJustGenerated(true);
@@ -259,6 +271,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
           (e) => {
             if (e.payload.call_id !== callId) return;
             setBgBusy(false);
+            // [F3] Отмена — шаги тоже убираем.
+            setRecapSteps([]);
             void refetchAll();
           },
         );
@@ -337,6 +351,31 @@ export function useCallDetail(callId: string): UseCallDetailResult {
         unlisten = fn;
       })
       .catch((err) => console.warn('recap:progress listener:', err));
+    return () => unlisten?.();
+  }, [callId]);
+
+  // [F3] Живые шаги генерации рекапа — upsert по step_idx (started → done
+  // обновляет ту же запись, порядок стабилен). Очистка: смена звонка,
+  // pipeline:finished, pipeline:cancelled (см. выше).
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<RecapStepEvent>(RECAP_STEP_EVENT, (e) => {
+      if (e.payload.call_id !== callId) return;
+      const ev = e.payload;
+      setRecapSteps((prev) => {
+        const idx = prev.findIndex((s) => s.step_idx === ev.step_idx);
+        if (idx === -1) {
+          return [...prev, ev].sort((a, b) => a.step_idx - b.step_idx);
+        }
+        const next = prev.slice();
+        next[idx] = ev;
+        return next;
+      });
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((err) => console.warn('recap:step listener:', err));
     return () => unlisten?.();
   }, [callId]);
 
@@ -464,6 +503,7 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     systemSrc,
     recapElapsedSec,
     setRecapElapsedSec,
+    recapSteps,
     bgBusy,
     setBgBusy,
     justGenerated,

@@ -18,6 +18,7 @@ import {
   reprocessCall,
 } from '../api/calls';
 import { retryChunk } from '../api/recording';
+import { useQueueState } from '../hooks/useQueueState';
 import { localEngineEvalRecap } from '../api/local-engine';
 import { humanError } from '../api/errors';
 import { engineLabelHuman } from '../utils/engineLabel';
@@ -70,6 +71,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
     systemSrc,
     recapElapsedSec,
     setRecapElapsedSec,
+    recapSteps,
     bgBusy,
     setBgBusy,
     justGenerated,
@@ -95,6 +97,22 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   // [B17 V3.2] Single audio source — shared между AudioScrubber и
   // InteractiveTranscript (для highlight current + click-to-seek).
   const audio = useCallAudio(callId, call?.duration_sec ?? 0);
+
+  // [Q] Этот звонок стоит в очереди тяжёлого ресурса? (в waiting и нигде
+  // не busy) → ProcessingPanel показывает «в очереди, позиция N».
+  const queue = useQueueState();
+  const queuedInfo = useMemo(() => {
+    if (!queue) return undefined;
+    const busySomewhere = queue.resources.some((r) => r.busy?.call_id === callId);
+    if (busySomewhere) return undefined;
+    for (const r of queue.resources) {
+      const idx = r.waiting.findIndex((w) => w.call_id === callId);
+      if (idx !== -1) {
+        return { resource: r.id, position: idx + 1 };
+      }
+    }
+    return undefined;
+  }, [queue, callId]);
 
   // [B17 V4.1] Per-tag sample bubble (text + start/end/src) — для модала
   // и (потенциально) для будущего sample-row inline-feature в транскрипте.
@@ -457,6 +475,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           <ProcessingPanel
             call={call}
             chunks={chunks}
+            queued={queuedInfo}
             onRetryChunk={(idx) => {
               // [Tech-debt P0.2] retry_chunk fire-and-forget — status update
               // придёт через transcript:chunk_done event, ChunkProgressStrip
@@ -605,6 +624,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             recap={recap}
             animate={justGenerated}
             generating={call.status === 'processing' || bgBusy}
+            steps={recapSteps}
             generatingLabel={
               recapElapsedSec != null
                 ? `${t('callDetail.generatingRecap')} ${recapElapsedSec}s`

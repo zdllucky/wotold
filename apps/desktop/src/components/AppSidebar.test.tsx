@@ -52,7 +52,8 @@ function props(view: RailView, extra: Partial<Parameters<typeof Sidebar>[0]> = {
     contactsCount: 4,
     activeCallId: null,
     isDev: false,
-    resolvedTheme: 'light' as const,
+    // [Q] Монитор очередей — заменил theme-toggle.
+    queue: null,
     onRecord: vi.fn(),
     onPause: vi.fn(),
     onNav: vi.fn(),
@@ -60,7 +61,6 @@ function props(view: RailView, extra: Partial<Parameters<typeof Sidebar>[0]> = {
     onSearch: vi.fn(),
     onCollapse: vi.fn(),
     onExpand: vi.fn(),
-    onToggleTheme: vi.fn(),
     onResizeStart: vi.fn(),
     ...extra,
   };
@@ -104,5 +104,15 @@ describe('Sidebar navbar', () => {
     expect(container.querySelectorAll('.navitem').length).toBe(5);
     // recents carry a leading .dot (StatusCell) inside a .nav-ico
     expect(container.querySelectorAll('.navitem .nav-ico .dot').length).toBeGreaterThanOrEqual(2);
+  });
+
+  // [Q] Theme-toggle заменён на QueueMonitor.
+  test('bottom row hosts QueueMonitor button, no theme toggle', () => {
+    const { container } = render(<Sidebar {...props('inbox')} />);
+    const buttons = [...container.querySelectorAll('button')];
+    expect(buttons.some((b) => /Light|Dark/.test(b.title))).toBe(false);
+    expect(
+      buttons.some((b) => /Очереди|queues|кезек/i.test(b.getAttribute('aria-label') ?? '')),
+    ).toBe(true);
   });
 });
