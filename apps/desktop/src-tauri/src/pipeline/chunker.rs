@@ -1,10 +1,11 @@
-//! [M14 T-05 Phase B] Разбиение transcript.md на token-windows для map-reduce.
+//! [M14 T-05 Phase B] Разбиение transcript.md на token-windows для
+//! chunked-генерации ([F1] refine-чейн).
 //!
 //! ## Зачем
 //!
 //! Локальная Qwen 1.5B имеет ~8K эффективного контекста. 1-часовой звонок
-//! ≈ 24-30K tokens — не влезает single-pass. Phase A path работает только
-//! для коротких звонков; Phase B решает long calls через chunk + map-reduce.
+//! ≈ 24-30K tokens — не влезает single-pass. Короткие звонки идут
+//! single-pass; длинные — последовательным refine-чейном по чанкам.
 //!
 //! ## Boundary detection
 //!
@@ -52,6 +53,11 @@ const SINGLE_PASS_MAX_TOKENS: usize = 4_600;
 /// оставляем место map/reduce system-промпту + выводу.
 const MAX_TOKENS_PER_CHUNK: usize = 3_200;
 
+/// [F1] Размер чанка для refine-чейна — меньше map-чанка: в промпт кроме
+/// чанка инъектится компактированный текущий рекап (≤1400 est-токенов),
+/// бюджет чанка приходится ужать. См. const assert в `refine_chain.rs`.
+pub(crate) const REFINE_MAX_TOKENS_PER_CHUNK: usize = 2_600;
+
 /// Continuity-overlap хвоста предыдущего chunk'а, в символах (≈256 токенов).
 const OVERLAP_CHARS: usize = 1_024;
 
@@ -85,6 +91,16 @@ impl ChunkConfig {
                     trigger_tokens: SINGLE_PASS_MAX_TOKENS,
                 }
             }
+        }
+    }
+
+    /// [F1] Конфиг нарезки для refine-чейна: trigger тот же (решение
+    /// «нужен ли chunking» не меняется), но сами чанки меньше — в промпте
+    /// рядом с чанком живёт инъекция текущего рекапа.
+    pub(crate) fn for_refine(preset: LocalEnginePreset) -> Self {
+        Self {
+            max_tokens: REFINE_MAX_TOKENS_PER_CHUNK,
+            ..Self::for_preset(preset)
         }
     }
 }

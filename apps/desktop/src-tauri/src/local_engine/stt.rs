@@ -33,6 +33,7 @@ use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
+use crate::pipeline::resource_queue::{self, Resource};
 use crate::providers::transcription::{
     DiarizedTranscript, TranscriptSegment, TranscriptionError, TranscriptionOpts,
     TranscriptionProvider,
@@ -77,6 +78,8 @@ pub struct LocalWhisperProvider {
     tmp_dir: PathBuf,
     /// Таймаут на один transcribe call.
     timeout: Duration,
+    /// [Q] call_id для QueueMonitor: чей звонок держит/ждёт STT-ресурс.
+    queue_call_id: Option<String>,
 }
 
 impl LocalWhisperProvider {
@@ -90,7 +93,14 @@ impl LocalWhisperProvider {
             app: Mutex::new(None),
             tmp_dir: std::env::temp_dir(),
             timeout: LOCAL_WHISPER_TIMEOUT,
+            queue_call_id: None,
         }
+    }
+
+    /// [Q] Привязать call_id к STT-очереди (QueueMonitor покажет чей звонок).
+    pub fn with_call(mut self, call_id: impl Into<String>) -> Self {
+        self.queue_call_id = Some(call_id.into());
+        self
     }
 
     /// Прикрепить AppHandle — pipeline-runner вызывает после resolve.
@@ -283,8 +293,15 @@ impl TranscriptionProvider for LocalWhisperProvider {
         // / wall_clock_sec. RTF=10× значит «в 10 раз быстрее реального
         // времени». M-series + Metal на Whisper Medium даёт RTF~15-25×;
         // RTF~1-3× указывает на CPU-only path (Metal backend не загрузился).
+        // [Q] Очередь STT-ресурса: 1 permit = 1 spawn whisper-cli (8 потоков).
+        // Дорожки одного звонка (tokio::join! у caller'ов) встают друг за
+        // другом — ровно один 8-поточный декодер единовременно. Скоуп permit'а
+        // — только sidecar-ран; parse JSON уже вне очереди.
         let start = std::time::Instant::now();
-        let run_result = run_sidecar_with_timeout(sidecar, self.timeout).await;
+        let run_result = {
+            let _q = resource_queue::acquire(Resource::Stt, self.queue_call_id.as_deref()).await;
+            run_sidecar_with_timeout(sidecar, self.timeout).await
+        };
         let elapsed = start.elapsed();
         let parse_result = match run_result {
             Ok(()) => parse_whisper_json(&json_path, self.track).await,

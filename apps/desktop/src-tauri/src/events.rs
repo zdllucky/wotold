@@ -47,6 +47,17 @@ pub const RECORDING_DURATION: &str = "recording:duration";
 pub const RECORDING_STATE: &str = "recording:state";
 pub const VOICE_MODEL_PROGRESS: &str = "voice-model:progress";
 pub const VOICE_MODEL_DONE: &str = "voice-model:done";
+/// [Q] Снапшот состояния очередей тяжёлых ресурсов (stt/diarization/llm) —
+/// эмитится на каждый transition (enqueue/acquire/release). Payload —
+/// `resource_queue::QueueStateEvent` (generic emit — без цикла events↔pipeline).
+/// UI: QueueMonitor попап в сайдбаре + «в очереди» на странице звонка.
+pub const QUEUE_STATE: &str = "queue:state";
+/// [F3] Пошаговый прогресс генерации рекапа (thinking-блок в RecapView).
+/// Payload — `RecapStepEvent`. Эмитится на каждый шаг chain'а: classify /
+/// refine chunk i/N / post_pass / narrative / finalize (local) или единый
+/// generate (cloud one-shot + короткий local). UI скрывает блок насовсем
+/// на `pipeline:finished`.
+pub const RECAP_STEP: &str = "recap:step";
 /// [Bulk recap] Прогресс массового пересоздания пустых рекапов. Payload —
 /// `{ done, total, call_id }`. Settings progress-strip подписывается.
 pub const RECAP_BULK_PROGRESS: &str = "recap:bulk_progress";
@@ -123,6 +134,35 @@ pub struct RecordingDurationEvent {
     pub duration_sec: i64,
 }
 
+/// [F3] Усечённое превью промежуточного результата refine-шага —
+/// разворачивается в thinking-блоке UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecapStepPreview {
+    /// Текущий title рекапа, усечён до 120 chars.
+    pub title: String,
+    /// Первые ≤3 key_points, каждый усечён до 120 chars.
+    pub key_points: Vec<String>,
+}
+
+/// [F3] Один шаг генерации рекапа. UI upsert'ит по `step_idx` и рендерит
+/// thinking-блок (см. RecapThinking.tsx); скрывает на `pipeline:finished`.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecapStepEvent {
+    pub call_id: String,
+    /// 0-based, стабилен для одного шага (started → done обновляет запись).
+    pub step_idx: u32,
+    /// 0 = ещё неизвестно (до подсчёта чанков).
+    pub total_steps: u32,
+    /// `classify` | `refine` | `post_pass` | `narrative` | `finalize` | `generate`
+    pub kind: &'static str,
+    /// `started` | `done` | `failed`
+    pub status: &'static str,
+    /// kind=refine: 1-based номер чанка.
+    pub chunk_no: Option<u32>,
+    pub chunk_total: Option<u32>,
+    pub preview: Option<RecapStepPreview>,
+}
+
 // `audio:level` payload живёт в audio::macos (типобезопасность копий нет).
 // EventBus принимает его generic'ом для совместимости.
 
@@ -186,6 +226,17 @@ impl<'a> EventBus<'a> {
     /// `pipeline::recap_progress::with_recap_progress_emitter`.
     pub fn recap_progress(&self, e: &RecapProgressEvent) {
         self.emit(RECAP_PROGRESS, e);
+    }
+
+    /// [F3] Пошаговый прогресс генерации рекапа (thinking-блок).
+    pub fn recap_step(&self, e: &RecapStepEvent) {
+        self.emit(RECAP_STEP, e);
+    }
+
+    /// [Q] Снапшот очередей ресурсов. Generic (payload живёт в
+    /// `pipeline::resource_queue`) — избегаем цикла events ↔ pipeline.
+    pub fn queue_state<T: Serialize + Clone>(&self, payload: &T) {
+        self.emit(QUEUE_STATE, payload);
     }
 
     /// [P5.2] Live duration update на sidecar rotated event. UI patch'ит
@@ -292,6 +343,8 @@ mod tests {
         assert_eq!(AUDIO_ROTATED, "audio:rotated");
         assert_eq!(TRANSCRIPT_CHUNK_DONE, "transcript:chunk_done");
         assert_eq!(RECAP_PROGRESS, "recap:progress");
+        assert_eq!(RECAP_STEP, "recap:step");
+        assert_eq!(QUEUE_STATE, "queue:state");
         assert_eq!(RECORDING_DURATION, "recording:duration");
         assert_eq!(VOICE_MODEL_PROGRESS, "voice-model:progress");
         assert_eq!(VOICE_MODEL_DONE, "voice-model:done");
