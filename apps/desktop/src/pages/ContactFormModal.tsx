@@ -13,7 +13,17 @@ import {
   type ContactInput,
 } from '../api/contacts';
 import { useI18n } from '../i18n';
-import { Avatar, Button, Icon, IconBtn, InputField, Modal, Select, SettingRow, Switch, TextareaField } from '../ui';
+import {
+  Button,
+  Icon,
+  IconBtn,
+  InputField,
+  Modal,
+  Select,
+  SettingRow,
+  Switch,
+  TextareaField,
+} from '../ui';
 
 interface ContactFormModalProps {
   /** null/undefined = создание нового. */
@@ -128,16 +138,6 @@ export function ContactFormModal({
             {error}
           </p>
         )}
-        {/* Аватар-превью + vCard-подсказка (канон; импорт-ряд сознательно
-            не показываем — синк DEFERRED, M6.4). */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Avatar name={displayName.trim() || '?'} color="var(--sp2)" size={44} />
-          <span className="u-faint" style={{ fontSize: 12, lineHeight: 1.5 }}>
-            {t('contacts.formHint')}
-          </span>
-        </div>
-        <div style={{ height: 1, background: 'var(--border)' }} />
-
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <InputField
             label={t('contacts.fieldName')}

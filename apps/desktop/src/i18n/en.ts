@@ -383,7 +383,6 @@ export const en: TranslationStrings = {
     notFoundTitle: 'Nothing found',
     newContact: 'New contact',
     editTitle: 'Edit contact',
-    formHint: 'Fields follow the vCard standard — they sync cleanly with external contacts. Voice links after the first call.',
     kind: {
       phone: 'Phone',
       email: 'Email',
@@ -427,13 +426,10 @@ export const en: TranslationStrings = {
   },
 
   voiceSamples: {
-    title: 'Voice samples',
     emptyTitle: 'No voice samples yet',
+    panelHint: 'You can listen or delete.',
     emptyBody:
       'Confirm this person in any call — Wotold will start saving short voice samples for future auto-detection. The “Remember voice” option must be on.',
-    quality: 'quality {pct}',
-    embedBytes: '{n} bytes',
-    callTag: 'call:{short}',
     deleteAria: 'Delete sample',
     deleteConfirmBody:
       'Delete voice sample from {created}?\n\nThis permanently removes the embedding from the contact profile. Biometrics are not recoverable.',

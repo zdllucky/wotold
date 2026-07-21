@@ -383,7 +383,6 @@ export const kk: TranslationStrings = {
     notFoundTitle: 'Ештеңе табылмады',
     newContact: 'Жаңа контакт',
     editTitle: 'Контактіні өңдеу',
-    formHint: 'Өрістер vCard стандартына сай — сыртқы контактілермен дұрыс синхрондалады. Дауыс алғашқы қоңыраудан кейін байланысады.',
     kind: {
       phone: 'Телефон',
       email: 'Email',
@@ -427,13 +426,10 @@ export const kk: TranslationStrings = {
   },
 
   voiceSamples: {
-    title: 'Дауыс үлгілері',
     emptyTitle: 'Әзірге дауыс үлгілері жоқ',
+    panelHint: 'Тыңдауға немесе жоюға болады.',
     emptyBody:
       'Бұл адамды кез келген қоңырауда растаңыз — Wotold болашақта авто-анықтау үшін қысқа дауыс үлгілерін сақтай бастайды. «Дауысты есте сақтау» опциясы қосылған болуы керек.',
-    quality: 'сапасы {pct}',
-    embedBytes: '{n} байт',
-    callTag: 'call:{short}',
     deleteAria: 'Үлгіні жою',
     deleteConfirmBody:
       '{created} дауыс үлгісін жоясыз ба?\n\nБұл контакт профилінен embedding-ті біржола жояды. Биометрия қалпына келмейді.',
