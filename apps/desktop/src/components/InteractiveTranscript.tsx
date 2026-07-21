@@ -8,12 +8,13 @@
 // Fallback: если raw_stt.json отсутствует (старые звонки до B10) —
 // рендер ReactMarkdown оригинального transcript.md.
 
-import { useEffect, useMemo, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { CallSpeakerView } from '../api/speakers';
 import { Avatar, Empty, Icon } from '../ui';
 import { useI18n } from '../i18n';
 import { humanSpeakerLabel } from '../utils/callMeta';
+import { findActiveGroupIdx, type GroupRange } from '../lib/transcriptActive';
 
 interface Segment {
   start: number;
@@ -114,6 +115,14 @@ interface Props {
   /** [P-fix10] Идёт STT и расшифровки ещё нет → ghost-строки (skeleton) вместо
    *  пустоты, чтобы не казалось зависшим. */
   generating?: boolean;
+  /** [B20.8] Автоскролл к активной реплике. false = юзер скроллит сам,
+   *  follow вернёт только кнопка в плеере (scrollToActive). */
+  follow?: boolean;
+}
+
+/** [B20.8] Императивный хэндл — кнопка «к текущему» в плеере. */
+export interface InteractiveTranscriptHandle {
+  scrollToActive: () => void;
 }
 
 /** speaker_tag → label для бейджа. Confirmed-contact → display_name,
@@ -129,14 +138,11 @@ function buildLabelMap(speakers?: CallSpeakerView[]): Map<string, string> {
   return m;
 }
 
-export function InteractiveTranscript({
-  rawSttJson,
-  fallbackMd,
-  speakers,
-  currentTime,
-  onSeek,
-  generating = false,
-}: Props) {
+export const InteractiveTranscript = forwardRef<InteractiveTranscriptHandle, Props>(
+  function InteractiveTranscript(
+    { rawSttJson, fallbackMd, speakers, currentTime, onSeek, generating = false, follow = true },
+    ref,
+  ) {
   const { t } = useI18n();
   const labels = useMemo(() => buildLabelMap(speakers), [speakers]);
   const segments: Segment[] | null = useMemo(() => {
@@ -150,26 +156,39 @@ export function InteractiveTranscript({
     [segments],
   );
 
-  // [B17 V3.2] Index of group containing currentTime, or -1.
-  const activeIdx = useMemo(() => {
-    if (currentTime == null || groups.length === 0) return -1;
-    for (let i = 0; i < groups.length; i++) {
-      const g = groups[i]!;
-      const start = g.segments[0]?.start ?? 0;
-      const end = g.segments[g.segments.length - 1]?.end ?? start;
-      if (currentTime >= start && currentTime <= end) return i;
-    }
-    return -1;
-  }, [currentTime, groups]);
+  // [B17 V3.2, B20.9] Index of group containing currentTime, or -1.
+  const groupRanges: GroupRange[] = useMemo(
+    () =>
+      groups.map((g) => {
+        const start = g.segments[0]?.start ?? 0;
+        return { start, end: g.segments[g.segments.length - 1]?.end ?? start };
+      }),
+    [groups],
+  );
+  const activeIdx = useMemo(
+    () => (currentTime == null ? -1 : findActiveGroupIdx(groupRanges, currentTime)),
+    [currentTime, groupRanges],
+  );
 
-  // Auto-scroll active row into view (smooth, only when user not interacting).
+  // [B20.8] Auto-scroll active row: только в follow-режиме. Ручной скролл юзера
+  // выключает follow (см. CallDetailPage listeners), кнопка в плеере включает
+  // обратно и дёргает scrollToActive() через ref.
   const activeRowRef = useRef<HTMLDivElement | null>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToActive: () => {
+        activeRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      },
+    }),
+    [],
+  );
   useEffect(() => {
-    if (activeIdx < 0) return;
+    if (!follow || activeIdx < 0) return;
     const el = activeRowRef.current;
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [activeIdx]);
+  }, [activeIdx, follow]);
 
   if (!segments || segments.length === 0) {
     if (fallbackMd) {
@@ -277,4 +296,5 @@ export function InteractiveTranscript({
       })}
     </div>
   );
-}
+  },
+);

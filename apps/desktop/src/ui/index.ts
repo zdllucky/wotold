@@ -29,6 +29,7 @@ export { SettingRow } from './SettingRow';
 export { OptionCard, QualityDots } from './OptionCard';
 export { Modal } from './Modal';
 export { Dropdown, MenuItem, MenuLabel, MenuSep } from './Menu';
+export { ContextMenu, type ContextMenuPos } from './ContextMenu';
 // [B18.9] Shared per-screen header bar (.view-head).
 export { ViewHead } from './ViewHead';
 // [window] Кастомные кнопки управления окном (macOS-светофор, hover-reveal).

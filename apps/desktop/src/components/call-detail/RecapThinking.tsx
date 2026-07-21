@@ -1,14 +1,12 @@
-// [F3] RecapThinking — thinking-блок генерации рекапа (стиль «размышлений»):
-// живой список шагов chain'а (classify → refine i/N → post_pass → narrative
-// или единый generate для cloud/короткого local). Каждый done-шаг с превью
-// разворачивается в промежуточный результат (title + первые key_points).
+// [F3, B20.1] RecapThinking — thinking-блок генерации рекапа в стиле
+// «рассуждений» Claude Code: поток приглушённых строк-шагов у левой
+// направляющей, без нумерованных кружков и галочек. Активный шаг — text-shimmer,
+// done-шаг с превью показывает промежуточный результат тихим инлайн-текстом
+// (без вложенного <details>: нет превью — нет и пустого аффорданса).
 //
 // Жизненный цикл: рендерится ТОЛЬКО пока идёт генерация — useCallDetail
 // очищает steps на pipeline:finished/cancelled и при смене звонка, блок
 // исчезает насовсем (решение F3: не персистим «размышления»).
-//
-// Реюз DS: native <details> (a11y бесплатно, mirror .proc-strip) +
-// .steps/.step--done|active|failed/.step-bullet/.step-shimmer/.caret.
 
 import { useI18n } from '../../i18n';
 import { Icon } from '../../ui/Icon';
@@ -70,45 +68,29 @@ export function RecapThinking({ steps }: RecapThinkingProps) {
           {doneCount} / {total > 0 ? total : '…'}
         </span>
       </summary>
-      <div className="steps recap-think-steps" aria-live="polite">
+      <div className="rthink-stream" aria-live="polite">
         {steps.map((s) => {
           const state = uiState(s);
           const label = labelFor(s);
           return (
-            <div key={s.step_idx}>
-              <div className={`step step--${state}`}>
-                <div className="step-bullet" aria-hidden="true">
-                  {state === 'done' ? '✓' : state === 'failed' ? '!' : s.step_idx + 1}
-                </div>
-                <div className="step-label" title={label}>
-                  <span className="step-label-text">{label}</span>
-                  {state === 'active' && <span className="caret" aria-hidden="true" />}
-                </div>
-                <div className="step-meta">
-                  {state === 'done' && '✓'}
-                  {state === 'active' && (
-                    <span
-                      className="step-shimmer"
-                      aria-label={t('callDetail.think.inProgress')}
-                    />
-                  )}
-                  {state === 'failed' && t('callDetail.think.stepFailed')}
-                </div>
+            <div key={s.step_idx} className={`rthink-line rthink-line--${state}`}>
+              <div
+                className="rthink-label"
+                title={label}
+                aria-label={state === 'active' ? `${label} — ${t('callDetail.think.inProgress')}` : undefined}
+              >
+                <span className="rthink-label-text">{label}</span>
+                {state === 'failed' && (
+                  <span className="rthink-skip mono">{t('callDetail.think.stepFailed')}</span>
+                )}
               </div>
-              {s.preview && (
-                <details className="recap-think-preview">
-                  <summary>{t('callDetail.think.preview')}</summary>
-                  <div className="recap-think-preview-body">
-                    <strong>{s.preview.title}</strong>
-                    {s.preview.key_points.length > 0 && (
-                      <ul>
-                        {s.preview.key_points.map((kp, i) => (
-                          <li key={i}>{kp}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </details>
+              {state === 'done' && s.preview && (
+                <div className="rthink-preview">
+                  <span className="rthink-preview-title">{s.preview.title}</span>
+                  {s.preview.key_points.map((kp, i) => (
+                    <span key={i}>— {kp}</span>
+                  ))}
+                </div>
               )}
             </div>
           );
