@@ -4,11 +4,14 @@ export interface ContactIdentifier {
   id: string;
   kind: string;
   value: string;
+  /** [B23] vCard-метка (home/work); UI пока не редактирует. */
+  label: string | null;
 }
 
 export interface ContactIdentifierInput {
   kind: string;
   value: string;
+  label?: string;
 }
 
 export interface Contact {
@@ -21,6 +24,10 @@ export interface Contact {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  /** [B23] Происхождение: 'local' | будущие 'imported:*' (паспорт M6.4). */
+  source: string;
+  external_id: string | null;
+  external_etag: string | null;
   identifiers: ContactIdentifier[];
 }
 

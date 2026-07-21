@@ -1112,6 +1112,9 @@ mod tests {
             notes: None,
             created_at: "now".into(),
             updated_at: "now".into(),
+            source: "local".into(),
+            external_id: None,
+            external_etag: None,
             identifiers: vec![],
         }
     }

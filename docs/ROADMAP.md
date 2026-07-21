@@ -21,7 +21,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [ ] **Views (saved smart-collections) + Explore** — персистентность `SavedView` (S2 контракт `{label, filter_state, view_mode, sort}`) + экраны по прототипу `wk-explore.jsx`.
 - [ ] **Inbox stats** (4 hero + sparkline) — как в прототипе (`wk-screens`/`wk-inbox`).
 - [ ] **Assistant-таб** ⏸ отложен отдельной доработкой (LLM Q&A над транскриптом + endpoint).
-- [ ] **Contacts B18.4 доводка** — identifiers chips (email/phone), derivations (calls-count / last / confirmed — новый query).
+- [x] **Contacts B18.4 доводка** — identifiers chips + derivations были реализованы ранее; форма приведена к канону в B23.
 - [ ] **Manual visual QA** (light/dark, все экраны) — human follow-up, агент не скриншотит native app.
 - [ ] **B18 a11y follow-up** — recording-state live-region (SC 4.1.3); отдельный aria-label тема-toggle; toast dismiss контекст (SC 4.1.2); capabilities least-privilege split для recording-widget; токен `--on-danger`; контраст `--wc-*` в dark; зачистка dead i18n `home.*`/`calls.*`.
 - [ ] **Сверка контрактов (S2)** — `ActionItemV2`/`Decisions`/`OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать.
@@ -117,6 +117,13 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B22.3** Хинты сокращены до осмысленных: убраны languageHint / privacy-простыня call-detect / cooldownHint; sttLang/sttRecapLang/hotkeyToggle/callDetect — короткие редакции.
 - [x] **B22.4** «Обслуживание» (bulk recap) удалено из UI; Rust-команды `regenerate_empty_recaps`/`cancel_bulk_recap` и события `recap:bulk_*` остаются без фронт-потребителя (вернём при надобности).
 - [x] **B22.5** Таблица хранилища: имя модели `.u-trunc`+title (конец наездов), lastUsed 84→70; человеческие лейблы для `qwen25-0_5b` («Ускоритель саммари · 0.5B») и `silero-vad-v5` («Детектор речи»).
+
+## B23 · Contacts polish + sync-ready schema (2026-07-21)
+
+- [x] **B23.1** Миграция 0018: contacts += `source('local')/external_id/external_etag`, identifiers += `label` + дедуп исторических дублей + UNIQUE(contact_id,kind,value) + partial-UNIQUE(source,external_id). Точка расширения импорта зафиксирована (паспорт M6.4, sync не реализуется).
+- [x] **B23.2** `update_contact`: replace-all → **diff-preserve** (стабильные id идентификаторов, label in-place, normalize+dedup payload'а). 8 новых cargo-тестов, включая raw-прогон 0001→дубли→0018. TODO(M6.4): политика нормализации case для value.
+- [x] **B23.3** ContactFormModal — канон v2 AddContactModal (Modal 480, парные поля, footer ghost/primary c form-атрибутом, Switch consent, kind-Select переведён, error/busy внутри диалога); импорт-заглушки сознательно не показываем. ContactsPage: панель view-only, add/edit только модалкой; ContactView на Button-обёртках.
+- [x] **B23.4** i18n: contacts.kind.*/editTitle/formHint ×3; −12 orphan-ключей ×3. RTL: ContactFormModal (6) + ContactsPage (4, включая failure-path в диалоге).
 
 ---
 
