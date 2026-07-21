@@ -11,6 +11,8 @@ import { useI18n } from '../../i18n';
 import { useTypewriter } from '../../hooks/useTypewriter';
 import { Button, Empty, Icon, Markdown, Segmented } from '../../ui';
 import { isMarkdownBlank } from '../../utils/markdown';
+import { RecapThinking } from './RecapThinking';
+import type { RecapStepEvent } from '../../api/recording';
 
 type Mode = 'rich' | 'md';
 
@@ -21,6 +23,9 @@ interface RecapViewProps {
   /** Идёт генерация и текста ещё нет → живой «генерируется…» блок (caret). */
   generating?: boolean;
   generatingLabel?: string;
+  /** [F3] Живые шаги генерации — thinking-блок вместо голого caret'а.
+   *  Пустой массив → прежнее поведение (placeholder + caret). */
+  steps?: RecapStepEvent[];
   emptyHint: string;
   emptyBody?: string;
   onRegenerate?: () => void;
@@ -33,6 +38,7 @@ export function RecapView({
   animate = false,
   generating = false,
   generatingLabel,
+  steps = [],
   emptyHint,
   emptyBody,
   onRegenerate,
@@ -48,6 +54,14 @@ export function RecapView({
 
   if (blank) {
     if (generating) {
+      // [F3] Есть живые шаги → thinking-блок вместо голого caret-placeholder'а.
+      if (steps.length > 0) {
+        return (
+          <div style={{ margin: 'var(--s4) 0' }} aria-busy="true">
+            <RecapThinking steps={steps} />
+          </div>
+        );
+      }
       return (
         <div
           className="card"
@@ -126,6 +140,9 @@ export function RecapView({
           {copied ? t('recap.copied') : t('recap.copyMd')}
         </Button>
       </div>
+      {/* [F3/UI-fix D] Регенерация поверх существующего рекапа — inline
+          thinking прямо над текстом документа (Claude-style). */}
+      {steps.length > 0 && <RecapThinking steps={steps} />}
       {mode === 'md' ? (
         <pre className="md-raw">{md}</pre>
       ) : (

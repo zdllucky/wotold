@@ -32,8 +32,13 @@ export type SummaryEngine =
   | 'cloud-anthropic'
   | 'cloud-xai-grok';
 
-/** Pipeline mode исполнения (calls.summary_pipeline_mode). */
-export type SummaryPipelineMode = 'one_shot' | 'map_reduce' | 'hierarchical';
+/**
+ * Pipeline mode исполнения (calls.summary_pipeline_mode).
+ * [F1] refine_chain заменил map_reduce/hierarchical (последовательный чейн
+ * «расширь и поправь текущий рекап»); исторических map_reduce-строк в БД
+ * нет — режим раньше хардкодился в one_shot.
+ */
+export type SummaryPipelineMode = 'one_shot' | 'refine_chain';
 
 /**
  * Substring-anchored evidence quote. `quote` обязательно verbatim substring

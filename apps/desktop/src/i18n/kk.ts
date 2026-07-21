@@ -193,6 +193,19 @@ export const kk: TranslationStrings = {
     bgBusyStripElapsed: 'Қорытындыны қайта жасаудамыз… {sec}s',
     generatingRecap: 'Қорытынды жасалуда…',
     generatingTranscript: 'Сөйлеу танылуда…',
+    // [F3] Рекап генерациясының тірі қадамдары (RecapThinking).
+    think: {
+      title: 'Генерация барысы',
+      preview: 'Аралық нәтиже',
+      classify: 'Қоңырау түрін анықтаудамыз',
+      refine: '{total} бөліктің {no}-бөлігін өңдеудеміз',
+      generate: 'Қорытынды жасаудамыз',
+      postPass: 'Тапсырмаларды нақтылаудамыз',
+      narrative: 'Баяндама жазудамыз',
+      finalize: 'Тексеріп сақтаудамыз',
+      inProgress: 'Орындалуда',
+      stepFailed: 'Өткізілді',
+    },
     regenerateNoTranscript: 'Регенерация үшін транскрипт жоқ',
     regenerateTitle: '↻ Атауын қайта жасау',
     regeneratingTitle: 'Атау қайта жасалуда…',
@@ -942,6 +955,20 @@ export const kk: TranslationStrings = {
     suggestDismiss: 'Жасыру',
   },
 
+  // [Q] Ауыр ресурстар кезегінің мониторы (QueueMonitor + queued жолы).
+  queue: {
+    monitor: 'Өңдеу кезектері',
+    res: {
+      stt: 'Сөйлеуді тану',
+      diarization: 'Дауыстарды бөлу',
+      llm: 'Қорытынды жасау',
+    },
+    free: 'БОС',
+    busy: 'ЖҰМЫСТА',
+    systemTask: 'Қызметтік тапсырма',
+    empty: 'Кезек бос',
+    callWaiting: 'Кезекте: {resource} — қазір басқа қоңырау өңделуде (позиция {pos})',
+  },
   callState: {
     live: 'жазу жүруде',
     uploading: 'жүктеп жатырмыз',

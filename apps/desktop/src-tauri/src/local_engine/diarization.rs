@@ -80,6 +80,8 @@ pub struct SortformerDiarizer {
     /// кластеров — для записей где user знает количество собеседников лучше
     /// автоматики. Clamp 1..=MAX_LOCAL_SPEAKERS в `with_num_speakers`.
     num_speakers: Option<i32>,
+    /// [Q] call_id для QueueMonitor: чей звонок держит/ждёт диаризацию.
+    queue_call_id: Option<String>,
 }
 
 impl SortformerDiarizer {
@@ -112,7 +114,14 @@ impl SortformerDiarizer {
             segmentation_path,
             embedding_path,
             num_speakers,
+            queue_call_id: None,
         }
+    }
+
+    /// [Q] Привязать call_id к очереди диаризации (QueueMonitor).
+    pub fn with_call(mut self, call_id: impl Into<String>) -> Self {
+        self.queue_call_id = Some(call_id.into());
+        self
     }
 
     /// Доступ к paths для тестов / диагностики.
@@ -190,10 +199,21 @@ impl SortformerDiarizer {
             .to_string();
         let num_clusters_override = self.num_speakers.unwrap_or(-1);
 
+        // [Q] Очередь диаризации: CPU-bound ONNX, permit=1. Permit ПЕРЕЕЗЖАЕТ
+        // внутрь blocking-closure: abort task'а НЕ прерывает spawn_blocking,
+        // поэтому ресурс честно числится busy до реального конца sherpa —
+        // раннее освобождение дало бы две параллельные диаризации.
+        let queue_permit = crate::pipeline::resource_queue::acquire(
+            crate::pipeline::resource_queue::Resource::Diarization,
+            self.queue_call_id.as_deref(),
+        )
+        .await;
+
         // sherpa-onnx APIs синхронные и могут блокировать долго (минута+
         // на большом файле). Запускаем на blocking pool чтобы не залипать
         // в async runtime.
         let segments = tokio::task::spawn_blocking(move || {
+            let _q = queue_permit;
             let wave = Wave::read(&audio_str).ok_or_else(|| {
                 DiarizerError::Provider(format!("Wave::read failed for {audio_str}"))
             })?;

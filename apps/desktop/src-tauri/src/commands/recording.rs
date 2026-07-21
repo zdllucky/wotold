@@ -542,7 +542,7 @@ async fn process_final_chunk(
         FinalChunkAction::Skip => unreachable!(),
     }
 
-    let providers = build_chunk_providers(db, app_data_dir, app).await?;
+    let providers = build_chunk_providers(db, app_data_dir, app, call_id).await?;
     let input = ChunkRunInput {
         call_id: call_id.to_string(),
         chunk_idx: k,
@@ -714,6 +714,8 @@ pub(crate) async fn build_chunk_providers(
     db: &SqlitePool,
     app_data_dir: &std::path::Path,
     app: &AppHandle,
+    // [Q] call_id → STT-очередь (QueueMonitor видит чей звонок у whisper'а).
+    call_id: &str,
 ) -> Result<ChunkProviders, AppError> {
     let preset = db::get_setting(db, SETTING_ACTIVE_PRESET)
         .await?
@@ -728,9 +730,11 @@ pub(crate) async fn build_chunk_providers(
     // TrackKind влияет на дефолтные speaker tags ("owner" для mic, "speaker:0"
     // для system) — их потом переcassign'ает cluster pipeline.
     let mic = LocalWhisperProvider::for_preset(app_data_dir, whisper_id, TrackKind::MicOwner)
+        .with_call(call_id)
         .with_app(app.clone())
         .await;
     let system = LocalWhisperProvider::for_preset(app_data_dir, whisper_id, TrackKind::System)
+        .with_call(call_id)
         .with_app(app.clone())
         .await;
     let mic: Arc<dyn TranscriptionProvider> = Arc::new(mic);
@@ -846,7 +850,7 @@ async fn prepare_chunked_setup(
         lang: stt_lang,
         mic_diarization,
         mic_diarization_num_speakers,
-    } = build_chunk_providers(&state.db, &state.app_data_dir, app).await?;
+    } = build_chunk_providers(&state.db, &state.app_data_dir, app, call_id).await?;
 
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(256);
     let (rotate_tx, rotate_rx) = mpsc::channel::<serde_json::Value>(8);
@@ -1096,7 +1100,7 @@ pub async fn retry_chunk(
         lang: stt_lang,
         mic_diarization,
         mic_diarization_num_speakers,
-    } = build_chunk_providers(&state.db, &state.app_data_dir, &app).await?;
+    } = build_chunk_providers(&state.db, &state.app_data_dir, &app, &call_id).await?;
 
     // 4. FSM gate failed → pending. После этого chunk_runner внутри сделает
     //    pending → processing → done|failed.
@@ -1230,7 +1234,7 @@ pub(crate) async fn spawn_recover_chunked(
     }
 
     // 3. Providers (fail fast если preset/модель не выбраны).
-    let providers = build_chunk_providers(&pool, &app_data_dir, &app).await?;
+    let providers = build_chunk_providers(&pool, &app_data_dir, &app, &call_id).await?;
 
     // 4. Клоны для фонового task'а.
     let db_bg = pool;

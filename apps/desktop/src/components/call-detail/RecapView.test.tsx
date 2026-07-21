@@ -62,4 +62,57 @@ describe('RecapView', () => {
     expect(screen.getByText('генерируется…')).toBeInTheDocument();
     expect(document.querySelector('.caret')).toBeTruthy();
   });
+
+  // [F3] Thinking-блок при живых шагах генерации.
+  const thinkingStep = {
+    call_id: 'c1',
+    step_idx: 0,
+    total_steps: 4,
+    kind: 'classify' as const,
+    status: 'started' as const,
+    chunk_no: null,
+    chunk_total: null,
+    preview: null,
+  };
+
+  test('renders RecapThinking instead of caret card when generating with steps', () => {
+    render(
+      <RecapView
+        recap={null}
+        emptyHint="пусто"
+        generating
+        generatingLabel="генерируется…"
+        steps={[thinkingStep]}
+      />,
+    );
+    expect(document.querySelector('.recap-think')).toBeTruthy();
+    // Голый placeholder-текст не рендерится.
+    expect(screen.queryByText('генерируется…')).toBeNull();
+  });
+
+  test('empty steps keeps legacy caret placeholder', () => {
+    render(
+      <RecapView
+        recap={null}
+        emptyHint="пусто"
+        generating
+        generatingLabel="генерируется…"
+        steps={[]}
+      />,
+    );
+    expect(document.querySelector('.recap-think')).toBeNull();
+    expect(screen.getByText('генерируется…')).toBeInTheDocument();
+  });
+
+  test('regeneration over existing recap shows thinking above content', () => {
+    render(
+      <RecapView
+        recap={'## Сводка\n\nТекст'}
+        emptyHint="пусто"
+        steps={[thinkingStep]}
+      />,
+    );
+    expect(document.querySelector('.recap-think')).toBeTruthy();
+    expect(document.querySelector('.md-rich')).toBeTruthy();
+  });
 });

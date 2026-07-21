@@ -34,24 +34,19 @@ use serde_json::Value;
 use tauri::AppHandle;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Mutex;
 
+use crate::pipeline::resource_queue::{self, Resource};
 use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 
 use super::models::{model_path, ModelId};
 use super::preset::LocalEnginePreset;
 use super::sidecar::SidecarGuard;
 
-/// Global semaphore: serializes all local-LLM subprocess spawns. llama-cli
-/// загружает 1.5-7B GGUF (~3-5 GB RAM, cold-start ~3-5 sec) per вызов.
-/// Параллельные вызовы из pipeline (regen, classifier, action_items,
-/// map-reduce) спавнят независимые subprocess'ы → 4× RAM, 4× CPU contention,
-/// OOM crash на Mac с <32GB. Permit=1 гарантирует FIFO queue: один llama
-/// в air-time, остальные ждут. Cold-start cost остаётся, но system survives.
-///
-/// Future: replace with llama-server persistent backend для re-use модели
-/// между requests (M14 T-? backlog).
-static LLM_SEMAPHORE: Semaphore = Semaphore::const_new(1);
+// [Q] Сериализация LLM-вызовов (llama-cli грузит 1.5-7B GGUF, ~3-5 GB RAM;
+// параллель = OOM/contention) жила в локальном `LLM_SEMAPHORE`; мигрировала
+// в общий реестр `pipeline::resource_queue` (Resource::Llm, permit=1, FIFO) —
+// та же семантика + наблюдаемость: QueueMonitor видит busy/очередь LLM.
 
 /// Имя sidecar бинаря — совпадает с `tauri.conf.json::externalBin` и
 /// capability whitelist'ом. Файлы на диске: `binaries/wotold-llama-<triple>`.
@@ -116,6 +111,9 @@ pub struct LocalLlamaProvider {
     /// идёт HTTP `POST {url}/completion` вместо one-shot `llama-cli` спавна
     /// (модель уже в RAM). `None` — обычный one-shot путь.
     server_url: Option<String>,
+    /// [Q] call_id для QueueMonitor: чей звонок держит/ждёт LLM-ресурс.
+    /// `None` — служебная задача (warm-up).
+    queue_call_id: Option<String>,
 }
 
 impl LocalLlamaProvider {
@@ -128,6 +126,7 @@ impl LocalLlamaProvider {
             tmp_dir: std::env::temp_dir(),
             draft_model_path: None,
             server_url: None,
+            queue_call_id: None,
         }
     }
 
@@ -136,6 +135,14 @@ impl LocalLlamaProvider {
     /// AppState.
     pub fn with_server(mut self, url: Option<String>) -> Self {
         self.server_url = url;
+        self
+    }
+
+    /// [Q] Привязать call_id к очереди LLM-ресурса (QueueMonitor покажет,
+    /// чей звонок держит/ждёт LLM). Ставится при конструировании провайдера —
+    /// вся generate-цепочка (classifier/refine/post-pass/narrative) наследует.
+    pub fn with_call(mut self, call_id: impl Into<String>) -> Self {
+        self.queue_call_id = Some(call_id.into());
         self
     }
 
@@ -189,11 +196,8 @@ impl LocalLlamaProvider {
     /// input) и та же per-request форма (json_schema/grammar), что one-shot,
     /// но без спавна процесса и перезагрузки модели.
     async fn generate_via_server(&self, url: &str, request: LlmRequest) -> Result<Value, LlmError> {
-        // Тот же семафор — сервер `--parallel 1`, держим FIFO как в CLI-пути.
-        let _permit = LLM_SEMAPHORE
-            .acquire()
-            .await
-            .map_err(|e| LlmError::Provider(format!("llm semaphore closed: {e}")))?;
+        // [Q] Та же очередь что и CLI-путь — сервер `--parallel 1`, FIFO.
+        let _permit = resource_queue::acquire(Resource::Llm, self.queue_call_id.as_deref()).await;
 
         let prompt = build_prompt(&request);
         let max_tokens = request
@@ -262,13 +266,11 @@ impl LlmProvider for LocalLlamaProvider {
             return Err(LlmError::NotImplemented);
         };
 
-        // Serialize subprocess spawns — 1 llama-completion at a time.
-        // Acquired permit держится до конца функции (drop при return),
-        // следующий caller автоматически продолжает с очереди.
-        let _permit = LLM_SEMAPHORE
-            .acquire()
-            .await
-            .map_err(|e| LlmError::Provider(format!("llm semaphore closed: {e}")))?;
+        // [Q] Serialize subprocess spawns — 1 llama-completion at a time.
+        // Permit держится до конца функции (drop при return / panic / cancel),
+        // следующий caller автоматически продолжает с очереди. Acquire ПОСЛЕ
+        // `Some(app)`-проверки — headless-тесты не трогают глобальный реестр.
+        let _permit = resource_queue::acquire(Resource::Llm, self.queue_call_id.as_deref()).await;
 
         // 1. Сериализуем prompt в файл. llama-cli `-f` читает целиком с диска,
         //    не страдает от stdin escaping на UTF-8 кириллице.
