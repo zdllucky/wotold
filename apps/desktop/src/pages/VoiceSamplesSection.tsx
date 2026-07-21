@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
-import { Chip, Empty, IconBtn, Skeleton } from '../ui';
+import { Empty, IconBtn, Skeleton } from '../ui';
 import {
   deleteVoiceSample,
   getVoiceSampleAudio,
@@ -189,13 +189,11 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   const empty = !samples || samples.length === 0;
   if (empty && !alwaysShow) return null;
 
-  // [B23-fix] Канон прототипа VoiceSamples (wk-extra.jsx:16-52): заголовок
-  // секции живёт снаружи (.rrail-sec в ContactView) + Chip-счётчик здесь;
-  // строки — .lrow внутри .panel: IconBtn play/pause (accent когда играет),
-  // дата, trailing IconBtn trash. Техно-мета (качество/байты/call-id)
-  // выпилена — обывателю она не нужна, а глифы ▶/❚❚ заменены line-иконками.
+  // [B23-fix] Плоские .lrow-строки без контейнера (фидбек юзера): IconBtn
+  // play/pause + дата + trailing IconBtn trash. Техно-мета
+  // (качество/байты/call-id) и глифы ▶/❚❚ выпилены ранее.
   return (
-    <div style={{ marginTop: 8 }}>
+    <div style={{ marginTop: 4 }}>
       {error && (
         <p role="alert" style={{ color: 'var(--danger)', marginBottom: 12 }}>
           {error}
@@ -207,22 +205,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
           description={t('voiceSamples.emptyBody')}
         />
       ) : (
-        <div className="panel" style={{ padding: 7 }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 9px 8px',
-            }}
-          >
-            <span className="u-faint" style={{ fontSize: 11.5, flex: 1 }}>
-              {t('voiceSamples.panelHint')}
-            </span>
-            <Chip size="sm" tone="line">
-              {samples!.length}
-            </Chip>
-          </div>
+        <div>
           {samples!.map((s) => {
             // [P4] Play разрешён только когда slice metadata complete.
             // Legacy rows (NULL по migration 0017) — disabled.

@@ -201,20 +201,21 @@
   padding-top: 6px;
   letter-spacing: 0.02em;
 }
+/* [B23-fix] Канонизирован под v2 .input (13px, r-sm): прежние 14px/r-xs/
+   letter-spacing были Atelier-легаси и выбивались из уровня Select/Input. */
 .input--box {
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-xs);
-  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  padding: 7px 11px;
   font-family: var(--font);
-  font-size: 14px;
-  letter-spacing: -0.005em;
+  font-size: 13px;
   background: var(--panel);
   transition: border-color var(--fast),
               box-shadow var(--fast);
 }
 .input--box:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .stat {
   display: flex;
