@@ -427,7 +427,6 @@ export const en: TranslationStrings = {
 
   voiceSamples: {
     emptyTitle: 'No voice samples yet',
-    panelHint: 'You can listen or delete.',
     emptyBody:
       'Confirm this person in any call — Wotold will start saving short voice samples for future auto-detection. The “Remember voice” option must be on.',
     deleteAria: 'Delete sample',

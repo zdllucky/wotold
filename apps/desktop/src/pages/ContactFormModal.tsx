@@ -281,7 +281,11 @@ function RowGroup({ title, emptyHint, count, onAdd, children }: RowGroupProps) {
           marginBottom: 8,
         }}
       >
-        <span className="small-caps">{title}</span>
+        {/* [B23-fix] .field-label вместо Atelier .small-caps — единый шрифт
+            с лейблами остальных полей формы. */}
+        <span className="field-label" style={{ marginBottom: 0 }}>
+          {title}
+        </span>
         <Button variant="ghost" size="sm" leading={<Icon name="plus" size={13} />} onClick={onAdd}>
           {t('contacts.addRow')}
         </Button>
