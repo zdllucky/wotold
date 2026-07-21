@@ -123,7 +123,8 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B23.1** Миграция 0018: contacts += `source('local')/external_id/external_etag`, identifiers += `label` + дедуп исторических дублей + UNIQUE(contact_id,kind,value) + partial-UNIQUE(source,external_id). Точка расширения импорта зафиксирована (паспорт M6.4, sync не реализуется).
 - [x] **B23.2** `update_contact`: replace-all → **diff-preserve** (стабильные id идентификаторов, label in-place, normalize+dedup payload'а). 8 новых cargo-тестов, включая raw-прогон 0001→дубли→0018. TODO(M6.4): политика нормализации case для value.
 - [x] **B23.3** ContactFormModal — канон v2 AddContactModal (Modal 480, парные поля, footer ghost/primary c form-атрибутом, Switch consent, kind-Select переведён, error/busy внутри диалога); импорт-заглушки сознательно не показываем. ContactsPage: панель view-only, add/edit только модалкой; ContactView на Button-обёртках.
-- [x] **B23.4** i18n: contacts.kind.*/editTitle/formHint ×3; −12 orphan-ключей ×3. RTL: ContactFormModal (6) + ContactsPage (4, включая failure-path в диалоге).
+- [x] **B23.4** i18n: contacts.kind.*/editTitle ×3; −12 orphan-ключей ×3. RTL: ContactFormModal (6) + ContactsPage (4, включая failure-path в диалоге).
+- [x] **B23.5** Фидбек: vCard-плашка из формы убрана; VoiceSamplesSection переверстан под канон (panel + lrow + IconBtn play/pause/trash вместо глифов ▶/❚❚/×, дубль-заголовок и техно-мета качество/байты/call-id выпилены).
 
 ---
 

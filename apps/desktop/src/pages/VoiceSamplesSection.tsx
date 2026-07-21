@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
-import { Badge, Button, Empty, Skeleton } from '../ui';
+import { Chip, Empty, IconBtn, Skeleton } from '../ui';
 import {
   deleteVoiceSample,
   getVoiceSampleAudio,
@@ -37,10 +37,6 @@ function formatCreatedAt(iso: string, locale: string): string {
   }
 }
 
-function formatQuality(q: number | null): string {
-  if (q == null) return '—';
-  return `${(q * 100).toFixed(0)}%`;
-}
 
 export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSectionProps) {
   const { locale, t } = useI18n();
@@ -193,30 +189,15 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
   const empty = !samples || samples.length === 0;
   if (empty && !alwaysShow) return null;
 
+  // [B23-fix] Канон прототипа VoiceSamples (wk-extra.jsx:16-52): заголовок
+  // секции живёт снаружи (.rrail-sec в ContactView) + Chip-счётчик здесь;
+  // строки — .lrow внутри .panel: IconBtn play/pause (accent когда играет),
+  // дата, trailing IconBtn trash. Техно-мета (качество/байты/call-id)
+  // выпилена — обывателю она не нужна, а глифы ▶/❚❚ заменены line-иконками.
   return (
-    <div style={{ marginTop: 14 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 10,
-        }}
-      >
-        <span className="small-caps">{t('voiceSamples.title')}</span>
-        {samples && samples.length > 0 && (
-          <Badge tone="neutral">{samples.length}</Badge>
-        )}
-      </div>
+    <div style={{ marginTop: 8 }}>
       {error && (
-        <p
-          role="alert"
-          style={{
-            color: 'var(--danger)',
-            fontFamily: 'var(--font)',
-            marginBottom: 12,
-          }}
-        >
+        <p role="alert" style={{ color: 'var(--danger)', marginBottom: 12 }}>
           {error}
         </p>
       )}
@@ -226,7 +207,22 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
           description={t('voiceSamples.emptyBody')}
         />
       ) : (
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        <div className="panel" style={{ padding: 7 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 9px 8px',
+            }}
+          >
+            <span className="u-faint" style={{ fontSize: 11.5, flex: 1 }}>
+              {t('voiceSamples.panelHint')}
+            </span>
+            <Chip size="sm" tone="line">
+              {samples!.length}
+            </Chip>
+          </div>
           {samples!.map((s) => {
             // [P4] Play разрешён только когда slice metadata complete.
             // Legacy rows (NULL по migration 0017) — disabled.
@@ -240,68 +236,36 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
                 ? t('voiceSamples.pauseAria')
                 : t('voiceSamples.playAria');
             return (
-              <li
-                key={s.id}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr auto auto',
-                  gap: 12,
-                  padding: '10px 0',
-                  borderTop: '1px solid var(--border-2)',
-                  alignItems: 'center',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 14,
-                    flexWrap: 'wrap',
-                    alignItems: 'baseline',
-                  }}
+              <div key={s.id} className="lrow" style={{ cursor: 'default' }}>
+                <span
+                  style={
+                    isPlaying
+                      ? { color: 'var(--accent-text)', display: 'inline-flex' }
+                      : { display: 'inline-flex' }
+                  }
                 >
-                  <span
-                    className="mono"
-                    style={{ fontSize: 12, color: 'var(--text)' }}
-                  >
-                    {formatCreatedAt(s.created_at, locale)}
-                  </span>
-                  <span className="muted" style={{ fontSize: 12 }}>
-                    {t('voiceSamples.quality', { pct: formatQuality(s.quality) })}
-                  </span>
-                  <span className="subtle" style={{ fontSize: 11 }}>
-                    {t('voiceSamples.embedBytes', { n: s.embedding_bytes })}
-                  </span>
-                  {s.source_call && (
-                    <span className="subtle mono" style={{ fontSize: 10 }}>
-                      {t('voiceSamples.callTag', { short: s.source_call.slice(0, 8) })}
-                    </span>
-                  )}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
+                  <IconBtn
+                    icon={isPlaying ? 'pause' : 'play'}
+                    size="sm"
+                    label={playLabel}
+                    title={playLabel}
+                    onClick={() => void handlePlay(s)}
+                    disabled={!canPlay || isLoading}
+                  />
+                </span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13 }} className="u-trunc">
+                  {formatCreatedAt(s.created_at, locale)}
+                </span>
+                <IconBtn
+                  icon="trash"
                   size="sm"
-                  onClick={() => void handlePlay(s)}
-                  disabled={!canPlay || isLoading}
-                  aria-label={playLabel}
-                  title={playLabel}
-                >
-                  {/* Glyph: ▶ idle, ❚❚ playing, … loading. Disabled — outline ▷. */}
-                  {isLoading ? '…' : isPlaying ? '❚❚' : canPlay ? '▶' : '▷'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
+                  label={t('voiceSamples.deleteAria')}
                   onClick={() => void handleDelete(s)}
-                  aria-label={t('voiceSamples.deleteAria')}
-                >
-                  ×
-                </Button>
-              </li>
+                />
+              </div>
             );
           })}
-        </ul>
+        </div>
       )}
       {/* [P3] Single shared <audio> для всех samples — single-concurrent
           playback. Hidden control (manage via refs). onEnded чистит state. */}
