@@ -18,10 +18,21 @@ interface FieldShellProps {
   error?: ReactNode;
   inline?: boolean;
   htmlFor: string;
+  /** [B23] Переопределение стилей контейнера .field (напр. margin: 0 внутри
+   *  grid-раскладок, где ритм задаёт gap). */
+  containerStyle?: CSSProperties;
   children: ReactNode;
 }
 
-function FieldShell({ label, hint, error, inline, htmlFor, children }: FieldShellProps) {
+function FieldShell({
+  label,
+  hint,
+  error,
+  inline,
+  htmlFor,
+  containerStyle: containerOverride,
+  children,
+}: FieldShellProps) {
   const containerStyle: CSSProperties = inline
     ? {
         display: 'flex',
@@ -29,8 +40,15 @@ function FieldShell({ label, hint, error, inline, htmlFor, children }: FieldShel
         alignItems: 'center',
         gap: 12,
         margin: 'var(--s2) 0',
+        ...containerOverride,
       }
-    : { display: 'flex', flexDirection: 'column', gap: 6, margin: 'var(--s2) 0' };
+    : {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        margin: 'var(--s2) 0',
+        ...containerOverride,
+      };
   return (
     <div className="field" style={containerStyle}>
       {label && (
@@ -64,16 +82,23 @@ interface InputFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
+  containerStyle?: CSSProperties;
 }
 
 export const InputField = forwardRef<HTMLInputElement, InputFieldProps>(function InputField(
-  { id, label, hint, error, className, ...rest },
+  { id, label, hint, error, className, containerStyle, ...rest },
   ref,
 ) {
   const autoId = useId();
   const fieldId = id ?? autoId;
   return (
-    <FieldShell htmlFor={fieldId} label={label} hint={hint} error={error}>
+    <FieldShell
+      htmlFor={fieldId}
+      label={label}
+      hint={hint}
+      error={error}
+      containerStyle={containerStyle}
+    >
       <input
         ref={ref}
         id={fieldId}
@@ -115,14 +140,21 @@ interface TextareaFieldProps extends TextareaHTMLAttributes<HTMLTextAreaElement>
   label?: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
+  containerStyle?: CSSProperties;
 }
 
 export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>(
-  function TextareaField({ id, label, hint, error, className, ...rest }, ref) {
+  function TextareaField({ id, label, hint, error, className, containerStyle, ...rest }, ref) {
     const autoId = useId();
     const fieldId = id ?? autoId;
     return (
-      <FieldShell htmlFor={fieldId} label={label} hint={hint} error={error}>
+      <FieldShell
+        htmlFor={fieldId}
+        label={label}
+        hint={hint}
+        error={error}
+        containerStyle={containerStyle}
+      >
         <textarea
           ref={ref}
           id={fieldId}
