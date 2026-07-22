@@ -36,7 +36,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 ### Ph1 — FTS5 retrieval end-to-end
 
 - [x] **M15.0** (S) PRD + canon-addendum + эта секция роадмапа.
-- [ ] **M15.1** (S) Контракт S2: `packages/contracts/src/assistant.ts` (AssistantAnswer/Source/Fragment/ChatMeta/Message/IndexStats) + export + Rust-зеркало `assistant/types.rs`. Тест: serde round-trip.
+- [x] **M15.1** (S) Контракт S2: `packages/contracts/src/assistant.ts` (AssistantAnswer/Source/Fragment/ChatMeta/Message/IndexStats) + export + Rust-зеркало `assistant/types.rs`. Тест: serde round-trip (4 шт).
 - [ ] **M15.2** (M) Миграция `0019_assistant.sql` (chats / messages / passages / FTS5 external-content + триггеры / index_state; partial-UNIQUE тред-на-звонок) + repository `db/assistant.rs`. TDD `fresh_db`: CRUD, каскады call→chat/passages, FTS-триггер-синк, FTS5 smoke. → #30 закрывается этим.
 - [ ] **M15.3** (L) Indexer: passage builder (окна транскрипта ~350 ток из `call_chunks.transcript_json` + fallback `transcript.md`, recap-абзацы, structured rows), `on_call_ready`/`deindex_call`, хуки в ready-точках (`pipeline/mod.rs:323`, `pipeline_runner.rs:199/250/451`), startup backfill, инвалидация reprocess/regenerate_recap. TDD: окна/overlap/token_est, идемпотентность, backfill.
 - [ ] **M15.4** (S) Классификатор `is_generative` (порт AS_GEN_RE + границы слов). TDD: таблица ≥20 позитив/негатив кейсов («написали в чате» — негатив).
