@@ -5,4 +5,6 @@
 //! - M15.3: `indexer` · M15.4: `classifier` · M15.5: `retrieval`
 //! - M15.6: `budget` · M15.7: `answer` · Ph2: `embedder`
 
+pub mod classifier;
+pub mod indexer;
 pub mod types;

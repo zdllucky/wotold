@@ -321,6 +321,16 @@ pub async fn delete_call_passages(pool: &SqlitePool, call_id: &str) -> Result<()
     Ok(())
 }
 
+/// Сбросить только index_state (self-heal: звонок вернётся в backfill-sweep).
+/// Пассажи НЕ трогаем — до переиндексации поиск работает по старым.
+pub async fn clear_index_state(pool: &SqlitePool, call_id: &str) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM assistant_index_state WHERE call_id = ?1")
+        .bind(call_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Хит полнотекстового поиска. rank = bm25 (меньше = релевантнее).
 #[derive(Debug, Clone)]
 pub struct PassageHit {
