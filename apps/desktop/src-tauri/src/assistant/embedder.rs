@@ -53,6 +53,57 @@ pub(crate) fn l2_normalize(v: &mut [f32]) {
 /// KV-ключ: id модели, которой посчитаны вектора в `assistant_embeddings`.
 pub const SETTING_EMBED_MODEL_ID: &str = "assistant.embed_model_id";
 
+/// [B25] KV-ключ тумблера «Семантический поиск ассистента».
+/// Отсутствие значения = ВКЛЮЧЕНО (default on — авто-скачивание модели).
+pub const SETTING_SEMANTIC_SEARCH: &str = "assistant.semantic_search";
+
+/// [B25] Включён ли семантический поиск. Ошибка чтения настроек трактуется
+/// как default (on) — фича деградируемая, ронять нечего.
+pub async fn semantic_search_enabled(pool: &sqlx::SqlitePool) -> bool {
+    !matches!(
+        crate::db::get_setting(pool, SETTING_SEMANTIC_SEARCH)
+            .await
+            .ok()
+            .flatten()
+            .as_deref(),
+        Some("off")
+    )
+}
+
+/// [B25] Авто-скачивание файлов эмбеддера (модель + tokenizer), если:
+/// тумблер включён И выбран локальный пресет (без него ассистенту нечем
+/// отвечать — качать 135MB незачем). Прогресс уходит в UI через
+/// существующие события `model:progress`/`model:done` (models::download).
+/// Возвращает true, если после вызова оба файла на месте.
+pub async fn ensure_model_downloaded(
+    pool: &sqlx::SqlitePool,
+    app_data_dir: &Path,
+    app: Option<&tauri::AppHandle>,
+) -> Result<bool, AppError> {
+    use crate::local_engine::models::{self, ModelId, ModelStatus};
+
+    if !semantic_search_enabled(pool).await {
+        return Ok(false);
+    }
+    let preset_chosen =
+        crate::db::get_setting(pool, crate::local_engine::preset::SETTING_ACTIVE_PRESET)
+            .await?
+            .is_some();
+    if !preset_chosen {
+        return Ok(false);
+    }
+    for id in [ModelId::E5_SMALL_QINT8, ModelId::E5_TOKENIZER] {
+        match models::check_status_fast(app_data_dir, id.as_str()).await? {
+            ModelStatus::Present { .. } => {}
+            _ => {
+                log::info!("assistant semantic: downloading {}", id.as_str());
+                models::download(app_data_dir, id.as_str(), app).await?;
+            }
+        }
+    }
+    Ok(true)
+}
+
 /// Актуальный id модели эмбеддера в каталоге.
 pub fn current_embed_model_id() -> &'static str {
     crate::local_engine::models::ModelId::E5_SMALL_QINT8.as_str()
@@ -492,6 +543,47 @@ mod tests {
     async fn try_load_returns_none_without_model_files() {
         let dir = tempfile::tempdir().unwrap();
         assert!(try_load_embedder(dir.path()).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn semantic_search_defaults_on_and_respects_off() {
+        let db = crate::db::test_support::fresh_db().await;
+        assert!(
+            semantic_search_enabled(&db.pool).await,
+            "отсутствие ключа = включено"
+        );
+        crate::db::set_setting(&db.pool, SETTING_SEMANTIC_SEARCH, "off")
+            .await
+            .unwrap();
+        assert!(!semantic_search_enabled(&db.pool).await);
+        crate::db::set_setting(&db.pool, SETTING_SEMANTIC_SEARCH, "on")
+            .await
+            .unwrap();
+        assert!(semantic_search_enabled(&db.pool).await);
+    }
+
+    #[tokio::test]
+    async fn ensure_model_downloaded_skips_without_preset_or_when_off() {
+        let db = crate::db::test_support::fresh_db().await;
+        let dir = tempfile::tempdir().unwrap();
+        // Пресет не выбран → не качаем (и не ходим в сеть — иначе тест бы завис).
+        assert!(!ensure_model_downloaded(&db.pool, dir.path(), None)
+            .await
+            .unwrap());
+        // Тумблер off → не качаем даже с пресетом.
+        crate::db::set_setting(
+            &db.pool,
+            crate::local_engine::preset::SETTING_ACTIVE_PRESET,
+            "light",
+        )
+        .await
+        .unwrap();
+        crate::db::set_setting(&db.pool, SETTING_SEMANTIC_SEARCH, "off")
+            .await
+            .unwrap();
+        assert!(!ensure_model_downloaded(&db.pool, dir.path(), None)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]

@@ -97,6 +97,42 @@ pub async fn assistant_ask(
     crate::assistant::ask(&app, &state.db, args).await
 }
 
+/// [B25] Состояние тумблера «Семантический поиск» (default on).
+#[tauri::command]
+pub async fn assistant_get_semantic_search(state: State<'_, AppState>) -> Result<bool, AppError> {
+    Ok(crate::assistant::embedder::semantic_search_enabled(&state.db).await)
+}
+
+/// [B25] Переключить семантический поиск. При включении фоново докачивает
+/// модель эмбеддера (прогресс — `model:progress`) и запускает embed-backfill;
+/// при выключении файлы НЕ удаляются (R12-bis: только явный storage UI).
+#[tauri::command]
+pub async fn assistant_set_semantic_search(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), AppError> {
+    crate::db::set_setting(
+        &state.db,
+        crate::assistant::embedder::SETTING_SEMANTIC_SEARCH,
+        if enabled { "on" } else { "off" },
+    )
+    .await?;
+    if enabled {
+        let pool = state.db.clone();
+        let dir = state.app_data_dir.clone();
+        tauri::async_runtime::spawn(async move {
+            match crate::assistant::embedder::ensure_model_downloaded(&pool, &dir, Some(&app)).await
+            {
+                Ok(true) => crate::assistant::indexer::embed_backfill(&pool, &dir).await,
+                Ok(false) => {}
+                Err(e) => log::warn!("assistant semantic enable: {e}"),
+            }
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

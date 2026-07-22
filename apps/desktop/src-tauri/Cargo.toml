@@ -96,7 +96,9 @@ proptest = "1.5"
 rstest = "0.23"
 
 [features]
-default = ["voice-onnx"]
+# [B25] assistant-embed в default: без него семантический поиск ассистента
+# мёртв в prod/dev-бинаре (деградация до BM25 навсегда). Паттерн voice-onnx.
+default = ["voice-onnx", "assistant-embed"]
 # Реализация macOS-аудио живёт под этим cfg (M1.2). Включится в Этапе 2.
 audio-macos = []
 # Windows-захват = unimplemented (R4). Фича-флаг для будущего.
