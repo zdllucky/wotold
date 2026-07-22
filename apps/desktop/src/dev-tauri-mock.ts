@@ -143,6 +143,8 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
     updatedAt: number;
   }
   const assistantChats: MockAssistantChat[] = [];
+  // [B25] In-memory состояние тумблера семантического поиска (default on).
+  let mockSemanticSearch = true;
   let assistantSeq = 0;
   const AS_GEN_RE = /напиш|состав|сгенерир|придума|перевед|отправ|создай|запланируй|оформи|нарисуй/i;
 
@@ -458,6 +460,14 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         const id = a.chatId as string;
         const i = assistantChats.findIndex((c) => c.chat.id === id);
         if (i !== -1) assistantChats.splice(i, 1);
+        return null;
+      }
+      // [B25] Тумблер семантического поиска: в моке просто in-memory флаг.
+      if (cmd === 'assistant_get_semantic_search') {
+        return mockSemanticSearch;
+      }
+      if (cmd === 'assistant_set_semantic_search') {
+        mockSemanticSearch = a.enabled as boolean;
         return null;
       }
       if (cmd === 'assistant_ask') {

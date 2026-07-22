@@ -699,6 +699,12 @@ export const en: TranslationStrings = {
     keepResidentLabel: 'Keep model warm',
     keepResidentHint:
       'The local model stays in RAM for the whole session — generation is faster (no reload per call) but it holds ~2–5 GB of RAM. Off by default.',
+    semanticLabel: 'Assistant semantic search',
+    semanticHint:
+      'The assistant finds fragments by meaning, not just word overlap (synonyms, paraphrases, other languages). The ~130 MB search module downloads automatically.',
+    semanticActive: 'active',
+    semanticDownloading: 'downloading · {pct}%',
+    semanticWaiting: 'waiting for model',
     preset: {
       light: 'Light',
       balanced: 'Balanced',

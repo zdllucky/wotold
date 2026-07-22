@@ -207,6 +207,18 @@ pub fn run() {
                         (state.db.clone(), state.store.clone())
                     };
                     crate::assistant::indexer::backfill(&pool, &store).await;
+                    // [B25] Авто-скачивание эмбеддера (тумблер default on +
+                    // выбран локальный пресет) — прогресс в UI через
+                    // model:progress. Ошибка сети — warn, не фатал.
+                    if let Err(e) = crate::assistant::embedder::ensure_model_downloaded(
+                        &pool,
+                        store.app_data_dir(),
+                        Some(&app_for_backfill),
+                    )
+                    .await
+                    {
+                        log::warn!("assistant semantic auto-download: {e}");
+                    }
                     // [M15.10] Следом — вектора: инвалидация по id модели +
                     // добор пассажей без эмбеддинга. No-op без модели/feature.
                     crate::assistant::indexer::embed_backfill(&pool, store.app_data_dir()).await;
@@ -706,6 +718,8 @@ pub fn run() {
             commands::assistant_delete_chat,
             #[cfg(target_os = "macos")]
             commands::assistant_ask,
+            commands::assistant_get_semantic_search,
+            commands::assistant_set_semantic_search,
             commands::get_call_audio_path,
             commands::export_call_markdown,
             commands::voice_model_status,

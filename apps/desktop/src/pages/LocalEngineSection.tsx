@@ -59,6 +59,7 @@ import {
   type LocalEngineCatalogEntry,
   type LocalEngineStorageRow,
 } from '../api/local-engine';
+import { getAssistantSemanticSearch, setAssistantSemanticSearch } from '../api/assistant';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
 import { modelLabel } from '../utils/modelLabel';
@@ -79,6 +80,11 @@ const PRESET_TO_MODELS: Record<LocalEnginePreset, { whisper: string; llm: string
 
 /** [M12-D5] Optional модель для multi-speaker diarization (degraded без неё). */
 const PYANNOTE_MODEL_ID = 'pyannote-segmentation';
+
+/** [B25] Пара файлов текст-эмбеддера ассистента (семантический поиск). */
+const E5_MODEL_ID = 'e5-small-qint8';
+const E5_TOKENIZER_ID = 'e5-small-tokenizer';
+const E5_IDS = [E5_MODEL_ID, E5_TOKENIZER_ID] as const;
 
 interface ModelProgress {
   pct: number;
@@ -121,6 +127,8 @@ export function LocalEngineSection() {
   const [preset, setPreset] = useState<PresetSpec | null>(null);
   // [B2] Тумблер «держать модель активной» (resident llama-server).
   const [keepResident, setKeepResident] = useState(false);
+  // [B25] Тумблер «Семантический поиск ассистента» (default on).
+  const [semanticSearch, setSemanticSearch] = useState(true);
   const [catalog, setCatalog] = useState<LocalEngineCatalogEntry[]>([]);
   const [statuses, setStatuses] = useState<Record<string, ModelStatus>>({});
   const [progresses, setProgresses] = useState<Record<string, ModelProgress>>({});
@@ -157,13 +165,15 @@ export function LocalEngineSection() {
   const refreshAll = useCallback(async () => {
     setHwLoading(true);
     try {
-      const [e, p, c, h, rows, resident] = await Promise.all([
+      const [e, p, c, h, rows, resident, semantic] = await Promise.all([
         localEngineGetActiveEngine(),
         localEngineGetActivePreset(),
         localEngineListCatalog(),
         localEngineHwProbe(false),
         localEngineStorageList().catch(() => [] as LocalEngineStorageRow[]),
         localEngineGetKeepResident().catch(() => false),
+        // [B25] Тумблер семантического поиска; ошибка → default on.
+        getAssistantSemanticSearch().catch(() => true),
       ]);
       setEngine(e);
       setPreset(p);
@@ -171,6 +181,7 @@ export function LocalEngineSection() {
       setHw(h);
       setStorageRows(rows);
       setKeepResident(resident);
+      setSemanticSearch(semantic);
       await refreshStatuses(c.map((m) => m.id));
       // [M12-v1.1] Rediscovery: show when not local + invite not dismissed.
       if (e !== 'local') {
@@ -275,9 +286,11 @@ export function LocalEngineSection() {
         const saved = await localEngineSetActivePreset(next);
         setPreset(saved);
         // Авто-старт download'ов на отсутствующие модели preset'а +
-        // pyannote (shared, optional но рекомендованная).
+        // pyannote (shared, optional но рекомендованная) + [B25] эмбеддер
+        // семантического поиска (если тумблер включён).
         const needed = PRESET_TO_MODELS[next];
-        for (const id of [needed.whisper, needed.llm, PYANNOTE_MODEL_ID]) {
+        const shared = [PYANNOTE_MODEL_ID, ...(semanticSearch ? E5_IDS : [])];
+        for (const id of [needed.whisper, needed.llm, ...shared]) {
           const status = statuses[id];
           if (!status || status.state === 'absent' || status.state === 'corrupted') {
             void localEngineModelDownload(id).catch((err) => setError(humanError(err)));
@@ -540,7 +553,6 @@ export function LocalEngineSection() {
           label={t('localEngine.keepResidentLabel')}
           hint={t('localEngine.keepResidentHint')}
           align="top"
-          last
           control={
             <Switch
               checked={keepResident}
@@ -555,6 +567,46 @@ export function LocalEngineSection() {
                 }
               }}
             />
+          }
+        />
+      )}
+
+      {/* [B25] Семантический поиск ассистента: тумблер + живой статус
+          модели (скачивается %/активен) из общих statuses/progresses. */}
+      {!hwLoading && engine === 'local' && (
+        <SettingRow
+          label={t('localEngine.semanticLabel')}
+          hint={t('localEngine.semanticHint')}
+          align="top"
+          last
+          control={
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+              {semanticSearch && (
+                <span className="u-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                  {(() => {
+                    const prog = progresses[E5_MODEL_ID] ?? progresses[E5_TOKENIZER_ID];
+                    if (prog) return t('localEngine.semanticDownloading', { pct: prog.pct });
+                    const ready = E5_IDS.every((id) => statuses[id]?.state === 'present');
+                    return ready
+                      ? t('localEngine.semanticActive')
+                      : t('localEngine.semanticWaiting');
+                  })()}
+                </span>
+              )}
+              <Switch
+                checked={semanticSearch}
+                label={t('localEngine.semanticLabel')}
+                onChange={async (next) => {
+                  setSemanticSearch(next); // optimistic
+                  try {
+                    await setAssistantSemanticSearch(next);
+                  } catch (err) {
+                    setSemanticSearch(!next); // revert on failure
+                    setError(humanError(err));
+                  }
+                }}
+              />
+            </span>
           }
         />
       )}
