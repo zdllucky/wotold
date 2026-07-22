@@ -298,6 +298,8 @@ assistant_delete_chat(chat_id)
 
 Плюс: light/dark на всех новых поверхностях, a11y-architect ревью (B24.7), `cargo fmt/check/clippy/test` + `pnpm -r typecheck` + vitest.
 
+**Статус (B24.7, 2026-07-22): пройдено.** Пункты 1–4, 6–12 верифицированы в dev-mock браузере (light+dark, консоль чистая). П.5 частично: «открыть звонок» ✓; живой seek аудио — Manual QA в native (аудио в браузер-моке нет, логика покрыта RTL). a11y-фиксы по ревью (3 CRITICAL + 4 HIGH + 3 MEDIUM) применены — детали в `docs/ROADMAP.md` B24.7.
+
 ## 11. Риски / открытые вопросы
 
 1. **Качество `used_fragments` на 1.5B (Light)**: схема гарантирует форму, не осмысленность. Митигация: клэмп + fallback top-score, eval M15.12. Открыто: показывать ли «●●○»-хинт качества (аналог R12) на Light.

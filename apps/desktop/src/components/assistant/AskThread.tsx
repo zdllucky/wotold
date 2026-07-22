@@ -36,7 +36,9 @@ export function AskThread({
   onAskGlobal,
 }: AskThreadProps) {
   return (
-    <div className="ask-thread">
+    // [B24.7 a11y H1] role="log": новые сообщения анонсируются AT (implicit
+    // aria-live=polite), чат-паттерн ARIA.
+    <div className="ask-thread" role="log">
       {messages.map((m, i) =>
         m.role === 'user' ? (
           <div className="ask-row fade-up" data-me="true" key={m.id}>
@@ -63,8 +65,11 @@ export function AskThread({
       )}
       {pending && (
         <div className="ask-row" data-me="false">
-          <div className="ask-bubble ask-pend">
-            <Wave bars={4} color="var(--text-3)" />
+          {/* [B24.7 a11y H1] role="status" — «Поиск…» объявляется AT. */}
+          <div className="ask-bubble ask-pend" role="status">
+            <span aria-hidden="true">
+              <Wave bars={4} color="var(--text-3)" />
+            </span>
             {pendingText}
           </div>
         </div>

@@ -390,6 +390,15 @@ export function MiniRail(props: RailProps) {
         active={view === 'contacts'}
         onClick={() => onNav('contacts')}
       />
+      {/* [B24.7] Ассистент в минирейле (acceptance п.1 — был пропущен). */}
+      <IconBtn
+        icon="chat"
+        iconSize={18}
+        label={t('assistant.title')}
+        title={t('assistant.title')}
+        active={view === 'assistant'}
+        onClick={() => onNav('assistant')}
+      />
       <div className="mr-spacer" />
       {/* [Q] Монитор очередей — вместо theme-toggle (тема в Настройках). */}
       <QueueMonitor queue={queue} calls={recent} iconSize={18} />

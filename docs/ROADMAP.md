@@ -20,9 +20,10 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 - [ ] **Views (saved smart-collections) + Explore** — персистентность `SavedView` (S2 контракт `{label, filter_state, view_mode, sort}`) + экраны по прототипу `wk-explore.jsx`.
 - [ ] **Inbox stats** (4 hero + sparkline) — как в прототипе (`wk-screens`/`wk-inbox`).
-- [~] **Assistant-таб** → поглощён милстоуном **M15** (см. секцию ниже) — полноценный RAG-ассистент вместо точечного Q&A-таба.
+- [x] **Assistant-таб** → поглощён милстоуном **M15** и реализован в батче **B24** (вкладка звонка B24.5 + раздел B24.4) — полноценный RAG-ассистент вместо точечного Q&A-таба.
 - [x] **Contacts B18.4 доводка** — identifiers chips + derivations были реализованы ранее; форма приведена к канону в B23.
 - [ ] **Manual visual QA** (light/dark, все экраны) — human follow-up, агент не скриншотит native app.
+- [ ] **Manual QA: живой seek из источника-чипа** (B24.7 п.5) — клик clock-чипа во вкладке ассистента реального звонка мотает плеер и запускает воспроизведение. Логика покрыта RTL; аудио в браузер-моке нет — проверяется руками в native.
 - [ ] **B18 a11y follow-up** — recording-state live-region (SC 4.1.3); отдельный aria-label тема-toggle; toast dismiss контекст (SC 4.1.2); capabilities least-privilege split для recording-widget; токен `--on-danger`; контраст `--wc-*` в dark; зачистка dead i18n `home.*`/`calls.*`.
 - [ ] **Сверка контрактов (S2)** — `ActionItemV2`/`Decisions`/`OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать.
 
@@ -68,7 +69,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B24.4** (L) `AssistantPage` + `AskThread` + `AssistantComposer`: колонка чатов (группировка по дням, trash по hover/focus), empty + 4 чипа, pending, композер ai-field (Enter-хендлер: в форме нет submit-кнопки; IME-guard; disabled при pending), чип статистики (3-формный ru-плюрал), мост `requestGlobalQuestion` (ref-стабилизированный). RTL ×3 файла.
 - [x] **B24.5** (M) Вкладка звонка: `Tab += 'assistant'` (только ready; сброс таба при смене звонка и при уходе из ready — фикс пустой панели по ревью), тред `useCallAssistant`, композер вместо плеера на табе, seek из источника (ms→сек + auto-play), эскалация → раздел. Подсказки мока в звонке намеренно опущены (мок-специфичный банк). RTL: видимость таба ready/processing. Заметка B24.7: lazy-fetch треда до открытия таба — перф-полиш.
 - [x] **B24.6** (M) Навигация + ⌘K: `RailView += 'assistant'`, NavItem + minirail, «Найти или спросить» (ai-field--panel + sparkle), палитра: команда + fallback «Спросить ассистента» (подстрока с N из indexStats) + новый плейсхолдер ×3 локали + ai-field на палитре, hash-роут. RTL: fallback только при 0 матчей, Enter → onAsk. Живой смоук в dev-mock браузере: раздел/чаты/refusal/empty/эскалация/⌘K/dark — пройден, консоль чистая. typescript-reviewer чанка: 4 HIGH (пустая панель таба, disabled композера, 2 тест-дыры) — пофикшены.
-- [ ] **B24.7** (M) Acceptance-pass: 12 пунктов SPEC (трассировка — PRD §10), light/dark, чистая консоль, a11y-architect ревью (список чатов / палитра / details), финальная сверка с моком. → всё выше
+- [x] **B24.7** (M) Acceptance-pass: 12 пунктов SPEC прогнаны в dev-mock браузере — 11 ✓, п.5 (живой seek) → Manual QA (секция A). Поймано и пофикшено: минирейл без пункта «Ассистент» (IconBtn chat). a11y-architect ревью → фиксы: C1 вложенный button в строке чата → `ul/li` + кнопка-сосед (`aria-current`), C2 focus-visible композера/палитры (`:focus-within` box-shadow), C3 контраст `--text-faint`→`--text-3` (ctx-meta/summary/empty), H1 `role=log`+`role=status` (pending, Wave aria-hidden), H2 hitbox чипов ≥24px (`::after inset:-3px`), H3 `.tip` по `:focus-visible`, M1 disabled у send, M2 combobox/listbox палитры (`aria-activedescendant`), M3 list-семантика чатов. 540 vitest / typecheck зелёные, консоль чистая.
 
 ---
 

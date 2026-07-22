@@ -107,7 +107,7 @@ export function AnswerMsg({
   const frag = (f: AssistantFragment, i: number) => (
     <div className="frag" key={`${f.callId}-${f.startMs ?? 'x'}-${i}`}>
       <b style={{ color: speakerColor(f.callId, f.speaker) }}>{f.speaker ?? f.callTitle}</b>
-      <span className="u-faint">
+      <span className="u-muted">
         {' '}
         · {f.callTitle}
         {f.startMs != null ? ` · ${fmtSourceClock(f.startMs)}` : ''}

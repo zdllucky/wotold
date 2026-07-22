@@ -161,10 +161,16 @@ export function CommandPalette({
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKeyDown}
             aria-label={t('palette.placeholder')}
+            /* [B24.7 a11y M2] combobox+listbox: фокус в инпуте, «выбранный»
+               пункт транслируется AT через activedescendant. */
+            role="combobox"
+            aria-expanded={flat.length > 0}
+            aria-controls="palette-listbox"
+            aria-activedescendant={flat.length > 0 ? `palette-opt-${sel}` : undefined}
           />
           <Kbd>esc</Kbd>
         </div>
-        <div className="palette-list scroll">
+        <div className="palette-list scroll" role="listbox" id="palette-listbox">
           {filteredActions.length > 0 && (
             <div className="menu-label">{t('palette.commands')}</div>
           )}
@@ -175,6 +181,10 @@ export function CommandPalette({
                 key={it.key}
                 type="button"
                 className="menu-item"
+                id={`palette-opt-${idx}`}
+                role="option"
+                aria-selected={idx === sel}
+                tabIndex={-1}
                 data-active={idx === sel ? 'true' : undefined}
                 onMouseMove={() => setSel(idx)}
                 onClick={() => it.run()}
@@ -202,6 +212,10 @@ export function CommandPalette({
                 key={it.key}
                 type="button"
                 className="menu-item"
+                id={`palette-opt-${idx}`}
+                role="option"
+                aria-selected={idx === sel}
+                tabIndex={-1}
                 data-active={idx === sel ? 'true' : undefined}
                 onMouseMove={() => setSel(idx)}
                 onClick={() => it.run()}
@@ -223,6 +237,10 @@ export function CommandPalette({
               <button
                 type="button"
                 className="menu-item"
+                id={`palette-opt-${flat.length - 1}`}
+                role="option"
+                aria-selected={sel === flat.length - 1}
+                tabIndex={-1}
                 data-active={sel === flat.length - 1 ? 'true' : undefined}
                 onMouseMove={() => setSel(flat.length - 1)}
                 onClick={() => askFallback.run()}
