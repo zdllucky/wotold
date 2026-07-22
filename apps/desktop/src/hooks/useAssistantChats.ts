@@ -39,6 +39,25 @@ interface CacheShape {
 // Module-level keep-alive между mount'ами раздела.
 const cache: CacheShape = { chats: [], activeChatId: null, messages: [] };
 
+// [B24.4] Мост эскалации/⌘K: App кладёт вопрос сюда и переключает вид на
+// «Ассистент»; смонтированный хук консьюмит и стреляет новым глобальным чатом.
+let queuedGlobalQuestion: string | null = null;
+let notifyQueued: (() => void) | null = null;
+
+/** Новый глобальный чат с готовым вопросом (эскалация из звонка, ⌘K-fallback). */
+export function requestGlobalQuestion(question: string): void {
+  queuedGlobalQuestion = question;
+  notifyQueued?.();
+}
+
+/** ТОЛЬКО для тестов: сброс module-кэша между кейсами. */
+export function resetAssistantChatsCacheForTests(): void {
+  cache.chats = [];
+  cache.activeChatId = null;
+  cache.messages = [];
+  queuedGlobalQuestion = null;
+}
+
 export interface UseAssistantChats {
   chats: AssistantChatMeta[];
   activeChatId: string | null;
@@ -229,6 +248,27 @@ export function useAssistantChats(): UseAssistantChats {
     },
     [runAsk, setActive],
   );
+
+  // Консьюм очереди эскалации/⌘K: на mount и на каждый requestGlobalQuestion.
+  // Регистрация — один раз ([]-deps), актуальный askInNewChat через ref
+  // (иначе notify пере-подписывался бы на каждый чих messages — ревью).
+  const askInNewChatRef = useRef(askInNewChat);
+  useEffect(() => {
+    askInNewChatRef.current = askInNewChat;
+  }, [askInNewChat]);
+  useEffect(() => {
+    const consume = () => {
+      const q = queuedGlobalQuestion;
+      if (!q) return;
+      queuedGlobalQuestion = null;
+      void askInNewChatRef.current(q);
+    };
+    notifyQueued = consume;
+    consume();
+    return () => {
+      if (notifyQueued === consume) notifyQueued = null;
+    };
+  }, []);
 
   return {
     chats,

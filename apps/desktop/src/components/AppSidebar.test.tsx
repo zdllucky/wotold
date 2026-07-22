@@ -70,8 +70,8 @@ describe('Sidebar navbar', () => {
   test('every nav row is a uniform button.navitem with icon + label', () => {
     const { container } = render(<Sidebar {...props('inbox')} />);
     const items = container.querySelectorAll('.navitem');
-    // inbox + contacts + settings (no recents in this fixture)
-    expect(items.length).toBe(3);
+    // [B24.6] inbox + contacts + assistant + settings (no recents in this fixture)
+    expect(items.length).toBe(4);
     items.forEach((el) => {
       expect(el.tagName).toBe('BUTTON');
       expect(el.querySelector('.nav-label')).toBeInTheDocument();
@@ -100,8 +100,8 @@ describe('Sidebar navbar', () => {
   test('recent rows render a StatusCell dot as the leading element', () => {
     const recent = [mkCall('a'), mkCall('b')];
     const { container } = render(<Sidebar {...props('inbox', { recent })} />);
-    // 3 primary + 2 recents = 5 navitems
-    expect(container.querySelectorAll('.navitem').length).toBe(5);
+    // [B24.6] 4 primary (звонки/контакты/ассистент + настройки) + 2 recents.
+    expect(container.querySelectorAll('.navitem').length).toBe(6);
     // recents carry a leading .dot (StatusCell) inside a .nav-ico
     expect(container.querySelectorAll('.navitem .nav-ico .dot').length).toBeGreaterThanOrEqual(2);
   });

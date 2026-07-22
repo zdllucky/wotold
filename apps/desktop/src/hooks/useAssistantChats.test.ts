@@ -13,7 +13,11 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import { invoke } from '@tauri-apps/api/core';
 import type { AssistantMessage } from '@wotold/contracts';
-import { useAssistantChats } from './useAssistantChats';
+import {
+  requestGlobalQuestion,
+  resetAssistantChatsCacheForTests,
+  useAssistantChats,
+} from './useAssistantChats';
 
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
@@ -40,11 +44,37 @@ function userMsg(id: string, text: string): AssistantMessage {
 
 describe('useAssistantChats', () => {
   beforeEach(() => {
+    resetAssistantChatsCacheForTests();
     mockInvoke.mockReset();
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'assistant_list_chats') return [];
       return null;
     });
+  });
+
+  // [B24.6/ревью] Мост эскалации/⌘K: вопрос, положенный ДО mount, консьюмится
+  // ровно один раз; из двух подряд выигрывает последний.
+  it('requestGlobalQuestion до mount → один assistant_ask с последним вопросом', async () => {
+    const asked: string[] = [];
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === 'assistant_list_chats') return [];
+      if (cmd === 'assistant_ask') {
+        asked.push((args as { args: { question: string } }).args.question);
+        return {
+          chatId: 'chat-1',
+          message: assistantMsg('m2', 'ответ'),
+        };
+      }
+      if (cmd === 'assistant_get_chat') return [userMsg('m1', 'второй'), assistantMsg('m2', 'ответ')];
+      return null;
+    });
+    requestGlobalQuestion('первый');
+    requestGlobalQuestion('второй'); // последний выигрывает
+    const { result } = renderHook(() => useAssistantChats());
+    await waitFor(() => expect(asked).toEqual(['второй']));
+    await waitFor(() => expect(result.current.pending).toBe(false));
+    // Повторный рендер не даёт второго консьюма.
+    expect(asked).toHaveLength(1);
   });
 
   it('ask: optimistic user-message → pending → тред из БД', async () => {

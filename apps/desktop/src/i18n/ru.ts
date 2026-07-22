@@ -33,7 +33,7 @@ const ruInternal = {
 
   // [B18.1c] ⌘K command palette.
   palette: {
-    placeholder: 'Перейти к звонку или команда…',
+    placeholder: 'Найти звонок или спросить ассистента…',
     commands: 'Команды',
     calls: 'Звонки',
     empty: 'Ничего не найдено',
@@ -1023,7 +1023,8 @@ const ruInternal = {
     title: 'Ассистент',
     statsChip: 'в поиске {ready} из {total} {plural} · {dur}',
     statsTooltip: 'Записи в обработке и с ошибкой не участвуют в поиске',
-    callsPluralOne: 'звонка',
+    callsPluralOne: 'звонок',
+    callsPluralFew: 'звонка',
     callsPluralMany: 'звонков',
     durHours: '{h} ч {m} мин',
     durMinutes: '{m} мин',
@@ -1054,6 +1055,13 @@ const ruInternal = {
     callEmptyDesc:
       'Чат этого звонка. Ответы строятся по его расшифровке; если факт найден в другом звонке — источник будет указан.',
     sendLabel: 'Отправить',
+    dayToday: 'Сегодня',
+    dayYesterday: 'Вчера',
+    findOrAsk: 'Найти или спросить',
+    paletteCommand: 'Ассистент — поиск по звонкам',
+    paletteNotFound: 'Ничего не найдено · Ассистент',
+    paletteFallbackLabel: 'Спросить ассистента',
+    paletteFallbackHint: '«{q}» — поиск по {n} звонкам',
   },
 } as const;
 
