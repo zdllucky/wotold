@@ -36,12 +36,51 @@ const PREFIX_EXPANSION_MIN_CHARS: usize = 6;
 /// Минимальная длина основы при экспансии.
 const PREFIX_STEM_MIN_CHARS: usize = 4;
 
+/// [M16.3] RU-стоплист: служебные слова ≥2 симв, проходившие MIN_TOKEN_CHARS.
+/// Data-диагностика M16 (живая БД): recap с ответом стоял в топ-4 по
+/// `"команд"*`, но ВЫПАДАЛ из top-12 при добавлении `"Что" OR "по" OR "на"` —
+/// высокочастотные токены раздувают bm25 длинных транскриптов. Однобуквенные
+/// (и/в/с/у/о/к/я) режет MIN_TOKEN_CHARS. «когда/сколько» здесь тоже шум —
+/// их семантику обрабатывает интент-раутер ДО retrieval (M16.4).
+const RU_STOPWORDS: &[&str] = &[
+    // вопросительные
+    "что", "чем", "чём", "кто", "кого", "как", "где", "когда", "почему", "зачем", "сколько",
+    "какой", "какая", "какое", "какие",
+    // предлоги/частицы ≥2 симв
+    "по", "за", "на", "не", "ни", "но", "же", "ли", "бы", "из", "до", "от", "об", "под", "при",
+    "для", "про",
+    // связки/местоимения
+    "это", "эти", "этот", "эта", "там", "тут", "был", "были", "было", "была", "есть", "будет",
+    "мы", "вы", "он", "она", "они", "нам", "вам", "его", "нас", "вас", "их",
+    "такой", "такая", "такое", "итог", "итоге", "итогу", "всё", "все", "или",
+];
+
+fn is_stopword(token: &str) -> bool {
+    let lower = token.to_lowercase();
+    RU_STOPWORDS.contains(&lower.as_str())
+}
+
 /// Вопрос → FTS5 MATCH-выражение. `None` — искать нечего (нет валидных
 /// токенов), вызывающий возвращает пустой результат без похода в БД.
+/// [M16.3] Стоп-слова фильтруются; вопрос целиком из стоп-слов → откат на
+/// нефильтрованный набор (честное «пусто» не должно стать ложным None).
 pub(crate) fn build_match_expr(question: &str) -> Option<String> {
-    let terms: Vec<String> = question
+    let tokens: Vec<&str> = question
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty() && w.chars().count() >= MIN_TOKEN_CHARS)
+        .collect();
+    let meaningful: Vec<&str> = tokens
+        .iter()
+        .copied()
+        .filter(|t| !is_stopword(t))
+        .collect();
+    let picked = if meaningful.is_empty() {
+        tokens
+    } else {
+        meaningful
+    };
+    let terms: Vec<String> = picked
+        .into_iter()
         .take(MAX_TOKENS)
         .map(term_for_token)
         .collect();
@@ -271,6 +310,31 @@ mod tests {
         assert_eq!(build_match_expr("?!…"), None);
         // Цифры — валидные токены (даты, номера версий).
         assert_eq!(build_match_expr("2026").as_deref(), Some("\"2026\""));
+    }
+
+    // [M16.3] Живой фейл Q2 (data-диагностика): стоп-токены «что/на/по»
+    // раздували bm25 длинных транскриптов и топили единственный релевантный
+    // recap. Стоплист режет их из MATCH.
+    #[test]
+    fn stopwords_are_filtered_from_match_expr() {
+        assert_eq!(
+            build_match_expr("Что решили на звонке по командам").as_deref(),
+            Some("\"реши\"* OR \"звон\"* OR \"команд\"*")
+        );
+        assert_eq!(
+            build_match_expr("Что там по делению команд").as_deref(),
+            Some("\"делен\"* OR \"кома\"*")
+        );
+    }
+
+    #[test]
+    fn all_stopword_question_falls_back_unfiltered() {
+        // Вопрос целиком из стоп-слов → откат на нефильтрованный набор,
+        // НЕ None (иначе честный empty превратился бы в ложный).
+        assert_eq!(
+            build_match_expr("что по нам").as_deref(),
+            Some("\"что\" OR \"по\" OR \"нам\"")
+        );
     }
 
     #[test]
