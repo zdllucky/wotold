@@ -50,6 +50,51 @@ pub(crate) fn l2_normalize(v: &mut [f32]) {
     }
 }
 
+/// KV-ключ: id модели, которой посчитаны вектора в `assistant_embeddings`.
+pub const SETTING_EMBED_MODEL_ID: &str = "assistant.embed_model_id";
+
+/// Актуальный id модели эмбеддера в каталоге.
+pub fn current_embed_model_id() -> &'static str {
+    crate::local_engine::models::ModelId::E5_SMALL_QINT8.as_str()
+}
+
+/// [M15.10.3] Инвалидация при смене модели эмбеддера: вектора разных моделей
+/// несравнимы (даже при равном dim), поэтому сохранённый id != текущему →
+/// полный `DELETE FROM assistant_embeddings`, backfill пересчитает новой
+/// моделью. Идемпотентно; вызывается на старте перед embed-backfill'ом.
+pub async fn ensure_embed_model_current(pool: &sqlx::SqlitePool) -> Result<(), AppError> {
+    let current = current_embed_model_id();
+    let stored = crate::db::get_setting(pool, SETTING_EMBED_MODEL_ID).await?;
+    if stored.as_deref() == Some(current) {
+        return Ok(());
+    }
+    if let Some(old) = &stored {
+        log::info!("assistant embedder model changed ({old} -> {current}): clearing vectors");
+    }
+    crate::db::assistant_embeddings::clear_embeddings(pool).await?;
+    crate::db::set_setting(pool, SETTING_EMBED_MODEL_ID, current).await?;
+    Ok(())
+}
+
+/// Процессный shared-эмбеддер. `Some` кэшируется навсегда (сессия ~120MB,
+/// выгрузка не нужна); `None` перепроверяется на каждом вызове — юзер может
+/// докачать модель без рестарта, а перепроверка = два stat'а
+/// (`check_status_fast`). Мьютекс держится на время загрузки (~250мс один
+/// раз) — параллельные вызовы не грузят модель дважды.
+static SHARED_EMBEDDER: std::sync::OnceLock<tokio::sync::Mutex<Option<Arc<dyn TextEmbedder>>>> =
+    std::sync::OnceLock::new();
+
+pub async fn shared(app_data_dir: &Path) -> Option<Arc<dyn TextEmbedder>> {
+    let slot = SHARED_EMBEDDER.get_or_init(|| tokio::sync::Mutex::new(None));
+    let mut guard = slot.lock().await;
+    if let Some(e) = guard.as_ref() {
+        return Some(e.clone());
+    }
+    let loaded = try_load_embedder(app_data_dir).await?;
+    *guard = Some(loaded.clone());
+    Some(loaded)
+}
+
 /// Загрузить ONNX-эмбеддер, если собран feature `assistant-embed` и обе
 /// записи каталога (модель + tokenizer) скачаны. Иначе `None` — вызывающий
 /// обязан деградировать до BM25, не ошибаться.
@@ -431,5 +476,73 @@ mod tests {
     async fn try_load_returns_none_without_model_files() {
         let dir = tempfile::tempdir().unwrap();
         assert!(try_load_embedder(dir.path()).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn ensure_embed_model_clears_vectors_on_model_change() {
+        use crate::assistant::types::AssistantPassageKind;
+        use crate::db::assistant::{replace_call_passages, PassageInput};
+        use crate::db::assistant_embeddings;
+        use crate::db::test_support::fresh_db;
+
+        let db = fresh_db().await;
+        sqlx::query(
+            "INSERT INTO calls (id, started_at, duration_sec, status, path_label, created_at, updated_at)
+             VALUES ('c1', CURRENT_TIMESTAMP, 60, 'ready', 'managed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        replace_call_passages(
+            &db.pool,
+            "c1",
+            &[PassageInput {
+                kind: AssistantPassageKind::Transcript,
+                speaker: None,
+                start_ms: Some(0),
+                end_ms: Some(1000),
+                text: "текст".into(),
+                token_est: 2,
+            }],
+        )
+        .await
+        .unwrap();
+        let ids = assistant_embeddings::list_call_passage_texts(&db.pool, "c1")
+            .await
+            .unwrap();
+        assistant_embeddings::upsert_embeddings(
+            &db.pool,
+            1,
+            &[(ids[0].0, crate::embeddings::embedding_to_bytes(&[1.0]))],
+        )
+        .await
+        .unwrap();
+
+        // Вектора «чужой» модели: сохранённый id отличается → clear + set.
+        crate::db::set_setting(&db.pool, SETTING_EMBED_MODEL_ID, "old-model")
+            .await
+            .unwrap();
+        ensure_embed_model_current(&db.pool).await.unwrap();
+        let stamp = assistant_embeddings::embedding_stamp(&db.pool).await.unwrap();
+        assert_eq!(stamp.embedding_count, 0, "вектора старой модели снесены");
+        assert_eq!(
+            crate::db::get_setting(&db.pool, SETTING_EMBED_MODEL_ID)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(current_embed_model_id())
+        );
+
+        // Повторный вызов с совпадающим id — no-op (вектора не трогаются).
+        assistant_embeddings::upsert_embeddings(
+            &db.pool,
+            1,
+            &[(ids[0].0, crate::embeddings::embedding_to_bytes(&[1.0]))],
+        )
+        .await
+        .unwrap();
+        ensure_embed_model_current(&db.pool).await.unwrap();
+        let stamp = assistant_embeddings::embedding_stamp(&db.pool).await.unwrap();
+        assert_eq!(stamp.embedding_count, 1, "актуальная модель — вектора целы");
     }
 }

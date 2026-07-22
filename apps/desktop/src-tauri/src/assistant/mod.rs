@@ -10,6 +10,7 @@
 pub mod answer;
 pub mod budget;
 pub mod classifier;
+pub mod embed_cache;
 pub mod embedder;
 pub mod indexer;
 pub mod retrieval;
