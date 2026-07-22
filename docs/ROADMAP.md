@@ -20,11 +20,55 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 - [ ] **Views (saved smart-collections) + Explore** — персистентность `SavedView` (S2 контракт `{label, filter_state, view_mode, sort}`) + экраны по прототипу `wk-explore.jsx`.
 - [ ] **Inbox stats** (4 hero + sparkline) — как в прототипе (`wk-screens`/`wk-inbox`).
-- [ ] **Assistant-таб** ⏸ отложен отдельной доработкой (LLM Q&A над транскриптом + endpoint).
+- [~] **Assistant-таб** → поглощён милстоуном **M15** (см. секцию ниже) — полноценный RAG-ассистент вместо точечного Q&A-таба.
 - [x] **Contacts B18.4 доводка** — identifiers chips + derivations были реализованы ранее; форма приведена к канону в B23.
 - [ ] **Manual visual QA** (light/dark, все экраны) — human follow-up, агент не скриншотит native app.
 - [ ] **B18 a11y follow-up** — recording-state live-region (SC 4.1.3); отдельный aria-label тема-toggle; toast dismiss контекст (SC 4.1.2); capabilities least-privilege split для recording-widget; токен `--on-danger`; контраст `--wc-*` в dark; зачистка dead i18n `home.*`/`calls.*`.
 - [ ] **Сверка контрактов (S2)** — `ActionItemV2`/`Decisions`/`OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать.
+
+---
+
+## M15 · Ассистент (RAG-чат по звонкам)
+
+> PRD: [`M15_ASSISTANT_PRD.md`](M15_ASSISTANT_PRD.md) · дизайн-канон: [`design/wotold-v2/assistant.md`](design/wotold-v2/assistant.md) · хендофф: `~/Downloads/design_handoff_wotold_assistant/`.
+> Решения: v1 local-only (cloud → беклог G); retrieval гибрид поэтапно (Ph1 FTS5 → Ph2 эмбеддер+RRF, обе до закрытия M15); окно 8K, источники через json_schema `used_fragments` (детерминированная привязка). UI-часть — батч B24 ниже (параллелится с Ph1 после M15.1).
+
+### Ph1 — FTS5 retrieval end-to-end
+
+- [x] **M15.0** (S) PRD + canon-addendum + эта секция роадмапа.
+- [ ] **M15.1** (S) Контракт S2: `packages/contracts/src/assistant.ts` (AssistantAnswer/Source/Fragment/ChatMeta/Message/IndexStats) + export + Rust-зеркало `assistant/types.rs`. Тест: serde round-trip.
+- [ ] **M15.2** (M) Миграция `0019_assistant.sql` (chats / messages / passages / FTS5 external-content + триггеры / index_state; partial-UNIQUE тред-на-звонок) + repository `db/assistant.rs`. TDD `fresh_db`: CRUD, каскады call→chat/passages, FTS-триггер-синк, FTS5 smoke. → #30 закрывается этим.
+- [ ] **M15.3** (L) Indexer: passage builder (окна транскрипта ~350 ток из `call_chunks.transcript_json` + fallback `transcript.md`, recap-абзацы, structured rows), `on_call_ready`/`deindex_call`, хуки в ready-точках (`pipeline/mod.rs:323`, `pipeline_runner.rs:199/250/451`), startup backfill, инвалидация reprocess/regenerate_recap. TDD: окна/overlap/token_est, идемпотентность, backfill.
+- [ ] **M15.4** (S) Классификатор `is_generative` (порт AS_GEN_RE + границы слов). TDD: таблица ≥20 позитив/негатив кейсов («написали в чате» — негатив).
+- [ ] **M15.5** (M) Retrieval BM25: нормализация, FTS-escape кавычками (инъекции), префикс-экспансия для морфологии, two-pass call-scope (8 своих + 4 глобальных), empty=0 матчей. TDD. → M15.3
+- [ ] **M15.6** (S) Budget assembly: greedy ≤5.5K ток, cap ≤3 passage/звонок (global), дедуп overlap, нумерация [1..N], счётчики для mono-строки; вынос `estimate_tokens` в общий util. TDD. → M15.5
+- [ ] **M15.7** (L) Answer engine: system-промпт (~0.6K, injection-hardened), json_schema `{answer, used_fragments}`, привязка источников (клэмп+fallback top-score), история ≤2 QA×150 ток, refusal/empty short-circuit, `resource_queue` Llm permit, resident+`cache_prompt:true` (порядок [system][fragments][history][question]), событие `assistant:status` (queued/retrieving/generating). TDD на mock LlmProvider. → M15.4, M15.6
+- [ ] **M15.8** (M) Команды: `commands/assistant.rs` (index_stats / list_chats / get_chat / get_call_thread / ask / delete_chat) + регистрация lib.rs. Command-level тесты fresh_db. → M15.7
+- [ ] **Gate Ph1** — живой e2e: реальная БД, живой вопрос через dev-сборку, замер латентности.
+
+### Ph2 — гибрид (семантический поиск)
+
+- [ ] **M15.9** (L) Эмбеддер: research-спайк fastembed vs ort+tokenizers → `multilingual-e5-small` int8 в `MODEL_CATALOG` (download+SHA256, refresh-script, лицензия), `assistant/embedder.rs`, feature `assistant-embed`, download-UX. Тест: reference-эмбеддинг фикстуры (образец B3.7d).
+- [ ] **M15.10** (M) Миграция `0020_assistant_embeddings.sql` + embed при индексации + фоновый backfill + in-memory кэш векторов с инвалидацией. → M15.9
+- [ ] **M15.11** (M) Гибрид: cosine top-30 + BM25 top-30 → RRF k=60; graceful degradation до BM25 без модели. TDD: RRF-математика, golden-кейсы синонимов. → M15.10
+- [ ] **M15.12** (S) Mini-eval harness: 10–15 golden QA на фикстурах → hit@k, подбор empty-порога и cap. → M15.11
+
+### Ph3 — закрытие
+
+- [ ] **M15.13** (S) `/security-scan` на `assistant/*` + миграции (prompt injection через транскрипт, FTS-escape аудит, mailto encode, отсутствие сетевых вызовов) + фиксы. Обязателен до пометки M15 done. → M15.8, повтор после M15.11
+
+## B24 · Ассистент UI (по хендоффу, «точь в точь»)
+
+> Design gate обязателен (B24.0). Параллелится с M15 через `dev-tauri-mock` после M15.1. Сшивка с живым бэкендом — после M15.8.
+
+- [ ] **B24.0** (S) Design-gate alignment-блок (surfaces: Assistant page / call-tab / palette / sidebar; reference: хендофф + `design/wotold-v2/assistant.md`). Здесь же решить keep-alive чатов (module-кэш vs always-mounted B20.4-паттерн).
+- [ ] **B24.1** (S) CSS-порт `wk2.css` → `components.css` (as-*, ai-field+`@property`+`prefers-reduced-motion`, ask-pend/note, src-row, ctx/frag, ans-acts) + иконка `chat` в Icon.tsx. Визуально light/dark.
+- [ ] **B24.2** (M) `api/assistant.ts` + `useAssistantChats` + `useCallAssistant` + dev-tauri-mock ответы + i18n `assistant.*` ×3 локали. Vitest: ask-flow, pending, optimistic. → M15.1
+- [ ] **B24.3** (M) `AnswerMsg.tsx`: 3 kinds, чипы источников (clock/doc), details «Контекст поиска» (спикер в `--spN`, mono-строка), copy (галка 1.4s, rejection catch), share-дропдаун («с источниками», «Отправить в почту…» = mailto → проверить `tauri-plugin-opener` capability). RTL. → B24.1, B24.2
+- [ ] **B24.4** (L) `AssistantPage.tsx` + `AskThread.tsx` + `AssistantComposer.tsx`: колонка чатов (группировка по дням, `div role="button"`, trash hover), empty + 4 чипа, pending «Поиск по N звонкам…», композер ai-field, чип статистики + tooltip. RTL: новый чат первым вопросом, title 42, delete, группировка. → B24.3
+- [ ] **B24.5** (M) Вкладка звонка: `Tab += 'assistant'` (только ready), персистентный тред, composer-dock swap, чип своего звонка → transcript-tab + seek, эскалация «Искать во всех звонках» → askGlobal + переход. RTL extend CallDetailPage.test. → B24.3 (мок) / M15.8 (живьём)
+- [ ] **B24.6** (M) Навигация + ⌘K: `RailView += 'assistant'`, NavItem/minirail, «Найти или спросить» (ai-field--panel), палитра: команда, fallback-секция с Enter, плейсхолдер, ai-field. RTL extend CommandPalette.test (fallback только при 0 матчей). → B24.1, B24.2
+- [ ] **B24.7** (M) Acceptance-pass: 12 пунктов SPEC (трассировка — PRD §10), light/dark, чистая консоль, a11y-architect ревью (список чатов / палитра / details), финальная сверка с моком. → всё выше
 
 ---
 
@@ -79,6 +123,16 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 - [ ] **R9/R4 Linux/Windows** — local-engine + audio capture за trait + `unimplemented!()` сейчас. Big chunk, MVP только macOS.
 - [ ] **R10 model bundling** — bundled installer для full preset (~50MB) если CI/CD scale'ится. Сейчас on-demand download.
+
+### G. После M15 (ассистент) — PRD §12
+
+- [ ] **Cloud-ответы ассистента** — `AnthropicProvider` через прокси на общем retrieval-слое (answer-engine switch + квоты + consent на отправку фрагментов в облако).
+- [ ] **Токен-стриминг** — llama-server SSE (`stream:true`) → событие `assistant:token`; требует resident ON.
+- [ ] **Map-reduce отчёты по архиву** («сводка недели по всем звонкам») — за пределами 8K, refine-chain; отдельный milestone.
+- [ ] **MCP-tool `search_passages`** — read-only чтение `assistant_passages`/`assistant_fts` из `services/mcp`.
+- [ ] **Query-rewrite multi-turn** — анафора («а что он обещал?») через LLM-переформулировку запроса.
+- [ ] **«Отправить в почту» → полноценный share** (сейчас mailto).
+- [ ] **Инкрементальная индексация processing-звонков** — по чанкам до ready.
 
 ---
 
