@@ -696,6 +696,13 @@ pub fn run() {
             commands::recover_chunked_call,
             commands::list_call_decisions,
             commands::list_call_open_questions,
+            commands::assistant_index_stats,
+            commands::assistant_list_chats,
+            commands::assistant_get_chat,
+            commands::assistant_get_call_thread,
+            commands::assistant_delete_chat,
+            #[cfg(target_os = "macos")]
+            commands::assistant_ask,
             commands::get_call_audio_path,
             commands::export_call_markdown,
             commands::voice_model_status,
