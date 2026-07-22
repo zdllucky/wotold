@@ -43,13 +43,15 @@ use tokio::io::AsyncWriteExt;
 use crate::AppError;
 
 /// Тип модели в каталоге — STT (Whisper) / LLM (GGUF) / Diarization
-/// (pyannote segmentation .onnx для sherpa-onnx OfflineSpeakerDiarization).
+/// (pyannote segmentation .onnx для sherpa-onnx OfflineSpeakerDiarization) /
+/// Embedding ([M15.9] текст-эмбеддер RAG-ассистента, e5-small ONNX).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelKind {
     Stt,
     Llm,
     Diarization,
+    Embedding,
 }
 
 /// Стабильный id записи в каталоге. Newtype-обёртка чтобы не путать со
@@ -75,6 +77,15 @@ impl ModelId {
     /// Shared across all 3 presets (~1.6 MB). Дропает silence regions ДО
     /// encoder pass → 30-50% wall-clock reduction на pause-heavy calls.
     pub const SILERO_VAD: ModelId = ModelId("silero-vad-v5");
+    /// [M15.9] Текст-эмбеддер RAG-ассистента (retrieval Ph2, гибрид RRF).
+    /// Официальный intfloat ONNX-экспорт multilingual-e5-small, dynamic
+    /// qint8 (имя файла упоминает avx512_vnni, но квантованные ops исполнимы
+    /// и на arm64 — спайк M15.9: ~5мс/пассаж на M1 Pro). Shared across
+    /// presets, optional: без него retrieval деградирует до чистого BM25.
+    pub const E5_SMALL_QINT8: ModelId = ModelId("e5-small-qint8");
+    /// [M15.9] tokenizer.json (XLM-R fast tokenizer) того же HF-репо — второй
+    /// обязательный файл эмбеддера.
+    pub const E5_TOKENIZER: ModelId = ModelId("e5-small-tokenizer");
 
     pub fn as_str(&self) -> &'static str {
         self.0
@@ -94,10 +105,11 @@ pub struct ModelEntry {
     pub license_url: &'static str,
 }
 
-/// Каталог — 3 Whisper + 3 LLM модели. SHA256 + size_bytes получены через
-/// `scripts/refresh-model-catalog.sh` (PRD §14 pre-flight) на 2026-05-22.
+/// Каталог — 4 STT + 4 LLM + 1 diarization + 2 embedding файла. SHA256 +
+/// size_bytes получены через `scripts/refresh-model-catalog.sh` (PRD §14
+/// pre-flight) на 2026-05-22 (e5-записи — спайк M15.9, 2026-07-22).
 /// При замене файла на HF — bump version в скрипте + регенерировать.
-pub const MODEL_CATALOG: [ModelEntry; 9] = [
+pub const MODEL_CATALOG: [ModelEntry; 11] = [
     ModelEntry {
         id: ModelId::WHISPER_SMALL,
         kind: ModelKind::Stt,
@@ -189,6 +201,27 @@ pub const MODEL_CATALOG: [ModelEntry; 9] = [
         sha256: "PLACEHOLDER_REFRESH_VIA_SCRIPT_BEFORE_PRODUCTION",
         size_bytes: 1_627_136,
         license_url: "https://huggingface.co/ggml-org/whisper-vad",
+    },
+    // [M15.9] Эмбеддер ассистента. SHA256/size сняты в спайке 2026-07-22 с
+    // официального intfloat-репо (MIT). PRD §6.3 оценивал «~30MB» — фактически
+    // qint8 = 118MB: у XLM-R словарь 250k доминирует в весах.
+    ModelEntry {
+        id: ModelId::E5_SMALL_QINT8,
+        kind: ModelKind::Embedding,
+        display_name: "Multilingual E5 Small (поиск)",
+        url: "https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/model_qint8_avx512_vnni.onnx",
+        sha256: "dd476dd0c2514e9b9be83aeb3853fac0763e0bdf4a71645407587d77c48a2d88",
+        size_bytes: 118_346_824,
+        license_url: "https://huggingface.co/intfloat/multilingual-e5-small",
+    },
+    ModelEntry {
+        id: ModelId::E5_TOKENIZER,
+        kind: ModelKind::Embedding,
+        display_name: "Multilingual E5 Tokenizer",
+        url: "https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/tokenizer.json",
+        sha256: "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+        size_bytes: 17_082_730,
+        license_url: "https://huggingface.co/intfloat/multilingual-e5-small",
     },
 ];
 
@@ -572,30 +605,31 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn catalog_has_three_stt_four_llm_one_diarization() {
-        let stt = MODEL_CATALOG
-            .iter()
-            .filter(|m| m.kind == ModelKind::Stt)
-            .count();
-        let llm = MODEL_CATALOG
-            .iter()
-            .filter(|m| m.kind == ModelKind::Llm)
-            .count();
-        let diar = MODEL_CATALOG
-            .iter()
-            .filter(|m| m.kind == ModelKind::Diarization)
-            .count();
+    fn catalog_has_expected_kind_counts() {
+        let count = |kind: ModelKind| MODEL_CATALOG.iter().filter(|m| m.kind == kind).count();
         // [P15.2] +silero-vad-v5 (Stt-kind, helper для whisper-cli `--vad`).
         assert_eq!(
-            stt, 4,
+            count(ModelKind::Stt),
+            4,
             "expected 4 STT models (whisper small/medium/large-v3 + silero-vad-v5)"
         );
         // [M14 T-16 P2] +qwen25-0_5b (draft model для speculative decoding).
         assert_eq!(
-            llm, 4,
+            count(ModelKind::Llm),
+            4,
             "expected 4 LLM models (qwen25-0_5b draft + 1_5b/3b/7b targets)"
         );
-        assert_eq!(diar, 1, "expected 1 diarization model (pyannote)");
+        assert_eq!(
+            count(ModelKind::Diarization),
+            1,
+            "expected 1 diarization model (pyannote)"
+        );
+        // [M15.9] Текст-эмбеддер ассистента: onnx-модель + tokenizer.json.
+        assert_eq!(
+            count(ModelKind::Embedding),
+            2,
+            "expected 2 embedding files (e5-small qint8 onnx + tokenizer.json)"
+        );
     }
 
     #[test]

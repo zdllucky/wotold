@@ -717,6 +717,8 @@ export const kk: TranslationStrings = {
       diarization: 'Бөлу модулі · базалық',
       qwenDraft: 'Қорытынды үдеткіші · 0.5B',
       vad: 'Сөйлеу детекторы',
+      embedder: 'Ассистенттің іздеу модулі',
+      embedderTokenizer: 'Іздеу модулінің сөздігі',
     },
     statusInstalled: 'орнатылған',
     statusDownloading: 'жүктелуде…',

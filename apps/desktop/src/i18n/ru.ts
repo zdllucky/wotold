@@ -765,6 +765,8 @@ const ruInternal = {
       diarization: 'Модуль разделения · базовый',
       qwenDraft: 'Ускоритель саммари · 0.5B',
       vad: 'Детектор речи',
+      embedder: 'Модуль поиска ассистента',
+      embedderTokenizer: 'Словарь модуля поиска',
     },
     statusInstalled: 'установлено',
     statusDownloading: 'качаем…',

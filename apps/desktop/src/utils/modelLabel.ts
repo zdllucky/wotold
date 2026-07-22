@@ -19,6 +19,9 @@ const MODEL_LABEL_KEYS: Record<string, TranslationKey> = {
   // [B22] Каталог вырос — без маппинга в таблице светились сырые id.
   'qwen25-0_5b': 'localEngine.modelLabel.qwenDraft',
   'silero-vad-v5': 'localEngine.modelLabel.vad',
+  // [M15.9] Текст-эмбеддер RAG-ассистента (модель + tokenizer.json).
+  'e5-small-qint8': 'localEngine.modelLabel.embedder',
+  'e5-small-tokenizer': 'localEngine.modelLabel.embedderTokenizer',
 };
 
 export function modelLabel(id: string, t: TFn): string {
