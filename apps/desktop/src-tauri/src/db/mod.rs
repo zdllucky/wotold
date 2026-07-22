@@ -8,6 +8,9 @@ use sqlx::{
 use crate::AppError;
 
 mod action_items;
+// [M15.2] Ассистент: чаты/сообщения/пассажи + FTS5. pub(crate) — вызовы из
+// assistant::{indexer,retrieval} и commands::assistant (M15.3+).
+pub(crate) mod assistant;
 mod calls;
 // [M13.1.3b] Chunked pipelined transcription — call_chunks table helpers.
 // pub(crate) чтобы pipeline::chunk_runner мог вызывать insert/mark/list.
