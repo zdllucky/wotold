@@ -121,6 +121,57 @@ pub async fn clear_embeddings(pool: &SqlitePool) -> Result<(), AppError> {
     Ok(())
 }
 
+/// [M15.11] Материализация cosine-only кандидатов: пассажи по списку id
+/// (BM25-канал свои строки уже принёс, векторный — только id из кэша).
+/// Отсутствующие id (гонка с удалением звонка) просто не возвращаются.
+/// `rank` заполняется нулём — вызывающий перезапишет RRF-скором.
+pub async fn fetch_passages_by_ids(
+    pool: &SqlitePool,
+    ids: &[i64],
+) -> Result<Vec<crate::db::assistant::PassageHit>, AppError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut qb = sqlx::QueryBuilder::new(
+        "SELECT id, call_id, kind, speaker, start_ms, end_ms, text, token_est
+         FROM assistant_passages WHERE id IN (",
+    );
+    let mut sep = qb.separated(", ");
+    for id in ids {
+        sep.push_bind(id);
+    }
+    qb.push(")");
+    type Row = (
+        i64,
+        String,
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<i64>,
+        String,
+        i64,
+    );
+    let rows: Vec<Row> = qb.build_query_as().fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, call_id, kind, speaker, start_ms, end_ms, text, token_est)| {
+                crate::db::assistant::PassageHit {
+                    id,
+                    call_id,
+                    kind,
+                    speaker,
+                    start_ms,
+                    end_ms,
+                    text,
+                    token_est,
+                    rank: 0.0,
+                }
+            },
+        )
+        .collect())
+}
+
 /// Текущий штамп инвалидации кэша — один дешёвый запрос перед поиском.
 pub async fn embedding_stamp(pool: &SqlitePool) -> Result<EmbeddingStamp, AppError> {
     let (indexed_calls, last_indexed_at, embedding_count): (i64, String, i64) = sqlx::query_as(
@@ -235,19 +286,19 @@ mod tests {
     async fn cascades_wipe_embeddings_on_reindex_and_call_delete() {
         let db = fresh_db().await;
         insert_dummy_call(&db.pool, "c1").await;
-        replace_call_passages(&db.pool, "c1", &[passage("x")]).await.unwrap();
+        replace_call_passages(&db.pool, "c1", &[passage("x")])
+            .await
+            .unwrap();
         let texts = list_call_passage_texts(&db.pool, "c1").await.unwrap();
-        upsert_embeddings(
-            &db.pool,
-            1,
-            &[(texts[0].0, embedding_to_bytes(&[1.0]))],
-        )
-        .await
-        .unwrap();
+        upsert_embeddings(&db.pool, 1, &[(texts[0].0, embedding_to_bytes(&[1.0]))])
+            .await
+            .unwrap();
         assert_eq!(count_embeddings(&db.pool).await, 1);
 
         // Переиндексация = DELETE+INSERT пассажей → каскад сносит вектора.
-        replace_call_passages(&db.pool, "c1", &[passage("y")]).await.unwrap();
+        replace_call_passages(&db.pool, "c1", &[passage("y")])
+            .await
+            .unwrap();
         assert_eq!(
             count_embeddings(&db.pool).await,
             0,
@@ -256,13 +307,9 @@ mod tests {
 
         // DELETE звонка → каскад через passages.
         let texts = list_call_passage_texts(&db.pool, "c1").await.unwrap();
-        upsert_embeddings(
-            &db.pool,
-            1,
-            &[(texts[0].0, embedding_to_bytes(&[1.0]))],
-        )
-        .await
-        .unwrap();
+        upsert_embeddings(&db.pool, 1, &[(texts[0].0, embedding_to_bytes(&[1.0]))])
+            .await
+            .unwrap();
         sqlx::query("DELETE FROM calls WHERE id = 'c1'")
             .execute(&db.pool)
             .await
@@ -278,18 +325,16 @@ mod tests {
         assert_eq!(s0.embedding_count, 0);
 
         insert_dummy_call(&db.pool, "c1").await;
-        replace_call_passages(&db.pool, "c1", &[passage("a")]).await.unwrap();
+        replace_call_passages(&db.pool, "c1", &[passage("a")])
+            .await
+            .unwrap();
         let s1 = embedding_stamp(&db.pool).await.unwrap();
         assert_ne!(s0, s1, "индексация меняет штамп");
 
         let texts = list_call_passage_texts(&db.pool, "c1").await.unwrap();
-        upsert_embeddings(
-            &db.pool,
-            1,
-            &[(texts[0].0, embedding_to_bytes(&[1.0]))],
-        )
-        .await
-        .unwrap();
+        upsert_embeddings(&db.pool, 1, &[(texts[0].0, embedding_to_bytes(&[1.0]))])
+            .await
+            .unwrap();
         let s2 = embedding_stamp(&db.pool).await.unwrap();
         assert_ne!(s1, s2, "новые вектора меняют штамп");
 

@@ -119,7 +119,9 @@ mod tests {
                 token_est: 2,
             })
             .collect();
-        replace_call_passages(pool, call_id, &passages).await.unwrap();
+        replace_call_passages(pool, call_id, &passages)
+            .await
+            .unwrap();
         list_call_passage_texts(pool, call_id)
             .await
             .unwrap()
@@ -133,26 +135,18 @@ mod tests {
         let db = fresh_db().await;
         let cache = EmbedCache::new();
         let ids = seed(&db.pool, "c1", &["a", "b"]).await;
-        upsert_embeddings(
-            &db.pool,
-            2,
-            &[(ids[0], embedding_to_bytes(&[1.0, 0.0]))],
-        )
-        .await
-        .unwrap();
+        upsert_embeddings(&db.pool, 2, &[(ids[0], embedding_to_bytes(&[1.0, 0.0]))])
+            .await
+            .unwrap();
 
         let s1 = cache.snapshot(&db.pool).await.unwrap();
         assert_eq!(s1.len(), 1);
         let s2 = cache.snapshot(&db.pool).await.unwrap();
         assert!(Arc::ptr_eq(&s1, &s2), "штамп не менялся — тот же снимок");
 
-        upsert_embeddings(
-            &db.pool,
-            2,
-            &[(ids[1], embedding_to_bytes(&[0.0, 1.0]))],
-        )
-        .await
-        .unwrap();
+        upsert_embeddings(&db.pool, 2, &[(ids[1], embedding_to_bytes(&[0.0, 1.0]))])
+            .await
+            .unwrap();
         let s3 = cache.snapshot(&db.pool).await.unwrap();
         assert_eq!(s3.len(), 2, "новый вектор → перезагрузка");
         assert!(!Arc::ptr_eq(&s1, &s3));
@@ -165,17 +159,23 @@ mod tests {
         let cache = EmbedCache::new();
         let ids = seed(&db.pool, "c1", &["a", "b", "c"]).await;
         // Валидный, dim-mismatch (заявлено 3, в BLOB 2), кривой BLOB (5 байт).
-        upsert_embeddings(&db.pool, 3, &[(ids[0], embedding_to_bytes(&[1.0, 0.0, 0.0]))])
-            .await
-            .unwrap();
+        upsert_embeddings(
+            &db.pool,
+            3,
+            &[(ids[0], embedding_to_bytes(&[1.0, 0.0, 0.0]))],
+        )
+        .await
+        .unwrap();
         upsert_embeddings(&db.pool, 3, &[(ids[1], embedding_to_bytes(&[1.0, 0.0]))])
             .await
             .unwrap();
-        sqlx::query("INSERT INTO assistant_embeddings (passage_id, dim, vec) VALUES (?1, 3, X'0102030405')")
-            .bind(ids[2])
-            .execute(&db.pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO assistant_embeddings (passage_id, dim, vec) VALUES (?1, 3, X'0102030405')",
+        )
+        .bind(ids[2])
+        .execute(&db.pool)
+        .await
+        .unwrap();
 
         let snap = cache.snapshot(&db.pool).await.unwrap();
         assert_eq!(snap.len(), 1, "битые строки скипнуты, валидная жива");

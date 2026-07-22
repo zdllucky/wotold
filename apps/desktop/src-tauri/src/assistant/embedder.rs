@@ -230,11 +230,7 @@ mod onnx {
             // Mean-pooling по attention mask.
             let mut sum = vec![0f32; dim];
             let mut count = 0f32;
-            for (t, row) in hidden
-                .index_axis(Axis(0), 0)
-                .axis_iter(Axis(0))
-                .enumerate()
-            {
+            for (t, row) in hidden.index_axis(Axis(0), 0).axis_iter(Axis(0)).enumerate() {
                 if mask.get(t).copied() == Some(1) {
                     for (d, v) in row.iter().enumerate() {
                         sum[d] += v;
@@ -348,10 +344,7 @@ mod onnx {
                 0.027741378,
             ];
             for (i, (got, want)) in p.iter().zip(reference.iter()).enumerate() {
-                assert!(
-                    (got - want).abs() < 5e-3,
-                    "dim {i}: got {got}, want {want}"
-                );
+                assert!((got - want).abs() < 5e-3, "dim {i}: got {got}, want {want}");
             }
 
             // 3. Семантика: синонимный пассаж (дедлайн↔сроки) обязан бить
@@ -523,7 +516,9 @@ mod tests {
             .await
             .unwrap();
         ensure_embed_model_current(&db.pool).await.unwrap();
-        let stamp = assistant_embeddings::embedding_stamp(&db.pool).await.unwrap();
+        let stamp = assistant_embeddings::embedding_stamp(&db.pool)
+            .await
+            .unwrap();
         assert_eq!(stamp.embedding_count, 0, "вектора старой модели снесены");
         assert_eq!(
             crate::db::get_setting(&db.pool, SETTING_EMBED_MODEL_ID)
@@ -542,7 +537,9 @@ mod tests {
         .await
         .unwrap();
         ensure_embed_model_current(&db.pool).await.unwrap();
-        let stamp = assistant_embeddings::embedding_stamp(&db.pool).await.unwrap();
+        let stamp = assistant_embeddings::embedding_stamp(&db.pool)
+            .await
+            .unwrap();
         assert_eq!(stamp.embedding_count, 1, "актуальная модель — вектора целы");
     }
 }
