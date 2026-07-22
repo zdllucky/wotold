@@ -12,6 +12,7 @@ pub mod budget;
 pub mod classifier;
 pub mod embed_cache;
 pub mod embedder;
+pub mod fusion;
 pub mod indexer;
 pub mod retrieval;
 pub mod types;
@@ -60,11 +61,27 @@ pub struct AskOutcome {
 
 /// Ядро `ask` — провайдер инжектится (тесты: MockProvider; прод: `ask`).
 /// EventBus с `None`-handle — no-op, тесты не требуют AppHandle.
+/// Без эмбеддера (retrieval = чистый BM25) — вход тестов Ph1 и live-gate;
+/// прод идёт через `ask_core_with` (отсюда allow: в non-test сборке
+/// вызовов нет).
+#[allow(dead_code)]
 pub async fn ask_core(
     provider: &dyn LlmProvider,
     pool: &SqlitePool,
     bus: &EventBus<'_>,
     args: AskArgs,
+) -> Result<AskOutcome, AppError> {
+    ask_core_with(provider, pool, bus, args, None).await
+}
+
+/// [M15.11] Полное ядро: + опциональный эмбеддер для гибридного retrieval
+/// (None → BM25, PRD §6.3 graceful degradation).
+pub async fn ask_core_with(
+    provider: &dyn LlmProvider,
+    pool: &SqlitePool,
+    bus: &EventBus<'_>,
+    args: AskArgs,
+    embedder: Option<std::sync::Arc<dyn embedder::TextEmbedder>>,
 ) -> Result<AskOutcome, AppError> {
     let question = args.question.trim().to_string();
     if question.is_empty() {
@@ -109,7 +126,8 @@ pub async fn ask_core(
         Some(id) => retrieval::Scope::Call(id),
         None => retrieval::Scope::Global,
     };
-    let hits = retrieval::search(pool, &question, scope).await?;
+    let hits =
+        retrieval::search_hybrid(pool, &question, scope, embedder, embed_cache::global()).await?;
     let ctx = budget::assemble(hits, scope);
 
     // 3. Пусто → честное «не найдено» (+эскалация в call-scope).
@@ -220,7 +238,9 @@ pub async fn ask(
     // follow-up-ходы на resident-сервере (PRD §6.4).
     let provider = provider.with_call(queue_label).with_cache_prompt(true);
     let bus = EventBus::new(Some(app));
-    ask_core(&provider, pool, &bus, args).await
+    // [M15.11] Гибридный retrieval, если эмбеддер доступен (feature + модель).
+    let text_embedder = embedder::shared(&app_data_dir).await;
+    ask_core_with(&provider, pool, &bus, args, text_embedder).await
 }
 
 /// Титулы звонков одним батч-SELECT (id IN (...)); fallback — call_id.

@@ -356,9 +356,11 @@ pub(crate) async fn embed_backfill_with(
 ) -> Result<usize, AppError> {
     let mut total = 0usize;
     loop {
-        let rows =
-            crate::db::assistant_embeddings::list_passages_missing_embedding(pool, EMBED_BACKFILL_BATCH)
-                .await?;
+        let rows = crate::db::assistant_embeddings::list_passages_missing_embedding(
+            pool,
+            EMBED_BACKFILL_BATCH,
+        )
+        .await?;
         if rows.is_empty() {
             break;
         }
@@ -681,10 +683,14 @@ mod tests {
         seed_call(&db.pool, "c1", "ready").await;
         let store = store_with_artifacts(tmp.path(), "c1");
 
-        let (count, _) =
-            index_call_with(&db.pool, &store, "c1", Some(std::sync::Arc::new(MockEmbedder)))
-                .await
-                .unwrap();
+        let (count, _) = index_call_with(
+            &db.pool,
+            &store,
+            "c1",
+            Some(std::sync::Arc::new(MockEmbedder)),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             count_embeddings(&db.pool).await,
             count,
@@ -697,10 +703,14 @@ mod tests {
         assert_eq!(dim as usize, crate::assistant::embedder::EMBED_DIM);
 
         // Переиндексация идемпотентна и по векторам (каскад + re-embed).
-        let (count2, _) =
-            index_call_with(&db.pool, &store, "c1", Some(std::sync::Arc::new(MockEmbedder)))
-                .await
-                .unwrap();
+        let (count2, _) = index_call_with(
+            &db.pool,
+            &store,
+            "c1",
+            Some(std::sync::Arc::new(MockEmbedder)),
+        )
+        .await
+        .unwrap();
         assert_eq!(count, count2);
         assert_eq!(count_embeddings(&db.pool).await, count2);
     }
@@ -714,7 +724,11 @@ mod tests {
 
         let (count, _) = index_call_with(&db.pool, &store, "c1", None).await.unwrap();
         assert!(count > 0);
-        assert_eq!(count_embeddings(&db.pool).await, 0, "без эмбеддера — только FTS");
+        assert_eq!(
+            count_embeddings(&db.pool).await,
+            0,
+            "без эмбеддера — только FTS"
+        );
     }
 
     #[tokio::test]

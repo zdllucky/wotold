@@ -89,6 +89,157 @@ pub async fn search(
     }
 }
 
+// ── [M15.11] Гибрид BM25 + cosine (RRF k=60, PRD §6.3) ──
+
+/// Кандидатов на канал до слияния; финальная обрезка — прежние лимиты §4.2.
+const FUSION_CANDIDATES: i64 = 30;
+
+/// Гибридный поиск. Деградация (PRD §6.3): нет эмбеддера / пустой кэш
+/// векторов → ветка Ph1 (`search`) без изменений поведения.
+///
+/// Инварианты контракта retrieval→budget→answer:
+/// 1. Выход — `Vec<PassageHit>` **best-first**: budget жадно ест по порядку
+///    и `rank` не читает; answer-fallback берёт top-3 по порядку.
+/// 2. Call-scope: RRF **внутри** каждого прохода (own-fusion → top-8, затем
+///    other-fusion → top-4, конкатенация) — свои безусловно раньше чужих.
+/// 3. `rank` у гибридных хитов = RRF-score (больше = лучше) — поле
+///    диагностическое, даунстрим его не потребляет.
+pub async fn search_hybrid(
+    pool: &SqlitePool,
+    question: &str,
+    scope: Scope<'_>,
+    embedder: Option<std::sync::Arc<dyn crate::assistant::embedder::TextEmbedder>>,
+    cache: &crate::assistant::embed_cache::EmbedCache,
+) -> Result<Vec<PassageHit>, AppError> {
+    let Some(emb) = embedder else {
+        return search(pool, question, scope).await;
+    };
+    // Вопрос без валидных токенов — деген (Ph1 честно отдаёт пусто);
+    // мусорный вектор по нему поднял бы случайные пассажи.
+    let Some(expr) = build_match_expr(question) else {
+        return Ok(Vec::new());
+    };
+    let rows = cache.snapshot(pool).await?;
+    if rows.is_empty() {
+        // Вектора ещё не насчитаны (backfill в пути) — чистый BM25.
+        return search(pool, question, scope).await;
+    }
+    // Вектор вопроса — вне async-потока (ONNX ~5-20мс).
+    let q = question.to_string();
+    let emb_clone = emb.clone();
+    let query_vec = tokio::task::spawn_blocking(move || emb_clone.embed_query(&q))
+        .await
+        .map_err(|e| AppError::Other(format!("embed query join: {e}")))??;
+
+    match scope {
+        Scope::Global => fuse_pass(pool, &expr, &rows, &query_vec, GLOBAL_LIMIT, None, None).await,
+        Scope::Call(call_id) => {
+            let mut own = fuse_pass(
+                pool,
+                &expr,
+                &rows,
+                &query_vec,
+                CALL_OWN_LIMIT,
+                Some(call_id),
+                None,
+            )
+            .await?;
+            let other = fuse_pass(
+                pool,
+                &expr,
+                &rows,
+                &query_vec,
+                CALL_OTHER_LIMIT,
+                None,
+                Some(call_id),
+            )
+            .await?;
+            own.extend(other);
+            Ok(own)
+        }
+    }
+}
+
+/// Один проход гибрида: BM25 top-30 + cosine top-30 → RRF → обрезка до
+/// `final_limit` → материализация PassageHit (cosine-only id дозагружаются).
+async fn fuse_pass(
+    pool: &SqlitePool,
+    expr: &str,
+    rows: &[crate::assistant::embed_cache::CachedVec],
+    query_vec: &[f32],
+    final_limit: i64,
+    only_call: Option<&str>,
+    exclude_call: Option<&str>,
+) -> Result<Vec<PassageHit>, AppError> {
+    let bm25 = search_fts(pool, expr, FUSION_CANDIDATES, only_call, exclude_call).await?;
+    let bm25_ids: Vec<i64> = bm25.iter().map(|h| h.id).collect();
+    let cosine_ids = cosine_top_n(
+        rows,
+        query_vec,
+        FUSION_CANDIDATES as usize,
+        only_call,
+        exclude_call,
+    );
+    let fused =
+        crate::assistant::fusion::rrf_fuse(&bm25_ids, &cosine_ids, crate::assistant::fusion::RRF_K);
+
+    let mut by_id: std::collections::HashMap<i64, PassageHit> =
+        bm25.into_iter().map(|h| (h.id, h)).collect();
+    let missing: Vec<i64> = fused
+        .iter()
+        .map(|(id, _)| *id)
+        .filter(|id| !by_id.contains_key(id))
+        .collect();
+    for h in crate::db::assistant_embeddings::fetch_passages_by_ids(pool, &missing).await? {
+        by_id.insert(h.id, h);
+    }
+
+    let mut out = Vec::with_capacity(final_limit as usize);
+    for (id, score) in fused {
+        if out.len() >= final_limit as usize {
+            break;
+        }
+        // id без строки — гонка со стёртым звонком (stale-кэш) → скип.
+        if let Some(mut hit) = by_id.remove(&id) {
+            hit.rank = score;
+            out.push(hit);
+        }
+    }
+    Ok(out)
+}
+
+/// Top-N пассажей по cosine (dot: вектора L2-нормализованы — инвариант
+/// `TextEmbedder`/`EmbedCache`). Тай-брейк по passage_id — стабильный выход.
+fn cosine_top_n(
+    rows: &[crate::assistant::embed_cache::CachedVec],
+    query_vec: &[f32],
+    n: usize,
+    only_call: Option<&str>,
+    exclude_call: Option<&str>,
+) -> Vec<i64> {
+    let mut scored: Vec<(f32, i64)> = rows
+        .iter()
+        .filter(|r| match (only_call, exclude_call) {
+            (Some(call), _) => r.call_id == call,
+            (None, Some(excl)) => r.call_id != excl,
+            (None, None) => true,
+        })
+        // dim-mismatch (вектор чужой модели, гонка с ensure) — не сравним.
+        .filter(|r| r.vec.len() == query_vec.len())
+        .map(|r| {
+            let dot: f32 = r.vec.iter().zip(query_vec).map(|(a, b)| a * b).sum();
+            (dot, r.passage_id)
+        })
+        .collect();
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.1.cmp(&b.1))
+    });
+    scored.truncate(n);
+    scored.into_iter().map(|(_, id)| id).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,5 +419,163 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+    }
+
+    // ── [M15.11] Гибрид BM25+cosine (KeywordMock: контролируемая семантика) ──
+
+    use std::sync::Arc;
+
+    use crate::assistant::embed_cache::EmbedCache;
+    use crate::assistant::embedder::{l2_normalize, TextEmbedder};
+
+    /// Тест-эмбеддер с «семантикой» по ключевым словам: синонимы одной группы
+    /// попадают в одну координату → cosine≈1 при разной лексике — ровно то,
+    /// что BM25 не умеет (golden-кейс ROADMAP M15.11).
+    struct KeywordMockEmbedder;
+
+    fn keyword_vec(text: &str) -> Vec<f32> {
+        let t = text.to_lowercase();
+        let mut v = vec![0.0f32; 8];
+        if t.contains("срок") || t.contains("дедлайн") {
+            v[0] = 1.0;
+        }
+        if t.contains("дизайн") || t.contains("палитр") {
+            v[1] = 1.0;
+        }
+        if t.contains("бюджет") {
+            v[2] = 1.0;
+        }
+        v[7] = 0.1; // общий фон — вектора без ключевых слов не нулевые
+        l2_normalize(&mut v);
+        v
+    }
+
+    impl TextEmbedder for KeywordMockEmbedder {
+        fn embed_passages(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, AppError> {
+            Ok(texts.iter().map(|t| keyword_vec(t)).collect())
+        }
+        fn embed_query(&self, question: &str) -> Result<Vec<f32>, AppError> {
+            Ok(keyword_vec(question))
+        }
+        fn dim(&self) -> usize {
+            8
+        }
+    }
+
+    /// Векторизовать все засеянные пассажи KeywordMock'ом.
+    async fn embed_all(pool: &SqlitePool) {
+        let rows = crate::db::assistant_embeddings::list_passages_missing_embedding(pool, 1000)
+            .await
+            .unwrap();
+        let blobs: Vec<(i64, Vec<u8>)> = rows
+            .iter()
+            .map(|(id, t)| (*id, crate::embeddings::embedding_to_bytes(&keyword_vec(t))))
+            .collect();
+        crate::db::assistant_embeddings::upsert_embeddings(pool, 8, &blobs)
+            .await
+            .unwrap();
+    }
+
+    fn kw() -> Option<Arc<dyn TextEmbedder>> {
+        Some(Arc::new(KeywordMockEmbedder))
+    }
+
+    #[tokio::test]
+    async fn hybrid_finds_synonym_passage_bm25_misses() {
+        let db = fresh_db().await;
+        seed(
+            &db.pool,
+            "c1",
+            &[
+                "Дедлайн подписания договора тридцатое мая",
+                "Обсудили дизайн лендинга и палитру бренда",
+            ],
+        )
+        .await;
+        embed_all(&db.pool).await;
+        let cache = EmbedCache::new();
+
+        // BM25 по «какие сроки?» — мимо (лексика не совпадает).
+        assert!(search(&db.pool, "какие сроки?", Scope::Global)
+            .await
+            .unwrap()
+            .is_empty());
+
+        // Гибрид достаёт синонимный пассаж через cosine-канал, включая
+        // материализацию cosine-only id (в BM25-листе его нет).
+        let hy = search_hybrid(&db.pool, "какие сроки?", Scope::Global, kw(), &cache)
+            .await
+            .unwrap();
+        assert!(!hy.is_empty(), "вектор обязан найти синоним");
+        assert!(hy[0].text.contains("Дедлайн"), "top-1: {}", hy[0].text);
+        assert!(hy[0].rank > 0.0, "rank = RRF-score");
+    }
+
+    #[tokio::test]
+    async fn hybrid_without_embedder_equals_ph1() {
+        let db = fresh_db().await;
+        seed(&db.pool, "c1", &["обсудили бюджет пилота", "прочее"]).await;
+        embed_all(&db.pool).await;
+        let cache = EmbedCache::new();
+
+        let ph1 = search(&db.pool, "бюджет", Scope::Global).await.unwrap();
+        let hy = search_hybrid(&db.pool, "бюджет", Scope::Global, None, &cache)
+            .await
+            .unwrap();
+        let ids = |v: &[PassageHit]| v.iter().map(|h| h.id).collect::<Vec<_>>();
+        assert_eq!(ids(&ph1), ids(&hy), "None-эмбеддер = ветка Ph1");
+    }
+
+    #[tokio::test]
+    async fn hybrid_with_empty_vector_cache_falls_back_to_bm25() {
+        let db = fresh_db().await;
+        seed(&db.pool, "c1", &["обсудили бюджет пилота"]).await;
+        // Векторов нет (backfill «ещё не бежал»).
+        let cache = EmbedCache::new();
+
+        let hy = search_hybrid(&db.pool, "бюджет", Scope::Global, kw(), &cache)
+            .await
+            .unwrap();
+        assert_eq!(hy.len(), 1, "пустой кэш → чистый BM25");
+    }
+
+    #[tokio::test]
+    async fn hybrid_call_scope_keeps_own_before_other() {
+        let db = fresh_db().await;
+        // У «чужого» звонка совпадение сильнее (бюджет + дедлайн), но свои
+        // пассажи обязаны идти раньше — RRF внутри прохода, не поверх.
+        seed(&db.pool, "c1", &["немного про бюджет"]).await;
+        seed(&db.pool, "c2", &["Бюджет маркетинга и дедлайн финализации"]).await;
+        embed_all(&db.pool).await;
+        let cache = EmbedCache::new();
+
+        let hy = search_hybrid(&db.pool, "бюджет", Scope::Call("c1"), kw(), &cache)
+            .await
+            .unwrap();
+        assert!(hy.len() >= 2);
+        assert_eq!(hy[0].call_id, "c1", "свои раньше чужих");
+        assert_eq!(hy.last().unwrap().call_id, "c2");
+    }
+
+    #[tokio::test]
+    async fn hybrid_output_is_stable_between_runs() {
+        let db = fresh_db().await;
+        seed(
+            &db.pool,
+            "c1",
+            &["дедлайн проекта", "сроки согласования", "дизайн главной"],
+        )
+        .await;
+        embed_all(&db.pool).await;
+        let cache = EmbedCache::new();
+
+        let a = search_hybrid(&db.pool, "какие сроки?", Scope::Global, kw(), &cache)
+            .await
+            .unwrap();
+        let b = search_hybrid(&db.pool, "какие сроки?", Scope::Global, kw(), &cache)
+            .await
+            .unwrap();
+        let ids = |v: &[PassageHit]| v.iter().map(|h| h.id).collect::<Vec<_>>();
+        assert_eq!(ids(&a), ids(&b), "детерминированный порядок (тай-брейки)");
     }
 }
