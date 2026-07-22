@@ -195,11 +195,12 @@ pub async fn list_call_passages_for_summary(
         "SELECT id, call_id, kind, speaker, start_ms, end_ms, text, token_est
          FROM assistant_passages WHERE call_id = ?1
          ORDER BY CASE kind
-           WHEN 'recap' THEN 0
-           WHEN 'decision' THEN 1
-           WHEN 'action_item' THEN 2
-           WHEN 'open_question' THEN 3
-           ELSE 4 END, id ASC",
+           WHEN 'call_meta' THEN 0
+           WHEN 'recap' THEN 1
+           WHEN 'decision' THEN 2
+           WHEN 'action_item' THEN 3
+           WHEN 'open_question' THEN 4
+           ELSE 5 END, id ASC",
     )
     .bind(call_id)
     .fetch_all(pool)

@@ -25,20 +25,48 @@ pub async fn list_call_speakers(
 /// пользователя. Используется UI confirmation flow.
 #[tauri::command]
 pub async fn confirm_call_speaker(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     call_speaker_id: String,
     contact_id: String,
 ) -> Result<(), AppError> {
-    crate::db::confirm_call_speaker(&state.db, &call_speaker_id, &contact_id).await
+    crate::db::confirm_call_speaker(&state.db, &call_speaker_id, &contact_id).await?;
+    respawn_assistant_index(&app, &state, &call_speaker_id).await;
+    Ok(())
 }
 
 /// Откатить ранее подтверждённую привязку (юзер передумал).
 #[tauri::command]
 pub async fn unbind_call_speaker(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     call_speaker_id: String,
 ) -> Result<(), AppError> {
-    crate::db::unbind_call_speaker(&state.db, &call_speaker_id).await
+    crate::db::unbind_call_speaker(&state.db, &call_speaker_id).await?;
+    respawn_assistant_index(&app, &state, &call_speaker_id).await;
+    Ok(())
+}
+
+/// [M16.6] Смена привязки спикера меняет имена в пассажах ассистента —
+/// переиндексировать звонок (fire-and-forget, ошибки резолва — тихий скип:
+/// индекс догонит startup-backfill'ом).
+async fn respawn_assistant_index(
+    app: &tauri::AppHandle,
+    state: &State<'_, AppState>,
+    call_speaker_id: &str,
+) {
+    let call_id: Option<(String,)> =
+        sqlx::query_as("SELECT call_id FROM call_speakers WHERE id = ?1")
+            .bind(call_speaker_id)
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!("assistant reindex on speaker change: lookup failed: {e}");
+                None
+            });
+    if let Some((call_id,)) = call_id {
+        crate::assistant::indexer::spawn_index(app, &call_id);
+    }
 }
 
 // ============================================================

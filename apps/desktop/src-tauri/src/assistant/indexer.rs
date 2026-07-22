@@ -93,9 +93,23 @@ fn parse_header_line(line: &str) -> Option<Turn> {
     })
 }
 
+/// [M16.6] Резолв speaker-тега в имя: подтверждённая привязка → display_name,
+/// иначе сырой тег. Имя попадает и в поле speaker, и в текст пассажа —
+/// «что говорил Дамир» начинает матчить FTS, а не только устные упоминания.
+fn resolve_speaker<'a>(
+    names: &'a std::collections::HashMap<String, String>,
+    tag: &'a str,
+) -> &'a str {
+    names.get(tag).map(String::as_str).unwrap_or(tag)
+}
+
 /// Окна последовательных реплик до ~350 ток, overlap = 1 реплика.
 /// speaker/start_ms — от первой реплики окна; end_ms = start следующего окна.
-pub fn build_transcript_passages(turns: &[Turn]) -> Vec<PassageInput> {
+/// [M16.6] `names`: speaker_tag → подтверждённое имя контакта.
+pub fn build_transcript_passages(
+    turns: &[Turn],
+    names: &std::collections::HashMap<String, String>,
+) -> Vec<PassageInput> {
     let mut windows: Vec<(usize, usize)> = Vec::new(); // [from, to) по turns
     let mut from = 0usize;
     while from < turns.len() {
@@ -124,13 +138,13 @@ pub fn build_transcript_passages(turns: &[Turn]) -> Vec<PassageInput> {
         .map(|&(a, b)| {
             let text = turns[a..b]
                 .iter()
-                .map(|t| format!("{}: {}", t.speaker_tag, t.text))
+                .map(|t| format!("{}: {}", resolve_speaker(names, &t.speaker_tag), t.text))
                 .collect::<Vec<_>>()
                 .join("\n");
             let end_ms = turns.get(b).map(|next| next.start_ms);
             PassageInput {
                 kind: AssistantPassageKind::Transcript,
-                speaker: Some(turns[a].speaker_tag.clone()),
+                speaker: Some(resolve_speaker(names, &turns[a].speaker_tag).to_string()),
                 start_ms: Some(turns[a].start_ms),
                 end_ms,
                 token_est: estimate_tokens(&text) as i64,
@@ -138,6 +152,38 @@ pub fn build_transcript_passages(turns: &[Turn]) -> Vec<PassageInput> {
             }
         })
         .collect()
+}
+
+/// [M16.6] Синтетическая «карточка звонка»: титул + дата + участники.
+/// Якорь для «в каком звонке / кто был / о чём» — раньше титулы и даты
+/// вообще не индексировались.
+pub fn build_call_meta_passage(
+    title: Option<&str>,
+    started_at: &str,
+    participants: &[String],
+) -> Option<PassageInput> {
+    let date = started_at.get(..10).map(|d| {
+        let mut it = d.split('-');
+        match (it.next(), it.next(), it.next()) {
+            (Some(y), Some(m), Some(day)) => format!("{day}.{m}.{y}"),
+            _ => d.to_string(),
+        }
+    })?;
+    let mut text = match title.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => format!("Звонок «{t}» — {date}."),
+        None => format!("Звонок от {date}."),
+    };
+    if !participants.is_empty() {
+        text.push_str(&format!(" Участники: {}.", participants.join(", ")));
+    }
+    Some(PassageInput {
+        kind: AssistantPassageKind::CallMeta,
+        speaker: None,
+        start_ms: None,
+        end_ms: None,
+        token_est: estimate_tokens(&text) as i64,
+        text,
+    })
 }
 
 /// recap.md → пассажи-абзацы. Заголовки (`#…`) скипаются, буллет-группы
@@ -199,6 +245,7 @@ pub fn build_structured_passages(
     decisions: &[crate::db::decisions::DecisionRow],
     action_items: &[crate::db::ActionItem],
     open_questions: &[crate::db::open_questions::OpenQuestionRow],
+    names: &std::collections::HashMap<String, String>,
 ) -> Vec<PassageInput> {
     let mut out = Vec::new();
     for d in decisions {
@@ -206,7 +253,9 @@ pub fn build_structured_passages(
             AssistantPassageKind::Decision,
             &d.text,
             d.evidence_quote.as_deref(),
-            d.evidence_speaker.as_deref(),
+            d.evidence_speaker
+                .as_deref()
+                .map(|t| resolve_speaker(names, t)),
             d.evidence_start_ms,
             d.evidence_end_ms,
         ));
@@ -216,7 +265,9 @@ pub fn build_structured_passages(
             AssistantPassageKind::ActionItem,
             &a.text,
             a.evidence_quote.as_deref(),
-            a.evidence_speaker.as_deref(),
+            a.evidence_speaker
+                .as_deref()
+                .map(|t| resolve_speaker(names, t)),
             a.evidence_start_ms,
             None,
         ));
@@ -226,7 +277,9 @@ pub fn build_structured_passages(
             AssistantPassageKind::OpenQuestion,
             &q.text,
             q.evidence_quote.as_deref(),
-            q.evidence_speaker.as_deref(),
+            q.evidence_speaker
+                .as_deref()
+                .map(|t| resolve_speaker(names, t)),
             q.evidence_start_ms,
             None,
         ));
@@ -258,11 +311,42 @@ pub(crate) async fn index_call_with(
 ) -> Result<(i64, i64), AppError> {
     let mut passages: Vec<PassageInput> = Vec::new();
 
+    // [M16.6] Подтверждённые привязки спикер→контакт: имена в пассажи
+    // (поле speaker + префиксы строк текста → имя ищется через FTS).
+    let names: std::collections::HashMap<String, String> =
+        crate::db::list_call_speakers(pool, call_id)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|s| s.confirmed)
+            .filter_map(|s| s.contact_display_name.map(|n| (s.speaker_tag, n)))
+            .collect();
+
+    // [M16.6] Карточка звонка (титул + дата + участники) — первый пассаж.
+    let call_row: Option<(Option<String>, String)> =
+        sqlx::query_as("SELECT title, started_at FROM calls WHERE id = ?1")
+            .bind(call_id)
+            .fetch_optional(pool)
+            .await?;
+    if let Some((title, started_at)) = call_row {
+        let mut participants: Vec<String> = names.values().cloned().collect();
+        participants.sort();
+        participants.dedup();
+        passages.extend(build_call_meta_passage(
+            title.as_deref(),
+            &started_at,
+            &participants,
+        ));
+    }
+
     if let Some(md) = store
         .read_artifact(call_id, ArtifactKind::Transcript)
         .await?
     {
-        passages.extend(build_transcript_passages(&parse_transcript_turns(&md)));
+        passages.extend(build_transcript_passages(
+            &parse_transcript_turns(&md),
+            &names,
+        ));
     }
     if let Some(md) = store.read_artifact(call_id, ArtifactKind::Recap).await? {
         passages.extend(build_recap_passages(&md));
@@ -274,6 +358,7 @@ pub(crate) async fn index_call_with(
         &decisions,
         &action_items,
         &open_questions,
+        &names,
     ));
 
     let (count, tokens) =
@@ -509,7 +594,7 @@ mod tests {
         // Каждая реплика ~150 ток (600 байт) → окно вмещает 2 (300 ≤ 350,
         // третья давала бы 450) → окна с overlap 1: [0,2], [1,3], [2,4].
         let turns: Vec<Turn> = (0..4).map(|i| turn("Speaker 0", i * 10_000, 600)).collect();
-        let ps = build_transcript_passages(&turns);
+        let ps = build_transcript_passages(&turns, &std::collections::HashMap::new());
         assert_eq!(ps.len(), 3);
         assert_eq!(ps[0].start_ms, Some(0));
         assert_eq!(ps[0].end_ms, Some(20_000)); // старт turn[2] (первого вне окна)
@@ -525,7 +610,7 @@ mod tests {
     fn oversized_single_turn_is_own_passage() {
         // Реплика больше таргета не делится и не зацикливает алгоритм.
         let turns = vec![turn("owner", 0, 4_000), turn("Speaker 0", 5_000, 100)];
-        let ps = build_transcript_passages(&turns);
+        let ps = build_transcript_passages(&turns, &std::collections::HashMap::new());
         assert_eq!(ps.len(), 2);
         assert!(ps[0].token_est as usize > TRANSCRIPT_PASSAGE_TARGET_TOKENS);
     }
@@ -533,7 +618,7 @@ mod tests {
     #[test]
     fn passage_text_carries_speaker_tags() {
         let turns = vec![turn("owner", 0, 40), turn("Speaker 0", 1_000, 40)];
-        let ps = build_transcript_passages(&turns);
+        let ps = build_transcript_passages(&turns, &std::collections::HashMap::new());
         assert_eq!(ps.len(), 1);
         assert!(ps[0].text.starts_with("owner: "));
         assert!(ps[0].text.contains("\nSpeaker 0: "));
@@ -542,7 +627,7 @@ mod tests {
 
     #[test]
     fn empty_turns_yield_no_passages() {
-        assert!(build_transcript_passages(&[]).is_empty());
+        assert!(build_transcript_passages(&[], &std::collections::HashMap::new()).is_empty());
     }
 
     #[test]
@@ -554,7 +639,7 @@ mod tests {
             turn("Speaker 0", 1_000, 700),
             turn("Speaker 1", 2_000, 700),
         ];
-        let ps = build_transcript_passages(&turns);
+        let ps = build_transcript_passages(&turns, &std::collections::HashMap::new());
         assert_eq!(ps.len(), 2);
         assert_eq!(ps[0].end_ms, Some(2_000)); // окно [0,2), следующее начинается с turn[2]... с overlap [1,3)
     }
@@ -612,7 +697,12 @@ mod tests {
             evidence_start_ms: None,
             order_idx: 0,
         }];
-        let ps = build_structured_passages(&decisions, &items, &questions);
+        let ps = build_structured_passages(
+            &decisions,
+            &items,
+            &questions,
+            &std::collections::HashMap::new(),
+        );
         assert_eq!(ps.len(), 2);
         assert_eq!(ps[0].kind, AssistantPassageKind::Decision);
         assert!(ps[0].text.contains("— цитата: давайте зафиксируем"));
@@ -761,16 +851,94 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn index_call_without_artifacts_is_ok_empty() {
+    async fn index_call_without_artifacts_keeps_only_call_card() {
         let db = fresh_db().await;
         let tmp = tempfile::tempdir().unwrap();
         seed_call(&db.pool, "c1", "ready").await;
         let store = CallStore::new(tmp.path().to_path_buf());
+        // [M16.6] Артефактов нет, но карточка звонка (титул+дата) есть всегда.
         let (count, tokens) = index_call(&db.pool, &store, "c1").await.unwrap();
-        assert_eq!((count, tokens), (0, 0));
-        // index_state есть (звонок «проиндексирован пустым», backfill не зациклится).
+        assert_eq!(count, 1, "только call_meta карточка");
+        assert!(tokens > 0);
+        // index_state есть (backfill не зациклится).
         let stats = crate::db::assistant::index_stats(&db.pool).await.unwrap();
         assert_eq!(stats.indexed_calls, 1);
+    }
+
+    // ── [M16.6] Резолв имён + карточка звонка ──
+
+    #[test]
+    fn transcript_speaker_names_resolved_from_map() {
+        let turns = vec![
+            Turn {
+                speaker_tag: "speaker:1".into(),
+                start_ms: 0,
+                text: "предлагаю стартовать".into(),
+            },
+            Turn {
+                speaker_tag: "speaker:2".into(),
+                start_ms: 5_000,
+                text: "согласен".into(),
+            },
+        ];
+        let names =
+            std::collections::HashMap::from([("speaker:1".to_string(), "Дамир Н.".to_string())]);
+        let ps = build_transcript_passages(&turns, &names);
+        assert_eq!(
+            ps[0].speaker.as_deref(),
+            Some("Дамир Н."),
+            "привязанный — имя"
+        );
+        assert!(
+            ps[0].text.contains("Дамир Н.: предлагаю"),
+            "имя в тексте (FTS): {}",
+            ps[0].text
+        );
+        assert!(
+            ps[0].text.contains("speaker:2: согласен"),
+            "непривязанный — сырой тег"
+        );
+    }
+
+    #[test]
+    fn call_meta_card_contains_title_date_participants() {
+        let card = build_call_meta_passage(
+            Some("Планёрка продукта"),
+            "2026-07-01T09:29:36+00:00",
+            &["Дамир".to_string(), "Глеб".to_string()],
+        )
+        .unwrap();
+        assert_eq!(card.kind, AssistantPassageKind::CallMeta);
+        assert_eq!(
+            card.text,
+            "Звонок «Планёрка продукта» — 01.07.2026. Участники: Дамир, Глеб."
+        );
+        // Без титула и участников — только дата.
+        let bare = build_call_meta_passage(None, "2026-07-01T09:29:36+00:00", &[]).unwrap();
+        assert_eq!(bare.text, "Звонок от 01.07.2026.");
+    }
+
+    #[tokio::test]
+    async fn index_call_card_is_searchable_by_title_word() {
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        sqlx::query(
+            "INSERT INTO calls (id, title, started_at, duration_sec, status, path_label, created_at, updated_at)
+             VALUES ('c1', 'Реструктуризация организаций', '2026-07-01T09:29:36+00:00', 300, 'ready', 'managed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        let store = store_with_artifacts(tmp.path(), "c1");
+        index_call(&db.pool, &store, "c1").await.unwrap();
+
+        // Слово из титула теперь находит звонок (раньше титулы не в индексе).
+        let hits =
+            crate::db::assistant::search_fts(&db.pool, "\"реструктуризац\"*", 10, None, None)
+                .await
+                .unwrap();
+        assert!(!hits.is_empty(), "карточка звонка обязана матчиться");
+        assert_eq!(hits[0].kind, "call_meta");
     }
 
     #[tokio::test]
