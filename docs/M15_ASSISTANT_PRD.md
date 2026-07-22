@@ -195,6 +195,8 @@ assistant_embeddings(
 - Fusion: **RRF k=60** над двумя ранк-листами (BM25 top-30 + cosine top-30). Cosine — brute-force по in-memory кэшу (инвалидация по `assistant_index_state`).
 - Без модели/feature — graceful degradation до чистого BM25.
 
+> **Итог M15.12 по empty-порогу (2026-07-22):** подбор на golden-set показал, что **глобальный cosine-floor невозможен** — e5-абсолюты не калиброваны между запросами, диапазоны перекрываются полностью (garbage-запрос даёт top-cos 0.8190, синонимный релевант — 0.7785). Порог НЕ введён: честное «не найдено» в гибридном режиме обеспечивает answer-слой (`NO_DIRECT_ANSWER` fallback M15.7 — модель без ответа в фрагментах отвечает «нет прямого ответа» → kind=empty). Цена: на мусорный вопрос при непустом индексе тратится LLM-прогон (~секунды). Метрики golden (12 кейсов, intfloat qint8): hit@3 7/10, hit@5 9/10, MRR 0.657; все три BM25-miss кейса (синоним/семантика/кросс-язычный) гибрид находит.
+
 ### 6.4 Resident-сервер и латентность
 
 - Если `local_engine.keep_resident` включён и `llama-server` жив — идём через него с `cache_prompt: true` (доработка `generate_via_server`: opt-in параметр). Порядок промпта `[system][fragments][history][question]` максимизирует KV-префикс на follow-up (~1–3с TTFT).

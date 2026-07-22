@@ -1,0 +1,5 @@
+{ "id": "case_11_negative_smalltalk",
+  "question": "расскажи анекдот про кота",
+  "scope": "global", "k": 5,
+  "expect_bm25": "empty", "expect_hybrid": "no_relevant",
+  "relevant_passage_keys": [] }

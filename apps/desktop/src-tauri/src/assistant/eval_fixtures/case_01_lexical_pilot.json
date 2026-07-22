@@ -1,0 +1,5 @@
+{ "id": "case_01_lexical_pilot",
+  "question": "что решили по пилоту?",
+  "scope": "global", "k": 5,
+  "expect_bm25": "hit", "expect_hybrid": "hit",
+  "relevant_passage_keys": ["acme-t1", "acme-r1", "acme-d1"] }

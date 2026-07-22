@@ -12,6 +12,8 @@ pub mod budget;
 pub mod classifier;
 pub mod embed_cache;
 pub mod embedder;
+#[cfg(test)]
+mod eval;
 pub mod fusion;
 pub mod indexer;
 pub mod retrieval;

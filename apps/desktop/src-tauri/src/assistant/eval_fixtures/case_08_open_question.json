@@ -1,0 +1,5 @@
+{ "id": "case_08_open_question",
+  "question": "что осталось нерешённым по бюджету?",
+  "scope": "global", "k": 5,
+  "expect_bm25": "hit", "expect_hybrid": "hit",
+  "relevant_passage_keys": ["budget-q1", "budget-r1"] }
