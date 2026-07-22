@@ -11,6 +11,7 @@ import { AssistantComposer } from '../components/assistant/AssistantComposer';
 import { useAssistantChats } from '../hooks/useAssistantChats';
 import { useI18n, type TranslationKey } from '../i18n';
 import { Button, Chip, Icon, IconBtn, useToast } from '../ui';
+import { ViewHead } from '../ui/ViewHead';
 
 export interface AssistantPageProps {
   onOpenCall: (callId: string) => void;
@@ -116,10 +117,11 @@ export function AssistantPage({ onOpenCall }: AssistantPageProps) {
   const pendingText = t('assistant.pendingGlobal', { n: stats?.indexedCalls ?? 0 });
 
   return (
-    <>
-      <div className="view-head">
-        <Icon name="chat" size={17} style={{ color: 'var(--text-3)' }} />
-        <span style={{ fontWeight: 650, fontSize: 'var(--t-14)' }}>{t('assistant.title')}</span>
+    // [B24.7] Shared shell (канон Inbox/Contacts, B18.9-fix): bleed мимо
+    // паддинга .app-main 34/44 + fill вьюпорта — .view-head флашится к краям,
+    // .as-layout получает всю высоту, composer-dock прижат к низу.
+    <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
+      <ViewHead icon="chat" title={t('assistant.title')}>
         {statsChip && (
           <span className="tip tip--bottom" data-tip={t('assistant.statsTooltip')}>
             <Chip size="sm" tone="line" icon="doc">
@@ -127,7 +129,7 @@ export function AssistantPage({ onOpenCall }: AssistantPageProps) {
             </Chip>
           </span>
         )}
-      </div>
+      </ViewHead>
       <div className="as-layout">
         <div className="as-chats">
           <div style={{ padding: '10px 10px 4px' }}>
@@ -221,6 +223,6 @@ export function AssistantPage({ onOpenCall }: AssistantPageProps) {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

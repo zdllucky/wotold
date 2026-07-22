@@ -1346,7 +1346,9 @@ html.recording-widget .rec-float {
 .as-empty {
   max-width: 540px;
   margin: 0 auto;
-  padding: 11vh 24px 24px;
+  /* Нижняя подушка 140px: подсказки-чипы не подлезают под composer-dock
+     в невысоком окне (B24.7, замечание юзера по скрину). */
+  padding: 11vh 24px 140px;
   display: flex;
   flex-direction: column;
   align-items: center;
