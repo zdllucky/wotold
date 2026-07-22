@@ -8,6 +8,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 vi.mock('../api/settings', () => ({
   getSetting: vi.fn(),
   setSetting: vi.fn(),
+  // [B21] useTheme читает реестр-ключи вместо локальных литералов.
+  SETTINGS_KEYS: { UI_THEME: 'ui.theme', UI_ACCENT: 'ui.accent' },
 }));
 
 import { getSetting, setSetting } from '../api/settings';

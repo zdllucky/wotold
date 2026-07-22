@@ -281,7 +281,8 @@ function SignedInView({
         {t('account.sessionUntil', { date: formatDate(expiresAt, locale) })}
       </p>
       <div style={{ display: 'flex', gap: 8 }}>
-        <Button variant="danger" size="sm" onClick={onSignOut} disabled={busy} busy={busy}>
+        {/* [B21] Канон: выход — danger-ghost (не заливной danger). */}
+        <Button variant="danger-ghost" size="sm" onClick={onSignOut} disabled={busy} busy={busy}>
           {t('account.signOut')}
         </Button>
       </div>

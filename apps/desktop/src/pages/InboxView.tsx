@@ -9,22 +9,15 @@
 // table directly (react-window virtualization dropped — the prototype `.tbl`
 // has a sticky head + group headers that don't fit a flat virtual list).
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { ask, save } from '@tauri-apps/plugin-dialog';
-
 import { humanError } from '../api/errors';
 import {
   listCalls,
   type Call,
   type CallProgressEvent,
 } from '../api/recording';
-import {
-  deleteCall,
-  exportCallMarkdown,
-  listActiveCallIds,
-  reprocessCall,
-} from '../api/calls';
+import { listActiveCallIds } from '../api/calls';
 import { listCallSpeakers } from '../api/speakers';
 import {
   Button,
@@ -35,16 +28,16 @@ import {
   MenuItem,
   MenuLabel,
   MenuSep,
-  Segmented,
   ViewHead,
   useToast,
-  type SegOption,
 } from '../ui';
 import { Icon, type IconName } from '../ui/Icon';
 import { formatElapsed } from '../recording/RecordingContext';
 import { LiveRecEq } from '../recording/LiveRecEq';
-import { useI18n, type TranslationKey } from '../i18n';
+import { useI18n } from '../i18n';
 import { TableRow } from './inboxBits';
+import { useInboxRowActions } from './useInboxRowActions';
+import { ViewSwitcher, type InboxViewMode } from './InboxViewSwitcher';
 import { InboxCards, InboxMonth, InboxWeek } from './InboxCalendarViews';
 import {
   FACETS_EMPTY,
@@ -62,7 +55,6 @@ import {
 } from './inboxData';
 
 type TFn = ReturnType<typeof useI18n>['t'];
-type InboxViewMode = 'list' | 'cards' | 'week' | 'month';
 
 interface FacetDef {
   key: StrFacetKey;
@@ -408,40 +400,6 @@ function FacetButton({ facets, setFacets, defs, t }: FacetButtonProps) {
   );
 }
 
-// ── View switcher (icon segmented) ──
-
-const VIEW_DEFS: [InboxViewMode, IconName, TranslationKey][] = [
-  ['list', 'list', 'inbox.viewList'],
-  ['cards', 'grid', 'inbox.viewCards'],
-  ['week', 'calendarWeek', 'inbox.viewWeek'],
-  ['month', 'calendar', 'inbox.viewMonth'],
-];
-
-function ViewSwitcher({
-  view,
-  setView,
-  t,
-}: {
-  view: InboxViewMode;
-  setView: (v: InboxViewMode) => void;
-  t: TFn;
-}) {
-  const options: SegOption<InboxViewMode>[] = VIEW_DEFS.map(([v, icon, key]) => ({
-    value: v,
-    label: t(key),
-    icon,
-  }));
-  return (
-    <Segmented<InboxViewMode>
-      options={options}
-      value={view}
-      onChange={setView}
-      iconOnly
-      ariaLabel={t('inbox.viewLabel')}
-    />
-  );
-}
-
 // ── Main ──
 
 interface PipelineFinishedEvent {
@@ -462,6 +420,9 @@ interface InboxViewProps {
   paused?: boolean;
   elapsed?: number;
   onPause?: () => void;
+  /** [B20.4] Keep-alive: компонент всегда mounted, false = скрыт (display:none).
+   *  Состояние (вид/поиск/фасеты/offset'ы/скролл) переживает навигацию. */
+  active?: boolean;
 }
 
 export function InboxView({
@@ -471,6 +432,7 @@ export function InboxView({
   paused = false,
   elapsed = 0,
   onPause,
+  active = true,
 }: InboxViewProps) {
   const { locale, t } = useI18n();
   const toast = useToast();
@@ -490,65 +452,14 @@ export function InboxView({
       .catch((e: unknown) => setError(humanError(e)));
   };
 
-  // [B19.7] Row-menu actions — mirror CallDetailPage kebab (reprocess/export/delete).
-  const onRowReprocess = (call: Call) => {
-    void (async () => {
-      try {
-        await reprocessCall(call.id);
-        setActiveIds((prev) => new Set(prev).add(call.id));
-        toast.show({ tone: 'success', message: t('inbox.reprocessStarted') });
-      } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
-      }
-    })();
-  };
-
-  const onRowExport = (call: Call) => {
-    void (async () => {
-      const base = call.title?.trim() || `wotold-${call.id.slice(0, 8)}`;
-      const defaultPath = `${base.replace(/[^\p{L}\p{N}_.-]/gu, '_')}.md`;
-      let dest: string | null = null;
-      try {
-        dest = (await save({
-          defaultPath,
-          filters: [{ name: 'Markdown', extensions: ['md'] }],
-          title: t('callDetail.exportTitle'),
-        })) as string | null;
-      } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
-        return;
-      }
-      if (!dest) return; // cancelled
-      try {
-        await exportCallMarkdown(call.id, dest);
-        toast.show({ tone: 'success', message: t('inbox.exported') });
-      } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
-      }
-    })();
-  };
-
-  const onRowDelete = (call: Call) => {
-    void (async () => {
-      const ok = await ask(
-        t('callDetail.deleteConfirmBody', { title: call.title ?? call.id.slice(0, 8) }),
-        {
-          title: 'Wotold',
-          kind: 'warning',
-          okLabel: t('callDetail.deleteConfirmOk'),
-          cancelLabel: t('common.cancel'),
-        },
-      );
-      if (!ok) return;
-      try {
-        await deleteCall(call.id);
-        refresh();
-        toast.show({ tone: 'success', message: t('inbox.deleted') });
-      } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
-      }
-    })();
-  };
+  // [B19.7, B20.5] Row-menu actions (reprocess/export/delete) — общий hook,
+  // используются таблицей и ПКМ-меню календарных видов.
+  const { onRowReprocess, onRowExport, onRowDelete } = useInboxRowActions({
+    t,
+    toast,
+    refresh,
+    markActive: (callId) => setActiveIds((prev) => new Set(prev).add(callId)),
+  });
 
   useEffect(() => {
     refresh();
@@ -663,11 +574,36 @@ export function InboxView({
   ];
   const nActive = facetCount(facets) + (text ? 1 : 0);
 
+  // [B20.4] Keep-alive scroll restore: display:none сбрасывает scrollTop в
+  // WebKit → пишем позицию непрерывно (onScroll) и восстанавливаем при show.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const savedScroll = useRef(0);
+  useLayoutEffect(() => {
+    // scrollTop-присваивание вместо scrollTo() — jsdom-safe + мгновенно.
+    if (active && scrollRef.current) scrollRef.current.scrollTop = savedScroll.current;
+  }, [active]);
+  // Реактивация: подхватить изменения, случившиеся вне event-потока
+  // (напр. удаление звонка из kebab на CallDetailPage). Update in place —
+  // старые строки остаются на экране, без флика.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current) refresh();
+    wasActive.current = active;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
   return (
     // [B18.9-fix] Shared shell: bleed past .app-main 34/44 padding + fill the
     // viewport so the .view-head navbar spans flush (rail→right edge) and the
     // table scrolls in its own region below — same pattern as Contacts/Settings.
-    <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
+    <div
+      className="main"
+      style={{
+        margin: '-34px -44px',
+        height: '100vh',
+        display: active ? undefined : 'none',
+      }}
+    >
       <ViewHead icon="inbox" title={t('nav.calls')} count={calls?.length} countTone="line">
         <div
           style={{
@@ -724,7 +660,14 @@ export function InboxView({
       {/* Body — the `.tbl` table is flush (its head/rows self-pad via wk.css);
           the calendar views pad themselves; the skeleton / error / footer get
           their own `.pad` so only the table touches the bar edges. */}
-      <div className="scroll" style={{ flex: '1 1 auto', minHeight: 0 }}>
+      <div
+        className="scroll"
+        style={{ flex: '1 1 auto', minHeight: 0 }}
+        ref={scrollRef}
+        onScroll={(e) => {
+          savedScroll.current = e.currentTarget.scrollTop;
+        }}
+      >
         {error ? (
           <p
             role="alert"
@@ -748,6 +691,10 @@ export function InboxView({
             speakerInitials={speakerInitials}
             locale={locale}
             t={t}
+            onReprocess={onRowReprocess}
+            onExport={onRowExport}
+            onDelete={onRowDelete}
+            activeIds={activeIds}
           />
         ) : view === 'week' ? (
           <InboxWeek
@@ -756,6 +703,10 @@ export function InboxView({
             speakerInitials={speakerInitials}
             locale={locale}
             t={t}
+            onReprocess={onRowReprocess}
+            onExport={onRowExport}
+            onDelete={onRowDelete}
+            activeIds={activeIds}
           />
         ) : view === 'month' ? (
           <InboxMonth
@@ -764,6 +715,10 @@ export function InboxView({
             speakerInitials={speakerInitials}
             locale={locale}
             t={t}
+            onReprocess={onRowReprocess}
+            onExport={onRowExport}
+            onDelete={onRowDelete}
+            activeIds={activeIds}
           />
         ) : calls.length === 0 ? (
           <Empty title={t('calls.emptyTitle')} description={t('calls.emptyBody')} />

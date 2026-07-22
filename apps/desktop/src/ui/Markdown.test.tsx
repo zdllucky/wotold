@@ -86,13 +86,34 @@ describe('Markdown (.md-rich)', () => {
       expect(table?.querySelectorAll('tbody td')).toHaveLength(2);
     });
 
-    test('renders a task list with checkboxes', () => {
+    // [B20.2] Task-list рендерится в v2-канон (.md-tasks + .chk display-only),
+    // голый чекбокс-инпут выпилен.
+    test('renders task list as .md-tasks with .chk spans (no inputs)', () => {
       render(<Markdown>{'- [ ] todo\n- [x] done'}</Markdown>);
-      const boxes = document.querySelectorAll<HTMLInputElement>(
-        'li.task-list-item input[type="checkbox"]',
-      );
-      expect(boxes).toHaveLength(2);
-      expect(boxes[1]?.checked).toBe(true);
+      expect(document.querySelector('ul.md-tasks')).toBeTruthy();
+      expect(document.querySelector('ul.md-ul')).toBeNull();
+      const chks = document.querySelectorAll('.chk');
+      expect(chks).toHaveLength(2);
+      expect(chks[0]?.getAttribute('data-done')).toBeNull();
+      expect(chks[1]?.getAttribute('data-done')).toBe('true');
+      // A11y: display-only чекбокс всё равно объявляет state для SR.
+      expect(chks[0]?.getAttribute('role')).toBe('checkbox');
+      expect(chks[0]?.getAttribute('aria-checked')).toBe('false');
+      expect(chks[1]?.getAttribute('aria-checked')).toBe('true');
+      expect(document.querySelector('input')).toBeNull();
+    });
+
+    test('task item keeps inline markdown (bold owner) and text', () => {
+      render(<Markdown>{'- [ ] **Иван.** Позвонить клиенту'}</Markdown>);
+      const li = document.querySelector('ul.md-tasks li');
+      expect(li?.querySelector('strong')?.textContent).toBe('Иван.');
+      expect(li?.textContent).toContain('Позвонить клиенту');
+    });
+
+    test('mixed document: tasks and plain lists coexist', () => {
+      render(<Markdown>{'- [ ] раз\n- [x] два\n\nтекст\n\n- тема А'}</Markdown>);
+      expect(document.querySelectorAll('.chk')).toHaveLength(2);
+      expect(document.querySelector('ul.md-ul')).toBeTruthy();
     });
 
     test('renders strikethrough as <del>', () => {

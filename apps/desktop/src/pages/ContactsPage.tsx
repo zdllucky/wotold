@@ -22,7 +22,7 @@ import { SP_COLORS } from './CallDetailUtils';
 import { Button, Empty, Skeleton, ViewHead } from '../ui';
 import { Icon, type IconName } from '../ui/Icon';
 import { bcp47, useI18n } from '../i18n';
-import { ContactForm } from './ContactForm';
+import { ContactFormModal } from './ContactFormModal';
 import { VoiceSamplesSection } from './VoiceSamplesSection';
 
 interface ContactStats {
@@ -30,11 +30,8 @@ interface ContactStats {
   totalSec: number;
 }
 
-type Mode =
-  | { kind: 'view'; contactId: string }
-  | { kind: 'add' }
-  | { kind: 'edit'; contactId: string }
-  | { kind: 'empty' };
+// [B23] Add/edit живут в ContactFormModal (канон v2) — панель только view.
+type Mode = { kind: 'view'; contactId: string } | { kind: 'empty' };
 
 function initials(name: string): string {
   return (
@@ -75,6 +72,10 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'empty' });
+  // [B23] Открытая модалка формы: null = закрыта, contact=null = создание.
+  const [form, setForm] = useState<{ contact: Contact | null } | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formBusy, setFormBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [statsByContact, setStatsByContact] = useState<Map<string, ContactStats>>(new Map());
   const [callsByContact, setCallsByContact] = useState<Map<string, Call[]>>(new Map());
@@ -132,24 +133,34 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
   }, [contacts]);
 
   const handleCreate = async (input: ContactInput) => {
+    setFormBusy(true);
     try {
       const created = await createContact(input);
-      setError(null);
+      setFormError(null);
       setContacts(await listContacts());
       setMode({ kind: 'view', contactId: created.id });
+      setForm(null);
     } catch (e) {
-      setError(humanError(e));
+      // [B23-fix] Модалка остаётся открытой; ошибка рендерится ВНУТРИ неё
+      // (панель под оверлеем не видна).
+      setFormError(humanError(e));
+    } finally {
+      setFormBusy(false);
     }
   };
 
   const handleUpdate = async (id: string, input: ContactInput) => {
+    setFormBusy(true);
     try {
       await updateContact(id, input);
-      setError(null);
+      setFormError(null);
       setContacts(await listContacts());
       setMode({ kind: 'view', contactId: id });
+      setForm(null);
     } catch (e) {
-      setError(humanError(e));
+      setFormError(humanError(e));
+    } finally {
+      setFormBusy(false);
     }
   };
 
@@ -214,9 +225,7 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
   }
 
   const activeContact =
-    mode.kind === 'view' || mode.kind === 'edit'
-      ? contacts.find((c) => c.id === mode.contactId)
-      : null;
+    mode.kind === 'view' ? contacts.find((c) => c.id === mode.contactId) : null;
   const activeId = activeContact?.id ?? null;
 
   return (
@@ -239,7 +248,7 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
           variant="primary"
           size="sm"
           leading={<Icon name="plus" size={14} />}
-          onClick={() => setMode({ kind: 'add' })}
+          onClick={() => setForm({ contact: null })}
           aria-label={t('contacts.addAria')}
         >
           {t('common.add')}
@@ -316,42 +325,13 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
           </p>
         )}
 
-        {mode.kind === 'add' && (
-          <div style={{ maxWidth: 640 }}>
-            <h1 className="doc-title" style={{ fontSize: 22, marginBottom: 18 }}>
-              {t('contacts.addTitle')}
-            </h1>
-            <ContactForm
-              submitLabel={t('contacts.submitCreate')}
-              onSubmit={handleCreate}
-              onCancel={() =>
-                setMode(contacts.length > 0 ? { kind: 'view', contactId: contacts[0]!.id } : { kind: 'empty' })
-              }
-            />
-          </div>
-        )}
-
-        {mode.kind === 'edit' && activeContact && (
-          <div style={{ maxWidth: 640 }}>
-            <h1 className="doc-title" style={{ fontSize: 22, marginBottom: 18 }}>
-              {activeContact.display_name}
-            </h1>
-            <ContactForm
-              submitLabel={t('contacts.submitSave')}
-              initial={activeContact}
-              onSubmit={(input) => handleUpdate(activeContact.id, input)}
-              onCancel={() => setMode({ kind: 'view', contactId: activeContact.id })}
-            />
-          </div>
-        )}
-
         {mode.kind === 'view' && activeContact && (
           <ContactView
             contact={activeContact}
             colorIdx={contacts.findIndex((c) => c.id === activeContact.id) % SP_COLORS.length}
             stats={statsByContact.get(activeContact.id) ?? null}
             recentCalls={callsByContact.get(activeContact.id) ?? []}
-            onEdit={() => setMode({ kind: 'edit', contactId: activeContact.id })}
+            onEdit={() => setForm({ contact: activeContact })}
             onDelete={() => void handleDelete(activeContact)}
             onOpenCall={onOpenCall}
           />
@@ -362,6 +342,23 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
         )}
         </div>
       </div>
+
+      {/* [B23] Add/Edit — канонная модалка; key сбрасывает state per contact. */}
+      {form && (
+        <ContactFormModal
+          key={form.contact?.id ?? 'new'}
+          contact={form.contact}
+          error={formError}
+          busy={formBusy}
+          onClose={() => {
+            setForm(null);
+            setFormError(null);
+          }}
+          onSubmit={(input) =>
+            form.contact ? void handleUpdate(form.contact.id, input) : void handleCreate(input)
+          }
+        />
+      )}
     </div>
   );
 }
@@ -419,20 +416,18 @@ function ContactView({
             {t('contacts.voiceConfirmed')}
           </span>
         ) : null}
-        <button type="button" className="btn btn--ghost" data-size="sm" onClick={onEdit}>
-          <Icon name="edit" size={14} />
+        <Button variant="ghost" size="sm" leading={<Icon name="edit" size={14} />} onClick={onEdit}>
           {t('common.edit')}
-        </button>
+        </Button>
         {!contact.is_owner && (
-          <button
-            type="button"
-            className="btn btn--danger-ghost"
-            data-size="sm"
+          <Button
+            variant="danger-ghost"
+            size="sm"
+            leading={<Icon name="trash" size={14} />}
             onClick={onDelete}
           >
-            <Icon name="trash" size={14} />
             {t('common.delete')}
-          </button>
+          </Button>
         )}
       </div>
 

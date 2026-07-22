@@ -30,7 +30,18 @@ import type {
 
 import { DeleteModelConfirm } from '../components/DeleteModelConfirm';
 import { RediscoveryChip } from '../components/RediscoveryChip';
-import { Icon, IconBtn, Skeleton, SettingRow, Switch } from '../ui';
+import {
+  Button,
+  Dot,
+  GroupLabel,
+  Icon,
+  IconBtn,
+  OptionCard,
+  Skeleton,
+  SettingRow,
+  Switch,
+  Wave,
+} from '../ui';
 import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import {
   localEngineGetActiveEngine,
@@ -343,7 +354,7 @@ export function LocalEngineSection() {
     preset?.preset !== hw.recommendation;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 640 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {deleteConfirmModel && (
         <DeleteModelConfirm
           modelRole={deleteConfirmModel.modelRole}
@@ -412,10 +423,8 @@ export function LocalEngineSection() {
             maxWidth: 560,
           }}
         >
-          <span className="wave" style={{ color: 'var(--accent)' }} aria-hidden>
-            {[0, 1, 2, 3, 4].map((i) => (
-              <i key={i} style={{ animationDelay: i * 0.1 + 's' }} />
-            ))}
+          <span style={{ color: 'var(--accent)' }} aria-hidden>
+            <Wave />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="set-eyebrow" style={{ marginBottom: 4 }}>
@@ -429,91 +438,71 @@ export function LocalEngineSection() {
               })}
             </div>
           </div>
-          <button
-            type="button"
-            className="btn btn--primary"
-            data-size="sm"
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => {
               if (hw.recommendation) void onPresetChange(hw.recommendation);
               setBannerDismissed(true);
             }}
           >
             {t('localEngine.hwBannerApply')}
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost"
-            data-size="sm"
-            onClick={() => setBannerDismissed(true)}
-          >
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setBannerDismissed(true)}>
             {t('localEngine.hwBannerDismiss')}
-          </button>
+          </Button>
         </div>
       )}
 
       {!hwLoading && (
-        <div className="field">
-          <label className="field-label" id="local-engine-kind-label">
-            {t('localEngine.engineLabel')}
-          </label>
+        <div>
+          <GroupLabel top={2}>{t('localEngine.engineLabel')}</GroupLabel>
           <div
             role="radiogroup"
-            aria-labelledby="local-engine-kind-label"
+            aria-label={t('localEngine.engineLabel')}
             style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
           >
-            {(['cloud_managed', 'local'] as EngineKind[]).map((k) => {
-              const active = engine === k;
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  className="optioncard"
-                  data-active={active ? 'true' : undefined}
-                  onClick={() => void onEngineChange(k)}
-                >
-                  <span className="optioncard-ico" aria-hidden>
-                    <Icon name={k === 'local' ? 'cpu' : 'cloud'} size={16} />
-                  </span>
-                  <span className="optioncard-main">
-                    <span className="optioncard-head">
-                      <b>{t(`localEngine.engine.${k}.title`)}</b>
-                      {active && (
-                        <span className="chip chip--accent" data-size="sm">
-                          {t('localEngine.engine.active')}
-                        </span>
-                      )}
-                    </span>
-                    <span className="optioncard-sub">{t(`localEngine.engine.${k}.body`)}</span>
-                    <span className="optioncard-meta mono">
-                      {t(`localEngine.engine.${k}.quality`)}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
+            {/* [B21] Канон: Local первым. */}
+            {(['local', 'cloud_managed'] as EngineKind[]).map((k) => (
+              <OptionCard
+                key={k}
+                radio
+                active={engine === k}
+                icon={k === 'local' ? 'cpu' : 'cloud'}
+                title={t(`localEngine.engine.${k}.title`)}
+                sub={t(`localEngine.engine.${k}.body`)}
+                quality={k === 'local' ? 2 : 3}
+                meta={<span className="mono">{t(`localEngine.engine.${k}.quality`)}</span>}
+                onClick={() => void onEngineChange(k)}
+              />
+            ))}
           </div>
         </div>
       )}
 
       {!hwLoading && engine === 'cloud_managed' && (
-        <div style={{ marginTop: 4 }}>
+        <div>
+          <GroupLabel>{t('usage.quotaTitle')}</GroupLabel>
           <UsageSection />
         </div>
       )}
 
+      {/* [B21] Канон :183-187 — sunken-плашка: Icon cpu + mono-спеки + ghost. */}
       {!hwLoading && engine === 'local' && hw && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 10,
-            fontSize: 12,
-            color: 'var(--text-3)',
+            padding: '10px 13px',
+            marginTop: 12,
+            background: 'var(--sunken)',
+            borderRadius: 'var(--r-md)',
+            fontSize: 12.5,
           }}
         >
-          <span>
+          <Icon name="cpu" size={15} style={{ color: 'var(--text-3)' }} />
+          <span className="mono" style={{ color: 'var(--text-2)', minWidth: 0 }}>
             {t('localEngine.probeSummary', {
               cpu: hw.cpu_model,
               ram: hw.ram_gb,
@@ -525,21 +514,24 @@ export function LocalEngineSection() {
                 : '—',
             })}
           </span>
-          <button
-            type="button"
-            className="btn btn--ghost"
-            data-size="sm"
-            onClick={async () => {
-              try {
-                const next = await localEngineHwProbe(true);
-                setHw(next);
-              } catch (e) {
-                setError(humanError(e));
-              }
+          <Button
+            variant="ghost"
+            size="sm"
+            style={{ marginLeft: 'auto' }}
+            leading={<Icon name="refresh" size={13} />}
+            onClick={() => {
+              void (async () => {
+                try {
+                  const next = await localEngineHwProbe(true);
+                  setHw(next);
+                } catch (e) {
+                  setError(humanError(e));
+                }
+              })();
             }}
           >
             {t('localEngine.reprobe')}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -547,11 +539,12 @@ export function LocalEngineSection() {
         <SettingRow
           label={t('localEngine.keepResidentLabel')}
           hint={t('localEngine.keepResidentHint')}
+          align="top"
+          last
           control={
             <Switch
               checked={keepResident}
               label={t('localEngine.keepResidentLabel')}
-              style={{ marginTop: 2 }}
               onChange={async (next) => {
                 setKeepResident(next); // optimistic
                 try {
@@ -567,17 +560,14 @@ export function LocalEngineSection() {
       )}
 
       {!hwLoading && engine === 'local' && (
-        <div className="field">
-          <label className="field-label" id="local-engine-preset-label">
-            {t('localEngine.presetLabel')}
-          </label>
+        <div>
+          <GroupLabel>{t('localEngine.presetLabel')}</GroupLabel>
           <div
             role="radiogroup"
-            aria-labelledby="local-engine-preset-label"
+            aria-label={t('localEngine.presetLabel')}
             style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
           >
-            {PRESETS.map((p) => {
-              const active = preset?.preset === p;
+            {PRESETS.map((p, qi) => {
               const models = PRESET_TO_MODELS[p];
               const whisperStatus = statuses[models.whisper];
               const llmStatus = statuses[models.llm];
@@ -588,47 +578,31 @@ export function LocalEngineSection() {
               const anyDownloading = !!whisperProgress || !!llmProgress;
               const totalSize =
                 (whisperStatus?.bytes_total ?? 0) + (llmStatus?.bytes_total ?? 0);
-              const isRecommended = hw?.recommendation === p;
-              const dot = anyDownloading
-                ? { background: 'var(--accent)', pulse: true }
-                : allPresent
-                  ? { background: 'var(--ok)', pulse: false }
-                  : { background: 'var(--text-faint)', pulse: false };
               return (
-                <button
+                <OptionCard
                   key={p}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  className="optioncard"
-                  data-active={active ? 'true' : undefined}
-                  onClick={() => void onPresetChange(p)}
-                >
-                  <span className="optioncard-main">
-                    <span className="optioncard-head">
-                      <span
-                        className={'dot' + (dot.pulse ? ' dot--pulse' : '')}
-                        style={{ background: dot.background }}
-                        aria-hidden
-                      />
-                      <b>{t(`localEngine.preset.${p}`)}</b>
-                      {isRecommended && (
-                        <span className="chip chip--accent" data-size="sm">
-                          {t('localEngine.presetRecommend')}
-                        </span>
-                      )}
-                    </span>
-                    <span className="optioncard-meta mono">
-                      {t(`localEngine.presetMeta.${p}`)}{' · '}
-                      {totalSize > 0 ? formatGB(totalSize) : '—'}{' · '}
+                  radio
+                  active={preset?.preset === p}
+                  title={t(`localEngine.preset.${p}`)}
+                  badge={
+                    hw?.recommendation === p ? t('localEngine.presetRecommend') : undefined
+                  }
+                  quality={qi + 1}
+                  meta={
+                    <span className="mono">
+                      {t(`localEngine.presetMeta.${p}`)}
+                      {' · '}
+                      {totalSize > 0 ? formatGB(totalSize) : '—'}
+                      {' · '}
                       {allPresent
                         ? t('localEngine.statusInstalled')
                         : anyDownloading
                           ? t('localEngine.statusDownloading')
                           : t('localEngine.statusAbsent')}
                     </span>
-                  </span>
-                </button>
+                  }
+                  onClick={() => void onPresetChange(p)}
+                />
               );
             })}
           </div>
@@ -640,10 +614,8 @@ export function LocalEngineSection() {
       )}
 
       {!hwLoading && engine === 'local' && storageRows.length > 0 && (
-        <div className="field">
-          <div className="set-eyebrow" id="local-engine-storage-title">
-            {t('localEngine.storageTitle')}
-          </div>
+        <div>
+          <GroupLabel>{t('localEngine.storageTitle')}</GroupLabel>
           <p className="set-hint" style={{ marginTop: 0, marginBottom: 12 }}>
             {t('localEngine.storageLede')}
           </p>
@@ -656,7 +628,7 @@ export function LocalEngineSection() {
               <span role="columnheader" style={{ flex: '0 0 64px' }}>
                 {t('localEngine.colSize')}
               </span>
-              <span role="columnheader" style={{ flex: '0 0 84px' }}>
+              <span role="columnheader" style={{ flex: '0 0 70px' }}>
                 {t('localEngine.colLastUsed')}
               </span>
               <span role="columnheader" style={{ flex: '0 0 96px' }}>
@@ -670,19 +642,38 @@ export function LocalEngineSection() {
               const dot = dotStyleForStatus(status, progress ?? null);
               return (
                 <div key={row.id} className="set-trow" role="row">
-                  <div style={{ flex: '1 1 auto', minWidth: 0, color: 'var(--text)' }}>
+                  {/* [B22] u-trunc: имя не переносится и не наезжает на колонки. */}
+                  <div
+                    className="u-trunc"
+                    title={modelLabel(row.id, t)}
+                    style={{ flex: '1 1 auto', minWidth: 0, color: 'var(--text)' }}
+                  >
                     {modelLabel(row.id, t)}
                   </div>
                   <span className="mono" style={{ flex: '0 0 64px', color: 'var(--text-3)' }}>
                     {formatGB(row.size_bytes)}
                   </span>
-                  <span className="mono" style={{ flex: '0 0 84px', color: 'var(--text-3)' }}>
+                  <span className="mono" style={{ flex: '0 0 70px', color: 'var(--text-3)' }}>
                     {row.last_used_at ? formatLastUsed(row.last_used_at) : '—'}
                   </span>
                   <div style={{ flex: '0 0 96px', display: 'flex', alignItems: 'center', gap: 6 }}>
                     {row.is_active && status.state === 'present' ? (
                       <span className="chip chip--accent" data-size="sm">
                         {t('localEngine.statusActive')}
+                      </span>
+                    ) : progress ? (
+                      // [B21] Канон загрузки: Dot ring pulse + accent-text %.
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          color: 'var(--accent-text)',
+                          fontSize: 11.5,
+                        }}
+                      >
+                        <Dot ring pulse color="var(--accent)" />
+                        {progress.pct.toFixed(0)}%
                       </span>
                     ) : (
                       <>
@@ -694,11 +685,9 @@ export function LocalEngineSection() {
                         <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
                           {status.state === 'present'
                             ? t('localEngine.statusInstalled')
-                            : progress
-                              ? `${progress.pct.toFixed(0)}%`
-                              : status.state === 'corrupted'
-                                ? t('localEngine.statusCorrupted')
-                                : t('localEngine.statusAbsent')}
+                            : status.state === 'corrupted'
+                              ? t('localEngine.statusCorrupted')
+                              : t('localEngine.statusAbsent')}
                         </span>
                       </>
                     )}

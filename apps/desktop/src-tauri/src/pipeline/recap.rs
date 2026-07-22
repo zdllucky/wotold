@@ -13,6 +13,7 @@ use crate::{
         ActionItemInput,
     },
     pipeline::{
+        recap_md,
         summary_v2::{ActionItemCategory, CallSummaryV2, CallType},
         summary_validator::{
             self, strip_unverified_evidence, validate_schema, DEFAULT_FUZZY_THRESHOLD,
@@ -658,22 +659,38 @@ fn render_recap_md_v2(
     let mut out = String::new();
     out.push_str(&format!("# {}\n\n", labels.title));
 
+    // [B20.3] Известные имена (участники + контакты) для render-side bold.
+    // Плейсхолдеры («unknown»/«не указано») не выделяем.
+    let known_names: Vec<String> = summary
+        .participants
+        .iter()
+        .filter_map(|p| p.display_name.clone())
+        .chain(contacts.iter().map(|c| c.display_name.clone()))
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty() && !is_placeholder_name(n))
+        .collect();
+
     // [recap-rich] Вверху — нарратив-минутки (prose) если есть; иначе короткий
     // summary. Оба сразу не рендерим (нарратив уже включает суть).
+    // Bold применяем только к summary-фоллбеку: нарратив выделяет имена сам
+    // (правило в narrative-промпте), двойная разметка не нужна.
     let lead = if !summary.narrative.trim().is_empty() {
-        summary.narrative.trim()
+        summary.narrative.trim().to_string()
     } else {
-        summary.summary.trim()
+        recap_md::bold_known_names(summary.summary.trim(), &known_names)
     };
     if !lead.is_empty() {
-        out.push_str(lead);
+        out.push_str(&lead);
         out.push_str("\n\n");
     }
 
     if !summary.key_points.is_empty() {
         out.push_str(&format!("## {}\n\n", labels.key_points));
         for kp in &summary.key_points {
-            out.push_str(&format!("- {}\n", kp.trim()));
+            out.push_str(&format!(
+                "- {}\n",
+                recap_md::bold_known_names(kp.trim(), &known_names)
+            ));
         }
         out.push('\n');
     }
@@ -755,16 +772,20 @@ fn render_recap_md_v2(
                 .as_deref()
                 .map(|d| format!(" — {} {d}", labels.until))
                 .unwrap_or_default();
+            // [B20.2] Категория — локализованный inline-code лейбл (рендерится
+            // как `.md-code`-чип в v2 UI). Emoji выпилены по design-gate (канон
+            // wotold-v2 — line-иконки/чипы, без emoji); старые сохранённые
+            // recap.md с emoji остаются валидными — рендерер их не переписывает.
             let category_prefix = ai
                 .category
                 .as_deref()
                 .map(|c| match c {
-                    "commitment" => "✅ ",
-                    "proposal" => "💡 ",
-                    "idea" => "📝 ",
-                    _ => "",
+                    "commitment" => format!("`{}` ", labels.cat_commitment),
+                    "proposal" => format!("`{}` ", labels.cat_proposal),
+                    "idea" => format!("`{}` ", labels.cat_idea),
+                    _ => String::new(),
                 })
-                .unwrap_or("");
+                .unwrap_or_default();
             match owner_label {
                 Some(label) if !label.trim().is_empty() => {
                     out.push_str(&format!(
@@ -826,6 +847,9 @@ struct RecapLabels {
     tasks: &'static str,
     participants: &'static str,
     until: &'static str,
+    cat_commitment: &'static str,
+    cat_proposal: &'static str,
+    cat_idea: &'static str,
 }
 
 impl RecapLabels {
@@ -840,6 +864,9 @@ impl RecapLabels {
                 tasks: "Tasks",
                 participants: "Participants",
                 until: "by",
+                cat_commitment: "Commitment",
+                cat_proposal: "Proposal",
+                cat_idea: "Idea",
             },
             "kk" => Self {
                 title: "Қорытынды",
@@ -850,6 +877,9 @@ impl RecapLabels {
                 tasks: "Тапсырмалар",
                 participants: "Қатысушылар",
                 until: "мерзім:",
+                cat_commitment: "Уәде",
+                cat_proposal: "Ұсыныс",
+                cat_idea: "Идея",
             },
             _ => Self {
                 title: "Рекап",
@@ -860,6 +890,9 @@ impl RecapLabels {
                 tasks: "Задачи",
                 participants: "Участники",
                 until: "до",
+                cat_commitment: "Договорённость",
+                cat_proposal: "Предложение",
+                cat_idea: "Идея",
             },
         }
     }
@@ -1079,6 +1112,9 @@ mod tests {
             notes: None,
             created_at: "now".into(),
             updated_at: "now".into(),
+            source: "local".into(),
+            external_id: None,
+            external_etag: None,
             identifiers: vec![],
         }
     }
@@ -1200,8 +1236,8 @@ mod tests {
         }];
         let md = render_recap_md_v2(&s, &contacts, &action_inputs);
         assert!(md.contains("## Задачи"));
-        // [M14 T-02] category prefix "✅" prefix'ит owner label.
-        assert!(md.contains("✅ **Alice** — send draft — до 2026-06-01"));
+        // [M14 T-02, B20.2] category — локализованный `код-лейбл` перед owner.
+        assert!(md.contains("`Договорённость` **Alice** — send draft — до 2026-06-01"));
         assert!(md.contains("## Участники"));
         assert!(md.contains("Alice (`Speaker 0`)"));
     }

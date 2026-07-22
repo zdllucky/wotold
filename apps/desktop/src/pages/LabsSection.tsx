@@ -27,17 +27,18 @@ interface ToggleRowProps {
   hint: string;
   checked: boolean;
   onToggle: (next: boolean) => void;
+  last?: boolean;
 }
 
 // [B18.7c] v2 toggle row — thin wrapper around SettingRow + Switch wrappers.
-function ToggleRow({ label, hint, checked, onToggle }: ToggleRowProps) {
+function ToggleRow({ label, hint, checked, onToggle, last }: ToggleRowProps) {
   return (
     <SettingRow
       label={label}
       hint={hint}
-      control={
-        <Switch checked={checked} onChange={onToggle} label={label} style={{ marginTop: 2 }} />
-      }
+      align="top"
+      last={last}
+      control={<Switch checked={checked} onChange={onToggle} label={label} />}
     />
   );
 }
@@ -106,10 +107,11 @@ export function LabsSection() {
     }
   };
 
+  // [B21] Все три контрола — единообразные Row (канон SecLabs).
   return (
-    <div className="set-group">
+    <div>
       {error && (
-        <p role="alert" style={{ color: 'var(--danger)', margin: 0 }}>
+        <p role="alert" style={{ color: 'var(--danger)', margin: '0 0 12px' }}>
           {error}
         </p>
       )}
@@ -130,8 +132,12 @@ export function LabsSection() {
       />
 
       {/* [P1.2] Force-N-speakers Labs override. Whitelist 4 options → Select. */}
-      <div className="field" style={{ maxWidth: 260 }}>
-        <label className="field-label">{t('settings.forceNumSpeakersLabel')}</label>
+      <SettingRow
+        label={t('settings.forceNumSpeakersLabel')}
+        hint={t('settings.forceNumSpeakersHint')}
+        align="top"
+        last
+      >
         <Select<MicDiarizationNumSpeakers>
           value={numSpeakers}
           options={MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS.map((opt) => ({
@@ -140,8 +146,7 @@ export function LabsSection() {
           }))}
           onChange={(v) => void persistNumSpeakers(v)}
         />
-        <span className="set-hint">{t('settings.forceNumSpeakersHint')}</span>
-      </div>
+      </SettingRow>
     </div>
   );
 }

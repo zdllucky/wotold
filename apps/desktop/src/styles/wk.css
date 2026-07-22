@@ -362,10 +362,16 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .set-divider { height: 1px; background: var(--border); margin: 4px 0; max-width: 560px; }
 .set-toggle { display: flex; align-items: flex-start; gap: 16px; padding: 2px 0; }
 .set-toggle-label { font-size: 14px; font-weight: 550; }
-/* SettingRow (kit) */
-.setting-row { display: flex; align-items: flex-start; gap: 16px; padding: 2px 0; }
+/* SettingRow (kit) — [B21] канонизирован под Row-идиому прототипа
+   (wk-settings.jsx Row: label+hint слева, контрол справа, 13px vertical,
+   divider между строками; у последней divider снимается data-last). */
+.setting-row { display: flex; align-items: center; gap: 24px; padding: 13px 0; border-bottom: 1px solid var(--border); }
+.setting-row[data-align="top"] { align-items: flex-start; }
+.setting-row[data-last="true"] { border-bottom: none; }
+.setting-row[data-disabled="true"] { opacity: 0.55; }
 .setting-row-text { flex: 1 1 auto; min-width: 0; }
-.setting-row-label { font-size: 14px; font-weight: 550; }
+.setting-row-label { font-size: 13.5px; font-weight: 550; display: flex; align-items: center; gap: 8px; }
+.setting-row-control { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
 /* OptionCard (kit) */
 .optioncard { display: flex; gap: 12px; padding: 13px; text-align: left; align-items: flex-start; width: 100%; max-width: 560px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); transition: border-color var(--fast), box-shadow var(--fast); }
 .optioncard:hover { border-color: var(--border-strong); }
