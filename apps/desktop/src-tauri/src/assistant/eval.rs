@@ -189,6 +189,153 @@ async fn eval_level_a_bm25_baseline() {
     }
 }
 
+/// [M16.7] Уровень D — live-gate на 18 РЕАЛЬНЫХ вопросах юзера (сняты из
+/// живой БД 2026-07-22, 18/20 были «нет ответа»). Прогон против копии
+/// реальной БД + resident llama-server. Acceptance M16: ≥14/18 содержательных.
+///
+/// Запуск:
+/// `WOTOLD_LIVE_DB_DIR=<dir с app.db> WOTOLD_LIVE_LLM_URL=http://127.0.0.1:47331 \
+///  WOTOLD_LIVE_APPDATA=<app-data с calls/> [WOTOLD_EVAL_MODEL_DIR=<e5 dir>] \
+///  cargo test -- --ignored live_gate_m16 --nocapture`
+///
+/// Вопросы: (текст, call-scope по титулу LIKE — None = глобальный).
+const LIVE_USER_QUESTIONS: &[(&str, Option<&str>)] = &[
+    ("Сколько звонков было итого", None),
+    ("Что решили на звонке по командам", None),
+    ("Что решили по реформированию команд в итоге?", None),
+    ("Что за проект Дамир делает", None),
+    ("Решения планёрки продукта", None),
+    ("В чем суть изменений в итоге", Some("Реструктуризация")),
+    ("о чем звонок", Some("Реструктуризация")),
+    ("сколько звонков записано", None),
+    ("Что должен сделать дамир", None),
+    ("О чем был последний звонок", None),
+    ("Что в итоге решили по ескроу", Some("Реструктуризация")),
+    ("Кто такой Александр", Some("Реструктуризация")),
+    ("Что по переводам", None),
+    ("что по проекту", None),
+    ("Что там делает Глеб?", None),
+    ("Когда был последний звонок?", None),
+    ("Когда обсуждали приватность?", None),
+    ("Что там по делению команд", None),
+];
+
+#[tokio::test]
+#[ignore = "live gate: env WOTOLD_LIVE_DB_DIR + WOTOLD_LIVE_LLM_URL + WOTOLD_LIVE_APPDATA"]
+async fn live_gate_m16_user_questions() {
+    use crate::assistant::{ask_core_with, AskArgs};
+    use crate::events::EventBus;
+
+    let db_dir = std::env::var("WOTOLD_LIVE_DB_DIR").expect("WOTOLD_LIVE_DB_DIR");
+    let url = std::env::var("WOTOLD_LIVE_LLM_URL").expect("WOTOLD_LIVE_LLM_URL");
+    let appdata = std::env::var("WOTOLD_LIVE_APPDATA").expect("WOTOLD_LIVE_APPDATA");
+
+    let pool = crate::db::init(std::path::Path::new(&db_dir))
+        .await
+        .expect("init db copy");
+    // Миграция 0021 вычистила индекс — восстанавливаем штатным backfill'ом
+    // (артефакты читаются из реального app-data, пишем в КОПИЮ БД).
+    let store = crate::call_store::CallStore::new(std::path::PathBuf::from(&appdata));
+    crate::assistant::indexer::backfill(&pool, &store).await;
+
+    // Гибрид: реальный эмбеддер если задан, вектора корпуса — backfill'ом.
+    #[cfg(feature = "assistant-embed")]
+    let embedder = match std::env::var("WOTOLD_EVAL_MODEL_DIR") {
+        Ok(dir) => {
+            let e = crate::assistant::embedder::onnx_load_from_dir(std::path::Path::new(&dir))
+                .expect("embedder");
+            let n = crate::assistant::indexer::embed_backfill_with(&pool, e.clone())
+                .await
+                .unwrap();
+            println!("live: embedded {n} passages");
+            Some(e)
+        }
+        Err(_) => None,
+    };
+    #[cfg(not(feature = "assistant-embed"))]
+    let embedder: Option<std::sync::Arc<dyn crate::assistant::embedder::TextEmbedder>> = None;
+
+    let preset = crate::local_engine::preset::LocalEnginePreset::Balanced;
+    let provider = crate::local_engine::llm::LocalLlamaProvider::for_preset(
+        std::path::Path::new(&appdata),
+        preset.llm_model_id(),
+    )
+    .with_server(Some(url))
+    .with_cache_prompt(true);
+    let bus = EventBus::new(None);
+
+    // Резолв call-scope по подстроке титула.
+    async fn call_by_title(pool: &SqlitePool, like: &str) -> Option<String> {
+        sqlx::query_as::<_, (String,)>(
+            "SELECT id FROM calls WHERE status='ready' AND title LIKE '%' || ?1 || '%'
+             ORDER BY started_at DESC LIMIT 1",
+        )
+        .bind(like)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|(id,)| id)
+    }
+
+    let mut meaningful = 0usize;
+    for (q, scope_title) in LIVE_USER_QUESTIONS {
+        let call_id = match scope_title {
+            Some(t) => call_by_title(&pool, t).await,
+            None => None,
+        };
+        let t0 = std::time::Instant::now();
+        let out = ask_core_with(
+            &provider,
+            &pool,
+            &bus,
+            AskArgs {
+                chat_id: None,
+                call_id,
+                question: (*q).to_string(),
+            },
+            embedder.clone(),
+        )
+        .await;
+        match out {
+            Ok(o) => {
+                let text = &o.message.text;
+                let is_meaningful = text != crate::assistant::answer::NO_DIRECT_ANSWER_TEXT
+                    && text != crate::assistant::EMPTY_GLOBAL_TEXT
+                    && !text.is_empty();
+                // «Когда обсуждали приватность» — темы в корпусе НЕТ: честный
+                // empty и есть правильный ответ, засчитываем.
+                let honest_empty_ok = *q == "Когда обсуждали приватность?"
+                    && text == crate::assistant::EMPTY_GLOBAL_TEXT;
+                if is_meaningful || honest_empty_ok {
+                    meaningful += 1;
+                }
+                let short: String = text.chars().take(140).collect();
+                println!(
+                    "[{}ms] {} {} → {}",
+                    t0.elapsed().as_millis(),
+                    if is_meaningful || honest_empty_ok {
+                        "OK "
+                    } else {
+                        "MISS"
+                    },
+                    q,
+                    short.replace('\n', " ")
+                );
+            }
+            Err(e) => println!("ERR {q} → {e}"),
+        }
+    }
+    println!(
+        "live gate M16: {meaningful}/{} содержательных",
+        LIVE_USER_QUESTIONS.len()
+    );
+    assert!(
+        meaningful >= 14,
+        "acceptance M16: ≥14/18, получили {meaningful}"
+    );
+}
+
 /// Уровень B — реальная модель. Метрики + распределения cosine для порога.
 #[cfg(feature = "assistant-embed")]
 #[tokio::test]
