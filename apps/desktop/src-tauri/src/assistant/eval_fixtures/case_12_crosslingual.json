@@ -1,0 +1,5 @@
+{ "id": "case_12_crosslingual",
+  "question": "где хранятся записи звонков?",
+  "scope": "global", "k": 5,
+  "expect_bm25": "miss", "expect_hybrid": "hit",
+  "relevant_passage_keys": ["acme-t3"] }

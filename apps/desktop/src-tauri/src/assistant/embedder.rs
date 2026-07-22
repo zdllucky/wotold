@@ -110,6 +110,10 @@ pub async fn try_load_embedder(app_data_dir: &Path) -> Option<Arc<dyn TextEmbedd
     }
 }
 
+/// [M15.12] Реэкспорт загрузчика для eval-harness (реальная модель из env).
+#[cfg(all(test, feature = "assistant-embed"))]
+pub(crate) use onnx::load_from_dir as onnx_load_from_dir;
+
 #[cfg(feature = "assistant-embed")]
 mod onnx {
     //! OnnxTextEmbedder — multilingual-e5-small qint8 через ort + tokenizers.
@@ -261,6 +265,18 @@ mod onnx {
         fn dim(&self) -> usize {
             EMBED_DIM
         }
+    }
+
+    /// [M15.12] Загрузка из директории с каноническими именами файлов
+    /// (`model.onnx` + `tokenizer.json`) — вход eval-harness'а
+    /// (env `WOTOLD_EVAL_MODEL_DIR`), минуя каталог.
+    #[cfg(test)]
+    pub(crate) fn load_from_dir(dir: &Path) -> Result<Arc<dyn TextEmbedder>, AppError> {
+        let e = OnnxTextEmbedder::load_from_paths(
+            &dir.join("model.onnx"),
+            &dir.join("tokenizer.json"),
+        )?;
+        Ok(Arc::new(e))
     }
 
     pub(super) async fn try_load(app_data_dir: &Path) -> Option<Arc<dyn TextEmbedder>> {

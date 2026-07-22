@@ -1,0 +1,5 @@
+{ "id": "case_10_negative_offtopic",
+  "question": "квантовая телепортация хомяков",
+  "scope": "global", "k": 5,
+  "expect_bm25": "empty", "expect_hybrid": "no_relevant",
+  "relevant_passage_keys": [] }
