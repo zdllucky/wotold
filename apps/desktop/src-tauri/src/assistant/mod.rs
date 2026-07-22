@@ -503,6 +503,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn model_empty_answer_becomes_honest_no_direct_answer() {
+        // Gate Ph1: Qwen 3B на «нет ответа» возвращает пустой answer вопреки
+        // промпту — мапится в честный текст без источников, не в ошибку.
+        let db = fresh_db().await;
+        seed_call_with_passages(&db.pool, "c1", "Синхрон", &["обсуждали бюджет"]).await;
+        let mock = MockProvider::scripted(vec![Ok(
+            serde_json::json!({"answer": "  ", "used_fragments": []}),
+        )]);
+        let bus = EventBus::new(None);
+        let out = ask_core(&mock, &db.pool, &bus, args("что с бюджетом?"))
+            .await
+            .unwrap();
+        let ans = out.message.answer.as_ref().unwrap();
+        assert_eq!(ans.kind, AssistantAnswerKind::Answer);
+        assert_eq!(ans.text, crate::assistant::answer::NO_DIRECT_ANSWER_TEXT);
+        assert!(ans.sources.is_empty());
+        assert!(!ans.fragments.is_empty(), "контекст поиска сохраняется");
+    }
+
+    #[tokio::test]
     async fn unknown_chat_id_is_not_found() {
         let db = fresh_db().await;
         let mock = MockProvider::scripted(vec![]);
@@ -519,5 +539,100 @@ mod tests {
         )
         .await;
         assert!(matches!(err, Err(AppError::NotFound(_))));
+    }
+
+    /// [Gate Ph1 / M15.12] Живой e2e против КОПИИ реальной БД и вручную
+    /// поднятого llama-server (HTTP-путь провайдера не требует AppHandle).
+    /// Запуск только явно:
+    /// ```sh
+    /// WOTOLD_LIVE_DB_DIR=<dir-с-копией-app.db> WOTOLD_LIVE_LLM_URL=http://127.0.0.1:47331 \
+    ///   cargo test --lib live_gate_ph1 -- --ignored --nocapture
+    /// ```
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    #[ignore = "live gate: требует WOTOLD_LIVE_DB_DIR + WOTOLD_LIVE_LLM_URL + запущенный llama-server"]
+    async fn live_gate_ph1() {
+        let Ok(db_dir) = std::env::var("WOTOLD_LIVE_DB_DIR") else {
+            panic!("set WOTOLD_LIVE_DB_DIR");
+        };
+        let Ok(url) = std::env::var("WOTOLD_LIVE_LLM_URL") else {
+            panic!("set WOTOLD_LIVE_LLM_URL");
+        };
+        let pool = crate::db::init(std::path::Path::new(&db_dir))
+            .await
+            .expect("init db copy");
+        let preset = crate::local_engine::preset::LocalEnginePreset::Balanced;
+        let provider = crate::local_engine::llm::LocalLlamaProvider::for_preset(
+            std::path::Path::new(&db_dir),
+            preset.llm_model_id(),
+        )
+        .with_server(Some(url))
+        .with_cache_prompt(true);
+        let bus = EventBus::new(None);
+
+        // 1. Refusal — мгновенно, без LLM.
+        let t0 = std::time::Instant::now();
+        let refusal = ask_core(&provider, &pool, &bus, args("Напиши письмо по итогам"))
+            .await
+            .unwrap();
+        println!(
+            "REFUSAL [{}ms]: {}",
+            t0.elapsed().as_millis(),
+            refusal.message.text
+        );
+        assert_eq!(
+            refusal.message.answer.as_ref().unwrap().kind,
+            AssistantAnswerKind::Refusal
+        );
+
+        // 2. Empty — честное «не найдено».
+        let t0 = std::time::Instant::now();
+        let empty = ask_core(
+            &provider,
+            &pool,
+            &bus,
+            args("квантовая телепортация хомяков"),
+        )
+        .await
+        .unwrap();
+        println!(
+            "EMPTY [{}ms]: {}",
+            t0.elapsed().as_millis(),
+            empty.message.text
+        );
+        assert_eq!(
+            empty.message.answer.as_ref().unwrap().kind,
+            AssistantAnswerKind::Empty
+        );
+
+        // 3. Живой вопрос по реальным данным.
+        let question =
+            std::env::var("WOTOLD_LIVE_QUESTION").unwrap_or_else(|_| "О чём договорились?".into());
+        let t0 = std::time::Instant::now();
+        let out = ask_core(&provider, &pool, &bus, args(&question))
+            .await
+            .expect("live ask");
+        let elapsed = t0.elapsed();
+        let ans = out.message.answer.as_ref().unwrap();
+        println!("QUESTION: {question}");
+        println!("ANSWER [{:.1}s]: {}", elapsed.as_secs_f32(), ans.text);
+        println!(
+            "SOURCES: {:?}",
+            ans.sources
+                .iter()
+                .map(|s| format!("{} @{:?}", s.call_title, s.start_ms))
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "FRAGMENTS: {} · ~{} tokens · window {}",
+            ans.fragments.len(),
+            ans.fragment_tokens,
+            ans.window_tokens
+        );
+        assert_eq!(ans.kind, AssistantAnswerKind::Answer);
+        // sources пусты только на honest «нет прямого ответа» — печатаем, не валим.
+        if ans.sources.is_empty() {
+            println!("NOTE: model returned no-direct-answer (sources empty)");
+        }
     }
 }
