@@ -69,6 +69,13 @@ const ICONS = {
     </>
   ),
   sparkle: <path d="M12 3l1.7 5.1a3 3 0 0 0 2.2 2.2L21 12l-5.1 1.7a3 3 0 0 0-2.2 2.2L12 21l-1.7-5.1a3 3 0 0 0-2.2-2.2L3 12l5.1-1.7a3 3 0 0 0 2.2-2.2z" />,
+  // [B24.1] Ассистент — из uikit-icons.jsx хендоффа (Wotold v2 · Ассистент).
+  chat: (
+    <path
+      d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3.6V17h-.5A2.5 2.5 0 0 1 3.5 14.5z"
+      transform="translate(.5 0)"
+    />
+  ),
   chevronDown: <path d="M5 9l7 7 7-7" />,
   chevronRight: <path d="M9 5l7 7-7 7" />,
   chevronLeft: <path d="M15 5l-7 7 7 7" />,

@@ -1018,6 +1018,43 @@ const ruInternal = {
     // кнопке когда есть failed chunks.
     resumeBlockedHint: 'Сначала повтори неудачные сегменты',
   },
+  // ── [B24] Ассистент (тексты SPEC хендоффа дословно, деловой регистр) ────
+  assistant: {
+    title: 'Ассистент',
+    statsChip: 'в поиске {ready} из {total} {plural} · {dur}',
+    statsTooltip: 'Записи в обработке и с ошибкой не участвуют в поиске',
+    callsPluralOne: 'звонка',
+    callsPluralMany: 'звонков',
+    durHours: '{h} ч {m} мин',
+    durMinutes: '{m} мин',
+    emptyTitle: 'Поиск по всем звонкам',
+    emptyDesc:
+      'Вопрос — это поиск по расшифровкам и рекапам, ответ — с указанием источников. Каждый диалог — новый чат.',
+    suggest1: 'Когда обсуждали приватность?',
+    suggest2: 'Все задачи Дмитрия за неделю',
+    suggest3: 'Что обещали «Контуру» на демо?',
+    suggest4: 'Решения планёрки продукта',
+    pendingGlobal: 'Поиск по {n} звонкам…',
+    pendingCall: 'Поиск…',
+    refusalNote: 'Вне области ассистента',
+    ctxSummary: 'Контекст поиска',
+    ctxMeta: 'фрагментов: {n} · ≈{tokens}K токенов · окно 8K',
+    copy: 'Скопировать',
+    copied: 'Скопировано',
+    share: 'Поделиться',
+    shareWithSources: 'Скопировать с источниками',
+    shareEmail: 'Отправить в почту…',
+    sourcesLabel: 'Источники',
+    escalate: 'Искать во всех звонках',
+    newChat: 'Новый чат',
+    noChats: 'Чатов пока нет',
+    deleteChat: 'Удалить чат',
+    composerGlobal: 'Спросить по всем звонкам…',
+    composerCall: 'Спросить об этом звонке…',
+    callEmptyDesc:
+      'Чат этого звонка. Ответы строятся по его расшифровке; если факт найден в другом звонке — источник будет указан.',
+    sendLabel: 'Отправить',
+  },
 } as const;
 
 // Widen recursively from literal types to `string` so other locales can
