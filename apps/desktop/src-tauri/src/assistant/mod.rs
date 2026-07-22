@@ -173,8 +173,9 @@ pub async fn ask_core_with(
         return finish(pool, chat.id, ans).await;
     }
 
-    // 4. Титулы звонков для промпта и источников.
-    let titles = call_titles(pool, &ctx.fragments).await?;
+    // 4. Титулы + даты звонков для промпта и источников ([M16.2] дата в
+    // заголовке фрагмента — опора для «когда»-вопросов).
+    let (titles, dates) = call_meta(pool, &ctx.fragments).await?;
 
     // 5. LLM.
     bus.assistant_status(&AssistantStatusEvent {
@@ -182,7 +183,8 @@ pub async fn ask_core_with(
         phase: "generating",
     });
     let (text, used) =
-        answer::generate_answer(provider, &ctx.fragments, &titles, &history, &question).await?;
+        answer::generate_answer(provider, &ctx.fragments, &titles, &dates, &history, &question)
+            .await?;
 
     // 6. Сборка ответа: sources из used-индексов (детерминированно), fragments —
     // весь контекст (блок «Контекст поиска» в UI).
@@ -266,11 +268,23 @@ pub async fn ask(
     ask_core_with(&provider, pool, &bus, args, text_embedder).await
 }
 
-/// Титулы звонков одним батч-SELECT (id IN (...)); fallback — call_id.
-async fn call_titles(
+/// [M16.2] «2026-07-01T09:29:36…» → «01.07.2026» для заголовка фрагмента.
+fn fmt_call_date(started_at: &str) -> Option<String> {
+    let d = started_at.get(..10)?;
+    let mut it = d.split('-');
+    let (y, m, day) = (it.next()?, it.next()?, it.next()?);
+    if y.len() != 4 || m.len() != 2 || day.len() != 2 {
+        return None;
+    }
+    Some(format!("{day}.{m}.{y}"))
+}
+
+/// Титулы + даты звонков одним батч-SELECT (id IN (...)); fallback титула —
+/// call_id, отсутствие даты — просто нет записи в dates-мапе.
+async fn call_meta(
     pool: &SqlitePool,
     fragments: &[crate::db::assistant::PassageHit],
-) -> Result<HashMap<String, String>, AppError> {
+) -> Result<(HashMap<String, String>, HashMap<String, String>), AppError> {
     let mut ids: Vec<&str> = fragments.iter().map(|f| f.call_id.as_str()).collect();
     ids.sort_unstable();
     ids.dedup();
@@ -279,21 +293,25 @@ async fn call_titles(
         .iter()
         .map(|id| (id.to_string(), id.to_string()))
         .collect();
+    let mut dates: HashMap<String, String> = HashMap::new();
     if ids.is_empty() {
-        return Ok(titles);
+        return Ok((titles, dates));
     }
     let placeholders = vec!["?"; ids.len()].join(",");
-    let sql = format!("SELECT id, title FROM calls WHERE id IN ({placeholders})");
-    let mut query = sqlx::query_as::<_, (String, Option<String>)>(&sql);
+    let sql = format!("SELECT id, title, started_at FROM calls WHERE id IN ({placeholders})");
+    let mut query = sqlx::query_as::<_, (String, Option<String>, String)>(&sql);
     for id in &ids {
         query = query.bind(*id);
     }
-    for (id, title) in query.fetch_all(pool).await? {
+    for (id, title, started_at) in query.fetch_all(pool).await? {
         if let Some(t) = title.filter(|t| !t.trim().is_empty()) {
-            titles.insert(id, t);
+            titles.insert(id.clone(), t);
+        }
+        if let Some(d) = fmt_call_date(&started_at) {
+            dates.insert(id, d);
         }
     }
-    Ok(titles)
+    Ok((titles, dates))
 }
 
 /// Источники из used-индексов: порядок модели, дедуп по (call_id, start_ms).
@@ -549,13 +567,15 @@ mod tests {
 
     #[tokio::test]
     async fn model_empty_answer_becomes_honest_no_direct_answer() {
-        // Gate Ph1: Qwen 3B на «нет ответа» возвращает пустой answer вопреки
-        // промпту — мапится в честный текст без источников, не в ошибку.
+        // [M16.2] Пустой answer → один retry с nudge; дважды пусто → честный
+        // NO_DIRECT, теперь С fallback-источниками top-K (след для ручного
+        // поиска вместо тупика).
         let db = fresh_db().await;
         seed_call_with_passages(&db.pool, "c1", "Синхрон", &["обсуждали бюджет"]).await;
-        let mock = MockProvider::scripted(vec![Ok(
-            serde_json::json!({"answer": "  ", "used_fragments": []}),
-        )]);
+        let mock = MockProvider::scripted(vec![
+            Ok(serde_json::json!({"answer": "  ", "used_fragments": []})),
+            Ok(serde_json::json!({"answer": "", "used_fragments": []})),
+        ]);
         let bus = EventBus::new(None);
         let out = ask_core(&mock, &db.pool, &bus, args("что с бюджетом?"))
             .await
@@ -563,8 +583,36 @@ mod tests {
         let ans = out.message.answer.as_ref().unwrap();
         assert_eq!(ans.kind, AssistantAnswerKind::Answer);
         assert_eq!(ans.text, crate::assistant::answer::NO_DIRECT_ANSWER_TEXT);
-        assert!(ans.sources.is_empty());
+        assert_eq!(mock.call_count(), 2, "ровно один retry");
+        assert!(
+            mock.last_input().contains("Прямого ответа во фрагментах может не быть"),
+            "retry несёт nudge-хвост"
+        );
+        assert!(
+            !ans.sources.is_empty(),
+            "NO_DIRECT теперь с fallback-источниками"
+        );
         assert!(!ans.fragments.is_empty(), "контекст поиска сохраняется");
+    }
+
+    #[tokio::test]
+    async fn empty_then_answer_retry_succeeds() {
+        // [M16.2] Первый проход пуст, retry дал ответ — юзер видит ответ,
+        // не NO_DIRECT.
+        let db = fresh_db().await;
+        seed_call_with_passages(&db.pool, "c1", "Синхрон", &["обсуждали бюджет проекта"]).await;
+        let mock = MockProvider::scripted(vec![
+            Ok(serde_json::json!({"answer": "", "used_fragments": []})),
+            Ok(serde_json::json!({"answer": "Бюджет обсуждали в звонке.", "used_fragments": [1]})),
+        ]);
+        let bus = EventBus::new(None);
+        let out = ask_core(&mock, &db.pool, &bus, args("что с бюджетом?"))
+            .await
+            .unwrap();
+        let ans = out.message.answer.as_ref().unwrap();
+        assert_eq!(ans.text, "Бюджет обсуждали в звонке.");
+        assert_eq!(mock.call_count(), 2);
+        assert_eq!(ans.sources.len(), 1);
     }
 
     #[tokio::test]
