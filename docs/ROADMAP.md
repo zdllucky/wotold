@@ -56,7 +56,9 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 ### Ph3 — закрытие
 
-- [ ] **M15.13** (S) `/security-scan` на `assistant/*` + миграции (prompt injection через транскрипт, FTS-escape аудит, mailto encode, отсутствие сетевых вызовов) + фиксы. Обязателен до пометки M15 done. → M15.8, повтор после M15.11
+- [x] **M15.13** (S) Security-scan (security-reviewer, 2026-07-22, скоуп Ph1+Ph2: assistant/* + db/assistant* + commands + e5-записи каталога + миграции 0019/0020 + Cargo deps): **0 CRITICAL/HIGH/MEDIUM**. Проверено и чисто: FTS MATCH-инъекция (единственный путь через build_match_expr, expr сам bind-параметр), prompt-инъекция (neutralize_markers + json_schema без call_id + клэмп used_fragments; XSS-эскалации нет — innerHTML не используется), логи без контента (только счётчики/id), path traversal (пути только из компилируемых ModelId-констант), supply chain (реальные SHA, `=`-пин ort, tokenizers без default-фич), SQL (всё bind, каскады полные при `foreign_keys=ON`), DoS-лимиты, Tauri-граница (6 команд за State, без путей/URL от фронта), секретов нет. 4 INFO-наблюдения (известные trade-off): (1) QUESTION_MAX_CHARS только на Tauri-границе — продублировать в ask_core_with при появлении второй точки входа (MCP/batch); (2) анти-инъекция декларативная+структурная, пересмотреть при добавлении tool-calling; (3) ort build-script качает prebuilt ORT (прецедент sherpa-onnx, задокументирован); (4) EmbedCache full-load без cap (~46MB/1000 звонков — не эксплуатируемо в single-user desktop). → M15.8, повтор после M15.11 ✓
+
+**M15 закрыт целиком** (Ph1 gate ✓, B24 UI ✓, Ph2 гибрид ✓, security ✓). Human-verify остатки — в секции A Manual QA (живой seek, визуальный QA) + скачивание e5-модели через Storage-UI для активации гибрида.
 
 ## B24 · Ассистент UI (по хендоффу, «точь в точь»)
 
