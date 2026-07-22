@@ -27,6 +27,9 @@ pub enum AssistantPassageKind {
     Decision,
     ActionItem,
     OpenQuestion,
+    /// [M16.6] Синтетическая «карточка звонка»: титул + дата + участники —
+    /// якорь для вопросов «в каком звонке / кто был / о чём» (глобально).
+    CallMeta,
 }
 
 impl AssistantPassageKind {
@@ -38,6 +41,7 @@ impl AssistantPassageKind {
             AssistantPassageKind::Decision => "decision",
             AssistantPassageKind::ActionItem => "action_item",
             AssistantPassageKind::OpenQuestion => "open_question",
+            AssistantPassageKind::CallMeta => "call_meta",
         }
     }
 
@@ -48,6 +52,7 @@ impl AssistantPassageKind {
             "decision" => AssistantPassageKind::Decision,
             "action_item" => AssistantPassageKind::ActionItem,
             "open_question" => AssistantPassageKind::OpenQuestion,
+            "call_meta" => AssistantPassageKind::CallMeta,
             _ => return None,
         })
     }

@@ -7,13 +7,15 @@
 /** Вид ответа ассистента. refusal = генеративный запрос (без retrieval), empty = ничего не найдено. */
 export type AssistantAnswerKind = 'answer' | 'refusal' | 'empty';
 
-/** Тип пассажа индекса (источник фрагмента). */
+/** Тип пассажа индекса (источник фрагмента).
+ * [M16.6] call_meta — синтетическая «карточка звонка» (титул+дата+участники). */
 export type AssistantPassageKind =
   | 'transcript'
   | 'recap'
   | 'decision'
   | 'action_item'
-  | 'open_question';
+  | 'open_question'
+  | 'call_meta';
 
 /**
  * Источник ответа: звонок + опциональный таймкод.
