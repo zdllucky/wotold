@@ -10,7 +10,7 @@ import {
   type SystemPane,
 } from '../api/permissions';
 import { useI18n } from '../i18n';
-import { Button } from '../ui';
+import { Button, Chip, IconBtn, SettingRow } from '../ui';
 
 type Target = 'microphone' | 'screen_recording' | 'accessibility';
 
@@ -80,81 +80,70 @@ export function PermissionsSection() {
     }
   };
 
+  // [B21] Канон SecPermissions: SettingRow + Chip-статус у лейбла; «Запросить»
+  // — primary (иерархия!), «Открыть настройки»/«Обновить» — IconBtn.
   return (
-    <div className="set-group">
+    <div>
       {error && (
-        <p role="alert" style={{ color: 'var(--danger)', margin: 0 }}>
+        <p role="alert" style={{ color: 'var(--danger)', margin: '0 0 12px' }}>
           {error}
         </p>
       )}
-      {ROWS.map((row) => {
+      {ROWS.map((row, i) => {
         const current: PermissionStatus = status?.[row.target] ?? 'unknown';
         const isBusy = busy === row.target;
         return (
-          <div key={row.target} className="setting-row">
-            <div className="setting-row-text">
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 8,
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  marginBottom: 4,
-                }}
-              >
-                <span className="setting-row-label">{t(row.labelKey)}</span>
-                <PermChip status={current} />
-              </div>
-              <p className="set-hint" style={{ marginTop: 0 }}>
-                {t(row.descKey)}
-              </p>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                gap: 6,
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                flex: '0 0 auto',
-              }}
-            >
+          <SettingRow
+            key={row.target}
+            label={t(row.labelKey)}
+            labelAdornment={<PermChip status={current} />}
+            hint={t(row.descKey)}
+            align="top"
+            last={i === ROWS.length - 1}
+          >
+            {current !== 'granted' && (
               <Button
                 size="sm"
-                variant="secondary"
+                variant="primary"
                 onClick={() => onRequest(row.target)}
                 disabled={isBusy}
                 busy={isBusy}
                 title={t('permissions.requestTitle')}
               >
-                {isBusy
-                  ? t('common.loadingShort')
-                  : current === 'granted'
-                    ? t('permissions.requestAgain')
-                    : t('permissions.request')}
+                {isBusy ? t('common.loadingShort') : t('permissions.request')}
               </Button>
-              {current !== 'granted' && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onOpen(row.pane)}
-                  disabled={isBusy}
-                  title={t('permissions.openSettingsTitle')}
-                >
-                  {t('permissions.openSettings')}
-                </Button>
-              )}
+            )}
+            {current === 'granted' && (
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => onRefresh(row.target)}
+                onClick={() => onRequest(row.target)}
                 disabled={isBusy}
-                title={t('permissions.refreshStatusTitle')}
-                aria-label={t('permissions.refreshStatusAria')}
+                busy={isBusy}
+                title={t('permissions.requestTitle')}
               >
-                ↻
+                {isBusy ? t('common.loadingShort') : t('permissions.requestAgain')}
               </Button>
-            </div>
-          </div>
+            )}
+            {current !== 'granted' && (
+              <IconBtn
+                icon="external"
+                size="sm"
+                label={t('permissions.openSettings')}
+                title={t('permissions.openSettingsTitle')}
+                onClick={() => void onOpen(row.pane)}
+                disabled={isBusy}
+              />
+            )}
+            <IconBtn
+              icon="refresh"
+              size="sm"
+              label={t('permissions.refreshStatusAria')}
+              title={t('permissions.refreshStatusTitle')}
+              onClick={() => void onRefresh(row.target)}
+              disabled={isBusy}
+            />
+          </SettingRow>
         );
       })}
     </div>
@@ -165,15 +154,15 @@ type ChipVariant = 'ok' | 'danger' | 'warn' | 'line';
 
 type TFn = ReturnType<typeof useI18n>['t'];
 
-// [B18.5b] Permission state → v2 `.chip` variant. Semantics preserved from the
+// [B18.5b, B21] Permission state → Chip wrapper. Semantics preserved from the
 // prior <Badge> mapping (granted=ok, denied/restricted=danger, pending=warn).
 function PermChip({ status }: { status: PermissionStatus }) {
   const { t } = useI18n();
   const meta = chipMeta(status, t);
   return (
-    <span className={`chip chip--${meta.variant}`} data-size="sm" title={meta.title}>
+    <Chip tone={meta.variant} size="sm" title={meta.title}>
       {meta.label}
-    </span>
+    </Chip>
   );
 }
 

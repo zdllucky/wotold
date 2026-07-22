@@ -3,11 +3,19 @@
 // calendar views (InboxCalendarViews). Extracted from InboxView to keep that
 // file under the 800-line guard and avoid duplicating the status/avatar UI.
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Call } from '../api/recording';
 import { type CallState, pipelineStepKey } from '../types/callState';
 import { bcp47, type useI18n } from '../i18n';
-import { Chip, Dropdown, IconBtn, MenuItem, MenuSep } from '../ui';
+import {
+  Chip,
+  ContextMenu,
+  type ContextMenuPos,
+  Dropdown,
+  IconBtn,
+  MenuItem,
+  MenuSep,
+} from '../ui';
 import { Icon } from '../ui/Icon';
 import {
   SP_COLORS,
@@ -139,6 +147,61 @@ interface TableRowProps {
   t: TFn;
 }
 
+/** [B20.5] Что доступно для звонка в row/context-меню (общее для kebab в
+ *  таблице и ПКМ-меню календарных видов). */
+export function rowCaps(
+  call: Call,
+  busy: boolean,
+): { canReprocess: boolean; canExport: boolean } {
+  const uiState = deriveCallState(call);
+  return {
+    // Reprocess: ready or failed calls, not while a task is running.
+    canReprocess: !busy && (uiState === 'ready' || uiState === 'error'),
+    // Export needs a finished transcript/recap → ready only.
+    canExport: uiState === 'ready',
+  };
+}
+
+interface CallMenuItemsProps {
+  call: Call;
+  busy: boolean;
+  onOpen: (id: string) => void;
+  onReprocess?: (call: Call) => void;
+  onExport?: (call: Call) => void;
+  onDelete?: (call: Call) => void;
+  t: TFn;
+}
+
+/** [B20.5] Пункты row-меню звонка — общие для kebab-Dropdown и ПКМ ContextMenu. */
+export function CallMenuItems({
+  call,
+  busy,
+  onOpen,
+  onReprocess,
+  onExport,
+  onDelete,
+  t,
+}: CallMenuItemsProps) {
+  const { canReprocess, canExport } = rowCaps(call, busy);
+  return (
+    <>
+      <MenuItem icon="doc" onClick={() => onOpen(call.id)}>
+        {t('inbox.rowOpen')}
+      </MenuItem>
+      <MenuItem icon="refresh" disabled={!canReprocess} onClick={() => onReprocess?.(call)}>
+        {t('inbox.rowReprocess')}
+      </MenuItem>
+      <MenuItem icon="download" disabled={!canExport} onClick={() => onExport?.(call)}>
+        {t('inbox.rowExport')}
+      </MenuItem>
+      <MenuSep />
+      <MenuItem icon="trash" danger onClick={() => onDelete?.(call)}>
+        {t('common.delete')}
+      </MenuItem>
+    </>
+  );
+}
+
 export function TableRow({
   call,
   onOpen,
@@ -154,11 +217,9 @@ export function TableRow({
   const uiState = deriveCallState(call);
   const busy = call.status === 'ready' && isActive === true;
   const hasTag = busy || uiState !== 'ready';
-  // Reprocess: ready or failed calls, not while a task is running / in progress.
-  const canReprocess = !busy && (uiState === 'ready' || uiState === 'error');
-  // Export needs a finished transcript/recap → ready only.
-  const canExport = uiState === 'ready';
   const title = call.title ?? t('calls.fallbackCallTitle', { short: call.id.slice(0, 8) });
+  // [B20.5] ПКМ на строке = то же меню что и kebab, у курсора.
+  const [ctxPos, setCtxPos] = useState<ContextMenuPos | null>(null);
 
   return (
     <div
@@ -166,6 +227,11 @@ export function TableRow({
       tabIndex={0}
       className="trow"
       onClick={() => onOpen(call.id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setCtxPos({ x: e.clientX, y: e.clientY });
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -196,25 +262,30 @@ export function TableRow({
             <IconBtn icon="dots" size="sm" onClick={toggle} label={t('inbox.rowActions')} />
           )}
         >
-          <MenuItem icon="doc" onClick={() => onOpen(call.id)}>
-            {t('inbox.rowOpen')}
-          </MenuItem>
-          <MenuItem
-            icon="refresh"
-            disabled={!canReprocess}
-            onClick={() => onReprocess?.(call)}
-          >
-            {t('inbox.rowReprocess')}
-          </MenuItem>
-          <MenuItem icon="download" disabled={!canExport} onClick={() => onExport?.(call)}>
-            {t('inbox.rowExport')}
-          </MenuItem>
-          <MenuSep />
-          <MenuItem icon="trash" danger onClick={() => onDelete?.(call)}>
-            {t('common.delete')}
-          </MenuItem>
+          <CallMenuItems
+            call={call}
+            busy={busy}
+            onOpen={onOpen}
+            onReprocess={onReprocess}
+            onExport={onExport}
+            onDelete={onDelete}
+            t={t}
+          />
         </Dropdown>
       </span>
+      {ctxPos && (
+        <ContextMenu pos={ctxPos} onClose={() => setCtxPos(null)}>
+          <CallMenuItems
+            call={call}
+            busy={busy}
+            onOpen={onOpen}
+            onReprocess={onReprocess}
+            onExport={onExport}
+            onDelete={onDelete}
+            t={t}
+          />
+        </ContextMenu>
+      )}
     </div>
   );
 }

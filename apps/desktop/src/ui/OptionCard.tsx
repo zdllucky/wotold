@@ -39,6 +39,8 @@ interface OptionCardProps {
   trailing?: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
+  /** [B21] Внутри radiogroup — role=radio + aria-checked (Settings/Onboarding). */
+  radio?: boolean;
 }
 
 export function OptionCard({
@@ -52,10 +54,13 @@ export function OptionCard({
   trailing,
   onClick,
   disabled,
+  radio,
 }: OptionCardProps) {
   return (
     <button
       type="button"
+      role={radio ? 'radio' : undefined}
+      aria-checked={radio ? !!active : undefined}
       className="optioncard"
       data-active={active ? 'true' : undefined}
       disabled={disabled}

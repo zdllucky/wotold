@@ -16,6 +16,9 @@ const MODEL_LABEL_KEYS: Record<string, TranslationKey> = {
   'qwen25-3b': 'localEngine.modelLabel.qwenMedium',
   'qwen25-7b': 'localEngine.modelLabel.qwenLarge',
   'pyannote-segmentation': 'localEngine.modelLabel.diarization',
+  // [B22] Каталог вырос — без маппинга в таблице светились сырые id.
+  'qwen25-0_5b': 'localEngine.modelLabel.qwenDraft',
+  'silero-vad-v5': 'localEngine.modelLabel.vad',
 };
 
 export function modelLabel(id: string, t: TFn): string {

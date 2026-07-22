@@ -6,7 +6,7 @@
 // Also asserts the v2 header/layout structure: the shared `.view-head` bar and
 // the database `.tbl` table replace the old flex header + `.lrow` list.
 
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -136,5 +136,39 @@ describe('InboxView — processing status', () => {
     await flush();
     // The «Записать» primary button now appears in the header.
     expect(screen.getByText('Записать')).toBeTruthy();
+  });
+
+  // [B20.4] Keep-alive: состояние (поиск) переживает hide/show через active,
+  // скрытый корень уходит в display:none, а не unmount.
+  test('keep-alive: search text survives active toggle, hidden root is display:none', async () => {
+    routeInvoke([]);
+    const { container, rerender } = renderInbox(<InboxView onOpen={() => {}} active />);
+    await flush();
+
+    const input = container.querySelector<HTMLInputElement>('input[type="text"], input:not([type])');
+    expect(input).toBeTruthy();
+    fireEvent.change(input!, { target: { value: 'синхрон' } });
+    expect(input!.value).toBe('синхрон');
+
+    rerender(
+      <ToastProvider>
+        <InboxView onOpen={() => {}} active={false} />
+      </ToastProvider>,
+    );
+    await flush();
+    const root = container.querySelector<HTMLElement>('.main');
+    expect(root?.style.display).toBe('none');
+
+    rerender(
+      <ToastProvider>
+        <InboxView onOpen={() => {}} active />
+      </ToastProvider>,
+    );
+    await flush();
+    const inputAfter = container.querySelector<HTMLInputElement>(
+      'input[type="text"], input:not([type])',
+    );
+    expect(inputAfter!.value).toBe('синхрон');
+    expect(container.querySelector<HTMLElement>('.main')?.style.display).not.toBe('none');
   });
 });

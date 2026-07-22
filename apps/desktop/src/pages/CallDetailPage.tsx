@@ -6,7 +6,7 @@
 //
 // Sub-components extracted to ./components/call-detail/* (see barrel).
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ask, save } from '@tauri-apps/plugin-dialog';
 
 import {
@@ -18,10 +18,10 @@ import {
   reprocessCall,
 } from '../api/calls';
 import { retryChunk } from '../api/recording';
+import { unbindCallSpeaker } from '../api/speakers';
 import { useQueueState } from '../hooks/useQueueState';
 import { localEngineEvalRecap } from '../api/local-engine';
 import { humanError } from '../api/errors';
-import { engineLabelHuman } from '../utils/engineLabel';
 import { Dropdown, Icon, IconBtn, MenuItem, MenuSep, Tabs } from '../ui';
 import {
   AutoBoundBanner,
@@ -37,9 +37,11 @@ import {
 } from '../components/call-detail';
 import { CallRail } from '../components/call-detail/CallRail';
 import { AudioScrubber } from '../components/AudioScrubber';
-import { InteractiveTranscript } from '../components/InteractiveTranscript';
+import {
+  InteractiveTranscript,
+  type InteractiveTranscriptHandle,
+} from '../components/InteractiveTranscript';
 import { SpeakerConfirmModal } from '../components/SpeakerConfirmModal';
-import { EngineChip } from '../components/EngineChip';
 import { CallStateTag, ProgressRail } from '../components/call-state';
 import { useCallAudio } from '../hooks/useCallAudio';
 import { useCallDetail } from '../hooks/useCallDetail';
@@ -97,6 +99,55 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   // [B17 V3.2] Single audio source — shared между AudioScrubber и
   // InteractiveTranscript (для highlight current + click-to-seek).
   const audio = useCallAudio(callId, call?.duration_sec ?? 0);
+
+  // [B20.8] Follow-режим транскрипта: автоскролл к активной реплике. Ручной
+  // скролл (wheel/touch/скроллбар/клавиши) выключает; включает ТОЛЬКО кнопка
+  // «к текущему» в плеере. Сбрасывается в on при смене звонка.
+  const [follow, setFollow] = useState(true);
+  const transcriptRef = useRef<InteractiveTranscriptHandle | null>(null);
+  const docScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => setFollow(true), [callId]);
+  useEffect(() => {
+    const el = docScrollRef.current;
+    if (!el) return;
+    const off = () => setFollow(false);
+    // pointerdown на самом контейнере/пустоте = скроллбар-драг; клики по
+    // .turn — это seek, follow не трогаем.
+    const onPointerDown = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest('.turn')) off();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      const scrollKeys = [
+        'PageUp',
+        'PageDown',
+        'Home',
+        'End',
+        'ArrowUp',
+        'ArrowDown',
+        ' ',
+      ];
+      if (scrollKeys.includes(e.key)) off();
+    };
+    el.addEventListener('wheel', off, { passive: true });
+    el.addEventListener('touchmove', off, { passive: true });
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('keydown', onKeyDown);
+    return () => {
+      el.removeEventListener('wheel', off);
+      el.removeEventListener('touchmove', off);
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('keydown', onKeyDown);
+    };
+    // `loading` в deps обязателен: первый рендер — скелетон, docScrollRef ещё
+    // null; листенеры вешаются вторым проходом, когда контейнер смонтирован.
+  }, [callId, loading]);
+
+  const onJumpToCurrent = () => {
+    setTab('transcript');
+    setFollow(true);
+    // rAF — дождаться маунта transcript-панели при переключении с рекапа.
+    requestAnimationFrame(() => transcriptRef.current?.scrollToActive());
+  };
 
   // [Q] Этот звонок стоит в очереди тяжёлого ресурса? (в waiting и нигде
   // не busy) → ProcessingPanel показывает «в очереди, позиция N».
@@ -207,6 +258,19 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   // pipeline:finished listener (refetchAll в useCallDetail) даже после возврата
   // на страницу; busy-флаг (bgBusy) сбросит он же. Задача переживает навигацию
   // и считается в бейдже у «Звонки».
+  // [B20.7] Отвязать конкретный голос от контакта. Зеркально confirm-flow:
+  // после отвязки имя спикера в рекапе устарело → предлагаем regen.
+  const onUnbindVoice = async (callSpeakerId: string) => {
+    setError(null);
+    try {
+      await unbindCallSpeaker(callSpeakerId);
+      await refetchSpeakersAndContacts();
+      setPendingRecapRegen(true);
+    } catch (e) {
+      setError(humanError(e));
+    }
+  };
+
   const onRegenerateRecap = async () => {
     setBgBusy(true);
     setError(null);
@@ -429,7 +493,7 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
           центру, собственный скролл) с плеером .player-dock у низа + CallRail. */}
       <div className="view-body">
         <div className="content doc-wrap">
-          <div className="doc-scroll scroll">
+          <div className="doc-scroll scroll" ref={docScrollRef}>
             <div className="doc" style={{ paddingBottom: 104 }}>
               <h1 className="doc-title">{title}</h1>
               {/* Meta-чипы — время · длительность · движок · тип (прототип CallView). */}
@@ -450,10 +514,9 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
                   <Icon name="waveform" size={11} />
                   {formatDur(call.duration_sec ?? 0)}
                 </span>
-                {call.processing_via && (
-                  <EngineChip kind={call.processing_via} variant="header" />
-                )}
-                {/* [M14 T-11] Тип звонка (sales/standup/1:1/...) — chip справа от движка. */}
+                {/* [B20.10] EngineChip убран из шапки — движок виден только в
+                    Настройках/онбординге, юзеру в звонке это знать незачем. */}
+                {/* [M14 T-11] Тип звонка (sales/standup/1:1/...). */}
                 <CallTypeBadge
                   callType={call.call_type}
                   confidence={call.call_type_confidence}
@@ -526,23 +589,6 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         >
           <div className="small-caps" style={{ color: 'var(--warn)', marginBottom: 6 }}>
             {t('callDetail.recapFailBadge')}
-            {/* [Bug-fix] Engine label — показывает какой движок обслуживал
-                последнюю (упавшую) попытку. Помогает понять stale-cloud-error
-                vs свежее local-падение. */}
-            {(() => {
-              const eng = engineLabelHuman(call.summary_engine, {
-                cloud: t('callDetail.engineCloud'),
-                localLight: t('callDetail.engineLocalLight'),
-                localBalanced: t('callDetail.engineLocalBalanced'),
-                localQuality: t('callDetail.engineLocalQuality'),
-                localGeneric: t('callDetail.engineLocalGeneric'),
-              });
-              return eng ? (
-                <span className="muted" style={{ marginLeft: 8, fontSize: 11 }}>
-                  · {eng}
-                </span>
-              ) : null;
-            })()}
           </div>
           <p
             style={{
@@ -649,11 +695,13 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
         </Tabs.Panel>
         <Tabs.Panel value="transcript">
           <InteractiveTranscript
+            ref={transcriptRef}
             rawSttJson={rawStt}
             fallbackMd={transcript}
             speakers={speakersLite}
             currentTime={audio.currentTime}
             generating={call.status === 'processing'}
+            follow={follow}
             onSeek={(s) => {
               audio.seek(s);
               if (!audio.playing && audio.ready) audio.togglePlay();
@@ -667,13 +715,21 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
               .doc-scroll. Включён и для failed: аудио сохранено локально, юзер
               должен иметь возможность послушать даже если транскрипт не получился.
               enabled=false (null) только когда нет ни одной дорожки. */}
-          <AudioScrubber audio={audio} seed={hashCallId(callId)} enabled />
+          <AudioScrubber
+            audio={audio}
+            seed={hashCallId(callId)}
+            enabled
+            onJump={onJumpToCurrent}
+            followActive={follow}
+          />
         </div>
 
         <CallRail
           call={call}
           speakers={speakersLite}
           onIdentify={(tag) => setConfirmingTag(tag)}
+          samplesByTag={samplesByTag}
+          onUnbind={(id) => void onUnbindVoice(id)}
           onExport={() => void onExportMarkdown()}
           exporting={exporting}
         />

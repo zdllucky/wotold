@@ -4,13 +4,13 @@
 // APIs. Today = real new Date(). Month/weekday labels via Intl. [B19.2] CalHeader
 // label is a Dropdown with year-nav + month-grid for quick jumps.
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { bcp47, useI18n } from '../i18n';
 import type { Call } from '../api/recording';
-import { Dropdown, Empty, IconBtn } from '../ui';
+import { ContextMenu, Dropdown, Empty, IconBtn } from '../ui';
 import { Icon } from '../ui/Icon';
 import { callHasRecap, deriveCallState, formatDuration, inferSpeakers } from './inboxData';
-import { AvatarGroup, StatusCell, statusColor } from './inboxBits';
+import { AvatarGroup, CallMenuItems, StatusCell, statusColor } from './inboxBits';
 import { callToDayEvent, hourRange, HOUR_PX, packDayEvents } from './weekGrid';
 
 type TFn = ReturnType<typeof useI18n>['t'];
@@ -21,6 +21,39 @@ interface ViewProps {
   speakerInitials: Map<string, string[]>;
   locale: string;
   t: TFn;
+  /** [B20.5] Row-действия для ПКМ context-menu (те же что kebab в таблице). */
+  onReprocess?: (call: Call) => void;
+  onExport?: (call: Call) => void;
+  onDelete?: (call: Call) => void;
+  /** call_id'ы с активной фоновой задачей — busy-состояние для rowCaps. */
+  activeIds?: Set<string>;
+}
+
+// [B20.5] ПКМ-меню звонка у курсора — общий hook для трёх видов.
+function useCallContextMenu(props: ViewProps): {
+  openMenu: (c: Call) => (e: ReactMouseEvent) => void;
+  menuEl: ReactNode;
+} {
+  const [menu, setMenu] = useState<{ call: Call; x: number; y: number } | null>(null);
+  const openMenu = (c: Call) => (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ call: c, x: e.clientX, y: e.clientY });
+  };
+  const menuEl = menu ? (
+    <ContextMenu pos={{ x: menu.x, y: menu.y }} onClose={() => setMenu(null)}>
+      <CallMenuItems
+        call={menu.call}
+        busy={menu.call.status === 'ready' && (props.activeIds?.has(menu.call.id) ?? false)}
+        onOpen={props.onOpen}
+        onReprocess={props.onReprocess}
+        onExport={props.onExport}
+        onDelete={props.onDelete}
+        t={props.t}
+      />
+    </ContextMenu>
+  ) : null;
+  return { openMenu, menuEl };
 }
 
 // ── helpers ──
@@ -214,7 +247,9 @@ function CalHeader({
 }
 
 // ── Карточки ──
-export function InboxCards({ calls, onOpen, speakerInitials, locale, t }: ViewProps) {
+export function InboxCards(props: ViewProps) {
+  const { calls, onOpen, speakerInitials, locale, t } = props;
+  const { openMenu, menuEl } = useCallContextMenu(props);
   if (!calls.length) {
     return <Empty title={t('calls.notFoundTitle')} description={t('calls.notFoundBody')} />;
   }
@@ -228,12 +263,14 @@ export function InboxCards({ calls, onOpen, speakerInitials, locale, t }: ViewPr
         padding: 'var(--s5)',
       }}
     >
+      {menuEl}
       {calls.map((c) => (
         <button
           key={c.id}
           type="button"
           className="panel panel--raised"
           onClick={() => onOpen(c.id)}
+          onContextMenu={openMenu(c)}
           style={{ padding: 13, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 11, textAlign: 'left' }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -286,7 +323,9 @@ export function InboxCards({ calls, onOpen, speakerInitials, locale, t }: ViewPr
 // высота — по длительности (мин. слот 40 мин). Перекрытия делят ширину
 // колонки поровну внутри кластера (weekGrid.packDayEvents). Sticky —
 // только строка дней; высокая сетка скроллится родительским .scroll.
-export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
+export function InboxWeek(props: ViewProps) {
+  const { calls, onOpen, locale, t } = props;
+  const { openMenu, menuEl } = useCallContextMenu(props);
   const [off, setOff] = useState(0);
   const today = new Date(); // recomputed per render — stays correct past midnight
   const base = mondayOf(today);
@@ -313,6 +352,7 @@ export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
 
   return (
     <div className="cal-week">
+      {menuEl}
       <CalHeader
         label={rangeLabel(start, days[6]!, locale)}
         onPrev={() => setOff((o) => o - 1)}
@@ -373,6 +413,7 @@ export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
                     type="button"
                     className={`cal-event${compact ? ' cal-event--compact' : ''}`}
                     onClick={() => onOpen(c.id)}
+                    onContextMenu={openMenu(c)}
                     style={{
                       top,
                       height,
@@ -395,7 +436,9 @@ export function InboxWeek({ calls, onOpen, locale, t }: ViewProps) {
 }
 
 // ── Месяц ──
-export function InboxMonth({ calls, onOpen, locale, t }: ViewProps) {
+export function InboxMonth(props: ViewProps) {
+  const { calls, onOpen, locale, t } = props;
+  const { openMenu, menuEl } = useCallContextMenu(props);
   const [off, setOff] = useState(0);
   const today = new Date(); // recomputed per render — stays correct past midnight
   const cur = new Date(today.getFullYear(), today.getMonth() + off, 1);
@@ -419,6 +462,7 @@ export function InboxMonth({ calls, onOpen, locale, t }: ViewProps) {
     // [UI-fix B] padding: паритет с InboxCards и прототипом wk-inbox.jsx —
     // порт потерял его, header/grid прижимались к краям.
     <div style={{ display: 'flex', flexDirection: 'column', padding: 'var(--s5)' }}>
+      {menuEl}
       <CalHeader
         label={monthYear(cur, locale)}
         onPrev={() => setOff((o) => o - 1)}
@@ -495,6 +539,7 @@ export function InboxMonth({ calls, onOpen, locale, t }: ViewProps) {
                   key={c.id}
                   type="button"
                   onClick={() => onOpen(c.id)}
+                  onContextMenu={openMenu(c)}
                   className="u-trunc"
                   style={{
                     textAlign: 'left',
