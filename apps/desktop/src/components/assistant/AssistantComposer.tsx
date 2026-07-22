@@ -61,6 +61,7 @@ export function AssistantComposer({ placeholder, icon, disabled, onAsk }: Assist
         icon="send"
         active={draft.trim().length > 0}
         label={t('assistant.sendLabel')}
+        disabled={disabled}
         onClick={submitDraft}
       />
     </form>

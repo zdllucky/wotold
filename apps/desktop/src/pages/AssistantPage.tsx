@@ -143,40 +143,41 @@ export function AssistantPage({ onOpenCall }: AssistantPageProps) {
                 <div className="sec-label">
                   <span>{g.label}</span>
                 </div>
-                {g.items.map((chat) => (
-                  <div
-                    key={chat.id}
-                    role="button"
-                    tabIndex={0}
-                    className="navitem"
-                    data-active={activeChatId === chat.id ? 'true' : undefined}
-                    onClick={() => void openChat(chat.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        void openChat(chat.id);
-                      }
-                    }}
-                  >
-                    <span className="nav-ico">
-                      <Icon name="chat" size={15} />
-                    </span>
-                    <span className="nav-label u-trunc">{chat.title}</span>
-                    <span
-                      className="as-del"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void deleteChat(chat.id);
-                      }}
+                {/* [B24.7 a11y C1/M3] Строка = контейнер + настоящая кнопка
+                    открытия + соседняя (НЕ вложенная) кнопка удаления. */}
+                <ul className="as-chat-ul">
+                  {g.items.map((chat) => (
+                    <li
+                      key={chat.id}
+                      className="navitem"
+                      data-active={activeChatId === chat.id ? 'true' : undefined}
                     >
-                      <IconBtn icon="trash" size="sm" label={t('assistant.deleteChat')} />
-                    </span>
-                  </div>
-                ))}
+                      <button
+                        type="button"
+                        className="as-chat-open"
+                        onClick={() => void openChat(chat.id)}
+                        aria-current={activeChatId === chat.id ? 'true' : undefined}
+                      >
+                        <span className="nav-ico">
+                          <Icon name="chat" size={15} />
+                        </span>
+                        <span className="nav-label u-trunc">{chat.title}</span>
+                      </button>
+                      <span className="as-del">
+                        <IconBtn
+                          icon="trash"
+                          size="sm"
+                          label={t('assistant.deleteChat')}
+                          onClick={() => void deleteChat(chat.id)}
+                        />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
             {chats.length === 0 && (
-              <div className="u-faint" style={{ padding: '10px 12px', fontSize: 12.5 }}>
+              <div className="u-muted" style={{ padding: '10px 12px', fontSize: 12.5 }}>
                 {t('assistant.noChats')}
               </div>
             )}

@@ -104,7 +104,9 @@ describe('AssistantPage', () => {
     expect(screen.getByText('Сегодня')).toBeInTheDocument();
     expect(screen.getByText('Вчера')).toBeInTheDocument();
 
-    const row = screen.getByText('Сегодняшний чат').closest('[role="button"]') as HTMLElement;
+    // [B24.7 a11y C1] Строка чата — <li> с кнопкой открытия и соседней
+    // кнопкой удаления (не вложенной).
+    const row = screen.getByText('Сегодняшний чат').closest('li') as HTMLElement;
     fireEvent.click(row.querySelector('[aria-label="Удалить чат"]') as HTMLElement);
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith('assistant_delete_chat', { chatId: 'c-today' }),

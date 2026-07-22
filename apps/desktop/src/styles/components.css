@@ -1430,11 +1430,12 @@ html.recording-widget .rec-float {
   align-items: center;
   gap: 5px;
   font-size: 11.5px;
-  color: var(--text-faint);
+  /* [B24.7 a11y C3] text-3 вместо text-faint — контраст 4.5:1. */
+  color: var(--text-3);
   user-select: none;
 }
 .ctx summary::-webkit-details-marker { display: none; }
-.ctx summary:hover { color: var(--text-3); }
+.ctx summary:hover { color: var(--text-2); }
 .ctx .ctx-arr { transition: transform var(--fast); }
 .ctx[open] .ctx-arr { transform: rotate(90deg); }
 .frag {
@@ -1445,4 +1446,47 @@ html.recording-widget .rec-float {
   color: var(--text-2);
   line-height: 1.5;
 }
-.ctx-meta { margin-top: 9px; font-size: 11px; color: var(--text-faint); }
+.ctx-meta { margin-top: 9px; font-size: 11px; color: var(--text-3); /* a11y C3 */ }
+
+/* ── [B24.7 a11y] Фиксы по ревью a11y-architect (WCAG 2.2 AA) ── */
+/* C1: строка чата = некликабельный контейнер + настоящая кнопка открытия
+   (вложенный button внутри role=button ломал клавиатурное удаление). */
+.as-chat-ul { list-style: none; margin: 0; padding: 0; }
+.as-chat-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.as-chat-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+/* C2: видимый фокус основного инпута фичи (composer/palette глушат outline). */
+.composer-ask:focus-within,
+.palette:focus-within {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* H2: хитбокс интерактивных чипов ≥24px (SC 2.5.8) без роста визуала. */
+button.chip { position: relative; }
+button.chip::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+}
+/* H3: тултип доступен и по клавиатурному фокусу (SC 1.4.13). */
+.tip:focus-visible::after,
+.tip:focus-within::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
