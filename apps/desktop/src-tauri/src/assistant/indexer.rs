@@ -243,6 +243,19 @@ pub async fn index_call(
     store: &CallStore,
     call_id: &str,
 ) -> Result<(i64, i64), AppError> {
+    // [M15.10] Эмбеддер резолвится из shared-кэша по app_data_dir store —
+    // сигнатуры ready-хуков не меняются. Нет модели/feature → None → FTS-only.
+    let embedder = crate::assistant::embedder::shared(store.app_data_dir()).await;
+    index_call_with(pool, store, call_id, embedder).await
+}
+
+/// DI-вариант `index_call` — тесты подсовывают `MockEmbedder`.
+pub(crate) async fn index_call_with(
+    pool: &SqlitePool,
+    store: &CallStore,
+    call_id: &str,
+    embedder: Option<std::sync::Arc<dyn crate::assistant::embedder::TextEmbedder>>,
+) -> Result<(i64, i64), AppError> {
     let mut passages: Vec<PassageInput> = Vec::new();
 
     if let Some(md) = store
@@ -266,7 +279,95 @@ pub async fn index_call(
     let (count, tokens) =
         crate::db::assistant::replace_call_passages(pool, call_id, &passages).await?;
     log::info!("assistant index[{call_id}]: {count} passages, ~{tokens} tokens");
+
+    // [M15.10] Batch-эмбеддинг вставленных пассажей. Ошибки НЕ роняют
+    // индексацию: FTS-индекс важнее, недостающие вектора доберёт
+    // embed_backfill (list_passages_missing_embedding).
+    if let Some(emb) = embedder {
+        if let Err(e) = embed_call_passages(pool, emb, call_id).await {
+            log::warn!("assistant embed[{call_id}]: {e}");
+        }
+    }
     Ok((count, tokens))
+}
+
+/// Векторизовать все пассажи звонка (после `replace_call_passages`, который
+/// id вставленных строк не возвращает — отдельный SELECT).
+pub(crate) async fn embed_call_passages(
+    pool: &SqlitePool,
+    emb: std::sync::Arc<dyn crate::assistant::embedder::TextEmbedder>,
+    call_id: &str,
+) -> Result<usize, AppError> {
+    let rows = crate::db::assistant_embeddings::list_call_passage_texts(pool, call_id).await?;
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let dim = emb.dim() as i64;
+    let blobs = embed_batch(emb, rows).await?;
+    crate::db::assistant_embeddings::upsert_embeddings(pool, dim, &blobs).await?;
+    Ok(blobs.len())
+}
+
+/// Инференс батча вне async-потока (ONNX ~5-90мс на пассаж).
+async fn embed_batch(
+    emb: std::sync::Arc<dyn crate::assistant::embedder::TextEmbedder>,
+    rows: Vec<(i64, String)>,
+) -> Result<Vec<(i64, Vec<u8>)>, AppError> {
+    tokio::task::spawn_blocking(move || {
+        let refs: Vec<&str> = rows.iter().map(|(_, t)| t.as_str()).collect();
+        let vecs = emb.embed_passages(&refs)?;
+        Ok(rows
+            .iter()
+            .zip(vecs.iter())
+            .map(|((id, _), v)| (*id, crate::embeddings::embedding_to_bytes(v)))
+            .collect())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("embed join: {e}")))?
+}
+
+/// [M15.10] Размер батча фонового embed-backfill'а.
+const EMBED_BACKFILL_BATCH: i64 = 64;
+
+/// Фоновый backfill векторов: добирает пассажи без эмбеддинга батчами —
+/// существующие Ph1-звонки и хвосты после warn'ов embed-hook'а. No-op без
+/// модели/feature. Перед стартом — инвалидация по id модели (M15.10.3).
+pub async fn embed_backfill(pool: &SqlitePool, app_data_dir: &std::path::Path) {
+    let Some(emb) = crate::assistant::embedder::shared(app_data_dir).await else {
+        return;
+    };
+    if let Err(e) = crate::assistant::embedder::ensure_embed_model_current(pool).await {
+        log::warn!("assistant embed backfill: ensure model: {e}");
+        return;
+    }
+    match embed_backfill_with(pool, emb).await {
+        Ok(0) => {}
+        Ok(n) => log::info!("assistant embed backfill: {n} passages embedded"),
+        Err(e) => log::warn!("assistant embed backfill: {e}"),
+    }
+}
+
+/// DI-вариант backfill'а (тесты — MockEmbedder). Ошибка прерывает цикл
+/// (не зацикливаемся на стабильно падающем батче), недобранное останется
+/// в missing-листинге до следующего старта.
+pub(crate) async fn embed_backfill_with(
+    pool: &SqlitePool,
+    emb: std::sync::Arc<dyn crate::assistant::embedder::TextEmbedder>,
+) -> Result<usize, AppError> {
+    let mut total = 0usize;
+    loop {
+        let rows =
+            crate::db::assistant_embeddings::list_passages_missing_embedding(pool, EMBED_BACKFILL_BATCH)
+                .await?;
+        if rows.is_empty() {
+            break;
+        }
+        let dim = emb.dim() as i64;
+        let blobs = embed_batch(emb.clone(), rows).await?;
+        crate::db::assistant_embeddings::upsert_embeddings(pool, dim, &blobs).await?;
+        total += blobs.len();
+    }
+    Ok(total)
 }
 
 /// Fire-and-forget индексация из ready-хуков пайплайна. Ошибки — warn,
@@ -559,6 +660,85 @@ mod tests {
         // Переиндексация идемпотентна.
         let (count2, _) = index_call(&db.pool, &store, "c1").await.unwrap();
         assert_eq!(count, count2);
+    }
+
+    // ── [M15.10] embed-hook + embed_backfill (MockEmbedder) ──
+
+    async fn count_embeddings(pool: &sqlx::SqlitePool) -> i64 {
+        let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM assistant_embeddings")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        n
+    }
+
+    #[tokio::test]
+    async fn index_call_with_mock_embedder_writes_vectors() {
+        use crate::assistant::embedder::test_support::MockEmbedder;
+
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        seed_call(&db.pool, "c1", "ready").await;
+        let store = store_with_artifacts(tmp.path(), "c1");
+
+        let (count, _) =
+            index_call_with(&db.pool, &store, "c1", Some(std::sync::Arc::new(MockEmbedder)))
+                .await
+                .unwrap();
+        assert_eq!(
+            count_embeddings(&db.pool).await,
+            count,
+            "каждый пассаж получает вектор"
+        );
+        let (dim,): (i64,) = sqlx::query_as("SELECT DISTINCT dim FROM assistant_embeddings")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(dim as usize, crate::assistant::embedder::EMBED_DIM);
+
+        // Переиндексация идемпотентна и по векторам (каскад + re-embed).
+        let (count2, _) =
+            index_call_with(&db.pool, &store, "c1", Some(std::sync::Arc::new(MockEmbedder)))
+                .await
+                .unwrap();
+        assert_eq!(count, count2);
+        assert_eq!(count_embeddings(&db.pool).await, count2);
+    }
+
+    #[tokio::test]
+    async fn index_call_without_embedder_writes_fts_only() {
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        seed_call(&db.pool, "c1", "ready").await;
+        let store = store_with_artifacts(tmp.path(), "c1");
+
+        let (count, _) = index_call_with(&db.pool, &store, "c1", None).await.unwrap();
+        assert!(count > 0);
+        assert_eq!(count_embeddings(&db.pool).await, 0, "без эмбеддера — только FTS");
+    }
+
+    #[tokio::test]
+    async fn embed_backfill_fills_missing_and_is_idempotent() {
+        use crate::assistant::embedder::test_support::MockEmbedder;
+
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        seed_call(&db.pool, "c1", "ready").await;
+        let store = store_with_artifacts(tmp.path(), "c1");
+        let (count, _) = index_call_with(&db.pool, &store, "c1", None).await.unwrap();
+        assert_eq!(count_embeddings(&db.pool).await, 0);
+
+        let n = embed_backfill_with(&db.pool, std::sync::Arc::new(MockEmbedder))
+            .await
+            .unwrap();
+        assert_eq!(n as i64, count, "backfill добирает все пассажи без вектора");
+        assert_eq!(count_embeddings(&db.pool).await, count);
+
+        // Повторный прогон — нечего добирать.
+        let n2 = embed_backfill_with(&db.pool, std::sync::Arc::new(MockEmbedder))
+            .await
+            .unwrap();
+        assert_eq!(n2, 0);
     }
 
     #[tokio::test]

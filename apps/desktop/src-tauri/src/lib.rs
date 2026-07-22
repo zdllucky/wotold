@@ -207,6 +207,9 @@ pub fn run() {
                         (state.db.clone(), state.store.clone())
                     };
                     crate::assistant::indexer::backfill(&pool, &store).await;
+                    // [M15.10] Следом — вектора: инвалидация по id модели +
+                    // добор пассажей без эмбеддинга. No-op без модели/feature.
+                    crate::assistant::indexer::embed_backfill(&pool, store.app_data_dir()).await;
                 });
             }
 
