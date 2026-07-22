@@ -168,16 +168,18 @@ assistant_embeddings(
 
 ### 6.1 Passage builder (`indexer.rs`)
 
+> Поправка M15.3 (после разведки кода): первоначальный план «chunks primary + md fallback» отменён — в `call_chunks.transcript_json` секунды **относительные чанку** (абсолютизация делается в `chunk_assembly.rs`), и повторять merge/remap дорого. Один код-путь по transcript.md покрывает и legacy.
+
 Источники (только `status='ready'`):
-- **Транскрипт**: `call_chunks.transcript_json` (DiarizedTranscript per chunk, start_ms абсолютные) → окна последовательных сегментов до ~350 ток, overlap 1 сегмент; `speaker` = спикер первого сегмента. Fallback для legacy-звонков без chunks — парс `transcript.md`.
-- **Рекап**: `recap.md` по абзацам → kind='recap', `start_ms = NULL` (чип источника без таймкода — SPEC допускает).
+- **Транскрипт**: `transcript.md` — финальная склейка (абсолютные таймкоды, финальные speaker-теги; формат `**{tag}** [{m}:{ss}]:` из `merge.rs::render_transcript_md`). Окна последовательных реплик до ~350 ток, overlap 1 реплика (только для окон ≥2 реплик); `speaker` = тег первой реплики (сырой `owner`/`Speaker N`, резолв имени — при сборке ответа M15.7).
+- **Рекап**: `recap.md` по абзацам (заголовки скипаются) → kind='recap', `start_ms = NULL` (чип источника без таймкода — SPEC допускает).
 - **Structured rows**: `decisions` / `action_items` / `open_questions` (text + evidence_quote/speaker/start_ms) → по одному passage. Самые плотные кандидаты для «какие решения/задачи».
 
 ### 6.2 Триггеры индексации
 
-1. Хук `assistant::indexer::on_call_ready(pool, call_id)` (spawn, не блокирует) в ready-точках: `pipeline/mod.rs` после `mark_call_ready` (:323) и restore/finalize-пути `services/pipeline_runner.rs` (:199, :250, :451).
-2. **Startup backfill**: sweep в `lib.rs` setup — ready-звонки без записи в `assistant_index_state` → фоновая индексация (throttled).
-3. **Инвалидация**: `reprocess_call` → `deindex_call` (DELETE passages, триггеры чистят FTS), переиндексация ready-хуком после завершения; `regenerate_recap` → kind-selective delete+insert (recap/structured); `delete_call` — каскад.
+1. `assistant::indexer::spawn_index(app, call_id)` (fire-and-forget) в ready-точках: `pipeline/mod.rs` после `mark_call_ready` и `services/pipeline_runner.rs::spawn_regen` (успех RegenKind::Recap); в `cancel` (restore в ready) — прямой `index_call`. (Поправка M15.3: упоминавшаяся ранее `pipeline_runner.rs:451` — тестовый код, не продакшн-точка.)
+2. **Startup backfill**: sweep в `lib.rs` setup — ready-звонки без записи в `assistant_index_state` → фоновая последовательная индексация; также добирает headless-пайплайны (app=None).
+3. **Инвалидация**: `reprocess_call` → `deindex_call` (DELETE passages, триггеры чистят FTS), переиндексация ready-хуком после завершения; `regenerate_recap` → полная переиндексация тем же `index_call` (kind-selective не нужен — replace дешёвый и идемпотентный); `delete_call` — каскад.
 
 ### 6.3 Retrieval
 

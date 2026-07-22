@@ -321,6 +321,11 @@ pub async fn run(
     let event = match &result {
         Ok(()) => {
             db::mark_call_ready(pool, &ctx.call_id).await?;
+            // [M15.3] Индексация ассистента — fire-and-forget; headless
+            // (app=None) добирается startup-backfill'ом.
+            if let Some(app) = app {
+                crate::assistant::indexer::spawn_index(app, &ctx.call_id);
+            }
             PipelineFinishedEvent {
                 call_id: ctx.call_id.clone(),
                 status: "ready",

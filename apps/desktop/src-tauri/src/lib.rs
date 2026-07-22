@@ -196,6 +196,20 @@ pub fn run() {
                 });
             }
 
+            // [M15.3] Backfill индекса ассистента: ready-звонки без записи в
+            // assistant_index_state (миграция с до-M15 версий, headless-pipeline
+            // без AppHandle). Фоном, последовательно, не блокирует окно.
+            {
+                let app_for_backfill = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let (pool, store) = {
+                        let state = tauri::Manager::state::<state::AppState>(&app_for_backfill);
+                        (state.db.clone(), state.store.clone())
+                    };
+                    crate::assistant::indexer::backfill(&pool, &store).await;
+                });
+            }
+
             // [warm-up B1] Прогрев local-LLM при старте: фоновый крошечный
             // generate компилит Metal-шейдеры + греет модель в page-cache, чтобы
             // первый рекап не ловил ~30с cold-start. No-op если движок не Local.
