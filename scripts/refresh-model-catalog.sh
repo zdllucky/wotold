@@ -72,6 +72,11 @@ MODELS=(
   # WeSpeaker embedding — reuse `voice_model.rs` (B3.7c) ~26 MB, не в этом
   # каталоге; см. `voice_model::MODEL_URL` + SHA.
   "pyannote-segmentation|csukuangfj/sherpa-onnx-pyannote-segmentation-3-0|model.onnx"
+  # [M15.9] Текст-эмбеддер RAG-ассистента: официальный intfloat ONNX-экспорт
+  # (MIT). Имя файла упоминает avx512_vnni, но dynamic-qint8 ops исполнимы
+  # и на arm64 (спайк M15.9). tokenizer.json — второй обязательный файл.
+  "e5-small-qint8|intfloat/multilingual-e5-small|onnx/model_qint8_avx512_vnni.onnx"
+  "e5-small-tokenizer|intfloat/multilingual-e5-small|onnx/tokenizer.json"
 )
 
 # Проверка зависимостей
@@ -117,6 +122,7 @@ for line in "${MODELS[@]}"; do
   case "$id" in
     whisper-*)        kind="ModelKind::Stt" ;;
     pyannote-*)       kind="ModelKind::Diarization" ;;
+    e5-*)             kind="ModelKind::Embedding" ;;
     *)                kind="ModelKind::Llm" ;;
   esac
 
@@ -129,6 +135,8 @@ for line in "${MODELS[@]}"; do
     qwen25-3b)             display="Qwen 2.5 (3B)" ;;
     qwen25-7b)             display="Qwen 2.5 (7B)" ;;
     pyannote-segmentation) display="Pyannote Segmentation 3.0" ;;
+    e5-small-qint8)        display="Multilingual E5 Small (поиск)" ;;
+    e5-small-tokenizer)    display="Multilingual E5 Tokenizer" ;;
     *)                     display="$id" ;;
   esac
 

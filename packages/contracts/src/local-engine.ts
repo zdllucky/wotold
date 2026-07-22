@@ -12,8 +12,8 @@ export type LocalEnginePreset = 'light' | 'balanced' | 'quality';
 /** Какой движок обрабатывает звонок. См. PRD §2.1. */
 export type EngineKind = 'local' | 'cloud_managed' | 'cloud_byo';
 
-/** Тип модели в каталоге. */
-export type LocalModelKind = 'stt' | 'llm' | 'diarization';
+/** Тип модели в каталоге. [M15.9] embedding — текст-эмбеддер ассистента. */
+export type LocalModelKind = 'stt' | 'llm' | 'diarization' | 'embedding';
 
 /**
  * Запись в hardcoded MODEL_CATALOG (PRD §M12.4.1).

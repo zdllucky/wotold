@@ -720,6 +720,8 @@ export const en: TranslationStrings = {
       diarization: 'Diarization module · basic',
       qwenDraft: 'Summary booster · 0.5B',
       vad: 'Speech detector',
+      embedder: 'Assistant search module',
+      embedderTokenizer: 'Search module vocabulary',
     },
     statusInstalled: 'installed',
     statusDownloading: 'downloading…',
