@@ -13,6 +13,7 @@
 //     `.unwrap()` идиоматичен и читабелен; разрешаем явно.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod assistant;
 mod audio;
 mod audio_io;
 mod call_store;
