@@ -431,7 +431,12 @@ pub async fn backfill(pool: &SqlitePool, store: &CallStore) {
         .bind(call_id)
         .fetch_optional(pool)
         .await
-        .unwrap_or(None);
+        // Ошибка запроса ≠ «уже не pending» — логируем перед скипом
+        // (rust-review Ph2), молчание маскировало бы падение БД.
+        .unwrap_or_else(|e| {
+            log::warn!("assistant backfill[{call_id}]: still_pending check failed: {e}");
+            None
+        });
         if still_pending.is_none() {
             continue;
         }
