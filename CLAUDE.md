@@ -69,7 +69,7 @@ docs/                 Паспорт и сопутствующие докуме�
 
 ## Design Gate (Wotold v2, [B18] — ОБЯЗАТЕЛЬНО до любой UI работы)
 
-> **Wotold v2 (uikit) — действующий дизайн** (миграция Atelier→v2 завершена в B18.6; shim `wotold.css`/`legacy-tokens.css` удалён). Канон — [`docs/design/wotold-v2/`](docs/design/wotold-v2/README.md) + код: `wk.css` (примитивы) / `components.css` (app-классы) / `tokens.css`. Источник истины = прототип `~/Downloads/Wotold v2/` (`uikit.css` + `wk-*.jsx`).
+> **Wotold v2 (uikit) — действующий дизайн** (миграция Atelier→v2 завершена в B18.6; shim `wotold.css`/`legacy-tokens.css` удалён). Канон — [`docs/design/wotold-v2/`](docs/design/wotold-v2/README.md) + код: `wk.css` (примитивы) / `components.css` (app-классы) / `tokens.css`. Источник истины = прототип `~/Downloads/Wotold v2/` (`uikit.css` + `wk-*.jsx`). Для поверхностей **Ассистента** (M15/B24) — addendum [`docs/design/wotold-v2/assistant.md`](docs/design/wotold-v2/assistant.md) + хендофф `~/Downloads/design_handoff_wotold_assistant/`.
 
 Перед **любой** правкой `.tsx`/`.css`/`*.module.css`, или инлайн-стилей, **до** Plan/Implement:
 
