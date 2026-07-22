@@ -67,12 +67,272 @@ pub async fn try_load_embedder(app_data_dir: &Path) -> Option<Arc<dyn TextEmbedd
 
 #[cfg(feature = "assistant-embed")]
 mod onnx {
-    // [M15.9 шаг 9.3] OnnxTextEmbedder — приходит следующим коммитом.
+    //! OnnxTextEmbedder — multilingual-e5-small qint8 через ort + tokenizers.
+    //! Порт валидированного спайка M15.9: mean-pooling по attention mask +
+    //! L2; inputs Xenova/intfloat-экспорта: input_ids + attention_mask +
+    //! token_type_ids (нулями). ~5мс короткий пассаж / ~90мс 350-ток на
+    //! M1 Pro — вызывающие оборачивают в spawn_blocking, отдельный слот
+    //! resource_queue не нужен (замер спайка).
+
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use ndarray::{Axis, Ix3};
+    use ort::session::{builder::GraphOptimizationLevel, Session};
+    use ort::value::TensorRef;
+    use tokenizers::Tokenizer;
+
     use super::*;
+    use crate::local_engine::models::{check_status_fast, model_path, ModelId, ModelStatus};
+
+    /// Лимит контекста e5 (512 позиций XLM-R, минус спецтокены).
+    const MAX_TOKENS: usize = 512;
+
+    pub(super) struct OnnxTextEmbedder {
+        /// `Session::run` требует `&mut` — трейт даёт `&self`, сериализуем
+        /// инференс мьютексом (один вызов ~5-90мс, конкуренции почти нет).
+        session: Mutex<Session>,
+        tokenizer: Tokenizer,
+        needs_token_type_ids: bool,
+    }
+
+    impl OnnxTextEmbedder {
+        /// Загрузка из явных путей — используется и продовым `try_load`
+        /// (пути каталога), и `#[ignore]` reference-тестом (env-директория).
+        pub(super) fn load_from_paths(
+            model: &PathBuf,
+            tokenizer_json: &PathBuf,
+        ) -> Result<Self, AppError> {
+            // `ort::Error<T>` в rc.12 генерик (возвращает builder при
+            // ошибке) — замыкание на каждый шаг, единый helper не типизируется.
+            let session = Session::builder()
+                .map_err(|e| AppError::Other(format!("embedder session: {e}")))?
+                .with_optimization_level(GraphOptimizationLevel::Level1)
+                .map_err(|e| AppError::Other(format!("embedder session: {e}")))?
+                .with_intra_threads(2)
+                .map_err(|e| AppError::Other(format!("embedder session: {e}")))?
+                .commit_from_file(model)
+                .map_err(|e| AppError::Other(format!("embedder session: {e}")))?;
+            let mut tokenizer = Tokenizer::from_file(tokenizer_json)
+                .map_err(|e| AppError::Other(format!("embedder tokenizer: {e}")))?;
+            tokenizer
+                .with_truncation(Some(tokenizers::TruncationParams {
+                    max_length: MAX_TOKENS,
+                    ..Default::default()
+                }))
+                .map_err(|e| AppError::Other(format!("embedder truncation: {e}")))?;
+            let needs_token_type_ids = session
+                .inputs()
+                .iter()
+                .any(|i| i.name() == "token_type_ids");
+            Ok(Self {
+                session: Mutex::new(session),
+                tokenizer,
+                needs_token_type_ids,
+            })
+        }
+
+        fn embed_one(&self, prefixed_text: &str) -> Result<Vec<f32>, AppError> {
+            let enc = self
+                .tokenizer
+                .encode(prefixed_text, true)
+                .map_err(|e| AppError::Other(format!("embedder encode: {e}")))?;
+            let ids: Vec<i64> = enc.get_ids().iter().map(|&i| i64::from(i)).collect();
+            let mask: Vec<i64> = enc
+                .get_attention_mask()
+                .iter()
+                .map(|&i| i64::from(i))
+                .collect();
+            let len = ids.len();
+            if len == 0 {
+                return Ok(vec![0.0; EMBED_DIM]);
+            }
+
+            let mut session = self
+                .session
+                .lock()
+                .map_err(|_| AppError::Other("embedder mutex poisoned".into()))?;
+
+            let ids_t = TensorRef::from_array_view(([1usize, len], &*ids))
+                .map_err(|e| AppError::Other(format!("embedder tensor: {e}")))?;
+            let mask_t = TensorRef::from_array_view(([1usize, len], &*mask))
+                .map_err(|e| AppError::Other(format!("embedder tensor: {e}")))?;
+            let tt: Vec<i64>;
+            let outputs = if self.needs_token_type_ids {
+                tt = vec![0; len];
+                let tt_t = TensorRef::from_array_view(([1usize, len], &*tt))
+                    .map_err(|e| AppError::Other(format!("embedder tensor: {e}")))?;
+                session.run(ort::inputs![
+                    "input_ids" => ids_t,
+                    "attention_mask" => mask_t,
+                    "token_type_ids" => tt_t
+                ])
+            } else {
+                session.run(ort::inputs![
+                    "input_ids" => ids_t,
+                    "attention_mask" => mask_t
+                ])
+            }
+            .map_err(|e| AppError::Other(format!("embedder run: {e}")))?;
+
+            let hidden = outputs["last_hidden_state"]
+                .try_extract_array::<f32>()
+                .map_err(|e| AppError::Other(format!("embedder output: {e}")))?
+                .into_dimensionality::<Ix3>()
+                .map_err(|e| AppError::Other(format!("embedder output shape: {e}")))?;
+            let dim = hidden.shape()[2];
+
+            // Mean-pooling по attention mask.
+            let mut sum = vec![0f32; dim];
+            let mut count = 0f32;
+            for (t, row) in hidden
+                .index_axis(Axis(0), 0)
+                .axis_iter(Axis(0))
+                .enumerate()
+            {
+                if mask.get(t).copied() == Some(1) {
+                    for (d, v) in row.iter().enumerate() {
+                        sum[d] += v;
+                    }
+                    count += 1.0;
+                }
+            }
+            for v in sum.iter_mut() {
+                *v /= count.max(1.0);
+            }
+            l2_normalize(&mut sum);
+            Ok(sum)
+        }
+    }
+
+    impl TextEmbedder for OnnxTextEmbedder {
+        fn embed_passages(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, AppError> {
+            texts
+                .iter()
+                .map(|t| self.embed_one(&format!("{PASSAGE_PREFIX}{t}")))
+                .collect()
+        }
+
+        fn embed_query(&self, question: &str) -> Result<Vec<f32>, AppError> {
+            self.embed_one(&format!("{QUERY_PREFIX}{question}"))
+        }
+
+        fn dim(&self) -> usize {
+            EMBED_DIM
+        }
+    }
 
     pub(super) async fn try_load(app_data_dir: &Path) -> Option<Arc<dyn TextEmbedder>> {
-        let _ = app_data_dir;
-        None
+        for id in [ModelId::E5_SMALL_QINT8, ModelId::E5_TOKENIZER] {
+            match check_status_fast(app_data_dir, id.as_str()).await {
+                Ok(ModelStatus::Present { .. }) => {}
+                Ok(_) => return None, // Absent/Corrupted — тихий BM25-fallback
+                Err(e) => {
+                    log::warn!("assistant embedder status check: {e}");
+                    return None;
+                }
+            }
+        }
+        let model = model_path(app_data_dir, ModelId::E5_SMALL_QINT8.as_str());
+        let tokenizer = model_path(app_data_dir, ModelId::E5_TOKENIZER.as_str());
+        // Session build ~230мс + чтение 118MB — вне async-потока.
+        let loaded = tokio::task::spawn_blocking(move || {
+            OnnxTextEmbedder::load_from_paths(&model, &tokenizer)
+        })
+        .await;
+        match loaded {
+            Ok(Ok(e)) => Some(Arc::new(e)),
+            Ok(Err(e)) => {
+                log::warn!("assistant embedder load failed: {e}");
+                None
+            }
+            Err(e) => {
+                log::warn!("assistant embedder load join: {e}");
+                None
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod reference_tests {
+        //! Reference-тест на реальной модели (образец B3.7d). Запуск:
+        //! `WOTOLD_E5_MODEL_DIR=<dir> cargo test --features assistant-embed \
+        //!  -- --ignored embedder`
+        //! где <dir> содержит `model.onnx` + `tokenizer.json` (артефакты
+        //! intfloat/multilingual-e5-small: onnx/model_qint8_avx512_vnni.onnx
+        //! + onnx/tokenizer.json).
+
+        use super::*;
+
+        fn cos(a: &[f32], b: &[f32]) -> f32 {
+            a.iter().zip(b).map(|(x, y)| x * y).sum()
+        }
+
+        #[test]
+        #[ignore = "требует скачанную e5-модель: env WOTOLD_E5_MODEL_DIR"]
+        fn reference_embedding_on_real_model() {
+            let dir = PathBuf::from(
+                std::env::var("WOTOLD_E5_MODEL_DIR").expect("WOTOLD_E5_MODEL_DIR не задан"),
+            );
+            let emb = OnnxTextEmbedder::load_from_paths(
+                &dir.join("model.onnx"),
+                &dir.join("tokenizer.json"),
+            )
+            .expect("load");
+
+            // 1. Размерность + L2-норма.
+            let q = emb.embed_query("какие сроки по контракту?").unwrap();
+            assert_eq!(q.len(), EMBED_DIM);
+            let n: f32 = q.iter().map(|x| x * x).sum::<f32>().sqrt();
+            assert!((n - 1.0).abs() < 1e-4, "norm = {n}");
+
+            // 2. Reference fingerprint (спайк M15.9, intfloat qint8,
+            //    Level1/intra=2): первые 8 компонент passage-вектора.
+            //    Допуск 5e-3 — устойчивость к минорным версиям ORT.
+            let p = &emb
+                .embed_passages(&["Договорились хранить записи звонков локально, без облака."])
+                .unwrap()[0];
+            let reference = [
+                0.013125232f32,
+                -0.009480266,
+                -0.029063327,
+                -0.049545348,
+                0.05303151,
+                -0.037857212,
+                -0.029183423,
+                0.027741378,
+            ];
+            for (i, (got, want)) in p.iter().zip(reference.iter()).enumerate() {
+                assert!(
+                    (got - want).abs() < 5e-3,
+                    "dim {i}: got {got}, want {want}"
+                );
+            }
+
+            // 3. Семантика: синонимный пассаж (дедлайн↔сроки) обязан бить
+            //    нерелевантный — кейс, который BM25 не ловит.
+            let ps = emb
+                .embed_passages(&[
+                    "Дедлайн подписания договора — 30 мая, Иван пришлёт SOW в пятницу.",
+                    "Обсудили дизайн лендинга и цветовую палитру бренда.",
+                ])
+                .unwrap();
+            assert!(
+                cos(&q, &ps[0]) > cos(&q, &ps[1]),
+                "синонимный пассаж должен ранжироваться выше нерелевантного"
+            );
+
+            // 4. Кросс-язычность: en-перевод ближе к ru-оригиналу, чем
+            //    ru-нерелевантный текст.
+            let pair = emb
+                .embed_passages(&[
+                    "Договорились хранить записи звонков локально, без облака.",
+                    "We agreed to keep call recordings locally, without any cloud.",
+                    "Команда переезжает в новый офис в сентябре.",
+                ])
+                .unwrap();
+            assert!(cos(&pair[0], &pair[1]) > cos(&pair[0], &pair[2]));
+        }
     }
 }
 
