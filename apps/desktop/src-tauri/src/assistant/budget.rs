@@ -22,10 +22,15 @@ const MAX_PASSAGES_PER_CALL_GLOBAL: usize = 3;
 
 /// Собранный контекст. Порядок fragments стабилен — нумерация [1..N]
 /// для промпта (M15.7) = индекс+1. token_total — для mono-строки UI.
+/// [M16.1] skipped_* — внутренняя диагностика отбора (debug-лог ask_core),
+/// в S2-контракт НЕ уходит.
 #[derive(Debug, Clone)]
 pub struct BudgetedContext {
     pub fragments: Vec<PassageHit>,
     pub token_total: i64,
+    pub skipped_dedup: usize,
+    pub skipped_cap: usize,
+    pub skipped_budget: usize,
 }
 
 /// Greedy-сборка: дедуп (текст + transcript-overlap) → cap/звонок (global) →
@@ -38,21 +43,26 @@ pub fn assemble(hits: Vec<PassageHit>, scope: Scope<'_>) -> BudgetedContext {
     let mut per_call: HashMap<String, usize> = HashMap::new();
     // Занятые интервалы транскрипта per call — душим overlap-окна.
     let mut taken_ranges: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
+    let (mut skipped_dedup, mut skipped_cap, mut skipped_budget) = (0usize, 0usize, 0usize);
 
     for hit in hits {
         if fragments.iter().any(|f| f.text == hit.text) {
+            skipped_dedup += 1;
             continue;
         }
         if is_transcript_overlap(&taken_ranges, &hit) {
+            skipped_dedup += 1;
             continue;
         }
         if is_global
             && per_call.get(hit.call_id.as_str()).copied().unwrap_or(0)
                 >= MAX_PASSAGES_PER_CALL_GLOBAL
         {
+            skipped_cap += 1;
             continue;
         }
         if token_total + hit.token_est > FRAGMENT_BUDGET_TOKENS {
+            skipped_budget += 1;
             continue; // skip-and-continue: следующий может быть меньше
         }
 
@@ -70,6 +80,9 @@ pub fn assemble(hits: Vec<PassageHit>, scope: Scope<'_>) -> BudgetedContext {
     BudgetedContext {
         fragments,
         token_total,
+        skipped_dedup,
+        skipped_cap,
+        skipped_budget,
     }
 }
 
@@ -125,6 +138,24 @@ mod tests {
         let texts: Vec<&str> = ctx.fragments.iter().map(|f| f.text.as_str()).collect();
         assert_eq!(texts, vec!["большой", "мелкий влезает"]);
         assert_eq!(ctx.token_total, 5_500);
+    }
+
+    // [M16.1] Счётчики скипов — диагностика debug-лога ask_core.
+    #[test]
+    fn skip_counters_track_dedup_cap_and_budget() {
+        let hits = vec![
+            hit("c1", "transcript", Some(0), Some(10_000), 100, "а"),
+            hit("c1", "recap", None, None, 100, "а"), // текст-дубль → dedup
+            hit("c1", "recap", None, None, 100, "б"),
+            hit("c1", "decision", None, None, 100, "в"),
+            hit("c1", "decision", None, None, 100, "г"), // 4-й в c1 → cap
+            hit("c2", "transcript", Some(0), Some(1_000), 6_000, "не влезает"), // budget
+        ];
+        let ctx = assemble(hits, Scope::Global);
+        assert_eq!(ctx.fragments.len(), 3);
+        assert_eq!(ctx.skipped_dedup, 1);
+        assert_eq!(ctx.skipped_cap, 1);
+        assert_eq!(ctx.skipped_budget, 1);
     }
 
     #[test]

@@ -130,7 +130,28 @@ pub async fn ask_core_with(
     };
     let hits =
         retrieval::search_hybrid(pool, &question, scope, embedder, embed_cache::global()).await?;
+    let hits_total = hits.len();
     let ctx = budget::assemble(hits, scope);
+
+    // [M16.1] Диагностика отбора — ТОЛЬКО id/метрики, без текста вопросов и
+    // фрагментов (приватность контента, W5). Включается RUST_LOG=debug.
+    if log::log_enabled!(log::Level::Debug) {
+        let taken: Vec<String> = ctx
+            .fragments
+            .iter()
+            .map(|f| format!("{}:{}:{}@{:.4}", f.id, f.kind, &f.call_id[..8.min(f.call_id.len())], f.rank))
+            .collect();
+        log::debug!(
+            "assistant retrieval: expr={:?} hits={hits_total} taken={} [{}] skipped dedup={} cap={} budget={} tokens={}",
+            retrieval::build_match_expr(&question),
+            ctx.fragments.len(),
+            taken.join(", "),
+            ctx.skipped_dedup,
+            ctx.skipped_cap,
+            ctx.skipped_budget,
+            ctx.token_total,
+        );
+    }
 
     // 3. Пусто → честное «не найдено» (+эскалация в call-scope).
     if ctx.fragments.is_empty() {
