@@ -62,6 +62,13 @@ pub fn current_embed_model_id() -> &'static str {
 /// несравнимы (даже при равном dim), поэтому сохранённый id != текущему →
 /// полный `DELETE FROM assistant_embeddings`, backfill пересчитает новой
 /// моделью. Идемпотентно; вызывается на старте перед embed-backfill'ом.
+///
+/// Инвариант (rust-review Ph2): на query-путь этот вызов НЕ ставится
+/// намеренно — смена модели всегда означает новый catalog id → новый файл
+/// на диске, до его скачивания `try_load` = None и гибрид не активен;
+/// после скачивания старт-ап backfill приводит вектора в порядок. Если
+/// когда-то каталожная запись начнёт переиспользовать id при смене
+/// артефакта — этот вызов обязан появиться и на query-пути.
 pub async fn ensure_embed_model_current(pool: &sqlx::SqlitePool) -> Result<(), AppError> {
     let current = current_embed_model_id();
     let stored = crate::db::get_setting(pool, SETTING_EMBED_MODEL_ID).await?;
