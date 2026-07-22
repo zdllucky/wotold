@@ -149,7 +149,14 @@ mod tests {
             hit("c1", "recap", None, None, 100, "б"),
             hit("c1", "decision", None, None, 100, "в"),
             hit("c1", "decision", None, None, 100, "г"), // 4-й в c1 → cap
-            hit("c2", "transcript", Some(0), Some(1_000), 6_000, "не влезает"), // budget
+            hit(
+                "c2",
+                "transcript",
+                Some(0),
+                Some(1_000),
+                6_000,
+                "не влезает",
+            ), // budget
         ];
         let ctx = assemble(hits, Scope::Global);
         assert_eq!(ctx.fragments.len(), 3);

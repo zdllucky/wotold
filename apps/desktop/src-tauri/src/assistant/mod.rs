@@ -17,6 +17,7 @@ mod eval;
 pub mod fusion;
 pub mod indexer;
 pub mod retrieval;
+pub mod router;
 pub mod types;
 
 use std::collections::HashMap;
@@ -40,7 +41,8 @@ const WINDOW_TOKENS: u32 = 8_192;
 const REFUSAL_TEXT: &str = "Составление текстов — вне области ассистента. Область: поиск и \
                             разбор информации в записанных звонках. Могу собрать факты — \
                             решения, задачи, сроки.";
-const EMPTY_GLOBAL_TEXT: &str =
+// pub(crate): переиспользует router (WhenDiscussed без результатов).
+pub(crate) const EMPTY_GLOBAL_TEXT: &str =
     "По звонкам ничего не найдено. Уточните имя участника, тему или период.";
 const EMPTY_CALL_TEXT: &str = "В этом звонке этого не нашлось.";
 
@@ -119,6 +121,38 @@ pub async fn ask_core_with(
         return finish(pool, chat.id, ans).await;
     }
 
+    // 1b. [M16.4] Интент-раутер: мета-вопросы (сколько/последний/какие
+    // звонки, «когда обсуждали», call-summary) — детерминированно по
+    // метаданным, без retrieval и почти всегда без LLM.
+    match router::try_route(pool, &question, scope_call_id.as_deref(), embedder.clone()).await? {
+        Some(router::RoutedAnswer::Direct { text, sources }) => {
+            let ans = AssistantAnswer {
+                kind: AssistantAnswerKind::Answer,
+                text,
+                sources,
+                fragments: vec![],
+                fragment_tokens: 0,
+                window_tokens: WINDOW_TOKENS,
+                escalate: None,
+            };
+            return finish(pool, chat.id, ans).await;
+        }
+        Some(router::RoutedAnswer::SummarizeCall { call_id }) => {
+            // [M16.5] Рекап-путь: пассажи звонка по типам, мимо FTS —
+            // «о чём звонок» не имеет лексического пересечения с контентом.
+            let hits =
+                crate::db::assistant_embeddings::list_call_passages_for_summary(pool, &call_id)
+                    .await?;
+            let ctx = budget::assemble(hits, retrieval::Scope::Call(&call_id));
+            if !ctx.fragments.is_empty() {
+                return llm_answer_path(provider, pool, bus, chat.id, ctx, &history, &question)
+                    .await;
+            }
+            // Пассажей нет (звонок без артефактов) — обычный конвейер ниже.
+        }
+        None => {}
+    }
+
     // 2. Retrieval + budget.
     bus.assistant_status(&AssistantStatusEvent {
         chat_id: chat.id.clone(),
@@ -139,7 +173,15 @@ pub async fn ask_core_with(
         let taken: Vec<String> = ctx
             .fragments
             .iter()
-            .map(|f| format!("{}:{}:{}@{:.4}", f.id, f.kind, &f.call_id[..8.min(f.call_id.len())], f.rank))
+            .map(|f| {
+                format!(
+                    "{}:{}:{}@{:.4}",
+                    f.id,
+                    f.kind,
+                    &f.call_id[..8.min(f.call_id.len())],
+                    f.rank
+                )
+            })
             .collect();
         log::debug!(
             "assistant retrieval: expr={:?} hits={hits_total} taken={} [{}] skipped dedup={} cap={} budget={} tokens={}",
@@ -173,20 +215,35 @@ pub async fn ask_core_with(
         return finish(pool, chat.id, ans).await;
     }
 
-    // 4. Титулы + даты звонков для промпта и источников ([M16.2] дата в
+    // 4-6. Общий LLM-хвост (титулы/даты → генерация → сборка → persist).
+    llm_answer_path(provider, pool, bus, chat.id, ctx, &history, &question).await
+}
+
+/// [M16.5] Общий LLM-хвост `ask`: call_meta → generate_answer → сборка
+/// AssistantAnswer → finish. Используется и обычным конвейером (после
+/// retrieval+budget), и call-summary путём (рекап-пассажи мимо FTS).
+async fn llm_answer_path(
+    provider: &dyn LlmProvider,
+    pool: &SqlitePool,
+    bus: &EventBus<'_>,
+    chat_id: String,
+    ctx: budget::BudgetedContext,
+    history: &[AssistantMessage],
+    question: &str,
+) -> Result<AskOutcome, AppError> {
+    // Титулы + даты звонков для промпта и источников ([M16.2] дата в
     // заголовке фрагмента — опора для «когда»-вопросов).
     let (titles, dates) = call_meta(pool, &ctx.fragments).await?;
 
-    // 5. LLM.
     bus.assistant_status(&AssistantStatusEvent {
-        chat_id: chat.id.clone(),
+        chat_id: chat_id.clone(),
         phase: "generating",
     });
     let (text, used) =
-        answer::generate_answer(provider, &ctx.fragments, &titles, &dates, &history, &question)
+        answer::generate_answer(provider, &ctx.fragments, &titles, &dates, history, question)
             .await?;
 
-    // 6. Сборка ответа: sources из used-индексов (детерминированно), fragments —
+    // Сборка ответа: sources из used-индексов (детерминированно), fragments —
     // весь контекст (блок «Контекст поиска» в UI).
     let sources = build_sources(&ctx.fragments, &titles, &used);
     let fragments = ctx
@@ -213,7 +270,7 @@ pub async fn ask_core_with(
         window_tokens: WINDOW_TOKENS,
         escalate: None,
     };
-    finish(pool, chat.id, ans).await
+    finish(pool, chat_id, ans).await
 }
 
 /// Persist assistant-ответа + результат — общий хвост всех веток ask_core.
@@ -585,7 +642,8 @@ mod tests {
         assert_eq!(ans.text, crate::assistant::answer::NO_DIRECT_ANSWER_TEXT);
         assert_eq!(mock.call_count(), 2, "ровно один retry");
         assert!(
-            mock.last_input().contains("Прямого ответа во фрагментах может не быть"),
+            mock.last_input()
+                .contains("Прямого ответа во фрагментах может не быть"),
             "retry несёт nudge-хвост"
         );
         assert!(
@@ -593,6 +651,88 @@ mod tests {
             "NO_DIRECT теперь с fallback-источниками"
         );
         assert!(!ans.fragments.is_empty(), "контекст поиска сохраняется");
+    }
+
+    // [M16.4] Мета-вопрос → детерминированный ответ роутера, LLM не зовётся.
+    #[tokio::test]
+    async fn meta_stats_question_answers_without_llm() {
+        let db = fresh_db().await;
+        seed_call_with_passages(&db.pool, "c1", "Синхрон", &["обсуждали бюджет"]).await;
+        let mock = MockProvider::scripted(vec![]); // любой LLM-вызов упал бы
+        let bus = EventBus::new(None);
+        let out = ask_core(&mock, &db.pool, &bus, args("сколько звонков записано"))
+            .await
+            .unwrap();
+        let ans = out.message.answer.as_ref().unwrap();
+        assert!(ans.text.contains("Записано 1 звонков"), "{}", ans.text);
+        assert_eq!(mock.call_count(), 0, "stats-интент не ходит в LLM");
+    }
+
+    // [M16.5] «о чём звонок» в call-scope → рекап-пассажи напрямую, мимо FTS
+    // (вопрос лексически НЕ пересекается с контентом — раньше был empty).
+    #[tokio::test]
+    async fn call_scope_summary_uses_recap_without_fts_match() {
+        let db = fresh_db().await;
+        sqlx::query(
+            "INSERT INTO calls (id, title, started_at, status, path_label, created_at, updated_at)
+             VALUES ('c1', 'Планёрка', CURRENT_TIMESTAMP, 'ready', 'managed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        replace_call_passages(
+            &db.pool,
+            "c1",
+            &[
+                PassageInput {
+                    kind: AssistantPassageKind::Recap,
+                    speaker: None,
+                    start_ms: None,
+                    end_ms: None,
+                    text: "Договорились о пилоте и распределили задачи.".into(),
+                    token_est: 12,
+                },
+                PassageInput {
+                    kind: AssistantPassageKind::Transcript,
+                    speaker: Some("owner".into()),
+                    start_ms: Some(0),
+                    end_ms: Some(30_000),
+                    text: "длинная беседа про детали".into(),
+                    token_est: 8,
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        let mock = MockProvider::scripted(vec![Ok(serde_json::json!({
+            "answer": "Планёрка: пилот и задачи.",
+            "used_fragments": [1]
+        }))]);
+        let bus = EventBus::new(None);
+        let out = ask_core(
+            &mock,
+            &db.pool,
+            &bus,
+            AskArgs {
+                chat_id: None,
+                call_id: Some("c1".into()),
+                question: "о чем звонок".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let ans = out.message.answer.as_ref().unwrap();
+        assert_eq!(ans.text, "Планёрка: пилот и задачи.");
+        let input = mock.last_input();
+        assert!(
+            input.contains("Договорились о пилоте"),
+            "рекап обязан попасть в промпт: {input}"
+        );
+        assert!(
+            input.contains("[1]"),
+            "рекап первым (порядок kind-приоритета)"
+        );
     }
 
     #[tokio::test]
