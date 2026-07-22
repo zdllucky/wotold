@@ -105,10 +105,10 @@ ask(pool, app, { chat_id?, call_id?, question })
 
 ```
 ASSISTANT_STATUS = "assistant:status"
-payload { chat_id, phase: 'queued' | 'retrieving' | 'generating', elapsed_sec }
+payload { chat_id, phase: 'retrieving' | 'generating' }
 ```
 
-`queued` — честная фаза когда permit Llm занят пайплайном рекапа. Токен-стриминга в v1 нет.
+> Поправка M15.7: фаза `queued` снята — permit берётся внутри `provider.generate`, момент постановки в очередь снаружи недоступен; очередь LLM и так видна фронту через существующий `queue:state` (UI выводит «ждём движок» из него). Токен-стриминга в v1 нет.
 
 ## 5. Схема данных
 

@@ -109,6 +109,24 @@ pub async fn get_or_create_call_chat(
     })
 }
 
+/// Чат по id (глобальный или тред звонка).
+pub async fn get_chat_meta(
+    pool: &SqlitePool,
+    chat_id: &str,
+) -> Result<Option<AssistantChatMeta>, AppError> {
+    let row: Option<(String, Option<String>, String, String)> =
+        sqlx::query_as("SELECT id, call_id, title, created_at FROM assistant_chats WHERE id = ?1")
+            .bind(chat_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|r| AssistantChatMeta {
+        id: r.0,
+        call_id: r.1,
+        title: r.2,
+        created_at: r.3,
+    }))
+}
+
 /// Тред звонка, если существует.
 pub async fn get_call_chat(
     pool: &SqlitePool,

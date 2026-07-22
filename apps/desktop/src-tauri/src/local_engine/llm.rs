@@ -114,6 +114,10 @@ pub struct LocalLlamaProvider {
     /// [Q] call_id для QueueMonitor: чей звонок держит/ждёт LLM-ресурс.
     /// `None` — служебная задача (warm-up).
     queue_call_id: Option<String>,
+    /// [M15.7] Server-путь: реюз KV-префикса между запросами (`cache_prompt`).
+    /// Ассистент включает (follow-up с общим префиксом = быстрый prefill);
+    /// рекап-пайплайн оставляет false (одноразовые несвязанные промпты).
+    cache_prompt: bool,
 }
 
 impl LocalLlamaProvider {
@@ -127,6 +131,7 @@ impl LocalLlamaProvider {
             draft_model_path: None,
             server_url: None,
             queue_call_id: None,
+            cache_prompt: false,
         }
     }
 
@@ -143,6 +148,13 @@ impl LocalLlamaProvider {
     /// вся generate-цепочка (classifier/refine/post-pass/narrative) наследует.
     pub fn with_call(mut self, call_id: impl Into<String>) -> Self {
         self.queue_call_id = Some(call_id.into());
+        self
+    }
+
+    /// [M15.7] Включить реюз KV-префикса на server-пути (`cache_prompt`).
+    /// На one-shot пути не влияет (у llama-cli нет эквивалента).
+    pub fn with_cache_prompt(mut self, on: bool) -> Self {
+        self.cache_prompt = on;
         self
     }
 
@@ -210,7 +222,7 @@ impl LocalLlamaProvider {
             "temperature": DEFAULT_TEMP,
             "repeat_penalty": DEFAULT_REPEAT_PENALTY,
             "repeat_last_n": DEFAULT_REPEAT_LAST_N,
-            "cache_prompt": false,
+            "cache_prompt": self.cache_prompt,
         });
         if let Some(schema) = request.json_schema.as_deref() {
             match serde_json::from_str::<Value>(schema) {
