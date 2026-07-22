@@ -76,3 +76,38 @@ export interface AssistantIndexStats {
   totalCalls: number;
   totalDurationSec: number;
 }
+
+/** Аргументы assistant_ask (зеркало Rust `assistant::AskArgs`). */
+export interface AssistantAskArgs {
+  /** Продолжить существующий чат (глобальный или тред звонка). */
+  chatId: string | null;
+  /** Тред звонка (создаётся при первом вопросе). Игнорируется если chatId задан. */
+  callId: string | null;
+  question: string;
+}
+
+/** Результат assistant_ask (зеркало Rust `assistant::AskOutcome`). */
+export interface AssistantAskOutcome {
+  chatId: string;
+  message: AssistantMessage;
+}
+
+/** Тред звонка (зеркало Rust `commands::assistant::AssistantCallThread`). */
+export interface AssistantCallThread {
+  chat: AssistantChatMeta;
+  messages: AssistantMessage[];
+}
+
+/** Имя tauri-события фаз ответа (Rust `events::ASSISTANT_STATUS`). */
+export const ASSISTANT_STATUS_EVENT = 'assistant:status';
+
+/**
+ * Payload события `assistant:status`.
+ * ВНИМАНИЕ: сознательное исключение из camelCase-правила файла — Rust-структура
+ * `events::AssistantStatusEvent` идёт без `rename_all` (конвенция events.rs:
+ * снейк, как `call_id` в остальных событиях). Не «чинить» односторонне.
+ */
+export interface AssistantStatusEvent {
+  chat_id: string;
+  phase: 'retrieving' | 'generating';
+}
