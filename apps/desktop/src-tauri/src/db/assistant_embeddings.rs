@@ -172,6 +172,58 @@ pub async fn fetch_passages_by_ids(
         .collect())
 }
 
+/// [M16.5] Пассажи звонка для call-summary пути (мимо FTS): recap →
+/// decision → action_item → open_question → transcript. Хвост транскрипта
+/// добирается жадным бюджетом (budget::assemble в call-scope), поэтому
+/// порядок = приоритет. Живёт здесь же, где fetch_passages_by_ids:
+/// db/assistant.rs на пределе 800 строк.
+pub async fn list_call_passages_for_summary(
+    pool: &SqlitePool,
+    call_id: &str,
+) -> Result<Vec<crate::db::assistant::PassageHit>, AppError> {
+    type Row = (
+        i64,
+        String,
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<i64>,
+        String,
+        i64,
+    );
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT id, call_id, kind, speaker, start_ms, end_ms, text, token_est
+         FROM assistant_passages WHERE call_id = ?1
+         ORDER BY CASE kind
+           WHEN 'recap' THEN 0
+           WHEN 'decision' THEN 1
+           WHEN 'action_item' THEN 2
+           WHEN 'open_question' THEN 3
+           ELSE 4 END, id ASC",
+    )
+    .bind(call_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, call_id, kind, speaker, start_ms, end_ms, text, token_est)| {
+                crate::db::assistant::PassageHit {
+                    id,
+                    call_id,
+                    kind,
+                    speaker,
+                    start_ms,
+                    end_ms,
+                    text,
+                    token_est,
+                    rank: 0.0,
+                }
+            },
+        )
+        .collect())
+}
+
 /// Текущий штамп инвалидации кэша — один дешёвый запрос перед поиском.
 pub async fn embedding_stamp(pool: &SqlitePool) -> Result<EmbeddingStamp, AppError> {
     let (indexed_calls, last_indexed_at, embedding_count): (i64, String, i64) = sqlx::query_as(

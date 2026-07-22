@@ -63,7 +63,7 @@ pub fn detect_prompt_mode(question: &str) -> PromptMode {
         .split(|c: char| !c.is_alphabetic())
         .filter(|w| !w.is_empty())
         .collect();
-    let has = |w: &str| words.iter().any(|&x| x == w);
+    let has = |w: &str| words.contains(&w);
     let o_chem = words
         .windows(2)
         .any(|p| p[0] == "о" && (p[1] == "чём" || p[1] == "чем"));
@@ -293,7 +293,12 @@ pub async fn generate_answer(
         // Малые модели на «нет ответа» возвращают пустую строку (Gate Ph1,
         // Qwen 3B) — даём второй шанс с явным разрешением частичного ответа.
         log::debug!("assistant answer: empty on first pass, retrying with nudge");
-        parsed = generate_once(provider, system.to_string(), format!("{input}{RETRY_NUDGE}")).await?;
+        parsed = generate_once(
+            provider,
+            system.to_string(),
+            format!("{input}{RETRY_NUDGE}"),
+        )
+        .await?;
     }
     let answer = parsed.answer.trim().to_string();
     if answer.is_empty() {
@@ -354,7 +359,13 @@ mod tests {
             msg(AssistantRole::User, "Первый вопрос?"),
             msg(AssistantRole::Assistant, "Первый ответ."),
         ];
-        let input = build_input(&frags, &titles, &HashMap::new(), &history, "О чём договорились?");
+        let input = build_input(
+            &frags,
+            &titles,
+            &HashMap::new(),
+            &history,
+            "О чём договорились?",
+        );
 
         assert!(input.contains("[1] «Синхрон по пилоту» · owner · 1:02:\nпро приватность"));
         assert!(input.contains("[2] «Планёрка»:\nитог рекапа"));
