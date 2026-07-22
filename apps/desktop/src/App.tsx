@@ -5,6 +5,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CallDetailPage } from './pages/CallDetailPage';
 import { InboxView } from './pages/InboxView';
 import { Coachmarks } from './pages/Coachmarks';
+import { AssistantPage } from './pages/AssistantPage';
+import { requestGlobalQuestion } from './hooks/useAssistantChats';
 import { ContactsPage } from './pages/ContactsPage';
 import { DesignSystemPage } from './pages/DesignSystemPage';
 import { OnboardingPage } from './pages/OnboardingPage';
@@ -47,7 +49,7 @@ function initialView(): RailView {
   if (typeof window === 'undefined') return 'inbox';
   const hash = window.location.hash.replace('#', '');
   // [B18.1a] 'home'/'calls' старого роутинга → 'inbox'.
-  if (hash === 'contacts' || hash === 'settings') return hash;
+  if (hash === 'contacts' || hash === 'settings' || hash === 'assistant') return hash;
   if (hash === 'ds' && IS_DEV) return 'ds';
   return 'inbox';
 }
@@ -444,6 +446,12 @@ function AppShell() {
     setDetailCallId(id);
     setView('call');
   }, []);
+  // [B24.6] Эскалация из звонка + ⌘K-fallback: новый глобальный чат с вопросом.
+  const onAskAssistant = useCallback((question: string) => {
+    requestGlobalQuestion(question);
+    setDetailCallId(null);
+    setView('assistant');
+  }, []);
 
   if (bootstrap === 'loading') {
     return (
@@ -529,8 +537,11 @@ function AppShell() {
               setDetailCallId(null);
               setView('inbox');
             }}
+            onOpenCall={onOpenCall}
+            onAskGlobal={onAskAssistant}
           />
         )}
+        {view === 'assistant' && <AssistantPage onOpenCall={onOpenCall} />}
         {view === 'contacts' && <ContactsPage onOpenCall={onOpenCall} />}
         {view === 'settings' && <SettingsPage />}
         {view === 'ds' && IS_DEV && <DesignSystemPage />}
@@ -593,6 +604,10 @@ function AppShell() {
           }}
           onRecord={() => {
             onRecordToggle();
+            setPaletteOpen(false);
+          }}
+          onAsk={(q) => {
+            onAskAssistant(q);
             setPaletteOpen(false);
           }}
           recent={recent}

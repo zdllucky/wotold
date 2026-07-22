@@ -29,7 +29,7 @@ export const kk: TranslationStrings = {
 
   // [B18.1c] ⌘K command palette.
   palette: {
-    placeholder: 'Қоңырауға өту немесе команда…',
+    placeholder: 'Қоңырауды табу немесе ассистенттен сұрау…',
     commands: 'Командалар',
     calls: 'Қоңыраулар',
     empty: 'Ештеңе табылмады',
@@ -945,6 +945,7 @@ export const kk: TranslationStrings = {
     statsChip: 'іздеуде {total} ішінен {ready} {plural} · {dur}',
     statsTooltip: 'Өңделіп жатқан және қателі жазбалар іздеуге қатыспайды',
     callsPluralOne: 'қоңырау',
+    callsPluralFew: 'қоңырау',
     callsPluralMany: 'қоңырау',
     durHours: '{h} сағ {m} мин',
     durMinutes: '{m} мин',
@@ -975,6 +976,13 @@ export const kk: TranslationStrings = {
     callEmptyDesc:
       'Осы қоңыраудың чаты. Жауаптар оның транскрипті бойынша құрылады; факт басқа қоңыраудан табылса — дереккөз көрсетіледі.',
     sendLabel: 'Жіберу',
+    dayToday: 'Бүгін',
+    dayYesterday: 'Кеше',
+    findOrAsk: 'Табу немесе сұрау',
+    paletteCommand: 'Ассистент — қоңыраулар бойынша іздеу',
+    paletteNotFound: 'Ештеңе табылмады · Ассистент',
+    paletteFallbackLabel: 'Ассистенттен сұрау',
+    paletteFallbackHint: '«{q}» — {n} қоңырау бойынша іздеу',
   },
 };
 

@@ -36,6 +36,9 @@ import {
   ReprocessBanner,
 } from '../components/call-detail';
 import { CallRail } from '../components/call-detail/CallRail';
+import { AskThread } from '../components/assistant/AskThread';
+import { AssistantComposer } from '../components/assistant/AssistantComposer';
+import { useCallAssistant } from '../hooks/useCallAssistant';
 import { AudioScrubber } from '../components/AudioScrubber';
 import {
   InteractiveTranscript,
@@ -51,14 +54,19 @@ import { formatDur } from './CallDetailUtils';
 import { hashCallId, simpleDateTitle } from '../utils/callMeta';
 
 // [B18.3a] v2 IA: 2 tabs. Tasks fold into Recap; speakers move to CallRail.
-type Tab = 'recap' | 'transcript';
+// [B24.5] + вкладка «Ассистент» (только при status='ready', SPEC §3).
+type Tab = 'recap' | 'transcript' | 'assistant';
 
 interface CallDetailPageProps {
   callId: string;
   onBack: () => void;
+  /** [B24.5] Переход к другому звонку из источника ответа ассистента. */
+  onOpenCall?: (callId: string) => void;
+  /** [B24.5] Эскалация «Искать во всех звонках» → раздел «Ассистент». */
+  onAskGlobal?: (question: string) => void;
 }
 
-export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
+export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: CallDetailPageProps) {
   const { t, locale } = useI18n();
   const {
     call,
@@ -99,6 +107,16 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
   // [B17 V3.2] Single audio source — shared между AudioScrubber и
   // InteractiveTranscript (для highlight current + click-to-seek).
   const audio = useCallAudio(callId, call?.duration_sec ?? 0);
+  // [B24.5] Персистентный тред ассистента этого звонка (SPEC §3).
+  const assistantThread = useCallAssistant(callId);
+  // [B24.5/ревью] Таб — пер-звонковое состояние: смена звонка сбрасывает на
+  // транскрипт (иначе tab='assistant' у не-ready звонка = пустая панель).
+  useEffect(() => {
+    setTab('transcript');
+  }, [callId]);
+  useEffect(() => {
+    if (tab === 'assistant' && call && call.status !== 'ready') setTab('transcript');
+  }, [tab, call]);
 
   // [B20.8] Follow-режим транскрипта: автоскролл к активной реплике. Ручной
   // скролл (wheel/touch/скроллбар/клавиши) выключает; включает ТОЛЬКО кнопка
@@ -651,7 +669,14 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
 
       <Tabs value={tab} onChange={(v) => setTab(v as Tab)}>
         <Tabs.List>
-          {(['transcript', 'recap'] as Tab[]).map((tabId) => (
+          {(
+            [
+              'transcript',
+              'recap',
+              // [B24.5] Ассистент доступен только по готовому звонку (SPEC §3).
+              ...(call.status === 'ready' ? (['assistant'] as Tab[]) : []),
+            ] as Tab[]
+          ).map((tabId) => (
             <Tabs.Trigger key={tabId} value={tabId}>
               {tabLabel(tabId, t)}
             </Tabs.Trigger>
@@ -708,20 +733,58 @@ export function CallDetailPage({ callId, onBack }: CallDetailPageProps) {
             }}
           />
         </Tabs.Panel>
+        {call.status === 'ready' && (
+          <Tabs.Panel value="assistant">
+            {/* [B24.5] Тред звонка (SPEC §3): интро при пустом треде; подсказки
+                мока намеренно опущены (их банк был мок-специфичен). */}
+            <div style={{ marginTop: 18, paddingBottom: 80 }}>
+              {assistantThread.messages.length === 0 && !assistantThread.pending && (
+                <div style={{ color: 'var(--text-3)', fontSize: 13.5, marginBottom: 14 }}>
+                  {t('assistant.callEmptyDesc')}
+                </div>
+              )}
+              <AskThread
+                messages={assistantThread.messages}
+                pending={assistantThread.pending}
+                pendingText={t('assistant.pendingCall')}
+                callId={callId}
+                onOpenCall={onOpenCall}
+                onSeek={(ms) => {
+                  setTab('transcript');
+                  audio.seek(ms / 1000);
+                  if (!audio.playing && audio.ready) audio.togglePlay();
+                }}
+                onAskGlobal={onAskGlobal}
+              />
+            </div>
+          </Tabs.Panel>
+        )}
       </Tabs>
             </div>
           </div>
           {/* [V6.5] Плеер .player-dock пристыкован к низу .doc-wrap, поверх
               .doc-scroll. Включён и для failed: аудио сохранено локально, юзер
               должен иметь возможность послушать даже если транскрипт не получился.
-              enabled=false (null) только когда нет ни одной дорожки. */}
-          <AudioScrubber
-            audio={audio}
-            seed={hashCallId(callId)}
-            enabled
-            onJump={onJumpToCurrent}
-            followActive={follow}
-          />
+              enabled=false (null) только когда нет ни одной дорожки.
+              [B24.5] На вкладке «Ассистент» вместо плеера — композер вопроса. */}
+          {tab === 'assistant' && call.status === 'ready' ? (
+            <div className="composer-dock">
+              <AssistantComposer
+                placeholder={t('assistant.composerCall')}
+                icon="sparkle"
+                disabled={assistantThread.pending}
+                onAsk={(q) => void assistantThread.ask(q)}
+              />
+            </div>
+          ) : (
+            <AudioScrubber
+              audio={audio}
+              seed={hashCallId(callId)}
+              enabled
+              onJump={onJumpToCurrent}
+              followActive={follow}
+            />
+          )}
         </div>
 
         <CallRail
@@ -772,6 +835,8 @@ function tabLabel(tab: Tab, t: TFn): string {
       return t('callDetail.tabRecap');
     case 'transcript':
       return t('callDetail.tabTranscript');
+    case 'assistant':
+      return t('assistant.title');
   }
 }
 

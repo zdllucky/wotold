@@ -14,7 +14,7 @@ import type { Call } from '../api/recording';
 import type { QueueState } from '../api/queue';
 import { useI18n } from '../i18n';
 
-export type RailView = 'inbox' | 'call' | 'contacts' | 'settings' | 'ds';
+export type RailView = 'inbox' | 'call' | 'contacts' | 'assistant' | 'settings' | 'ds';
 export type RailRecKind = 'idle' | 'recording' | 'paused';
 
 interface RailHandlers {
@@ -187,19 +187,24 @@ export function Sidebar(props: RailProps) {
       </div>
 
       <div style={{ padding: '0 10px 8px' }}>
+        {/* [B24.6] «Найти или спросить» — одно из трёх ai-field-полей (SPEC §6). */}
         <button
-          className="input"
+          className="input ai-field ai-field--panel"
           onClick={onSearch}
-          style={{
-            cursor: 'pointer',
-            height: 30,
-            color: 'var(--text-faint)',
-            borderColor: 'var(--border-2)',
-          }}
+          style={{ cursor: 'pointer', height: 30, color: 'var(--text-3)' }}
         >
-          <Icon name="command" size={15} className="iico" />
-          <span style={{ flex: 1, textAlign: 'left', fontSize: 13 }}>
-            {t('palette.commands')}
+          <Icon name="sparkle" size={15} className="iico" />
+          <span
+            style={{
+              flex: 1,
+              textAlign: 'left',
+              fontSize: 13,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {t('assistant.findOrAsk')}
           </span>
           <Kbd>⌘K</Kbd>
         </button>
@@ -221,6 +226,13 @@ export function Sidebar(props: RailProps) {
           current={view === 'contacts'}
           meta={contactsCount > 0 ? contactsCount : undefined}
           onClick={() => onNav('contacts')}
+        />
+        <NavItem
+          icon="chat"
+          label={t('assistant.title')}
+          active={view === 'assistant'}
+          current={view === 'assistant'}
+          onClick={() => onNav('assistant')}
         />
 
         {recentTop.length > 0 && (
@@ -357,8 +369,8 @@ export function MiniRail(props: RailProps) {
       <IconBtn
         icon="command"
         iconSize={18}
-        label={t('palette.commands')}
-        title={`${t('palette.commands')} ⌘K`}
+        label={t('assistant.findOrAsk')}
+        title={`${t('assistant.findOrAsk')} ⌘K`}
         onClick={onSearch}
       />
       <div className="minirail-sep" />

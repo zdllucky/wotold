@@ -29,7 +29,7 @@ export const en: TranslationStrings = {
 
   // [B18.1c] ⌘K command palette.
   palette: {
-    placeholder: 'Jump to a call or run a command…',
+    placeholder: 'Find a call or ask the assistant…',
     commands: 'Commands',
     calls: 'Calls',
     empty: 'Nothing found',
@@ -949,6 +949,7 @@ export const en: TranslationStrings = {
     statsChip: 'searching {ready} of {total} {plural} · {dur}',
     statsTooltip: 'Recordings that are processing or failed are not searchable',
     callsPluralOne: 'call',
+    callsPluralFew: 'calls',
     callsPluralMany: 'calls',
     durHours: '{h} h {m} min',
     durMinutes: '{m} min',
@@ -979,6 +980,13 @@ export const en: TranslationStrings = {
     callEmptyDesc:
       'This call’s chat. Answers are built from its transcript; if a fact comes from another call, the source is cited.',
     sendLabel: 'Send',
+    dayToday: 'Today',
+    dayYesterday: 'Yesterday',
+    findOrAsk: 'Find or ask',
+    paletteCommand: 'Assistant — search across calls',
+    paletteNotFound: 'Nothing found · Assistant',
+    paletteFallbackLabel: 'Ask the assistant',
+    paletteFallbackHint: '“{q}” — search across {n} calls',
   },
 };
 
