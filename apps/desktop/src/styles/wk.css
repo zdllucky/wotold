@@ -44,11 +44,7 @@ a { color: inherit; text-decoration: none; }
 .minirail-sep { width: 26px; height: 1px; background: var(--border); margin: 4px 0; flex: 0 0 auto; }
 .minirail .mr-spacer { flex: 1 1 auto; }
 .minirail .iconbtn[data-active="true"] { background: var(--active); color: var(--accent-text); }
-/* tooltip on right side for the rail */
-.tip--right::after { bottom: auto; top: 50%; left: calc(100% + 8px); transform: translateY(-50%) translateX(-3px); }
-.tip--right:hover::after { transform: translateY(-50%) translateX(0); }
-.tip--bottom::after { bottom: auto; top: calc(100% + 7px); transform: translateX(-50%) translateY(-3px); }
-.tip--bottom:hover::after { transform: translateX(-50%) translateY(0); }
+/* [B27.5] tooltip перенесён в портальный ui/Tooltip (.tooltip в components.css) */
 /* inbox omni-bar + toolbar bits */
 .vh-sep { width: 1px; height: 20px; background: var(--border); flex: 0 0 auto; margin: 0 2px; }
 .omni { position: relative; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px;
@@ -276,16 +272,6 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; padding: 56px 20px; color: var(--text-3); }
 .empty .empty-ico { width: 44px; height: 44px; border-radius: var(--r-md); background: var(--sunken); display: flex; align-items: center; justify-content: center; color: var(--text-faint); }
 .empty .empty-title { font-size: var(--t-15); font-weight: 600; color: var(--text); }
-
-/* — Tooltip — */
-.tip { position: relative; }
-.tip::after {
-  content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%) translateY(2px);
-  background: var(--raised); color: var(--text-2); font-size: 11px; font-weight: 550; padding: 3px 7px; border-radius: var(--r-xs);
-  border: 1px solid var(--border-2); box-shadow: var(--shadow-sm);
-  white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity var(--fast), transform var(--fast); z-index: 80;
-}
-.tip:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* — divider — */
 .hr { height: 1px; background: var(--border); border: none; margin: var(--s5) 0; }

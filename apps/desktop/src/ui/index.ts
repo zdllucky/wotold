@@ -18,6 +18,7 @@ export { Markdown, type MarkdownProps } from './Markdown';
 export { Switch } from './Switch';
 export { Segmented, type SegOption } from './Segmented';
 export { IconBtn } from './IconBtn';
+export { Tooltip } from './Tooltip';
 export { Dot } from './Dot';
 export { Wave } from './Wave';
 export { Kbd } from './Kbd';
