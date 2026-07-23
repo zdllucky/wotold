@@ -5,7 +5,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Call } from '../api/recording';
-import { Sidebar, type RailView } from './AppSidebar';
+import { Sidebar, type RailView, mergeRecent } from './AppSidebar';
 
 afterEach(() => cleanup());
 
@@ -58,6 +58,8 @@ function props(view: RailView, extra: Partial<Parameters<typeof Sidebar>[0]> = {
     onPause: vi.fn(),
     onNav: vi.fn(),
     onOpenCall: vi.fn(),
+    recentChats: [],
+    onOpenAssistantChat: vi.fn(),
     onSearch: vi.fn(),
     onCollapse: vi.fn(),
     onExpand: vi.fn(),
@@ -114,5 +116,33 @@ describe('Sidebar navbar', () => {
     expect(
       buttons.some((b) => /Очереди|queues|кезек/i.test(b.getAttribute('aria-label') ?? '')),
     ).toBe(true);
+  });
+});
+
+
+// [B26.9] Микс «Недавних»: звонки + чаты по времени активности.
+describe('mergeRecent', () => {
+  const call = (id: string, at: string) =>
+    ({ id, title: `Звонок ${id}`, started_at: at, duration_sec: 60, status: 'ready' }) as never;
+  const chat = (id: string, at: string) => ({
+    id,
+    callId: null,
+    title: `Чат ${id}`,
+    createdAt: at,
+    updatedAt: at,
+  });
+
+  test('сортирует по времени и режет до лимита', () => {
+    const out = mergeRecent(
+      [call('c1', '2026-07-20T10:00:00Z'), call('c2', '2026-07-23T09:00:00Z')],
+      [chat('ch1', '2026-07-23T11:00:00Z'), chat('ch2', '2026-07-01T00:00:00Z')],
+      3,
+    );
+    expect(out.map((e) => `${e.kind}:${e.id}`)).toEqual(['chat:ch1', 'call:c2', 'call:c1']);
+  });
+
+  test('чат без updatedAt падает на createdAt', () => {
+    const out = mergeRecent([], [{ ...chat('ch1', '2026-07-23T11:00:00Z'), updatedAt: '' }], 5);
+    expect(out[0]?.at).toBe('2026-07-23T11:00:00Z');
   });
 });

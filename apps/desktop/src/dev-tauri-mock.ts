@@ -137,7 +137,7 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
   // ── [B24.2] Ассистент: in-memory store + движок-мок (банк из хендоффа).
   // Типы — из контракта (@wotold/contracts): дрейф формы ловит tsc (ревью M4).
   interface MockAssistantChat {
-    chat: { id: string; callId: string | null; title: string; createdAt: string };
+    chat: { id: string; callId: string | null; title: string; createdAt: string; updatedAt: string };
     messages: AssistantMessage[];
     /** Для сортировки списка как в проде: ORDER BY updated_at DESC (ревью M2). */
     updatedAt: number;
@@ -219,7 +219,7 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
     if (!entry) {
       const title = ask.question.length > 42 ? `${ask.question.slice(0, 41).trimEnd()}…` : ask.question;
       entry = {
-        chat: { id: `mock-chat-${++assistantSeq}`, callId: ask.callId, title, createdAt: now },
+        chat: { id: `mock-chat-${++assistantSeq}`, callId: ask.callId, title, createdAt: now, updatedAt: now },
         messages: [],
         updatedAt: Date.now(),
       };

@@ -15,6 +15,10 @@ import { ViewHead } from '../ui/ViewHead';
 
 export interface AssistantPageProps {
   onOpenCall: (callId: string) => void;
+  /** [B26.9] Запрос открыть чат (клик в «Недавних»); seq — повторные клики. */
+  openChatRequest?: { id: string; seq: number } | null;
+  /** [B26.5] Чип контакт-источника → раздел «Контакты». */
+  onOpenContacts?: () => void;
 }
 
 const SUGGEST_KEYS: TranslationKey[] = [
@@ -39,7 +43,7 @@ function ruPluralKey(n: number): TranslationKey {
   return 'assistant.callsPluralMany';
 }
 
-export function AssistantPage({ onOpenCall }: AssistantPageProps) {
+export function AssistantPage({ onOpenCall, openChatRequest, onOpenContacts }: AssistantPageProps) {
   const { t, locale } = useI18n();
   const toast = useToast();
   const {
@@ -61,6 +65,12 @@ export function AssistantPage({ onOpenCall }: AssistantPageProps) {
       .then(setStats)
       .catch((e) => console.warn('assistant stats:', e));
   }, []);
+
+  // [B26.9] Открытие чата по клику из «Недавних» (seq — повторные клики).
+  useEffect(() => {
+    if (openChatRequest) void openChat(openChatRequest.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openChatRequest?.seq]);
 
   // Ошибки ask/open/delete — тостом (SPEC: честные состояния, консоль чистая).
   useEffect(() => {
@@ -210,6 +220,7 @@ export function AssistantPage({ onOpenCall }: AssistantPageProps) {
                   pending={pending}
                   pendingText={pendingText}
                   onOpenCall={onOpenCall}
+                  onOpenContacts={onOpenContacts}
                 />
               </div>
             )}
