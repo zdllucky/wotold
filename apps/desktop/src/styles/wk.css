@@ -44,11 +44,7 @@ a { color: inherit; text-decoration: none; }
 .minirail-sep { width: 26px; height: 1px; background: var(--border); margin: 4px 0; flex: 0 0 auto; }
 .minirail .mr-spacer { flex: 1 1 auto; }
 .minirail .iconbtn[data-active="true"] { background: var(--active); color: var(--accent-text); }
-/* tooltip on right side for the rail */
-.tip--right::after { bottom: auto; top: 50%; left: calc(100% + 8px); transform: translateY(-50%) translateX(-3px); }
-.tip--right:hover::after { transform: translateY(-50%) translateX(0); }
-.tip--bottom::after { bottom: auto; top: calc(100% + 7px); transform: translateX(-50%) translateY(-3px); }
-.tip--bottom:hover::after { transform: translateX(-50%) translateY(0); }
+/* [B27.5] tooltip перенесён в портальный ui/Tooltip (.tooltip в components.css) */
 /* inbox omni-bar + toolbar bits */
 .vh-sep { width: 1px; height: 20px; background: var(--border); flex: 0 0 auto; margin: 0 2px; }
 .omni { position: relative; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px;
@@ -277,16 +273,6 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .empty .empty-ico { width: 44px; height: 44px; border-radius: var(--r-md); background: var(--sunken); display: flex; align-items: center; justify-content: center; color: var(--text-faint); }
 .empty .empty-title { font-size: var(--t-15); font-weight: 600; color: var(--text); }
 
-/* — Tooltip — */
-.tip { position: relative; }
-.tip::after {
-  content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%) translateY(2px);
-  background: var(--raised); color: var(--text-2); font-size: 11px; font-weight: 550; padding: 3px 7px; border-radius: var(--r-xs);
-  border: 1px solid var(--border-2); box-shadow: var(--shadow-sm);
-  white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity var(--fast), transform var(--fast); z-index: 80;
-}
-.tip:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
-
 /* — divider — */
 .hr { height: 1px; background: var(--border); border: none; margin: var(--s5) 0; }
 
@@ -307,8 +293,10 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 /* — Table (database list) — */
 .tbl { display: flex; flex-direction: column; }
 .tbl-head, .trow {
-  display: grid; grid-template-columns: 20px minmax(0,1fr) 96px 64px 84px 28px;
-  align-items: center; gap: var(--s3); padding: 0 var(--s4); height: 38px;
+  /* [B30.2] Первая колонка = ширина точки: зазор старт→точка (s3-паддинг)
+     равен зазору точка→название (grid gap s3) — симметрия. */
+  display: grid; grid-template-columns: 8px minmax(0,1fr) 96px 64px 84px 28px;
+  align-items: center; gap: var(--s3); padding: 0 var(--s4) 0 var(--s3); height: 38px;
 }
 .tbl-head { height: 32px; position: sticky; top: 0; z-index: 2; background: var(--bg);
   border-bottom: 1px solid var(--border); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-faint); }
@@ -320,7 +308,7 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .trow .t-cell { font-size: var(--t-12); color: var(--text-3); }
 .trow .t-more { opacity: 0; }
 .trow:hover .t-more { opacity: 1; }
-.tbl-group { padding: var(--s5) var(--s4) 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
+.tbl-group { padding: var(--s5) var(--s4) 4px var(--s3); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
 
 /* — generic list row (recents, contacts) — */
 .lrow { display: flex; align-items: center; gap: var(--s3); width: 100%; padding: 9px 10px; border-radius: var(--r); text-align: left; transition: background var(--fast); }
@@ -423,9 +411,16 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .composer { max-width: 720px; margin: 0 auto; background: var(--raised); border: 1px solid var(--border-strong);
   border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 8px 8px 8px 10px; display: flex; align-items: center; gap: var(--s3); }
 .composer--rec { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft), var(--shadow); }
-.composer-ask { padding: 6px 6px 6px 14px; }
-.composer-ask input { flex: 1; border: none; outline: none; background: none; font-size: var(--t-14); color: var(--text); min-width: 0; }
-.composer-ask input::placeholder { color: var(--text-faint); }
+.composer-ask { padding: 6px 6px 6px 14px; align-items: flex-end; }
+/* [B27.7] Многострочный композер: auto-grow textarea 1→6 строк, дальше scroll. */
+.composer-ask textarea {
+  flex: 1; border: none; outline: none; background: none; font: inherit;
+  font-size: var(--t-14); line-height: 1.5; color: var(--text); min-width: 0;
+  resize: none; max-height: 132px; overflow-y: auto; padding: 4px 0;
+}
+.composer-ask textarea::placeholder { color: var(--text-faint); }
+.composer-ask > svg { margin-bottom: 8px; }
+.composer-ask .iconbtn { margin-bottom: 1px; }
 
 .eng-trigger { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px; border-radius: var(--r); border: 1px solid var(--border-2); background: var(--panel); color: var(--text-2); font-size: var(--t-12); font-weight: 550; white-space: nowrap; }
 .eng-trigger:hover { background: var(--hover); }

@@ -1,0 +1,45 @@
+{
+  "calls": [
+    {
+      "id": "fx-acme",
+      "passages": [
+        { "key": "acme-t1", "kind": "transcript", "speaker": "owner", "start_ms": 0,
+          "text": "Добрый день! Предлагаю стартовать пилот с двух недель теста, потом решим." },
+        { "key": "acme-t2", "kind": "transcript", "speaker": "Speaker 1", "start_ms": 60000,
+          "text": "Дедлайн подписания договора — тридцатое мая, SOW пришлёт Иван в пятницу." },
+        { "key": "acme-t3", "kind": "transcript", "speaker": "Speaker 1", "start_ms": 120000,
+          "text": "We agreed to keep all call recordings stored locally, no cloud uploads." },
+        { "key": "acme-r1", "kind": "recap",
+          "text": "Договорились о пилоте на две недели, затем полный контракт." },
+        { "key": "acme-d1", "kind": "decision", "speaker": "owner", "start_ms": 62000,
+          "text": "Стартуем пилот с пятнадцатого июня — цитата: давайте зафиксируем старт" }
+      ]
+    },
+    {
+      "id": "fx-design",
+      "passages": [
+        { "key": "design-t1", "kind": "transcript", "speaker": "owner", "start_ms": 0,
+          "text": "Обсудим макет лендинга: палитра бренда слишком тёмная, сделаем светлее." },
+        { "key": "design-t2", "kind": "transcript", "speaker": "Speaker 1", "start_ms": 45000,
+          "text": "Логотип оставляем, а шрифт меняем на гротеск." },
+        { "key": "design-r1", "kind": "recap",
+          "text": "Ревью макета: палитру осветлить, шрифт заменить." },
+        { "key": "design-a1", "kind": "action_item",
+          "text": "Прислать обновлённые макеты до четверга" }
+      ]
+    },
+    {
+      "id": "fx-budget",
+      "passages": [
+        { "key": "budget-t1", "kind": "transcript", "speaker": "owner", "start_ms": 0,
+          "text": "По деньгам на третий квартал: маркетинг просит триста тысяч." },
+        { "key": "budget-t2", "kind": "transcript", "speaker": "Speaker 1", "start_ms": 30000,
+          "text": "Урежем до двухсот пятидесяти, остальное отдадим в разработку." },
+        { "key": "budget-q1", "kind": "open_question",
+          "text": "Кто утверждает финальную смету?" },
+        { "key": "budget-r1", "kind": "recap",
+          "text": "Бюджет третьего квартала: маркетингу двести пятьдесят тысяч, приоритет разработке." }
+      ]
+    }
+  ]
+}

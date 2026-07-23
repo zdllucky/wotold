@@ -13,6 +13,7 @@
 //     `.unwrap()` идиоматичен и читабелен; разрешаем явно.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod assistant;
 mod audio;
 mod audio_io;
 mod call_store;
@@ -154,6 +155,13 @@ pub fn run() {
             // ⌘Q / app menu". Без этого CloseRequested от красного крестика
             // сворачивает окно в трей; с флагом — даёт нашему graceful-stop
             // pipeline пути отработать и завершить процесс.
+            // [B30.1] Dock-иконка runtime'ом: в dev голый бинарь без .app-бандла —
+            // система берёт вшитую в бинарь иконку, а cargo не пересобирает при
+            // смене icons/* (иконка «застревала» старой). Явный setApplicationIconImage
+            // из padded-1024 PNG даёт корректный Dock и app-switcher в dev и проде.
+            #[cfg(target_os = "macos")]
+            set_dock_icon();
+
             let quitting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             tauri::Manager::manage(app, quitting.clone());
 
@@ -163,6 +171,16 @@ pub fn run() {
                 let app_for_recover = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     commands::maybe_headless_recover(app_for_recover).await;
+                });
+            }
+
+            // [B28.2] Авто-восстановление прерванных звонков (краш/quit посреди
+            // пайплайна → sweep пометил failed при целом аудио). Гейты и лимит
+            // попыток внутри; ручной WOTOLD_RECOVER_CALL_ID главнее.
+            {
+                let app_for_auto = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    commands::auto_recover_interrupted_calls(app_for_auto).await;
                 });
             }
 
@@ -192,6 +210,35 @@ pub fn run() {
                     {
                         log::warn!("call-detect bootstrap failed: {e}");
                     }
+                });
+            }
+
+            // [M15.3] Backfill индекса ассистента: ready-звонки без записи в
+            // assistant_index_state (миграция с до-M15 версий, headless-pipeline
+            // без AppHandle). Фоном, последовательно, не блокирует окно.
+            {
+                let app_for_backfill = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let (pool, store) = {
+                        let state = tauri::Manager::state::<state::AppState>(&app_for_backfill);
+                        (state.db.clone(), state.store.clone())
+                    };
+                    crate::assistant::indexer::backfill(&pool, &store).await;
+                    // [B25] Авто-скачивание эмбеддера (тумблер default on +
+                    // выбран локальный пресет) — прогресс в UI через
+                    // model:progress. Ошибка сети — warn, не фатал.
+                    if let Err(e) = crate::assistant::embedder::ensure_model_downloaded(
+                        &pool,
+                        store.app_data_dir(),
+                        Some(&app_for_backfill),
+                    )
+                    .await
+                    {
+                        log::warn!("assistant semantic auto-download: {e}");
+                    }
+                    // [M15.10] Следом — вектора: инвалидация по id модели +
+                    // добор пассажей без эмбеддинга. No-op без модели/feature.
+                    crate::assistant::indexer::embed_backfill(&pool, store.app_data_dir()).await;
                 });
             }
 
@@ -681,6 +728,17 @@ pub fn run() {
             commands::recover_chunked_call,
             commands::list_call_decisions,
             commands::list_call_open_questions,
+            commands::assistant_index_stats,
+            commands::assistant_list_chats,
+            commands::assistant_get_chat,
+            commands::assistant_get_call_thread,
+            commands::assistant_delete_chat,
+            #[cfg(target_os = "macos")]
+            commands::assistant_ask,
+            commands::assistant_get_semantic_search,
+            commands::assistant_set_semantic_search,
+            commands::assistant_get_fragment_text,
+            commands::share_text,
             commands::get_call_audio_path,
             commands::export_call_markdown,
             commands::voice_model_status,
@@ -742,6 +800,33 @@ pub fn run() {
 /// Кнопки в widget'е переопределяют CSS `-webkit-app-region: no-drag`, что
 /// блокирует window drag на этих субвью — клики работают.
 ///
+/// [B30.1] Установить Dock-иконку приложения из padded-1024 PNG (канонный
+/// macOS-паддинг ~10%). setup() бежит на main thread — AppKit-инвариант
+/// соблюдён; NSImage decode PNG сам. Ошибки — warn, не фатальны.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn set_dock_icon() {
+    use objc2::AnyThread;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::{MainThreadMarker, NSData};
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        log::warn!("set_dock_icon: not on main thread");
+        return;
+    };
+    let bytes: &[u8] = include_bytes!("../icons/source/app-icon-1024.png");
+    let data = NSData::with_bytes(bytes);
+    let Some(img) = NSImage::initWithData(NSImage::alloc(), &data) else {
+        log::warn!("set_dock_icon: NSImage decode failed");
+        return;
+    };
+    // SAFETY: main thread гарантирован mtm; img — валидный NSImage (decode
+    // проверен выше); setApplicationIconImage — no-throw AppKit-setter.
+    unsafe {
+        NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&img));
+    }
+}
+
 /// # Safety
 ///
 /// `ns_window` pointer гарантированно валиден от Tauri пока окно

@@ -108,4 +108,39 @@ describe('CallDetailPage — smoke', () => {
     expect(muted).not.toBeNull();
     expect(muted?.textContent?.length ?? 0).toBeGreaterThan(0);
   });
+
+  // [B24.5] Вкладка «Ассистент» — только у ready-звонка (SPEC §3).
+  function mockCall(status: string) {
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_call')
+        return {
+          id: 'c1',
+          title: 'Тестовый звонок',
+          status,
+          started_at: '2026-07-22T10:00:00Z',
+          duration_sec: 60,
+          path_label: 'managed',
+          created_at: '2026-07-22T10:00:00Z',
+          updated_at: '2026-07-22T10:00:00Z',
+        };
+      if (cmd === 'list_call_speakers' || cmd === 'list_call_action_items') return [];
+      if (cmd === 'list_call_decisions' || cmd === 'list_call_open_questions') return [];
+      if (cmd === 'list_call_chunks' || cmd === 'list_contacts') return [];
+      return null;
+    });
+  }
+
+  test('assistant tab present for ready call, absent for processing', async () => {
+    mockCall('ready');
+    render(<CallDetailPage callId="c1" onBack={() => {}} />);
+    await flush();
+    expect(screen.getByRole('tab', { name: 'Ассистент' })).toBeInTheDocument();
+
+    cleanup();
+    vi.clearAllMocks();
+    mockCall('processing');
+    render(<CallDetailPage callId="c1" onBack={() => {}} />);
+    await flush();
+    expect(screen.queryByRole('tab', { name: 'Ассистент' })).not.toBeInTheDocument();
+  });
 });

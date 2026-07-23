@@ -1,6 +1,8 @@
 // Dev-only mock for Tauri invoke API when running plain Vite in browser (no webview).
 // Lets us preview pages visually without spinning up `tauri dev`. Inert in production.
 
+import type { AssistantAnswer, AssistantMessage } from '@wotold/contracts';
+
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: {
@@ -131,6 +133,117 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
       embedding_bytes: 1024,
     },
   ];
+
+  // ── [B24.2] Ассистент: in-memory store + движок-мок (банк из хендоффа).
+  // Типы — из контракта (@wotold/contracts): дрейф формы ловит tsc (ревью M4).
+  interface MockAssistantChat {
+    chat: { id: string; callId: string | null; title: string; createdAt: string; updatedAt: string };
+    messages: AssistantMessage[];
+    /** Для сортировки списка как в проде: ORDER BY updated_at DESC (ревью M2). */
+    updatedAt: number;
+  }
+  const assistantChats: MockAssistantChat[] = [];
+  // [B25] In-memory состояние тумблера семантического поиска (default on).
+  let mockSemanticSearch = true;
+  let assistantSeq = 0;
+  const AS_GEN_RE = /напиш|состав|сгенерир|придума|перевед|отправ|создай|запланируй|оформи|нарисуй/i;
+
+  function assistantAnswerFor(question: string, callId: string | null): AssistantAnswer {
+    const base = {
+      sources: [],
+      fragments: [],
+      fragmentTokens: 0,
+      windowTokens: 8192 as const,
+    };
+    if (AS_GEN_RE.test(question)) {
+      return {
+        ...base,
+        kind: 'refusal',
+        text: 'Составление текстов — вне области ассистента. Область: поиск и разбор информации в записанных звонках. Могу собрать факты — решения, задачи, сроки.',
+      };
+    }
+    if (/пилот|контракт|план|sow|дедлайн/i.test(question)) {
+      const call = sampleCalls[0];
+      const title = call?.title ?? 'Звонок';
+      return {
+        ...base,
+        kind: 'answer',
+        text: 'Договорились о пилоте на 2 недели, затем полный контракт. Дедлайн контракта — 30 мая; Иван присылает SOW в пятницу.',
+        sources: [
+          { callId: call?.id ?? 'c1', callTitle: title, startMs: 6000 },
+          { callId: call?.id ?? 'c1', callTitle: title, startMs: 12000 },
+        ],
+        fragments: [
+          {
+            callId: call?.id ?? 'c1',
+            callTitle: title,
+            kind: 'transcript',
+            speaker: 'Speaker 0',
+            startMs: 6000,
+            text: 'Сначала пилот на 2 недели, потом полный контракт.',
+          },
+          {
+            callId: call?.id ?? 'c1',
+            callTitle: title,
+            kind: 'transcript',
+            speaker: 'owner',
+            startMs: 12000,
+            text: 'Согласен. Дедлайн контракта — 30 мая.',
+          },
+        ],
+        fragmentTokens: 1400,
+      };
+    }
+    if (callId) {
+      return {
+        ...base,
+        kind: 'empty',
+        text: 'В этом звонке этого не нашлось.',
+        escalate: true,
+      };
+    }
+    return {
+      ...base,
+      kind: 'empty',
+      text: 'По звонкам ничего не найдено. Уточните имя участника, тему или период.',
+    };
+  }
+
+  function assistantMockAsk(ask: { chatId: string | null; callId: string | null; question: string }) {
+    const now = new Date().toISOString();
+    let entry = ask.chatId
+      ? assistantChats.find((c) => c.chat.id === ask.chatId)
+      : ask.callId
+        ? assistantChats.find((c) => c.chat.callId === ask.callId)
+        : undefined;
+    if (!entry) {
+      const title = ask.question.length > 42 ? `${ask.question.slice(0, 41).trimEnd()}…` : ask.question;
+      entry = {
+        chat: { id: `mock-chat-${++assistantSeq}`, callId: ask.callId, title, createdAt: now, updatedAt: now },
+        messages: [],
+        updatedAt: Date.now(),
+      };
+      assistantChats.push(entry);
+    }
+    entry.updatedAt = Date.now();
+    entry.messages.push({
+      id: `mock-msg-${++assistantSeq}`,
+      role: 'user',
+      text: ask.question,
+      answer: null,
+      createdAt: now,
+    });
+    const answer = assistantAnswerFor(ask.question, entry.chat.callId);
+    const message: AssistantMessage = {
+      id: `mock-msg-${++assistantSeq}`,
+      role: 'assistant',
+      text: answer.text,
+      answer,
+      createdAt: now,
+    };
+    entry.messages.push(message);
+    return { chatId: entry.chat.id, message };
+  }
 
   window.__TAURI_INTERNALS__ = {
     invoke: async (cmd: string, args?: unknown) => {
@@ -315,6 +428,65 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         cmd === 'restore_main_window'
       ) {
         return null;
+      }
+      // ── [B24.2] Ассистент: in-memory чаты + банк ответов (адаптация
+      // wk2-assistant.jsx хендоффа). Задержка ответа 800мс по SPEC §4.
+      if (cmd === 'assistant_index_stats') {
+        const ready = sampleCalls.filter((c) => c.status === 'ready').length;
+        return {
+          indexedCalls: ready,
+          totalCalls: sampleCalls.length,
+          totalDurationSec: sampleCalls
+            .filter((c) => c.status === 'ready')
+            .reduce((s, c) => s + (c.duration_sec ?? 0), 0),
+        };
+      }
+      if (cmd === 'assistant_list_chats') {
+        // Как в проде: свежая активность сверху (ORDER BY updated_at DESC).
+        return assistantChats
+          .filter((c) => c.chat.callId === null)
+          .sort((x, y) => y.updatedAt - x.updatedAt)
+          .map((c) => c.chat);
+      }
+      if (cmd === 'assistant_get_chat') {
+        const id = a.chatId as string;
+        return assistantChats.find((c) => c.chat.id === id)?.messages ?? [];
+      }
+      if (cmd === 'assistant_get_call_thread') {
+        const cid = a.callId as string;
+        return assistantChats.find((c) => c.chat.callId === cid) ?? null;
+      }
+      if (cmd === 'assistant_delete_chat') {
+        const id = a.chatId as string;
+        const i = assistantChats.findIndex((c) => c.chat.id === id);
+        if (i !== -1) assistantChats.splice(i, 1);
+        return null;
+      }
+      // [B26.4] Полный текст фрагмента: мок хранит полные тексты в answer —
+      // отдаём как есть (мок не усекает).
+      if (cmd === 'share_text') return null; // [B27.6] нативный пикер в браузере недоступен
+      if (cmd === 'assistant_get_fragment_text') {
+        const mid = a.messageId as string;
+        const idx = a.fragmentIndex as number;
+        for (const c of assistantChats) {
+          const m = c.messages.find((m) => m.id === mid);
+          const t = m?.answer?.fragments[idx]?.text;
+          if (t != null) return t;
+        }
+        throw new Error('fragment not found');
+      }
+      // [B25] Тумблер семантического поиска: в моке просто in-memory флаг.
+      if (cmd === 'assistant_get_semantic_search') {
+        return mockSemanticSearch;
+      }
+      if (cmd === 'assistant_set_semantic_search') {
+        mockSemanticSearch = a.enabled as boolean;
+        return null;
+      }
+      if (cmd === 'assistant_ask') {
+        const ask = a.args as { chatId: string | null; callId: string | null; question: string };
+        await new Promise((r) => setTimeout(r, 800));
+        return assistantMockAsk(ask);
       }
       return responses[cmd] ?? null;
     },

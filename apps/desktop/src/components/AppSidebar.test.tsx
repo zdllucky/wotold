@@ -5,7 +5,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Call } from '../api/recording';
-import { Sidebar, type RailView } from './AppSidebar';
+import { Sidebar, type RailView, mergeRecent } from './AppSidebar';
 
 afterEach(() => cleanup());
 
@@ -58,6 +58,8 @@ function props(view: RailView, extra: Partial<Parameters<typeof Sidebar>[0]> = {
     onPause: vi.fn(),
     onNav: vi.fn(),
     onOpenCall: vi.fn(),
+    recentChats: [],
+    onOpenAssistantChat: vi.fn(),
     onSearch: vi.fn(),
     onCollapse: vi.fn(),
     onExpand: vi.fn(),
@@ -70,8 +72,8 @@ describe('Sidebar navbar', () => {
   test('every nav row is a uniform button.navitem with icon + label', () => {
     const { container } = render(<Sidebar {...props('inbox')} />);
     const items = container.querySelectorAll('.navitem');
-    // inbox + contacts + settings (no recents in this fixture)
-    expect(items.length).toBe(3);
+    // [B24.6] inbox + contacts + assistant + settings (no recents in this fixture)
+    expect(items.length).toBe(4);
     items.forEach((el) => {
       expect(el.tagName).toBe('BUTTON');
       expect(el.querySelector('.nav-label')).toBeInTheDocument();
@@ -100,8 +102,8 @@ describe('Sidebar navbar', () => {
   test('recent rows render a StatusCell dot as the leading element', () => {
     const recent = [mkCall('a'), mkCall('b')];
     const { container } = render(<Sidebar {...props('inbox', { recent })} />);
-    // 3 primary + 2 recents = 5 navitems
-    expect(container.querySelectorAll('.navitem').length).toBe(5);
+    // [B24.6] 4 primary (звонки/контакты/ассистент + настройки) + 2 recents.
+    expect(container.querySelectorAll('.navitem').length).toBe(6);
     // recents carry a leading .dot (StatusCell) inside a .nav-ico
     expect(container.querySelectorAll('.navitem .nav-ico .dot').length).toBeGreaterThanOrEqual(2);
   });
@@ -114,5 +116,33 @@ describe('Sidebar navbar', () => {
     expect(
       buttons.some((b) => /Очереди|queues|кезек/i.test(b.getAttribute('aria-label') ?? '')),
     ).toBe(true);
+  });
+});
+
+
+// [B26.9] Микс «Недавних»: звонки + чаты по времени активности.
+describe('mergeRecent', () => {
+  const call = (id: string, at: string) =>
+    ({ id, title: `Звонок ${id}`, started_at: at, duration_sec: 60, status: 'ready' }) as never;
+  const chat = (id: string, at: string) => ({
+    id,
+    callId: null,
+    title: `Чат ${id}`,
+    createdAt: at,
+    updatedAt: at,
+  });
+
+  test('сортирует по времени и режет до лимита', () => {
+    const out = mergeRecent(
+      [call('c1', '2026-07-20T10:00:00Z'), call('c2', '2026-07-23T09:00:00Z')],
+      [chat('ch1', '2026-07-23T11:00:00Z'), chat('ch2', '2026-07-01T00:00:00Z')],
+      3,
+    );
+    expect(out.map((e) => `${e.kind}:${e.id}`)).toEqual(['chat:ch1', 'call:c2', 'call:c1']);
+  });
+
+  test('чат без updatedAt падает на createdAt', () => {
+    const out = mergeRecent([], [{ ...chat('ch1', '2026-07-23T11:00:00Z'), updatedAt: '' }], 5);
+    expect(out[0]?.at).toBe('2026-07-23T11:00:00Z');
   });
 });

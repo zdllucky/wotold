@@ -29,7 +29,7 @@ export const kk: TranslationStrings = {
 
   // [B18.1c] ⌘K command palette.
   palette: {
-    placeholder: 'Қоңырауға өту немесе команда…',
+    placeholder: 'Қоңырауды табу немесе ассистенттен сұрау…',
     commands: 'Командалар',
     calls: 'Қоңыраулар',
     empty: 'Ештеңе табылмады',
@@ -374,6 +374,8 @@ export const kk: TranslationStrings = {
   },
 
   contacts: {
+    collapsePanel: 'Контактілер тізімін жию',
+    expandPanel: 'Контактілер тізімін жаю',
     title: 'Контактілер',
     addAria: 'Контакт қосу',
     searchPlaceholder: 'Іздеу…',
@@ -439,6 +441,8 @@ export const kk: TranslationStrings = {
   },
 
   settings: {
+    collapsePanel: 'Бөлімдерді жию',
+    expandPanel: 'Бөлімдерді жаю',
     title: 'Баптаулар',
     saved: '✓ Сақталды',
     sectionAppearance: 'Сыртқы түрі',
@@ -696,6 +700,12 @@ export const kk: TranslationStrings = {
     keepResidentLabel: 'Модельді белсенді ұстау',
     keepResidentHint:
       'Жергілікті модель бүкіл сессия бойы жедел жадыда қалады — генерация жылдамырақ (әр шақыруда қайта жүктелмейді), бірақ ~2–5 ГБ RAM алады. Әдепкіде өшірулі.',
+    semanticLabel: 'Ассистенттің семантикалық іздеуі',
+    semanticHint:
+      'Ассистент фрагменттерді сөз сәйкестігі бойынша ғана емес, мағынасы бойынша табады (синонимдер, парафразалар, басқа тіл). ~130 МБ іздеу модулі автоматты жүктеледі.',
+    semanticActive: 'белсенді',
+    semanticDownloading: 'жүктелуде · {pct}%',
+    semanticWaiting: 'модельді күтуде',
     preset: {
       light: 'Жеңіл',
       balanced: 'Теңгерімді',
@@ -717,6 +727,8 @@ export const kk: TranslationStrings = {
       diarization: 'Бөлу модулі · базалық',
       qwenDraft: 'Қорытынды үдеткіші · 0.5B',
       vad: 'Сөйлеу детекторы',
+      embedder: 'Ассистенттің іздеу модулі',
+      embedderTokenizer: 'Іздеу модулінің сөздігі',
     },
     statusInstalled: 'орнатылған',
     statusDownloading: 'жүктелуде…',
@@ -939,6 +951,51 @@ export const kk: TranslationStrings = {
     retrying: 'Қайталаймыз…',
     failedSummary: '{total} ішінен {n} сегмент сәтсіз — қайталау үшін ↻ басыңыз.',
     resumeBlockedHint: 'Алдымен сәтсіз сегменттерді қайталаңыз',
+  },
+  assistant: {
+    title: 'Ассистент',
+    msgYesterday: 'кеше',
+    searchChats: 'Чаттардан іздеу…',
+    chatsPanel: 'Чаттар',
+    searchEmpty: 'Сұранысқа чат табылмады',
+    searchResults: 'Табылды',
+    collapsePanel: 'Чат тізімін жию',
+    expandPanel: 'Чат тізімін ашу',
+    fragExpand: 'толық көрсету',
+    fragCollapse: 'жию',
+    fragLoading: 'жүктелуде…',
+    fragLoadError: 'Фрагмент жүктелмеді',
+    fragRefLabel: '{n}-фрагмент',
+    durHours: '{h} сағ {m} мин',
+    durMinutes: '{m} мин',
+    emptyTitle: 'Барлық қоңыраулар бойынша іздеу',
+    emptyDesc:
+      'Сұрақ — транскрипттер мен рекаптар бойынша іздеу; жауап дереккөздерімен беріледі. Әр диалог — жаңа чат.',
+    pendingGlobal: '{n} қоңырау бойынша іздеу…',
+    pendingCall: 'Іздеу…',
+    refusalNote: 'Ассистент аясынан тыс',
+    ctxSummary: 'Іздеу контексті',
+    ctxMeta: 'фрагменттер: {n} · ≈{tokens}K токен · 8K терезе',
+    copy: 'Көшіру',
+    copied: 'Көшірілді',
+    share: 'Бөлісу',
+    sourcesLabel: 'Дереккөздер',
+    escalate: 'Барлық қоңыраулардан іздеу',
+    newChat: 'Жаңа чат',
+    noChats: 'Чаттар әзірге жоқ',
+    deleteChat: 'Чатты жою',
+    composerGlobal: 'Барлық қоңыраулар бойынша сұрау…',
+    composerCall: 'Осы қоңырау туралы сұрау…',
+    callEmptyDesc:
+      'Осы қоңыраудың чаты. Жауаптар оның транскрипті бойынша құрылады; факт басқа қоңыраудан табылса — дереккөз көрсетіледі.',
+    sendLabel: 'Жіберу',
+    dayToday: 'Бүгін',
+    dayYesterday: 'Кеше',
+    findOrAsk: 'Табу немесе сұрау',
+    paletteCommand: 'Ассистент — қоңыраулар бойынша іздеу',
+    paletteNotFound: 'Ештеңе табылмады · Ассистент',
+    paletteFallbackLabel: 'Ассистенттен сұрау',
+    paletteFallbackHint: '«{q}» — {n} қоңырау бойынша іздеу',
   },
 };
 

@@ -63,6 +63,10 @@ pub const RECAP_STEP: &str = "recap:step";
 pub const RECAP_BULK_PROGRESS: &str = "recap:bulk_progress";
 /// [Bulk recap] Финал массового регена. Payload — `{ regenerated, failed, cancelled }`.
 pub const RECAP_BULK_DONE: &str = "recap:bulk_done";
+/// [M15.7] Фазы ответа ассистента. Payload — `AssistantStatusEvent`.
+/// Фазы: `retrieving` → `generating`. Очередь LLM (queued) отдельно
+/// не эмитится — фронт выводит её из существующего `queue:state`.
+pub const ASSISTANT_STATUS: &str = "assistant:status";
 
 // ──────────────────────────────────────────────────────────────
 // Payload types. Re-exported из event-bus, чтобы у frontend
@@ -163,6 +167,15 @@ pub struct RecapStepEvent {
     pub preview: Option<RecapStepPreview>,
 }
 
+/// [M15.7] Фаза ответа ассистента. UI показывает pending-пузырь
+/// («Поиск по N звонкам…» / «Поиск…») по chat_id.
+#[derive(Debug, Clone, Serialize)]
+pub struct AssistantStatusEvent {
+    pub chat_id: String,
+    /// `retrieving` | `generating`
+    pub phase: &'static str,
+}
+
 // `audio:level` payload живёт в audio::macos (типобезопасность копий нет).
 // EventBus принимает его generic'ом для совместимости.
 
@@ -231,6 +244,11 @@ impl<'a> EventBus<'a> {
     /// [F3] Пошаговый прогресс генерации рекапа (thinking-блок).
     pub fn recap_step(&self, e: &RecapStepEvent) {
         self.emit(RECAP_STEP, e);
+    }
+
+    /// [M15.7] Фаза ответа ассистента (retrieving/generating).
+    pub fn assistant_status(&self, e: &AssistantStatusEvent) {
+        self.emit(ASSISTANT_STATUS, e);
     }
 
     /// [Q] Снапшот очередей ресурсов. Generic (payload живёт в
@@ -348,5 +366,6 @@ mod tests {
         assert_eq!(RECORDING_DURATION, "recording:duration");
         assert_eq!(VOICE_MODEL_PROGRESS, "voice-model:progress");
         assert_eq!(VOICE_MODEL_DONE, "voice-model:done");
+        assert_eq!(ASSISTANT_STATUS, "assistant:status");
     }
 }

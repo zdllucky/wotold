@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from 'vitest';
 import type { Call } from '../api/recording';
-import { FACETS_EMPTY, matchesFacets } from './inboxData';
+import { FACETS_EMPTY, confirmedParticipants, matchesFacets } from './inboxData';
 
 function mkCall(id: string, overrides: Partial<Call> = {}): Call {
   return {
@@ -98,5 +98,39 @@ describe('matchesFacets — custom date range (B19.3)', () => {
 
   test('an unparseable bound fails closed (excludes, not widens)', () => {
     expect(matchesFacets(onJun15, range('not-a-date', null), '')).toBe(false);
+  });
+});
+
+// [B29.1] Дедуп аватаров участников по контакту.
+describe('confirmedParticipants', () => {
+  const row = (
+    contact_id: string | null,
+    name: string | null,
+    confirmed = true,
+  ) => ({ confirmed, contact_id, contact_display_name: name });
+
+  test('несколько тегов одного контакта схлопываются в один аватар', () => {
+    const r = confirmedParticipants([
+      row('c1', 'Дамир Нуртазин'),
+      row('c1', 'Дамир Нуртазин'),
+      row('c2', 'Ренат Буланов'),
+    ]);
+    expect(r.initials).toEqual(['ДН', 'РБ']);
+    expect(r.names).toEqual(['Дамир Нуртазин', 'Ренат Буланов']);
+  });
+
+  test('contact_id null — дедуп по имени', () => {
+    const r = confirmedParticipants([row(null, 'Гость Гость'), row(null, 'Гость Гость')]);
+    expect(r.initials).toEqual(['ГГ']);
+  });
+
+  test('разные контакты с одинаковыми инициалами остаются двумя', () => {
+    const r = confirmedParticipants([row('a', 'Дана Дулатова'), row('b', 'Диас Досжан')]);
+    expect(r.initials).toEqual(['ДД', 'ДД']);
+  });
+
+  test('неподтверждённые и безымянные пропускаются', () => {
+    const r = confirmedParticipants([row('a', 'Имя Фамилия', false), row('b', null)]);
+    expect(r.initials).toEqual([]);
   });
 });

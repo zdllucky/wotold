@@ -194,11 +194,18 @@ impl PipelineRunner {
             };
 
             let event = match &result {
-                Ok(()) => PipelineFinishedEvent {
-                    call_id: call_id_for_task.clone(),
-                    status: "ready",
-                    failed_reason: None,
-                },
+                Ok(()) => {
+                    // [M15.3] Recap-regen обновил recap.md + structured rows —
+                    // переиндексировать для ассистента (title regen не влияет).
+                    if matches!(kind, RegenKind::Recap) {
+                        crate::assistant::indexer::spawn_index(&app_handle, &call_id_for_task);
+                    }
+                    PipelineFinishedEvent {
+                        call_id: call_id_for_task.clone(),
+                        status: "ready",
+                        failed_reason: None,
+                    }
+                }
                 Err(e) => {
                     log::warn!("regen ({kind:?}) {call_id_for_task} error: {e}");
                     PipelineFinishedEvent {
@@ -260,6 +267,11 @@ impl PipelineRunner {
             .bind(call_id)
             .execute(pool)
             .await?;
+            // [M15.3] Артефакты целы, звонок снова ready — вернуть в индекс
+            // ассистента (reprocess его деиндексировал на старте).
+            if let Err(e) = crate::assistant::indexer::index_call(pool, store, call_id).await {
+                log::warn!("assistant index[{call_id}] after cancel-restore failed: {e}");
+            }
         } else {
             crate::db::fail_recording_with_reason(pool, call_id, Some("Отменено пользователем"))
                 .await?;

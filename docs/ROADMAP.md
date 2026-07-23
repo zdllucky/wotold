@@ -20,11 +20,138 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 - [ ] **Views (saved smart-collections) + Explore** — персистентность `SavedView` (S2 контракт `{label, filter_state, view_mode, sort}`) + экраны по прототипу `wk-explore.jsx`.
 - [ ] **Inbox stats** (4 hero + sparkline) — как в прототипе (`wk-screens`/`wk-inbox`).
-- [ ] **Assistant-таб** ⏸ отложен отдельной доработкой (LLM Q&A над транскриптом + endpoint).
+- [x] **Assistant-таб** → поглощён милстоуном **M15** и реализован в батче **B24** (вкладка звонка B24.5 + раздел B24.4) — полноценный RAG-ассистент вместо точечного Q&A-таба.
 - [x] **Contacts B18.4 доводка** — identifiers chips + derivations были реализованы ранее; форма приведена к канону в B23.
 - [ ] **Manual visual QA** (light/dark, все экраны) — human follow-up, агент не скриншотит native app.
+- [ ] **Manual QA: живой seek из источника-чипа** (B24.7 п.5) — клик clock-чипа во вкладке ассистента реального звонка мотает плеер и запускает воспроизведение. Логика покрыта RTL; аудио в браузер-моке нет — проверяется руками в native.
 - [ ] **B18 a11y follow-up** — recording-state live-region (SC 4.1.3); отдельный aria-label тема-toggle; toast dismiss контекст (SC 4.1.2); capabilities least-privilege split для recording-widget; токен `--on-danger`; контраст `--wc-*` в dark; зачистка dead i18n `home.*`/`calls.*`.
 - [ ] **Сверка контрактов (S2)** — `ActionItemV2`/`Decisions`/`OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать.
+
+---
+
+## M15 · Ассистент (RAG-чат по звонкам)
+
+> PRD: [`M15_ASSISTANT_PRD.md`](M15_ASSISTANT_PRD.md) · дизайн-канон: [`design/wotold-v2/assistant.md`](design/wotold-v2/assistant.md) · хендофф: `~/Downloads/design_handoff_wotold_assistant/`.
+> Решения: v1 local-only (cloud → беклог G); retrieval гибрид поэтапно (Ph1 FTS5 → Ph2 эмбеддер+RRF, обе до закрытия M15); окно 8K, источники через json_schema `used_fragments` (детерминированная привязка). UI-часть — батч B24 ниже (параллелится с Ph1 после M15.1).
+
+### Ph1 — FTS5 retrieval end-to-end
+
+- [x] **M15.0** (S) PRD + canon-addendum + эта секция роадмапа.
+- [x] **M15.1** (S) Контракт S2: `packages/contracts/src/assistant.ts` (AssistantAnswer/Source/Fragment/ChatMeta/Message/IndexStats) + export + Rust-зеркало `assistant/types.rs`. Тест: serde round-trip (4 шт).
+- [x] **M15.2** (M) Миграция `0019_assistant.sql` (chats / messages / passages / FTS5 external-content + триггеры / index_state; partial-UNIQUE тред-на-звонок) + repository `db/assistant.rs`. TDD `fresh_db`: 16 тестов — CRUD, каскады call→chat/passages, FTS-триггер-синк, FTS5 smoke, конкурентность (get_or_create ×2, order_idx ×8), malformed MATCH → Err. → #30 закрыт (FTS5 вернулся как assistant_fts). rust-reviewer: 0 CRITICAL/HIGH, MEDIUMs пофикшены.
+- [x] **M15.3** (L) Indexer: passage builder по `transcript.md` (окна ~350 ток c overlap; chunks-путь отменён — см. PRD §6.1 поправку), recap-абзацы, structured rows; `spawn_index` в ready-точках (`pipeline::run`, regen Recap, cancel-restore), `deindex_call` при reprocess, startup backfill c анти-гонкой + self-heal index_state. 14 тестов. rust-reviewer: 0 CRIT/HIGH, 4 MEDIUM пофикшены.
+- [x] **M15.4** (S) Классификатор `is_generative`: точные словоформы (императив±«те» + инфинитив) вместо substring-regex — прошедшее время («написали», «отправил») не матчится. 32 кейса в 3 тест-таблицах.
+- [x] **M15.5** (M) Retrieval BM25: токенизация-санитизация (MATCH-синтаксис структурно недостижим), префикс-экспансия морфологии (`приватность → "приватнос"*`), OR-recall, cap 12 токенов, two-pass call-scope (8 своих + 4 глобальных). 13 тестов, включая инъекции против живого FTS5 и case-fold кириллицы.
+- [x] **M15.6** (S) Budget assembly: greedy ≤5.5K с skip-and-continue, cap ≤3/звонок (только global), дедуп текста + интервальный дедуп overlap-окон, стабильный порядок → нумерация [1..N]; API на Scope-enum, hits по значению без клонов. 7 тестов. (`estimate_tokens` остался в chunker — уже shared, вынос снят.) rust-reviewer чанка: 0 CRIT/HIGH, 4 MEDIUM пофикшены.
+- [x] **M15.7** (L) Answer engine: injection-hardened system-промпт + нейтрализация `<<<`/`>>>`-маркеров в фрагментах/титулах/истории (адверсариальный тест), json_schema `{answer, used_fragments}` → детерминированная привязка источников (клэмп+дедуп+fallback top-3), история ≤2 QA×150 ток, refusal/empty short-circuit, `ask_core` (DI-провайдер) + macos-`ask` (build_local_llm_provider + `with_cache_prompt(true)`), событие `assistant:status` (retrieving/generating; queued снят — очередь видна через `queue:state`). 15 тестов на MockProvider+fresh_db.
+- [x] **M15.8** (M) Команды: `commands/assistant.rs` — 6 команд (ask macos-gated R9, validate_question cap 2000 симв + unit-тест) + регистрация mod.rs/lib.rs. Логика покрыта тестами ядра; command-слой тонкий by design. rust-reviewer чанка: 1 CRITICAL (delimiter injection) + 2 HIGH (queue-метка, дубль persist) найдены и пофикшены до коммита.
+- [x] **Gate Ph1** — живой e2e пройден (env-gated `live_gate_ph1`-тест: копия реальной БД + llama-server Qwen 3B): refusal 4мс без LLM, честное «не найдено» 1мс, живой вопрос → связный ответ с детерминированным источником за **3.8с** (resident, 5 фрагментов ~1K ток). Найдено и пофикшено: WAL-копирование БД (VACUUM INTO), пустой `answer` от 3B на «нет ответа» → honest no-direct-answer вместо ошибки. Вердикт: BM25-retrieval слаб на общих вопросах («о чём договорились») — ровно зона Ph2-эмбеддера.
+
+### Ph2 — гибрид (семантический поиск)
+
+- [x] **M15.9** (L) Эмбеддер: спайк решён в пользу **ort+tokenizers** (fastembed откат: TokenizerFiles = 4 файла → 5 SHA-записей; дефолт тянет hf-hub/image-models). Каталог: 2 записи официального intfloat ONNX (qint8 118MB — PRD-оценка «~30MB» неверна, XLM-R словарь; + tokenizer.json 17MB), MIT, SHA сняты локально. `embedder.rs`: трейт вне feature (Mock для даунстрим-тестов), OnnxTextEmbedder под `assistant-embed` (префиксы `query:`/`passage:` — решение спайка, mean-pool+L2, token_type_ids нулями, truncation 512). Замеры M1 Pro: ~5мс/пассаж, ~91мс 350-ток, load 228мс → spawn_blocking, без Resource::Embed. Download-UX: `shared_model_ids` (качается с пресетом). Тесты: 5 unit (Mock) + `#[ignore]` reference на реальной модели (fingerprint+семантика+кросс-язычность) — зелёный.
+- [x] **M15.10** (M) Миграция 0020 (passage_id PK CASCADE, dim per-row, vec BLOB f32 LE — PRD §5.2 дословно) + репозиторий `db/assistant_embeddings.rs` (отдельный модуль: assistant.rs на пределе 800 строк). Embed-hook: `index_call` резолвит shared-эмбеддер по `store.app_data_dir()` (сигнатуры ready-хуков не тронуты), ошибки embed НЕ роняют FTS-индексацию; `embed_backfill` батчами по 64 из lib.rs setup. Инвалидация при смене модели: KV `assistant.embed_model_id` → mismatch = clear + пересчёт. `embed_cache.rs`: инстансный `EmbedCache` (+процессный `global()`), снимок по штампу (index_state + счётчик векторов), битые BLOB скипаются с warn. TDD: 4 repo + 1 ensure + 3 indexer (Mock) + 3 cache. Контракт IndexStats не тронут (coverage — лог backfill; UI-прогресс → беклог G). → M15.9
+- [x] **M15.11** (M) Гибрид: `fusion.rs` (RRF k=60, тай-брейк по passage_id — стабильная нумерация источников; 6 TDD-тестов с ручными числами) + `retrieval::search_hybrid` (BM25 top-30 + cosine top-30 по кэшу → RRF → прежние лимиты 12/8+4; cosine-only id материализуются `fetch_passages_by_ids`; call-scope: RRF внутри проходов, свои раньше чужих). Деградация: None-эмбеддер/пустой кэш → ветка Ph1 (`search` не тронут — 13 тестов Ph1 без правок). `ask_core_with(+embedder)`, прод-обёртка `ask` резолвит shared; `rank` гибридных хитов = RRF-score (диагностика, даунстрим не читает). 5 интеграционных тестов на KeywordMock: golden-синонимы (BM25 мимо — вектор находит), эквивалентность Ph1, пустой кэш, own-first, стабильность. → M15.10
+- [x] **M15.12** (S) Mini-eval harness (`assistant/eval.rs` + `eval_fixtures/`, паттерн golden_eval): корпус 3 звонка × 13 пассажей + 12 QA-кейсов. Уровень A — BM25-baseline в CI (документирует miss-кейсы лексики: синоним/семантика/кросс-язычный); уровень B — `#[ignore]`+env на реальной e5: **hit@3 7/10, hit@5 9/10, MRR 0.657**, все BM25-miss кейсы гибрид находит. Подбор empty-порога дал отрицательный результат: cosine-диапазоны перекрываются (garbage 0.819 > synonym-rel 0.7785) → **floor не введён**, честное «пусто» гибрида — ответственность answer-слоя (NO_DIRECT_ANSWER, M15.7); зафиксировано в PRD §6.3. → M15.11
+
+### Ph3 — закрытие
+
+- [x] **M15.13** (S) Security-scan (security-reviewer, 2026-07-22, скоуп Ph1+Ph2: assistant/* + db/assistant* + commands + e5-записи каталога + миграции 0019/0020 + Cargo deps): **0 CRITICAL/HIGH/MEDIUM**. Проверено и чисто: FTS MATCH-инъекция (единственный путь через build_match_expr, expr сам bind-параметр), prompt-инъекция (neutralize_markers + json_schema без call_id + клэмп used_fragments; XSS-эскалации нет — innerHTML не используется), логи без контента (только счётчики/id), path traversal (пути только из компилируемых ModelId-констант), supply chain (реальные SHA, `=`-пин ort, tokenizers без default-фич), SQL (всё bind, каскады полные при `foreign_keys=ON`), DoS-лимиты, Tauri-граница (6 команд за State, без путей/URL от фронта), секретов нет. 4 INFO-наблюдения (известные trade-off): (1) QUESTION_MAX_CHARS только на Tauri-границе — продублировать в ask_core_with при появлении второй точки входа (MCP/batch); (2) анти-инъекция декларативная+структурная, пересмотреть при добавлении tool-calling; (3) ort build-script качает prebuilt ORT (прецедент sherpa-onnx, задокументирован); (4) EmbedCache full-load без cap (~46MB/1000 звонков — не эксплуатируемо в single-user desktop). → M15.8, повтор после M15.11 ✓
+
+**M15 закрыт целиком** (Ph1 gate ✓, B24 UI ✓, Ph2 гибрид ✓, security ✓). Human-verify остатки — в секции A Manual QA (живой seek, визуальный QA) + скачивание e5-модели через Storage-UI для активации гибрида.
+
+## B24 · Ассистент UI (по хендоффу, «точь в точь»)
+
+> Design gate обязателен (B24.0). Параллелится с M15 через `dev-tauri-mock` после M15.1. Сшивка с живым бэкендом — после M15.8.
+
+- [x] **B24.0** (S) Design-gate пройден (alignment-блок в сессии). Решения: keep-alive = module-кэш в хуке (single-instance инвариант задокументирован); цвет спикера owner→sp1 + stable-hash→sp2..5; «Отправить в почту» = mailto с фоллбеком в копию.
+- [x] **B24.1** (S) CSS-порт `wk2.css` → `components.css` (as-*, ai-field+`@property`+`prefers-reduced-motion`, ask-pend/note, src-row, ctx/frag, ans-acts; +focus-within для trash в списке чатов) + иконка `chat` в Icon.tsx.
+- [x] **B24.2** (M) Контракт += AskArgs/AskOutcome/CallThread/событие; `api/assistant.ts`; `useAssistantChats` (module-кэш, optimistic, статус-listener) + `useCallAssistant`; dev-mock assistant_* (типизирован контрактом, сортировка по активности); i18n `assistant.*` ×3. 7 hook-тестов, включая гонки (двойной ask, смена чата/звонка mid-pending, out-of-order openChat).
+- [x] **B24.3** (M) `AnswerMsg.tsx`: 3 kinds, чипы источников (clock→seek / doc→открыть), details «Контекст поиска» (спикер в `--spN`, mono-строка), эскалация, copy (галка только после успешной записи — ревью H6) + share («с источниками», mailto+фоллбек). 7 RTL-тестов. typescript-reviewer чанка: 0 CRIT, 7 HIGH (гонки/утечка listener/false-copied) — все пофикшены.
+- [x] **B24.4** (L) `AssistantPage` + `AskThread` + `AssistantComposer`: колонка чатов (группировка по дням, trash по hover/focus), empty + 4 чипа, pending, композер ai-field (Enter-хендлер: в форме нет submit-кнопки; IME-guard; disabled при pending), чип статистики (3-формный ru-плюрал), мост `requestGlobalQuestion` (ref-стабилизированный). RTL ×3 файла.
+- [x] **B24.5** (M) Вкладка звонка: `Tab += 'assistant'` (только ready; сброс таба при смене звонка и при уходе из ready — фикс пустой панели по ревью), тред `useCallAssistant`, композер вместо плеера на табе, seek из источника (ms→сек + auto-play), эскалация → раздел. Подсказки мока в звонке намеренно опущены (мок-специфичный банк). RTL: видимость таба ready/processing. Заметка B24.7: lazy-fetch треда до открытия таба — перф-полиш.
+- [x] **B24.6** (M) Навигация + ⌘K: `RailView += 'assistant'`, NavItem + minirail, «Найти или спросить» (ai-field--panel + sparkle), палитра: команда + fallback «Спросить ассистента» (подстрока с N из indexStats) + новый плейсхолдер ×3 локали + ai-field на палитре, hash-роут. RTL: fallback только при 0 матчей, Enter → onAsk. Живой смоук в dev-mock браузере: раздел/чаты/refusal/empty/эскалация/⌘K/dark — пройден, консоль чистая. typescript-reviewer чанка: 4 HIGH (пустая панель таба, disabled композера, 2 тест-дыры) — пофикшены.
+- [x] **B24.7** (M) Acceptance-pass: 12 пунктов SPEC прогнаны в dev-mock браузере — 11 ✓, п.5 (живой seek) → Manual QA (секция A). Поймано и пофикшено: минирейл без пункта «Ассистент» (IconBtn chat). a11y-architect ревью → фиксы: C1 вложенный button в строке чата → `ul/li` + кнопка-сосед (`aria-current`), C2 focus-visible композера/палитры (`:focus-within` box-shadow), C3 контраст `--text-faint`→`--text-3` (ctx-meta/summary/empty), H1 `role=log`+`role=status` (pending, Wave aria-hidden), H2 hitbox чипов ≥24px (`::after inset:-3px`), H3 `.tip` по `:focus-visible`, M1 disabled у send, M2 combobox/listbox палитры (`aria-activedescendant`), M3 list-семантика чатов. 540 vitest / typecheck зелёные, консоль чистая.
+
+## M16 · Assistant Recall (реальные вопросы получают ответы)
+
+> Мотивация: юзер задал 20 живых вопросов — 18 «нет ответа». Трёхсторонняя диагностика (research конкурентов Otter/Fireflies/Gong/Granola + код + data-разбор каждого фейла по живой БД). Корни: (A) сверхстрогий extractive-промпт схлопывал 3B в пустой answer при ДОСТАВЛЕННЫХ фрагментах; (B) классы вне retrieval — COUNT/recency/даты; (C) стоп-токены топили релевантный recap в bm25; (D) в индексе не было дат/имён спикеров/титулов.
+
+- [x] **M16.1** (S) Debug-диагностика: skipped-счётчики budget + `log::debug` отбора (id/метрики, без текста — W5).
+- [x] **M16.2** (M) Answer-промпт v2: развилка Extractive/Summarize (детектор «о чём/суть/резюме…»), явно разрешён синтез из нескольких фрагментов и частичный ответ, убран двойной посыл «нет ответа/НИКОГДА не пусто»; retry с nudge-хвостом в input (KV-кэш жив) → NO_DIRECT только после второго пустого, теперь с top-3 fallback-источниками; `call_meta` — дата звонка в заголовке фрагмента.
+- [x] **M16.3** (S) RU-стоплист (~50 слов) в `build_match_expr` + откат при вопросе целиком из стоп-слов. Доказательство: recap с ответом топ-4 по `"команд"*`, но выпадал из top-12 с «Что/по/на». Транслит-стретч (ескроу→escrow) → беклог M17.
+- [x] **M16.4** (M) Интент-раутер `router.rs` ДО retrieval: Stats (index_stats, 0 LLM), LastCall (когда/о чём), WhenDiscussed (срез служебных слов → гибрид темы → топ-3 звонка с датами; пусто → честный EMPTY), ListCalls (период сегодня/вчера/неделя/месяц/квартал). Узкие якоря «звонок/встреча» + негативные тесты на живых контентных вопросах.
+- [x] **M16.5** (S-M) Call-summary путь: обобщающий вопрос в call-scope (или резолвнутый последний звонок) → recap/structured пассажи НАПРЯМУЮ мимо FTS (`list_call_passages_for_summary`, kind-приоритет) → summarize-промпт. Общий LLM-хвост вынесен в `llm_answer_path`.
+- [x] **M16.6** (L) Обогащение индекса + миграция 0021 (пересоздание passages/fts/триггеров, CHECK += `call_meta`; очистка index_state/embeddings — startup-backfill восстанавливает): резолв speaker-тегов в имена контактов (поле + текст → FTS матчит «что говорил Дамир»), синтетическая карточка звонка «Звонок «Титул» — дата. Участники: …», реиндекс-хук на confirm/unbind привязки. Контракт: `AssistantPassageKind += call_meta` (S2).
+- [x] **M16.7** (M) Live-gate: 18 реальных вопросов юзера против копии живой БД + resident 3B + e5-гибрид — **18/18 содержательных (было 2/20), acceptance ≥14/18 перевыполнен**. Уровень C (интент-кейсы CI) = router+ask_core тесты; уровень A расширять по мере новых фейлов. 793 rust-теста зелёные.
+
+**Беклог M17+**: кросс-звонковый map-reduce («какие возражения повторялись за квартал»), транслит-экспансия, query-rewrite follow-up, сентимент/коучинг, talk-time аналитика, `embeddedCalls` в IndexStats UI.
+
+## B25 · Семантический поиск: авто-скачивание + тумблер
+
+- [x] **B25** (M) По фидбеку юзера («надо вручную качать? давай автоматом + в настройки»). (1) `assistant-embed` в **default features** — без этого гибрид был мёртв в dev/prod-бинаре (главная причина «не вижу»). (2) Setting `assistant.semantic_search` (отсутствие = ON) + команды `assistant_get/set_semantic_search`; включение фоново качает модель + запускает backfill. (3) Startup-задача: тумблер on + выбран пресет + файлов нет → авто-download (прогресс через существующие `model:progress`) → `embed_backfill`. (4) UI: SettingRow-тумблер «Семантический поиск ассистента» в разделе «Обработка» (LocalEngineSection, после «Держать модель активной») с живым статусом: «скачивается · N%» → «активен» / «ожидает модель»; e5-пара добавлена в авто-старт скачиваний при выборе пресета; i18n ×3; dev-mock ветки. Живой прогон: старт app → download 118MB+17MB (~30с) → «embed backfill: 85 passages embedded», в БД 85 векторов dim=384, model-id проставлен. 775 rust + 540 vitest зелёные.
+
+## B26 · Assistant polish: время, фрагменты, контакты, панель чатов
+
+По батч-фидбеку юзера после M16 (7 пунктов одним сообщением).
+
+- [x] **B26.1-3** (M) Относительное время: `period_range(ws, now)` в router.rs — полуинтервалы `[since, until)` UTC из `chrono::Local` (сегодня/вчера/позавчера, «на прошлой неделе» = [пн−7, пн), календарные месяц/год, 12 именованных месяцев с прошлогодним откатом будущих, кварталы). Темпоральный префильтр в обычных вопросах: `HashSet<call_id>` за период → фильтр в `search_hybrid`/`fuse_pass` (BM25 пост-фильтр + cosine keep-условие); пустой период → честный EMPTY_PERIOD без LLM. Слова периодов в RU-стоплисте. «Сегодня: ДД.ММ.ГГГГ» в промпте перед вопросом — модель сопоставляет с датами фрагментов.
+- [x] **B26.4** (M) Лёгкий фронт: усечение фрагментов **только на wire** (persist answer_json нетронут — история совместима, индекс стабилен). `text_truncated` (serde default, S2), `truncate_fragment_text` 280+гистерезис 60 по границе слова, `truncate_answer_for_wire` в get_chat/call_thread/ask (после persist). Lazy-команда `assistant_get_fragment_text(message_id, fragment_index)`.
+- [x] **B26.5** (M) Контакты в поиске («и то и другое» по выбору юзера): (a) router-интент «кто такой X» → карточка контакта (имя/орг/роль/notes + звонков вместе, последний); (b) инжект-канал — matched-контакты (lowercase+ё→е, падежные хвосты ≤3) инжектятся синтетическими `PassageHit{kind: contact, call_id: "contact:<id>"}` ДО empty-проверки: «чем занимается X» отвечается даже без звонков. In-memory скан вместо FTS (кириллический NOCASE в SQLite не фолдится; контактов десятки). Фронт: chip источника → иконка user → переход в «Контакты».
+- [x] **B26.6-8** (M) Облачка: `FragmentRow` — шеврон, lazy-подгрузка полного текста, сворачивание вычищает его из DOM/JS (`setFullText(null)`); ошибка → inline-нота. Выделение текста: `data-selectable` на облачках и фрагментах. Время в облачке низ-справа (`MsgTime`): сегодня → HH:MM, вчера → «вчера HH:MM», раньше → дата; клик → toggle полной даты, aria-pressed.
+- [x] **B26.9** (S) «Недавние» в сайдбаре = микс звонков и чатов: `AssistantChatMeta.updatedAt` (S2), чистая `mergeRecent` top-5 по времени, чаты с иконкой chat → открытие чата в ассистенте (`openChatRequest` с seq для повторных кликов).
+- [x] **B26.10-11** (M) Панель чатов: fuzzy-поиск без ML (`lib/fuzzy` — субпоследовательность + бонусы начала слова/streak; активный запрос → плоский список по score, Esc сброс), collapse до 48px («Новый чат» остаётся иконкой), resize драгом по паттерну rail-resize (clamp 180-400, авто-collapse ниже 150), persist `wk-aschatsw`/`wk-aschats-collapsed`. RTL + unit-тесты.
+
+Итог батча: 804 rust + 562 vitest зелёные, clippy -D warnings чист, tsc чист.
+
+## B27 · Assistant polish 2: тултипы, share, composer, [N]-рефы, контакт-звонки
+
+Батч-фидбек юзера после B26 (9 пунктов).
+
+- [x] **B27.5** (M) Портальный `ui/Tooltip` вместо CSS `.tip::after` (тот резался краями/overflow: «уть список чатов», уплывший тултип statsChip): portal в body, position:fixed + viewport-clamp + флип, hover-delay 300ms / focus сразу / Esc / click-hide (SC 1.4.13); IconBtn переведён — все call-sites чинятся разом; мёртвый CSS `.tip*` выпилен.
+- [x] **B27.1** (S) `.ans-foot`: действия (copy/share) и время сообщения — один flex-ряд (лево/право).
+- [x] **B27.8** (M) Интерактивные `[N]`-ссылки в тексте ответа: `parseFragmentRefs` (валидны только все N в диапазоне), клик → controlled `<details>` раскрывается, скролл к фрагменту + `.frag--flash` подсветка (reduced-motion учтён).
+- [x] **B27.2** (S) Header панели чатов без inline-стилей: `.as-chats-head` (Новый чат + collapse) + поиск с иконкой (`.input>.iico`).
+- [x] **B27.3** (S) ViewHead: активный чат → его полное название (ellipsis); statsChip только без активного чата.
+- [x] **B27.4** (M) 50 обезличенных подсказок ×3 локали в `suggestions.ts` (контент-модуль, не i18n — DotPath-тип), случайные 4 на маунт (частичный Fisher-Yates).
+- [x] **B27.7** (M) Композер многострочный: textarea auto-grow по scrollHeight до ~6 строк (field-sizing в WKWebView нет), Enter = отправка / Shift+Enter = перенос, IME-guard; подушки треда подняты под высокий док.
+- [x] **B27.6** (L) Нативный share: Rust-команда `share_text` — NSSharingServicePicker (objc2-app-kit, typed FFI; thread_local Retained держит пикер; main-thread через run_on_main_thread; не-macOS → Err, R4-стиль); UI: кнопка зовёт пикер у своего rect, Dropdown copy/mailto удалён, фоллбек — копия с источниками.
+- [x] **B27.9** (M) «Контакт есть, а звонков нет»: (a) data-fix — 3 звонка с полными transcript/recap (июльский repair) переведены из зависшего `failed` в `ready` по явным id → backfill индексирует; (b) `contact_call_stats` считает ВСЕ confirmed-звонки + `indexed_count` по `assistant_index_state`, карточка честно «Звонков вместе: N (в поиске M)».
+
+Итог батча: 809 rust + 584 vitest зелёные, clippy -D warnings / fmt / tsc чисты.
+
+## B28 · Надёжность записи: звонок не теряется при краше
+
+Разбор живого инцидента 23.07 (звонок 3df01365, 283с): WKWebView crash посреди пайплайна → рестарт → sweep пометил `failed` навсегда при целом аудио и готовом STT chunk-0; юзер увидел «ошибку сохранения». Аудио пишется на диск потоком всю запись — терялась только обработка.
+
+- [x] **B28.1** (S) audio_merger: уникальный tmp (pid+seq) — параллельные merge одного трека (плеер mic+system, pipeline, ретраи UI) больше не делят tmp-файл (в логе было 7 «wav write failed: ENOENT» подряд); зачистка stale tmp старше часа. Регресс-тест: 8 конкурентных merge — все успешны.
+- [x] **B28.2** (M) Авто-восстановление на старте: `failed AND failed_reason IS NULL` (метка sweep/reconcile — прерывание, не реальный фейл) + аудио на диске + нет transcript.md → автоматически `recover_chunked_call`-путь (reconstruct → STT → reprocess). Лимит 2 попыток на звонок (маркер `.auto-recover-tries`), cap 3 за старт, ручной `WOTOLD_RECOVER_CALL_ID` главнее. Живой гейт: звонок 3df01365 подхвачен на первом же старте.
+- [x] **B28.3** (S) llama-server pidfile: сирота с прошлой сессии (force-kill приложения не убивал сайдкар) держала порт 47331 — резидентная LLM умирала «/health timeout» до ручного вмешательства. Перед spawn добиваем процесс из pidfile (только если имя процесса = наш сайдкар).
+
+Итог: 812 rust тестов, clippy/fmt чисты.
+
+## B29 · UI-полиш: участники, шапка ассистента, панели, иконки
+
+Батч-фидбек юзера (7 пунктов).
+
+- [x] **B29.1** (S) Дедуп аватаров «Участники»: несколько speaker-тегов одного контакта («Д Д») схлопываются по contact_id (`confirmedParticipants` в inboxData, fallback — имя; дедуп по ключу, не по инициалам).
+- [x] **B29.2-3** (M) Ассистент: «Новый чат» → правое действие ViewHead (Button primary, канон Контактов), поиск по чатам → центр шапки (канон omni звонков); панель — слим-ряд «Чаты»+collapse, mini = только expand; клик «Новый чат» не разворачивает свёрнутую панель.
+- [x] **B29.4** (S) Contacts: `.rrail`-хак с инлайн-стилями → канонный `.side-list` (прозрачный фон, 240px в ряду Settings/Assistant, data-active строки).
+- [x] **B29.5** (M) `useResizablePanel` — общий хук (обобщение B26.11; ассистент мигрирован, ключи прежние); drag+collapse для Settings (mini = полоса иконок разделов, навигация без разворота) и Contacts (mini = полоса аватаров, клик открывает контакт); `.as-resize`→`.panel-resize`; persist wk-setw/wk-ctw(+collapsed).
+- [x] **B29.6** (M) Иконка приложения: канонный macOS-паддинг (контент 819.2/1024, ~10% поля) в SVG + аналитический SDF-рендер 1024-PNG + перегенерация набора `tauri icon` — в доке в ряду соседей. Stage Manager в dev — генерик (голый бинарь без .app), в собранном .app ок.
+- [x] **B29.7** (S) Иконка trash: канонная урна (крышка+ручка+тело+рёбра) вместо «воронки-стрелки»; все call-sites централизованно.
+
+Итог батча: 594 vitest зелёные, tsc чист (включая strict-фиксы index-access в B27-коде). Rust не задет.
+
+## B30 · UI-полиш 2 (фидбек по B29)
+
+- [x] **B30.1** (S) Dock-иконка runtime'ом (`setApplicationIconImage` из padded-1024 PNG): cargo не пересобирает бинарь при смене `icons/*` — вшитая иконка «застревала» старой; теперь корректна в dev/проде независимо от кэша сборки.
+- [x] **B30.2** (S) Список звонков: колонка точки = 8px + левый паддинг s3 — зазоры старт→точка и точка→название равны; `.tbl-group` на той же вертикали.
+- [x] **B30.3** (S) Collapse-кнопка панелей везде снизу — единый `.side-list-foot` (ассистент/контакты/настройки).
+- [x] **B30.4** (S) Шапка ассистента: Раздел → поиск → титул чата; статчип «в поиске N из M» убран (мёртвые i18n-ключи вычищены ×3).
+- [x] **B30.5** (S) Симметрия collapse: expand-кнопка свёрнутых панелей тоже снизу; drag хэндла работает в обе стороны (вытягивание разворачивает, канон rail onExpandResize), хэндл живёт и в свёрнутом виде.
+
+Итог: 812 rust + 596 vitest, clippy/fmt/tsc чисты.
 
 ---
 
@@ -79,6 +206,16 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 - [ ] **R9/R4 Linux/Windows** — local-engine + audio capture за trait + `unimplemented!()` сейчас. Big chunk, MVP только macOS.
 - [ ] **R10 model bundling** — bundled installer для full preset (~50MB) если CI/CD scale'ится. Сейчас on-demand download.
+
+### G. После M15 (ассистент) — PRD §12
+
+- [ ] **Cloud-ответы ассистента** — `AnthropicProvider` через прокси на общем retrieval-слое (answer-engine switch + квоты + consent на отправку фрагментов в облако).
+- [ ] **Токен-стриминг** — llama-server SSE (`stream:true`) → событие `assistant:token`; требует resident ON.
+- [ ] **Map-reduce отчёты по архиву** («сводка недели по всем звонкам») — за пределами 8K, refine-chain; отдельный milestone.
+- [ ] **MCP-tool `search_passages`** — read-only чтение `assistant_passages`/`assistant_fts` из `services/mcp`.
+- [ ] **Query-rewrite multi-turn** — анафора («а что он обещал?») через LLM-переформулировку запроса.
+- [ ] **«Отправить в почту» → полноценный share** (сейчас mailto).
+- [ ] **Инкрементальная индексация processing-звонков** — по чанкам до ready.
 
 ---
 

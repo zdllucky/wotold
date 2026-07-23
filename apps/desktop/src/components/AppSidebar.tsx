@@ -13,8 +13,9 @@ import { QueueMonitor } from './QueueMonitor';
 import type { Call } from '../api/recording';
 import type { QueueState } from '../api/queue';
 import { useI18n } from '../i18n';
+import type { AssistantChatMeta } from '@wotold/contracts';
 
-export type RailView = 'inbox' | 'call' | 'contacts' | 'settings' | 'ds';
+export type RailView = 'inbox' | 'call' | 'contacts' | 'assistant' | 'settings' | 'ds';
 export type RailRecKind = 'idle' | 'recording' | 'paused';
 
 interface RailHandlers {
@@ -38,6 +39,9 @@ interface RailProps extends RailHandlers {
   busy: boolean;
   pipelineCount: number;
   recent: Call[];
+  /** [B26.9] Чаты ассистента — микс в «Недавних». */
+  recentChats: AssistantChatMeta[];
+  onOpenAssistantChat: (id: string) => void;
   /** Total calls / contacts — shown as nav count badges. */
   callsCount: number;
   contactsCount: number;
@@ -46,6 +50,36 @@ interface RailProps extends RailHandlers {
   isDev: boolean;
   /** [Q] Снапшот очередей ресурсов для QueueMonitor (null до первого фетча). */
   queue: QueueState | null;
+}
+
+/** [B26.9] Микс «Недавних»: звонки (started_at) + чаты (updatedAt), top-N.
+ *  Discriminated union — у call-ветки `call` обязателен, каст не нужен. */
+export type RecentEntry =
+  | { kind: 'call'; id: string; label: string; at: string; call: Call }
+  | { kind: 'chat'; id: string; label: string; at: string };
+
+export function mergeRecent(
+  calls: Call[],
+  chats: AssistantChatMeta[],
+  limit = 5,
+): RecentEntry[] {
+  const entries: RecentEntry[] = [
+    ...calls.map((c) => ({
+      kind: 'call' as const,
+      id: c.id,
+      label: c.title ?? c.id.slice(0, 8),
+      at: c.started_at,
+      call: c,
+    })),
+    ...chats.map((ch) => ({
+      kind: 'chat' as const,
+      id: ch.id,
+      label: ch.title,
+      at: ch.updatedAt || ch.createdAt,
+    })),
+  ];
+  // RFC3339 сортируется лексикографически; свежие сверху.
+  return entries.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
 }
 
 function fmtDur(sec: number | null): string {
@@ -92,6 +126,8 @@ export function Sidebar(props: RailProps) {
     busy,
     pipelineCount,
     recent,
+    recentChats,
+    onOpenAssistantChat,
     callsCount,
     contactsCount,
     activeCallId,
@@ -107,7 +143,8 @@ export function Sidebar(props: RailProps) {
   } = props;
   const recording = recKind !== 'idle';
   const paused = recKind === 'paused';
-  const recentTop = recent.slice(0, 5);
+  // [B26.9] Микс звонков и чатов по времени активности.
+  const recentTop = mergeRecent(recent, recentChats, 5);
   const onInbox = view === 'inbox' || view === 'call';
 
   // Inbox meta: live processing badge when calls are in the pipeline, else the
@@ -187,19 +224,24 @@ export function Sidebar(props: RailProps) {
       </div>
 
       <div style={{ padding: '0 10px 8px' }}>
+        {/* [B24.6] «Найти или спросить» — одно из трёх ai-field-полей (SPEC §6). */}
         <button
-          className="input"
+          className="input ai-field ai-field--panel"
           onClick={onSearch}
-          style={{
-            cursor: 'pointer',
-            height: 30,
-            color: 'var(--text-faint)',
-            borderColor: 'var(--border-2)',
-          }}
+          style={{ cursor: 'pointer', height: 30, color: 'var(--text-3)' }}
         >
-          <Icon name="command" size={15} className="iico" />
-          <span style={{ flex: 1, textAlign: 'left', fontSize: 13 }}>
-            {t('palette.commands')}
+          <Icon name="sparkle" size={15} className="iico" />
+          <span
+            style={{
+              flex: 1,
+              textAlign: 'left',
+              fontSize: 13,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {t('assistant.findOrAsk')}
           </span>
           <Kbd>⌘K</Kbd>
         </button>
@@ -222,19 +264,41 @@ export function Sidebar(props: RailProps) {
           meta={contactsCount > 0 ? contactsCount : undefined}
           onClick={() => onNav('contacts')}
         />
+        <NavItem
+          icon="chat"
+          label={t('assistant.title')}
+          active={view === 'assistant'}
+          current={view === 'assistant'}
+          onClick={() => onNav('assistant')}
+        />
 
         {recentTop.length > 0 && (
           <>
             <div style={{ height: 8 }} />
             <div className="sec-label">{t('rail.recent')}</div>
-            {recentTop.map((c) => {
-              const label = c.title ?? c.id.slice(0, 8);
+            {recentTop.map((entry) => {
+              if (entry.kind === 'chat') {
+                return (
+                  <NavItem
+                    key={`chat-${entry.id}`}
+                    label={entry.label}
+                    title={entry.label}
+                    leading={
+                      <span className="nav-ico">
+                        <Icon name="chat" size={15} />
+                      </span>
+                    }
+                    onClick={() => onOpenAssistantChat(entry.id)}
+                  />
+                );
+              }
+              const c = entry.call;
               const openHere = view === 'call' && activeCallId === c.id;
               return (
                 <NavItem
                   key={c.id}
-                  label={label}
-                  title={label}
+                  label={entry.label}
+                  title={entry.label}
                   active={openHere}
                   current={openHere}
                   leading={
@@ -357,8 +421,8 @@ export function MiniRail(props: RailProps) {
       <IconBtn
         icon="command"
         iconSize={18}
-        label={t('palette.commands')}
-        title={`${t('palette.commands')} ⌘K`}
+        label={t('assistant.findOrAsk')}
+        title={`${t('assistant.findOrAsk')} ⌘K`}
         onClick={onSearch}
       />
       <div className="minirail-sep" />
@@ -377,6 +441,15 @@ export function MiniRail(props: RailProps) {
         title={t('nav.contacts')}
         active={view === 'contacts'}
         onClick={() => onNav('contacts')}
+      />
+      {/* [B24.7] Ассистент в минирейле (acceptance п.1 — был пропущен). */}
+      <IconBtn
+        icon="chat"
+        iconSize={18}
+        label={t('assistant.title')}
+        title={t('assistant.title')}
+        active={view === 'assistant'}
+        onClick={() => onNav('assistant')}
       />
       <div className="mr-spacer" />
       {/* [Q] Монитор очередей — вместо theme-toggle (тема в Настройках). */}

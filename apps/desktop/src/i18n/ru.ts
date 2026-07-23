@@ -33,7 +33,7 @@ const ruInternal = {
 
   // [B18.1c] ⌘K command palette.
   palette: {
-    placeholder: 'Перейти к звонку или команда…',
+    placeholder: 'Найти звонок или спросить ассистента…',
     commands: 'Команды',
     calls: 'Звонки',
     empty: 'Ничего не найдено',
@@ -403,6 +403,8 @@ const ruInternal = {
 
   // ── ContactsPage ────────────────────────────────────────────────────────
   contacts: {
+    collapsePanel: 'Свернуть список контактов',
+    expandPanel: 'Развернуть список контактов',
     title: 'Контакты',
     addAria: 'Добавить контакт',
     searchPlaceholder: 'Поиск…',
@@ -470,6 +472,8 @@ const ruInternal = {
 
   // ── Settings — sections + interior content ─────────────────────────────
   settings: {
+    collapsePanel: 'Свернуть разделы',
+    expandPanel: 'Развернуть разделы',
     title: 'Настройки',
     saved: '✓ Сохранено',
     sectionAppearance: 'Внешний вид',
@@ -742,6 +746,12 @@ const ruInternal = {
     keepResidentLabel: 'Держать модель активной',
     keepResidentHint:
       'Локальная модель остаётся в оперативке всю сессию — генерация быстрее (нет перезагрузки на каждый вызов), но занимает ~2–5 ГБ RAM. Выключено по умолчанию.',
+    semanticLabel: 'Семантический поиск ассистента',
+    semanticHint:
+      'Ассистент находит фрагменты по смыслу, а не только по совпадению слов (синонимы, парафразы, другой язык). Модуль поиска ~130 МБ скачается автоматически.',
+    semanticActive: 'активен',
+    semanticDownloading: 'скачивается · {pct}%',
+    semanticWaiting: 'ожидает модель',
     preset: {
       light: 'Лёгкий',
       balanced: 'Сбалансированный',
@@ -765,6 +775,8 @@ const ruInternal = {
       diarization: 'Модуль разделения · базовый',
       qwenDraft: 'Ускоритель саммари · 0.5B',
       vad: 'Детектор речи',
+      embedder: 'Модуль поиска ассистента',
+      embedderTokenizer: 'Словарь модуля поиска',
     },
     statusInstalled: 'установлено',
     statusDownloading: 'качаем…',
@@ -1017,6 +1029,52 @@ const ruInternal = {
     // [P11.3] Resume-blocked tooltip — disabled-state причина на reprocess
     // кнопке когда есть failed chunks.
     resumeBlockedHint: 'Сначала повтори неудачные сегменты',
+  },
+  // ── [B24] Ассистент (тексты SPEC хендоффа дословно, деловой регистр) ────
+  assistant: {
+    title: 'Ассистент',
+    msgYesterday: 'вчера',
+    searchChats: 'Поиск по чатам…',
+    chatsPanel: 'Чаты',
+    searchEmpty: 'Чатов по запросу не найдено',
+    searchResults: 'Найдено',
+    collapsePanel: 'Свернуть список чатов',
+    expandPanel: 'Развернуть список чатов',
+    fragExpand: 'показать целиком',
+    fragCollapse: 'свернуть',
+    fragLoading: 'загрузка…',
+    fragLoadError: 'Не удалось загрузить фрагмент',
+    fragRefLabel: 'Фрагмент {n}',
+    durHours: '{h} ч {m} мин',
+    durMinutes: '{m} мин',
+    emptyTitle: 'Поиск по всем звонкам',
+    emptyDesc:
+      'Вопрос — это поиск по расшифровкам и рекапам, ответ — с указанием источников. Каждый диалог — новый чат.',
+    pendingGlobal: 'Поиск по {n} звонкам…',
+    pendingCall: 'Поиск…',
+    refusalNote: 'Вне области ассистента',
+    ctxSummary: 'Контекст поиска',
+    ctxMeta: 'фрагментов: {n} · ≈{tokens}K токенов · окно 8K',
+    copy: 'Скопировать',
+    copied: 'Скопировано',
+    share: 'Поделиться',
+    sourcesLabel: 'Источники',
+    escalate: 'Искать во всех звонках',
+    newChat: 'Новый чат',
+    noChats: 'Чатов пока нет',
+    deleteChat: 'Удалить чат',
+    composerGlobal: 'Спросить по всем звонкам…',
+    composerCall: 'Спросить об этом звонке…',
+    callEmptyDesc:
+      'Чат этого звонка. Ответы строятся по его расшифровке; если факт найден в другом звонке — источник будет указан.',
+    sendLabel: 'Отправить',
+    dayToday: 'Сегодня',
+    dayYesterday: 'Вчера',
+    findOrAsk: 'Найти или спросить',
+    paletteCommand: 'Ассистент — поиск по звонкам',
+    paletteNotFound: 'Ничего не найдено · Ассистент',
+    paletteFallbackLabel: 'Спросить ассистента',
+    paletteFallbackHint: '«{q}» — поиск по {n} звонкам',
   },
 } as const;
 

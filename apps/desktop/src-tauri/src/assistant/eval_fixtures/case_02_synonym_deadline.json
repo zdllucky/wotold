@@ -1,0 +1,5 @@
+{ "id": "case_02_synonym_deadline",
+  "question": "когда крайний срок?",
+  "scope": "global", "k": 5,
+  "expect_bm25": "miss", "expect_hybrid": "hit",
+  "relevant_passage_keys": ["acme-t2"] }

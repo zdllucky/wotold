@@ -172,6 +172,10 @@ pub async fn reprocess_call(
     }
     db::set_recap_failed_reason(&state.db, &call_id, None).await?;
 
+    // [M15.3] Звонок уходит из ready — убрать из индекса ассистента.
+    // Переиндексация случится ready-хуком когда reprocess завершится.
+    crate::assistant::indexer::deindex_call(&state.db, &call_id).await?;
+
     PipelineRunner::spawn_reprocess(
         state.db.clone(),
         state.store.clone(),

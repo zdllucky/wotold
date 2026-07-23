@@ -1,0 +1,5 @@
+{ "id": "case_05_call_scope_font",
+  "question": "что делаем со шрифтом?",
+  "scope": { "call": "fx-design" }, "k": 5,
+  "expect_bm25": "hit", "expect_hybrid": "hit",
+  "relevant_passage_keys": ["design-t2", "design-r1"] }

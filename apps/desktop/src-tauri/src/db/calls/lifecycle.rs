@@ -500,6 +500,22 @@ pub async fn set_summary_metadata(
 /// `chunk_assembly::load_chunked_transcripts` молча skip'ал бы его (filter
 /// status='done'), что приводило бы к silent data loss для chunk'а в
 /// финальном transcript'е.
+/// [B28.2] Кандидаты авто-восстановления: failed БЕЗ failed_reason — так
+/// помечают только sweep_stale_calls / reconcile_orphan_recordings (прерывание
+/// крашем/quit), настоящие фейлы пайплайна идут через mark_call_failed с
+/// reason. Дальнейшие гейты (аудио есть, транскрипта нет, лимит попыток) —
+/// на стороне caller'а по файловой системе.
+pub async fn list_interrupted_failed_calls(pool: &SqlitePool) -> Result<Vec<String>, AppError> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT id FROM calls
+         WHERE status = 'failed' AND failed_reason IS NULL
+         ORDER BY started_at DESC",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 pub async fn sweep_stale_calls(pool: &SqlitePool) -> Result<u64, AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     // [B19.6] Только 'processing' (у них есть финализированное аудио → recoverable
@@ -790,6 +806,30 @@ mod tests {
         assert_eq!(a_after.status, "recording", "recording left for reconcile");
         assert_eq!(b_after.status, "failed");
         assert_eq!(c_after.status, "ready");
+    }
+
+    // [B28.2] Кандидаты авто-восстановления: failed без reason (sweep/краш),
+    // но НЕ настоящие фейлы пайплайна (mark_call_failed с reason).
+    #[tokio::test]
+    async fn list_interrupted_failed_calls_excludes_real_failures() {
+        let db = fresh_db().await;
+        // a: прерван (sweep: processing → failed без reason).
+        let a = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &a.id, 5.0).await.unwrap();
+        sweep_stale_calls(&db.pool).await.unwrap();
+        // b: настоящий фейл пайплайна — с reason.
+        let b = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &b.id, 5.0).await.unwrap();
+        fail_recording_with_reason(&db.pool, &b.id, Some("stt_failed"))
+            .await
+            .unwrap();
+        // c: ready — не кандидат.
+        let c = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &c.id, 5.0).await.unwrap();
+        mark_call_ready(&db.pool, &c.id).await.unwrap();
+
+        let ids = list_interrupted_failed_calls(&db.pool).await.unwrap();
+        assert_eq!(ids, vec![a.id.clone()], "только прерванный без reason");
     }
 
     #[tokio::test]

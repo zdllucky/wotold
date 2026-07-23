@@ -29,7 +29,7 @@ export const en: TranslationStrings = {
 
   // [B18.1c] ⌘K command palette.
   palette: {
-    placeholder: 'Jump to a call or run a command…',
+    placeholder: 'Find a call or ask the assistant…',
     commands: 'Commands',
     calls: 'Calls',
     empty: 'Nothing found',
@@ -374,6 +374,8 @@ export const en: TranslationStrings = {
   },
 
   contacts: {
+    collapsePanel: 'Collapse contact list',
+    expandPanel: 'Expand contact list',
     title: 'Contacts',
     addAria: 'Add contact',
     searchPlaceholder: 'Search…',
@@ -439,6 +441,8 @@ export const en: TranslationStrings = {
   },
 
   settings: {
+    collapsePanel: 'Collapse sections',
+    expandPanel: 'Expand sections',
     title: 'Settings',
     saved: '✓ Saved',
     sectionAppearance: 'Appearance',
@@ -699,6 +703,12 @@ export const en: TranslationStrings = {
     keepResidentLabel: 'Keep model warm',
     keepResidentHint:
       'The local model stays in RAM for the whole session — generation is faster (no reload per call) but it holds ~2–5 GB of RAM. Off by default.',
+    semanticLabel: 'Assistant semantic search',
+    semanticHint:
+      'The assistant finds fragments by meaning, not just word overlap (synonyms, paraphrases, other languages). The ~130 MB search module downloads automatically.',
+    semanticActive: 'active',
+    semanticDownloading: 'downloading · {pct}%',
+    semanticWaiting: 'waiting for model',
     preset: {
       light: 'Light',
       balanced: 'Balanced',
@@ -720,6 +730,8 @@ export const en: TranslationStrings = {
       diarization: 'Diarization module · basic',
       qwenDraft: 'Summary booster · 0.5B',
       vad: 'Speech detector',
+      embedder: 'Assistant search module',
+      embedderTokenizer: 'Search module vocabulary',
     },
     statusInstalled: 'installed',
     statusDownloading: 'downloading…',
@@ -943,6 +955,51 @@ export const en: TranslationStrings = {
     retrying: 'Retrying…',
     failedSummary: '{n} of {total} segments failed — click ↻ to respawn.',
     resumeBlockedHint: 'Retry failed segments first',
+  },
+  assistant: {
+    title: 'Assistant',
+    msgYesterday: 'yesterday',
+    searchChats: 'Search chats…',
+    chatsPanel: 'Chats',
+    searchEmpty: 'No chats match your search',
+    searchResults: 'Results',
+    collapsePanel: 'Collapse chat list',
+    expandPanel: 'Expand chat list',
+    fragExpand: 'show full',
+    fragCollapse: 'collapse',
+    fragLoading: 'loading…',
+    fragLoadError: 'Failed to load fragment',
+    fragRefLabel: 'Fragment {n}',
+    durHours: '{h} h {m} min',
+    durMinutes: '{m} min',
+    emptyTitle: 'Search across all calls',
+    emptyDesc:
+      'A question is a search across transcripts and recaps; answers cite their sources. Every dialog is a new chat.',
+    pendingGlobal: 'Searching {n} calls…',
+    pendingCall: 'Searching…',
+    refusalNote: 'Outside the assistant’s scope',
+    ctxSummary: 'Search context',
+    ctxMeta: 'fragments: {n} · ≈{tokens}K tokens · 8K window',
+    copy: 'Copy',
+    copied: 'Copied',
+    share: 'Share',
+    sourcesLabel: 'Sources',
+    escalate: 'Search all calls',
+    newChat: 'New chat',
+    noChats: 'No chats yet',
+    deleteChat: 'Delete chat',
+    composerGlobal: 'Ask across all calls…',
+    composerCall: 'Ask about this call…',
+    callEmptyDesc:
+      'This call’s chat. Answers are built from its transcript; if a fact comes from another call, the source is cited.',
+    sendLabel: 'Send',
+    dayToday: 'Today',
+    dayYesterday: 'Yesterday',
+    findOrAsk: 'Find or ask',
+    paletteCommand: 'Assistant — search across calls',
+    paletteNotFound: 'Nothing found · Assistant',
+    paletteFallbackLabel: 'Ask the assistant',
+    paletteFallbackHint: '“{q}” — search across {n} calls',
   },
 };
 

@@ -1,0 +1,5 @@
+{ "id": "case_07_structured_decision",
+  "question": "какие решения приняли по старту?",
+  "scope": "global", "k": 5,
+  "expect_bm25": "hit", "expect_hybrid": "hit",
+  "relevant_passage_keys": ["acme-d1"] }

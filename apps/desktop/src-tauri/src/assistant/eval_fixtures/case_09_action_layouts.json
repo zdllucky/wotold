@@ -1,0 +1,5 @@
+{ "id": "case_09_action_layouts",
+  "question": "когда пришлют обновлённые макеты?",
+  "scope": "global", "k": 5,
+  "expect_bm25": "hit", "expect_hybrid": "hit",
+  "relevant_passage_keys": ["design-a1"] }

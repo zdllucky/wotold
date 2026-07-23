@@ -2,10 +2,14 @@
   <!-- Wotold v2 app icon: light squircle + two-bar graphite mark.
        Brand mark geometry ported from AppSidebar Brand (viewBox 72x50).
        Colors are the resolved light-theme token values (icon is fixed, not theme-switched):
-       text #1A1B23, text-3 #71747F. Regenerate the bundle set with `tauri icon`. -->
-  <rect x="0" y="0" width="1024" height="1024" rx="229" fill="#F4F4F6"/>
-  <rect x="6" y="6" width="1012" height="1012" rx="223" fill="none" stroke="#E2E3E8" stroke-width="6"/>
-  <g transform="translate(144.8,257) scale(10.2)">
+       text #1A1B23, text-3 #71747F. Regenerate the bundle set with `tauri icon`.
+       [B29.6] Canonical macOS padding: content occupies 819.2/1024 (~10% margin
+       each side) so the Dock icon sits flush with neighbours. Note: in `tauri dev`
+       the bare binary has no .app bundle/Info.plist — Stage Manager shows a
+       generic document icon; the packaged .app is correct. -->
+  <rect x="102.4" y="102.4" width="819.2" height="819.2" rx="183.2" fill="#F4F4F6"/>
+  <rect x="107.2" y="107.2" width="809.6" height="809.6" rx="178.4" fill="none" stroke="#E2E3E8" stroke-width="4.8"/>
+  <g transform="translate(218.24,308) scale(8.16)">
     <rect x="3" y="6" width="56" height="17" rx="8.5" fill="#1A1B23"/>
     <rect x="13" y="27" width="56" height="17" rx="8.5" fill="#71747F"/>
   </g>
