@@ -167,6 +167,16 @@ pub fn run() {
                 });
             }
 
+            // [B28.2] Авто-восстановление прерванных звонков (краш/quit посреди
+            // пайплайна → sweep пометил failed при целом аудио). Гейты и лимит
+            // попыток внутри; ручной WOTOLD_RECOVER_CALL_ID главнее.
+            {
+                let app_for_auto = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    commands::auto_recover_interrupted_calls(app_for_auto).await;
+                });
+            }
+
             // [S2] Если CALL_DETECT_ENABLED == "1" с прошлой сессии — поднимаем
             // probe автоматически. Иначе sidecar спит до toggle'а юзером.
             #[cfg(target_os = "macos")]
