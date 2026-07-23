@@ -1,0 +1,5 @@
+{ "id": "case_03_paraphrase_budget",
+  "question": "во сколько обойдётся маркетинг в третьем квартале?",
+  "scope": "global", "k": 5,
+  "expect_bm25": "hit", "expect_hybrid": "hit",
+  "relevant_passage_keys": ["budget-t1", "budget-t2", "budget-r1"] }

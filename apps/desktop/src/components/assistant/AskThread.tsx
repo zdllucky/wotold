@@ -1,0 +1,91 @@
+// [B24.4] Тред сообщений ассистента — общий для раздела и вкладки звонка.
+// user → пузырь справа; assistant → AnswerMsg; pending → Wave-пузырь.
+
+import type { AssistantMessage } from '@wotold/contracts';
+
+import { Wave } from '../../ui';
+import { AnswerMsg } from './AnswerMsg';
+import { MsgTime } from './MsgTime';
+
+export interface AskThreadProps {
+  messages: AssistantMessage[];
+  pending: boolean;
+  pendingText: string;
+  /** Звонок текущего экрана (вкладка звонка) — источники его становятся seek-чипами. */
+  callId?: string | null;
+  onOpenCall?: (callId: string) => void;
+  onSeek?: (ms: number) => void;
+  onAskGlobal?: (question: string) => void;
+  /** [B26.5] Клик по контакт-источнику → раздел «Контакты». */
+  onOpenContacts?: () => void;
+}
+
+/** Вопрос, на который отвечает assistant-сообщение = предыдущий user-текст. */
+function questionFor(messages: AssistantMessage[], index: number): string {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m && m.role === 'user') return m.text;
+  }
+  return '';
+}
+
+export function AskThread({
+  messages,
+  pending,
+  pendingText,
+  callId = null,
+  onOpenCall,
+  onSeek,
+  onAskGlobal,
+  onOpenContacts,
+}: AskThreadProps) {
+  return (
+    // [B24.7 a11y H1] role="log": новые сообщения анонсируются AT (implicit
+    // aria-live=polite), чат-паттерн ARIA.
+    <div className="ask-thread" role="log">
+      {messages.map((m, i) =>
+        m.role === 'user' ? (
+          <div className="ask-row fade-up" data-me="true" key={m.id}>
+            {/* [B26.7] data-selectable: текст в облачках выделяется. */}
+            <div className="ask-bubble" data-selectable>
+              {m.text}
+              <MsgTime createdAt={m.createdAt} />
+            </div>
+          </div>
+        ) : (
+          <div className="ask-row fade-up" data-me="false" key={m.id}>
+            {m.answer ? (
+              <AnswerMsg
+                answer={m.answer}
+                question={questionFor(messages, i)}
+                messageId={m.id}
+                createdAt={m.createdAt}
+                callId={callId}
+                onOpenCall={onOpenCall}
+                onSeek={onSeek}
+                onAskGlobal={onAskGlobal}
+                onOpenContacts={onOpenContacts}
+              />
+            ) : (
+              <div className="ask-bubble" data-selectable style={{ whiteSpace: 'pre-line' }}>
+                {m.text}
+                <MsgTime createdAt={m.createdAt} />
+              </div>
+            )}
+          </div>
+        ),
+      )}
+      {pending && (
+        <div className="ask-row" data-me="false">
+          {/* [B24.7 a11y H1] role="status" — «Поиск…» объявляется AT. */}
+          <div className="ask-bubble ask-pend" role="status">
+            <span aria-hidden="true">
+              <Wave bars={4} color="var(--text-3)" />
+            </span>
+            {pendingText}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

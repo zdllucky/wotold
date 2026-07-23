@@ -69,12 +69,28 @@ futures-util = "0.3"
 # Скачивание модели — runtime download через https + checksum (B3.7c TODO).
 sherpa-onnx = { version = "1.13", default-features = false, features = ["static"], optional = true }
 
+# [M15.9] Текст-эмбеддер ассистента (`assistant/embedder.rs`) — optional,
+# включается `--features assistant-embed`. Спайк M15.9: fastembed отклонён
+# (TokenizerFiles требует 4 файла токенизатора → 5 SHA-записей каталога
+# против 2 у прямого пути; дефолт-фичи тянут hf-hub + image-models).
+# ort default-фичи включают download-binaries: build script качает prebuilt
+# ONNX Runtime — тот же сетевой прецедент, что sherpa-onnx выше.
+# tokenizers: onig достаточно для XLM-R tokenizer.json (Unigram).
+ort = { version = "=2.0.0-rc.12", features = ["ndarray"], optional = true }
+tokenizers = { version = "0.21", default-features = false, features = ["onig"], optional = true }
+ndarray = { version = "0.17", optional = true }
+
 # [Widget v4] objc для прямого вызова NSWindow.setMovableByWindowBackground —
 # единственный надёжный способ сделать transparent + decorations:false окно
 # draggable со всех точек (включая тачпад, где IPC-based startDragging
 # не успевает за быстрым tap-press-release циклом).
 [target."cfg(target_os = \"macos\")".dependencies]
 objc = "0.2"
+# [B27.6] Нативный share-пикер: типизированный objc2-стек (уже в Cargo.lock
+# транзитивно через wry) — NSRect/MainThreadOnly без ручного unsafe Encode.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSGeometry", "NSObject", "NSData"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSharingService", "NSView", "NSWindow", "NSResponder", "NSGraphics", "NSApplication", "NSImage"] }
 
 [dev-dependencies]
 httpmock = "0.7"
@@ -85,7 +101,9 @@ proptest = "1.5"
 rstest = "0.23"
 
 [features]
-default = ["voice-onnx"]
+# [B25] assistant-embed в default: без него семантический поиск ассистента
+# мёртв в prod/dev-бинаре (деградация до BM25 навсегда). Паттерн voice-onnx.
+default = ["voice-onnx", "assistant-embed"]
 # Реализация macOS-аудио живёт под этим cfg (M1.2). Включится в Этапе 2.
 audio-macos = []
 # Windows-захват = unimplemented (R4). Фича-флаг для будущего.
@@ -93,6 +111,9 @@ audio-windows = []
 # [B3.7] Включает OnnxEmbedder (ort + ndarray + Kaldi fbank preprocessing).
 # Production-сборка включает; default off для быстрого dev build.
 voice-onnx = ["dep:sherpa-onnx"]
+# [M15.9] ONNX-реализация текст-эмбеддера ассистента (retrieval Ph2).
+# Не в default: dev-сборка быстрее, graceful degradation до BM25 без него.
+assistant-embed = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 
 # [B16 audit P1]: жёстче политика на unsafe code и common pitfalls.
 # unsafe_code deny — pure-Rust core за исключением single FFI хелпера

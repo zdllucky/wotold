@@ -1,0 +1,5 @@
+{ "id": "case_06_call_scope_other",
+  "question": "какой бюджет на маркетинг?",
+  "scope": { "call": "fx-acme" }, "k": 12,
+  "expect_bm25": "hit", "expect_hybrid": "hit",
+  "relevant_passage_keys": ["budget-t1", "budget-r1"] }

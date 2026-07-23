@@ -74,11 +74,16 @@ impl LocalEnginePreset {
     }
 
     /// [M12-D5] Модели общие для всех presets — pyannote segmentation для
-    /// multi-speaker диаризации. Optional: без неё system track остаётся
-    /// single-bucket (degraded но рабочий).
+    /// multi-speaker диаризации + [M15.9] пара файлов текст-эмбеддера
+    /// ассистента. Все optional: без pyannote system track single-bucket,
+    /// без эмбеддера retrieval ассистента деградирует до чистого BM25.
     #[allow(dead_code)]
-    pub fn shared_model_ids() -> [ModelId; 1] {
-        [ModelId::PYANNOTE_SEGMENTATION]
+    pub fn shared_model_ids() -> [ModelId; 3] {
+        [
+            ModelId::PYANNOTE_SEGMENTATION,
+            ModelId::E5_SMALL_QINT8,
+            ModelId::E5_TOKENIZER,
+        ]
     }
 
     /// [P5.1] Human-friendly engine label для `calls.summary_engine` field.

@@ -42,11 +42,11 @@ import { InboxCards, InboxMonth, InboxWeek } from './InboxCalendarViews';
 import {
   FACETS_EMPTY,
   STR_FACET_KEYS,
+  confirmedParticipants,
   declinePlural,
   facetCount,
   groupByMonth,
   hasRange,
-  initials,
   matchesFacets,
   setRange,
   toggleFacet,
@@ -537,14 +537,8 @@ export function InboxView({
       results.forEach((r, i) => {
         if (r.status !== 'fulfilled') return;
         const callId = ready[i]!.id;
-        const out: string[] = [];
-        const names: string[] = [];
-        for (const s of r.value) {
-          if (s.confirmed && s.contact_display_name) {
-            out.push(initials(s.contact_display_name));
-            names.push(s.contact_display_name);
-          }
-        }
+        // [B29.1] Дедуп по контакту: несколько голосов одного человека — один аватар.
+        const { initials: out, names } = confirmedParticipants(r.value);
         next.set(callId, out);
         if (names.length > 0) persons.set(callId, names);
       });

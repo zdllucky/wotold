@@ -4,7 +4,7 @@
 // stats logic preserved 1-to-1 from the Atelier version; alphabet grouping
 // dropped for the v2 flat list.
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { humanError } from '../api/errors';
 import { ask } from '@tauri-apps/plugin-dialog';
 
@@ -19,7 +19,8 @@ import {
 import { listCalls, type Call } from '../api/recording';
 import { listCallSpeakers } from '../api/speakers';
 import { SP_COLORS } from './CallDetailUtils';
-import { Button, Empty, Skeleton, ViewHead } from '../ui';
+import { Button, Empty, IconBtn, Skeleton, ViewHead } from '../ui';
+import { useResizablePanel } from '../hooks/useResizablePanel';
 import { Icon, type IconName } from '../ui/Icon';
 import { bcp47, useI18n } from '../i18n';
 import { ContactFormModal } from './ContactFormModal';
@@ -77,6 +78,15 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
   const [formError, setFormError] = useState<string | null>(null);
   const [formBusy, setFormBusy] = useState(false);
   const [search, setSearch] = useState('');
+  // [B29.5b] Панель списка: drag-resize + collapse до полосы аватаров.
+  const panel = useResizablePanel({
+    min: 200,
+    max: 400,
+    defaultWidth: 240,
+    collapseAt: 170,
+    widthKey: 'wk-ctw',
+    collapsedKey: 'wk-ct-collapsed',
+  });
   const [statsByContact, setStatsByContact] = useState<Map<string, ContactStats>>(new Map());
   const [callsByContact, setCallsByContact] = useState<Map<string, Call[]>>(new Map());
 
@@ -256,19 +266,63 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
       </ViewHead>
 
       <div className="view-body">
-        {/* ── List ── */}
+        {/* ── List ── [B29.4] Канонная панель .side-list (прозрачный фон,
+            240px, resize+collapse — как чаты ассистента). */}
         <aside
-          className="rrail"
-          style={{
-            width: 300,
-            borderLeft: 'none',
-            borderRight: '1px solid var(--border)',
-            display: 'flex',
-            flexDirection: 'column',
-            flexShrink: 0,
-            minHeight: 0,
-          }}
+          className="side-list"
+          data-collapsed={panel.collapsed || undefined}
+          style={{ ['--side-w' as string]: `${panel.width}px` } as CSSProperties}
         >
+          {panel.collapsed ? (
+            // [B29.5b] Свёрнуто: expand + полоса аватаров (клик = открыть).
+            <div className="side-list-mini">
+              <div
+                className="scroll"
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 6,
+                  width: '100%',
+                }}
+              >
+              {filtered.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="avatar"
+                  title={c.display_name}
+                  aria-label={c.display_name}
+                  aria-current={c.id === activeId ? 'true' : undefined}
+                  onClick={() => setMode({ kind: 'view', contactId: c.id })}
+                  style={{
+                    background: c.is_owner
+                      ? SP_COLORS[0]
+                      : avatarColor(contacts.findIndex((x) => x.id === c.id)),
+                    width: 30,
+                    height: 30,
+                    fontSize: 11,
+                    flex: '0 0 auto',
+                    cursor: 'pointer',
+                    boxShadow: c.id === activeId ? '0 0 0 2px var(--accent)' : undefined,
+                  }}
+                >
+                  {initials(c.display_name)}
+                </button>
+              ))}
+              </div>
+              <IconBtn
+                icon="chevronRight"
+                label={t('contacts.expandPanel')}
+                tip={t('contacts.expandPanel')}
+                tipSide="right"
+                onClick={() => panel.setCollapsed(false)}
+              />
+            </div>
+          ) : (
+            <>
           <div className="scroll" style={{ flex: 1, minHeight: 0, padding: 6 }}>
           {filtered.length === 0 ? (
             <div className="u-faint" style={{ padding: 16, fontSize: 13, textAlign: 'center' }}>
@@ -284,8 +338,8 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
                   key={c.id}
                   type="button"
                   className="lrow"
+                  data-active={c.id === activeId ? 'true' : undefined}
                   onClick={() => setMode({ kind: 'view', contactId: c.id })}
-                  style={c.id === activeId ? { background: 'var(--active)' } : undefined}
                 >
                   <span
                     className="avatar"
@@ -315,6 +369,20 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
             })
           )}
           </div>
+          {/* [B30.3] Collapse — в футере (единый паттерн всех панелей). */}
+          <div className="side-list-foot">
+            <IconBtn
+              icon="chevronLeft"
+              size="sm"
+              label={t('contacts.collapsePanel')}
+              tip={t('contacts.collapsePanel')}
+              onClick={() => panel.setCollapsed(true)}
+            />
+          </div>
+            </>
+          )}
+          {/* [B30.5] Хэндл живёт и в свёрнутом виде — drag разворачивает. */}
+          <div className="panel-resize" onMouseDown={panel.onResizeStart} aria-hidden="true" />
         </aside>
 
         {/* ── Detail / Add / Edit ── */}

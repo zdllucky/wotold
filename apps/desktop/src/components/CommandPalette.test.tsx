@@ -69,4 +69,32 @@ describe('CommandPalette', () => {
     fireEvent.mouseDown(overlay);
     expect(props.onClose).toHaveBeenCalled();
   });
+
+  // [B24.6] ⌘K-fallback «Спросить ассистента» (SPEC §5).
+  test('assistant command is listed', () => {
+    setup();
+    expect(screen.getByText('Ассистент — поиск по звонкам')).toBeTruthy();
+  });
+
+  test('fallback appears only when neither commands nor calls match', () => {
+    const props = setup({ onAsk: vi.fn() });
+    const input = document.querySelector('.palette-input input') as HTMLInputElement;
+    // 'acme' матчит звонок → fallback НЕ показывается.
+    fireEvent.change(input, { target: { value: 'acme' } });
+    expect(screen.queryByText('Спросить ассистента')).toBeNull();
+    // Полный промах → fallback есть; Enter вызывает onAsk с запросом.
+    fireEvent.change(input, { target: { value: 'о чём договорились с юристами' } });
+    expect(screen.getByText('Ничего не найдено · Ассистент')).toBeTruthy();
+    expect(screen.getByText('Спросить ассистента')).toBeTruthy();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(props.onAsk).toHaveBeenCalledWith('о чём договорились с юристами');
+  });
+
+  test('no fallback without onAsk prop', () => {
+    setup();
+    const input = document.querySelector('.palette-input input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'полный промах' } });
+    expect(screen.queryByText('Спросить ассистента')).toBeNull();
+    expect(screen.getByText('Ничего не найдено')).toBeTruthy();
+  });
 });

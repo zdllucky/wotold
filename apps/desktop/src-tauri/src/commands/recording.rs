@@ -1338,6 +1338,109 @@ pub(crate) async fn maybe_headless_recover(app: AppHandle) {
     }
 }
 
+/// [B28.2] Максимум авто-восстановлений за один старт (не забивать
+/// resource queue при массовом бэклоге).
+const AUTO_RECOVER_MAX_PER_STARTUP: usize = 3;
+/// [B28.2] Лимит попыток на звонок (маркер-файл в call-dir) — иначе
+/// повторяющийся краш зациклил бы recovery навсегда.
+const AUTO_RECOVER_MAX_TRIES: u32 = 2;
+
+/// [B28.2] Авто-восстановление прерванных звонков на старте.
+///
+/// Кейс 3df01365 (23.07): WKWebView crash посреди пайплайна → рестарт →
+/// sweep пометил звонок failed НАВСЕГДА при целом аудио и даже готовом STT
+/// chunk-0. Аудио пишется на диск всю запись — терять такой звонок нельзя.
+///
+/// Кандидат: `status='failed' AND failed_reason IS NULL` (помечен sweep'ом,
+/// не настоящим фейлом пайплайна), на диске есть аудио, НЕТ transcript.md,
+/// попыток < лимита. Восстановление — тот же путь, что ручная
+/// `recover_chunked_call` (M13): reconstruct chunks, STT недостающих,
+/// reprocess.
+pub(crate) async fn auto_recover_interrupted_calls(app: AppHandle) {
+    let state = tauri::Manager::state::<AppState>(&app);
+    // Ручной headless-триггер главнее — его call_id не трогаем (двойной
+    // recovery одного звонка).
+    let headless_id = std::env::var("WOTOLD_RECOVER_CALL_ID")
+        .ok()
+        .map(|v| v.trim().to_string());
+
+    let candidates = match db::list_interrupted_failed_calls(&state.db).await {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("auto_recover: candidate query failed: {e}");
+            return;
+        }
+    };
+    let mut started = 0usize;
+    for call_id in candidates {
+        if started >= AUTO_RECOVER_MAX_PER_STARTUP {
+            log::warn!("auto_recover: cap {AUTO_RECOVER_MAX_PER_STARTUP} reached, rest deferred");
+            break;
+        }
+        if headless_id.as_deref() == Some(call_id.as_str()) {
+            continue;
+        }
+        let call_dir = state.store.call_dir(&call_id);
+        // Уже обработан (транскрипт есть) — failed относится к хвосту
+        // (recap?), не к аудио: не наш кейс.
+        if call_dir.join("transcript.md").exists() {
+            continue;
+        }
+        // Аудио должно существовать: root wav или chunk wav.
+        let chunks_dir = state.store.chunks_dir(&call_id);
+        let has_audio = state.store.mic_path(&call_id).exists()
+            || state.store.system_path(&call_id).exists()
+            || !crate::pipeline::audio_merger::list_chunk_wavs(
+                &chunks_dir,
+                crate::pipeline::audio_merger::TrackKind::Mic,
+            )
+            .is_empty()
+            || !crate::pipeline::audio_merger::list_chunk_wavs(
+                &chunks_dir,
+                crate::pipeline::audio_merger::TrackKind::System,
+            )
+            .is_empty();
+        if !has_audio {
+            continue;
+        }
+        // Анти-луп: счётчик попыток в маркер-файле.
+        let marker = call_dir.join(".auto-recover-tries");
+        let tries: u32 = std::fs::read_to_string(&marker)
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        if tries >= AUTO_RECOVER_MAX_TRIES {
+            log::warn!("auto_recover[{call_id}]: {tries} попыток исчерпано — оставляем failed");
+            continue;
+        }
+        if let Err(e) = std::fs::write(&marker, (tries + 1).to_string()) {
+            log::warn!("auto_recover[{call_id}]: marker write failed: {e}");
+        }
+        log::warn!(
+            "auto_recover[{call_id}]: прерванный звонок (попытка {}/{AUTO_RECOVER_MAX_TRIES}) → recovery",
+            tries + 1
+        );
+        if let Err(e) = spawn_recover_chunked(
+            state.db.clone(),
+            state.store.clone(),
+            state.device_id.clone(),
+            state.pipeline_tasks.clone(),
+            state.app_data_dir.clone(),
+            app.clone(),
+            call_id.clone(),
+        )
+        .await
+        {
+            log::warn!("auto_recover[{call_id}]: не стартовал: {e}");
+        } else {
+            started += 1;
+        }
+    }
+    if started > 0 {
+        log::info!("auto_recover: восстановление запущено для {started} звонков");
+    }
+}
+
 /// [P11.1] После того как chunk_runner перевёл chunk failed→done в
 /// `retry_chunk`, проверить: можно ли уже автоматически возобновить
 /// downstream pipeline (diarize → audio_merger → recap).

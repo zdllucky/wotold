@@ -1322,3 +1322,350 @@ html.recording-widget .rec-float {
   background: var(--active);
   color: var(--accent-text);
 }
+
+/* ── [B24] Ассистент — порт wk2.css хендоффа (Wotold v2 · Ассистент) ──
+   Канон: docs/design/wotold-v2/assistant.md. Базовые .ask-* / .composer-* /
+   .fade-up живут в wk.css — здесь только фиче-классы раздела. */
+.as-layout { display: flex; flex: 1 1 auto; min-height: 0; }
+/* [B29.4] Универсальная левая панель-список (Assistant/Contacts/Settings):
+   прозрачный фон, ширина var(--side-w), collapse до 48px-полосы. */
+.side-list {
+  position: relative;
+  flex: 0 0 var(--side-w, 240px);
+  width: var(--side-w, 240px);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.side-list[data-collapsed] {
+  flex-basis: 48px;
+  width: 48px;
+}
+.side-list-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  flex: 1;
+  min-height: 0;
+}
+.side-list .lrow[data-active='true'] { background: var(--active); }
+.as-chats-list { flex: 1; min-height: 0; padding: 6px 8px 10px; }
+/* [B29.3] Слим-ряд панели чатов: лейбл сверху. */
+.as-chats-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 0 12px;
+}
+/* [B30.3] Футер панели: collapse-кнопка ВЕЗДЕ снизу (единый паттерн). */
+.side-list-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 6px 8px 8px;
+  flex: 0 0 auto;
+}
+/* [B27.3] Название активного чата в хедере раздела. */
+.as-head-chat {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-size: var(--t-13);
+  color: var(--text-2);
+}
+.as-chats .navitem { position: relative; cursor: pointer; }
+.as-del { opacity: 0; margin-left: auto; flex: 0 0 auto; display: inline-flex; }
+.navitem:hover .as-del,
+.navitem:focus-within .as-del { opacity: 1; }
+.as-main { flex: 1 1 auto; min-width: 0; position: relative; display: flex; flex-direction: column; }
+.as-scroll { flex: 1; min-height: 0; }
+/* [B27.7] Подушка 190px: composer-dock с 6-строчным textarea выше прежнего. */
+.as-doc { max-width: 720px; margin: 0 auto; padding: 26px 24px 190px; }
+.as-empty {
+  max-width: 540px;
+  margin: 0 auto;
+  /* Нижняя подушка 140px: подсказки-чипы не подлезают под composer-dock
+     в невысоком окне (B24.7, замечание юзера по скрину). */
+  padding: 11vh 24px 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.as-empty-ico {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--sunken);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+/* AI-градиент: РОВНО три поля (сайдбар «Найти или спросить», ⌘K-палитра,
+   композер вопроса). Логотип и прочие элементы не перекрашиваются (SPEC §6). */
+@property --ai-a {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.ai-field {
+  --ai-bg: var(--raised);
+  border: 1px solid transparent !important;
+  background:
+    linear-gradient(var(--ai-bg), var(--ai-bg)) padding-box,
+    conic-gradient(from var(--ai-a), var(--sp1), var(--sp5), var(--sp2), var(--sp4), var(--sp1))
+      border-box !important;
+  animation: aiSpin 7s linear infinite;
+}
+.ai-field--panel { --ai-bg: var(--panel); }
+.ai-field:hover { animation-duration: 2.8s; }
+@keyframes aiSpin {
+  to { --ai-a: 360deg; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-field { animation: none; }
+}
+
+/* Сообщение-ответ ассистента */
+.ans-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 7px;
+  margin-left: -4px;
+  opacity: 0;
+  transition: opacity var(--fast);
+}
+.ask-row:hover .ans-acts,
+.ans-acts:focus-within { opacity: 1; }
+.as-doc .ask-row[data-me='false'] .ask-bubble { max-width: 90%; }
+.ask-pend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+.ask-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  margin-bottom: 5px;
+}
+.src-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.ctx { margin-top: 9px; }
+.ctx summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  /* [B24.7 a11y C3] text-3 вместо text-faint — контраст 4.5:1. */
+  color: var(--text-3);
+  user-select: none;
+}
+.ctx summary::-webkit-details-marker { display: none; }
+.ctx summary:hover { color: var(--text-2); }
+.ctx .ctx-arr { transition: transform var(--fast); }
+.ctx[open] .ctx-arr { transform: rotate(90deg); }
+.frag {
+  border-left: 2px solid var(--border-strong);
+  padding: 1px 0 1px 10px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.ctx-meta { margin-top: 9px; font-size: 11px; color: var(--text-3); /* a11y C3 */ }
+
+/* ── [B24.7 a11y] Фиксы по ревью a11y-architect (WCAG 2.2 AA) ── */
+/* C1: строка чата = некликабельный контейнер + настоящая кнопка открытия
+   (вложенный button внутри role=button ломал клавиатурное удаление). */
+.as-chat-ul { list-style: none; margin: 0; padding: 0; }
+.as-chat-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.as-chat-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+/* C2: видимый фокус основного инпута фичи (composer/palette глушат outline). */
+.composer-ask:focus-within,
+.palette:focus-within {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* H2: хитбокс интерактивных чипов ≥24px (SC 2.5.8) без роста визуала. */
+button.chip { position: relative; }
+button.chip::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+}
+/* [B27.1] Футер облачка-ответа: действия слева, время справа, один ряд. */
+.ans-foot {
+  display: flex;
+  align-items: center;
+  margin-top: 7px;
+  min-height: 24px;
+}
+.ans-foot .ans-acts {
+  margin-top: 0;
+}
+.ans-foot .msg-time {
+  margin: 0 0 0 auto;
+}
+
+/* [B27.8] Интерактивная [N]-ссылка на фрагмент в тексте ответа. */
+.frag-ref {
+  display: inline;
+  padding: 0 3px;
+  border: 0;
+  background: var(--sunken);
+  border-radius: var(--r-xs);
+  font-size: 11.5px;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color var(--fast), background var(--fast);
+}
+.frag-ref:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.frag-ref:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.frag--flash > .frag {
+  animation: fragFlash 1.4s var(--ease);
+}
+@keyframes fragFlash {
+  0%,
+  60% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frag--flash > .frag {
+    animation: none;
+    background: var(--accent-soft);
+  }
+}
+
+/* [B27.5] Портальный тултип (ui/Tooltip): визуал бывшего .tip::after,
+   но с переносом строк и max-width — не клипается краями/overflow. */
+.tooltip {
+  background: var(--raised);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 550;
+  padding: 3px 7px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border-2);
+  box-shadow: var(--shadow-sm);
+  max-width: 260px;
+}
+
+/* ── [B26.6-8] Облачка ассистента: время сообщения + lazy-фрагменты ── */
+.msg-time {
+  display: block;
+  width: max-content;
+  margin: 6px 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.msg-time:hover { color: var(--text-3); }
+/* Выделение — только в раскрытом (кликнутом) состоянии. */
+.msg-time[data-expanded] { color: var(--text-2); }
+.msg-time:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.frag-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 11px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.frag-more:hover { color: var(--text); }
+.frag-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.frag-more svg { transition: transform var(--fast); }
+@media (prefers-reduced-motion: reduce) {
+  .frag-more svg { transition: none; }
+}
+.frag-error {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+/* ── [B26.11→B29.5a] Resize-хэндл панелей (side-list) ──
+   Хэндл — копия канонного .rail-resize (wk.css:72). */
+.panel-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+}
+.panel-resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 3px;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background var(--fast);
+}
+.panel-resize:hover::after,
+.panel-resize:active::after {
+  background: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-resize::after { transition: none; }
+}

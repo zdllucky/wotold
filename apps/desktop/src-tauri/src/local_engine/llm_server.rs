@@ -38,6 +38,43 @@ pub struct LlamaServer {
     url: String,
 }
 
+/// [B28.3] PID-файл сервера. При force-quit/kill приложения дочерний
+/// llama-server осиротевает и держит порт — все последующие старты падают
+/// «/health timeout» → резидентная LLM мертва до ручного вмешательства
+/// (живой кейс 23.07: сирота пережила остановку, три llama-server подряд не
+/// поднялись). Перед spawn читаем pidfile и добиваем сироту (только если
+/// процесс с этим PID — действительно наш sidecar по имени).
+const PID_FILE: &str = "llama-server.pid";
+
+#[cfg(unix)]
+fn kill_stale_server(app_data_dir: &Path) {
+    let pid_path = app_data_dir.join(PID_FILE);
+    let Some(pid) = std::fs::read_to_string(&pid_path)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+    else {
+        return;
+    };
+    // Имя процесса обязано совпадать с нашим сайдкаром — чужие PID не трогаем
+    // (PID мог быть переиспользован системой).
+    let comm = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    if comm.ends_with(SERVER_SIDECAR) {
+        log::warn!("llama-server: убиваем сироту pid={pid} с прошлой сессии (держит порт)");
+        let _ = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .status();
+    }
+    let _ = std::fs::remove_file(&pid_path);
+}
+
+#[cfg(not(unix))]
+fn kill_stale_server(_app_data_dir: &Path) {}
+
 impl LlamaServer {
     pub fn url(&self) -> &str {
         &self.url
@@ -66,6 +103,9 @@ impl LlamaServer {
             .to_str()
             .ok_or_else(|| AppError::Other("non-utf8 model path".into()))?
             .to_string();
+        // [B28.3] Сирота с прошлой сессии держит порт → добиваем до spawn.
+        kill_stale_server(app_data_dir);
+
         let port_str = SERVER_PORT.to_string();
         let ctx_str = CTX_SIZE.to_string();
 
@@ -97,6 +137,12 @@ impl LlamaServer {
         let (mut rx, child) = sidecar
             .spawn()
             .map_err(|e| AppError::Other(format!("llama-server spawn: {e}")))?;
+
+        // [B28.3] PID нового сервера — чтобы следующий старт мог добить
+        // сироту, если этот процесс переживёт приложение.
+        if let Err(e) = std::fs::write(app_data_dir.join(PID_FILE), child.pid().to_string()) {
+            log::warn!("llama-server: pidfile write failed: {e}");
+        }
 
         // Дренируем вывод сервера в лог — иначе event-канал заполнится и сервер
         // застынет на write. Только логируем (stderr = perf/загрузка).

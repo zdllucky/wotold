@@ -1,6 +1,10 @@
 // [B18.6c] Wotold v2 uikit — icon button (.iconbtn from wk.css).
+// [B27.5] tip рендерится портальным <Tooltip> (CSS .tip::after клипался краями).
+
+import type { MouseEvent } from 'react';
 
 import { Icon, type IconName } from './Icon';
+import { Tooltip } from './Tooltip';
 
 interface IconBtnProps {
   icon: IconName;
@@ -10,7 +14,7 @@ interface IconBtnProps {
   tip?: string;
   tipSide?: 'right';
   iconSize?: number;
-  onClick?: () => void;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   title?: string;
   /** For dropdown/menu triggers — sets aria-haspopup="menu" + aria-expanded. */
@@ -33,15 +37,12 @@ export function IconBtn({
   expanded,
 }: IconBtnProps) {
   const s = iconSize ?? (size === 'sm' ? 15 : size === 'lg' ? 18 : 16);
-  const className =
-    'iconbtn' + (tip ? ' tip' : '') + (tip && tipSide === 'right' ? ' tip--right' : '');
-  return (
+  const btn = (
     <button
       type="button"
-      className={className}
+      className="iconbtn"
       data-size={size}
       data-active={active ? 'true' : undefined}
-      data-tip={tip}
       aria-label={label}
       aria-haspopup={hasPopup ? 'menu' : undefined}
       aria-expanded={hasPopup ? expanded ?? false : undefined}
@@ -52,4 +53,6 @@ export function IconBtn({
       <Icon name={icon} size={s} />
     </button>
   );
+  if (!tip) return btn;
+  return <Tooltip content={tip} side={tipSide === 'right' ? 'right' : 'top'}>{btn}</Tooltip>;
 }
