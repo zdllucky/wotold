@@ -1044,6 +1044,7 @@ const ruInternal = {
     fragCollapse: 'свернуть',
     fragLoading: 'загрузка…',
     fragLoadError: 'Не удалось загрузить фрагмент',
+    fragRefLabel: 'Фрагмент {n}',
     durHours: '{h} ч {m} мин',
     durMinutes: '{m} мин',
     emptyTitle: 'Поиск по всем звонкам',

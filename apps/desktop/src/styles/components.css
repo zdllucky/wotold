@@ -1484,6 +1484,59 @@ button.chip::after {
   position: absolute;
   inset: -3px;
 }
+/* [B27.1] Футер облачка-ответа: действия слева, время справа, один ряд. */
+.ans-foot {
+  display: flex;
+  align-items: center;
+  margin-top: 7px;
+  min-height: 24px;
+}
+.ans-foot .ans-acts {
+  margin-top: 0;
+}
+.ans-foot .msg-time {
+  margin: 0 0 0 auto;
+}
+
+/* [B27.8] Интерактивная [N]-ссылка на фрагмент в тексте ответа. */
+.frag-ref {
+  display: inline;
+  padding: 0 3px;
+  border: 0;
+  background: var(--sunken);
+  border-radius: var(--r-xs);
+  font-size: 11.5px;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color var(--fast), background var(--fast);
+}
+.frag-ref:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.frag-ref:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.frag--flash > .frag {
+  animation: fragFlash 1.4s var(--ease);
+}
+@keyframes fragFlash {
+  0%,
+  60% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frag--flash > .frag {
+    animation: none;
+    background: var(--accent-soft);
+  }
+}
+
 /* [B27.5] Портальный тултип (ui/Tooltip): визуал бывшего .tip::after,
    но с переносом строк и max-width — не клипается краями/overflow. */
 .tooltip {

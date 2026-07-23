@@ -116,6 +116,65 @@ describe('AnswerMsg', () => {
     );
   });
 
+  // [B27.8] Интерактивные [N]-ссылки: клик раскрывает контекст + подсвечивает.
+  it('[N] в тексте — кнопка; клик раскрывает контекст и подсвечивает фрагмент', () => {
+    const { container } = render(
+      <AnswerMsg
+        messageId="m1"
+        createdAt="2026-07-23T10:00:00Z"
+        answer={answer({ text: 'Итог (фрагменты [2]).' })}
+        question="q"
+        onOpenCall={() => {}}
+      />,
+    );
+    const ref = screen.getByRole('button', { name: 'Фрагмент 2' });
+    expect(ref).toHaveTextContent('[2]');
+    const details = container.querySelector('details.ctx') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+
+    fireEvent.click(ref);
+    expect(details.open).toBe(true);
+    const wraps = container.querySelectorAll('.frag-wrap');
+    expect(wraps[1].className).toContain('frag--flash');
+    expect(wraps[0].className).not.toContain('frag--flash');
+  });
+
+  it('[N] вне диапазона остаётся текстом; controlled summary работает', () => {
+    const { container } = render(
+      <AnswerMsg
+        messageId="m1"
+        createdAt="2026-07-23T10:00:00Z"
+        answer={answer({ text: 'см. [7]' })}
+        question="q"
+        onOpenCall={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Фрагмент 7' })).not.toBeInTheDocument();
+    expect(screen.getByText(/см\. \[7\]/)).toBeInTheDocument();
+
+    const details = container.querySelector('details.ctx') as HTMLDetailsElement;
+    fireEvent.click(screen.getByText('Контекст поиска'));
+    expect(details.open).toBe(true);
+    fireEvent.click(screen.getByText('Контекст поиска'));
+    expect(details.open).toBe(false);
+  });
+
+  // [B27.1] Время и действия — в одном ряду .ans-foot.
+  it('время сообщения соседствует с действиями в .ans-foot', () => {
+    const { container } = render(
+      <AnswerMsg
+        messageId="m1"
+        createdAt="2026-07-23T10:00:00Z"
+        answer={answer()}
+        question="q"
+        onOpenCall={() => {}}
+      />,
+    );
+    const foot = container.querySelector('.ans-foot') as HTMLElement;
+    expect(foot.querySelector('.ans-acts')).not.toBeNull();
+    expect(foot.querySelector('.msg-time')).not.toBeNull();
+  });
+
   it('fmtSourceClock: минуты без часов', () => {
     expect(fmtSourceClock(0)).toBe('0:00');
     expect(fmtSourceClock(62000)).toBe('1:02');
