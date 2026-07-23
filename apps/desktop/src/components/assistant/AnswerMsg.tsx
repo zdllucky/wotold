@@ -7,6 +7,8 @@ import { useCallback, useState } from 'react';
 import type { AssistantAnswer, AssistantFragment, AssistantSource } from '@wotold/contracts';
 
 import { useI18n } from '../../i18n';
+import { FragmentRow } from './FragmentRow';
+import { MsgTime } from './MsgTime';
 import { Chip, Dropdown, Icon, IconBtn, MenuItem } from '../../ui';
 
 const COPIED_RESET_MS = 1400;
@@ -45,20 +47,29 @@ export interface AnswerMsgProps {
   answer: AssistantAnswer;
   /** Вопрос, на который это ответ (для эскалации «Искать во всех звонках»). */
   question: string;
+  /** [B26.6] id сообщения — ключ ленивой подгрузки полного текста фрагмента. */
+  messageId: string;
+  /** [B26.8] Время сообщения для MsgTime. */
+  createdAt: string;
   /** Звонок текущего экрана (вкладка звонка) — его источники становятся seek-чипами. */
   callId?: string | null;
   onOpenCall?: (callId: string) => void;
   onSeek?: (ms: number) => void;
   onAskGlobal?: (question: string) => void;
+  /** [B26.5] Клик по контакт-источнику (sentinel contact:*) → раздел «Контакты». */
+  onOpenContacts?: () => void;
 }
 
 export function AnswerMsg({
   answer,
   question,
+  messageId,
+  createdAt,
   callId = null,
   onOpenCall,
   onSeek,
   onAskGlobal,
+  onOpenContacts,
 }: AnswerMsgProps) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -94,31 +105,36 @@ export function AnswerMsg({
   }, [answer, doCopy]);
 
   const sourceChip = (s: AssistantSource, i: number) => {
-    const own = callId != null && s.callId === callId;
+    // [B26.5] Контакт-источник (sentinel) — ведёт в раздел «Контакты».
+    const isContact = s.callId.startsWith('contact:');
+    const own = !isContact && callId != null && s.callId === callId;
     const seek = own && onSeek && s.startMs != null ? () => onSeek(s.startMs as number) : undefined;
-    const open = !own && onOpenCall ? () => onOpenCall(s.callId) : undefined;
+    const open = !own && !isContact && onOpenCall ? () => onOpenCall(s.callId) : undefined;
     return (
-      <Chip key={`${s.callId}-${s.startMs ?? 'x'}-${i}`} size="sm" tone="line" icon={own ? 'clock' : 'doc'} onClick={seek ?? open}>
+      <Chip
+        key={`${s.callId}-${s.startMs ?? 'x'}-${i}`}
+        size="sm"
+        tone="line"
+        icon={isContact ? 'user' : own ? 'clock' : 'doc'}
+        onClick={isContact ? onOpenContacts : (seek ?? open)}
+      >
         {sourceLabel(s, callId)}
       </Chip>
     );
   };
 
+  // [B26.6] Управляемая строка: усечённый текст + lazy-раскрытие.
   const frag = (f: AssistantFragment, i: number) => (
-    <div className="frag" key={`${f.callId}-${f.startMs ?? 'x'}-${i}`}>
-      <b style={{ color: speakerColor(f.callId, f.speaker) }}>{f.speaker ?? f.callTitle}</b>
-      <span className="u-muted">
-        {' '}
-        · {f.callTitle}
-        {f.startMs != null ? ` · ${fmtSourceClock(f.startMs)}` : ''}
-      </span>
-      <br />
-      {f.text}
-    </div>
+    <FragmentRow
+      key={`${f.callId}-${f.startMs ?? 'x'}-${i}`}
+      fragment={f}
+      index={i}
+      messageId={messageId}
+    />
   );
 
   return (
-    <div className="ask-bubble">
+    <div className="ask-bubble" data-selectable>
       {answer.kind === 'refusal' && (
         <div className="ask-note">
           <Icon name="shield" size={13} />
@@ -182,6 +198,7 @@ export function AnswerMsg({
           </Dropdown>
         </div>
       )}
+      <MsgTime createdAt={createdAt} />
     </div>
   );
 }

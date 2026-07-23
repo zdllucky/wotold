@@ -5,6 +5,7 @@ import type { AssistantMessage } from '@wotold/contracts';
 
 import { Wave } from '../../ui';
 import { AnswerMsg } from './AnswerMsg';
+import { MsgTime } from './MsgTime';
 
 export interface AskThreadProps {
   messages: AssistantMessage[];
@@ -15,6 +16,8 @@ export interface AskThreadProps {
   onOpenCall?: (callId: string) => void;
   onSeek?: (ms: number) => void;
   onAskGlobal?: (question: string) => void;
+  /** [B26.5] Клик по контакт-источнику → раздел «Контакты». */
+  onOpenContacts?: () => void;
 }
 
 /** Вопрос, на который отвечает assistant-сообщение = предыдущий user-текст. */
@@ -34,6 +37,7 @@ export function AskThread({
   onOpenCall,
   onSeek,
   onAskGlobal,
+  onOpenContacts,
 }: AskThreadProps) {
   return (
     // [B24.7 a11y H1] role="log": новые сообщения анонсируются AT (implicit
@@ -42,7 +46,11 @@ export function AskThread({
       {messages.map((m, i) =>
         m.role === 'user' ? (
           <div className="ask-row fade-up" data-me="true" key={m.id}>
-            <div className="ask-bubble">{m.text}</div>
+            {/* [B26.7] data-selectable: текст в облачках выделяется. */}
+            <div className="ask-bubble" data-selectable>
+              {m.text}
+              <MsgTime createdAt={m.createdAt} />
+            </div>
           </div>
         ) : (
           <div className="ask-row fade-up" data-me="false" key={m.id}>
@@ -50,14 +58,18 @@ export function AskThread({
               <AnswerMsg
                 answer={m.answer}
                 question={questionFor(messages, i)}
+                messageId={m.id}
+                createdAt={m.createdAt}
                 callId={callId}
                 onOpenCall={onOpenCall}
                 onSeek={onSeek}
                 onAskGlobal={onAskGlobal}
+                onOpenContacts={onOpenContacts}
               />
             ) : (
-              <div className="ask-bubble" style={{ whiteSpace: 'pre-line' }}>
+              <div className="ask-bubble" data-selectable style={{ whiteSpace: 'pre-line' }}>
                 {m.text}
+                <MsgTime createdAt={m.createdAt} />
               </div>
             )}
           </div>
