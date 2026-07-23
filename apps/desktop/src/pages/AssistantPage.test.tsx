@@ -14,7 +14,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 import { invoke } from '@tauri-apps/api/core';
 import { ToastProvider } from '../ui';
 import { resetAssistantChatsCacheForTests } from '../hooks/useAssistantChats';
-import { AssistantPage } from './AssistantPage';
+import { AssistantPage, clampChatsWidth } from './AssistantPage';
 
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
@@ -38,6 +38,7 @@ function yesterdayIso(): string {
 describe('AssistantPage', () => {
   beforeEach(() => {
     resetAssistantChatsCacheForTests();
+    localStorage.clear();
     mockInvoke.mockReset();
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'assistant_index_stats') return STATS;
@@ -111,5 +112,69 @@ describe('AssistantPage', () => {
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith('assistant_delete_chat', { chatId: 'c-today' }),
     );
+  });
+});
+
+
+// ── [B26.11] Панель чатов: clamp, collapse, fuzzy-поиск, persist ──
+
+describe('панель чатов', () => {
+  const chat = (id: string, title: string) => ({
+    id,
+    callId: null,
+    title,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  beforeEach(() => {
+    resetAssistantChatsCacheForTests();
+    localStorage.clear();
+    mockInvoke.mockReset();
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'assistant_index_stats')
+        return { indexedCalls: 1, totalCalls: 1, totalDurationSec: 60 };
+      if (cmd === 'assistant_list_chats')
+        return [chat('c1', 'Планёрки итоги июня'), chat('c2', 'Бюджет на квартал')];
+      if (cmd === 'assistant_get_chat') return [];
+      return null;
+    });
+  });
+
+  it('clampChatsWidth держит границы 180-400', () => {
+    expect(clampChatsWidth(100)).toBe(180);
+    expect(clampChatsWidth(500)).toBe(400);
+    expect(clampChatsWidth(250)).toBe(250);
+  });
+
+  it('collapse скрывает список/поиск, expand возвращает; persist в localStorage', async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText('Планёрки итоги июня')).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть список чатов' }));
+    expect(screen.queryByText('Планёрки итоги июня')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Поиск по чатам…')).not.toBeInTheDocument();
+    expect(localStorage.getItem('wk-aschats-collapsed')).toBe('1');
+    // «Новый чат» остаётся доступен иконкой.
+    expect(screen.getByRole('button', { name: 'Новый чат' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть список чатов' }));
+    expect(await screen.findByText('Планёрки итоги июня')).toBeInTheDocument();
+  });
+
+  it('fuzzy-поиск фильтрует чаты, Esc сбрасывает', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Бюджет на квартал')).toBeInTheDocument());
+    const input = screen.getByLabelText('Поиск по чатам…');
+    fireEvent.change(input, { target: { value: 'плнрк' } });
+    expect(screen.getByText('Планёрки итоги июня')).toBeInTheDocument();
+    expect(screen.queryByText('Бюджет на квартал')).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: 'qqqq' } });
+    expect(screen.getByText('Чатов по запросу не найдено')).toBeInTheDocument();
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.getByText('Бюджет на квартал')).toBeInTheDocument();
   });
 });

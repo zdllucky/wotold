@@ -1540,3 +1540,48 @@ button.chip::after {
   font-size: 11px;
   color: var(--warn);
 }
+
+/* ── [B26.11] Панель чатов: resize + collapse ── */
+.as-chats {
+  position: relative;
+  flex-basis: var(--aschats-w, 232px);
+  width: var(--aschats-w, 232px);
+}
+.as-chats[data-collapsed] {
+  flex-basis: 48px;
+  width: 48px;
+}
+.as-chats-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+}
+/* Хэндл — копия канонного .rail-resize (wk.css:72). */
+.as-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+}
+.as-resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 3px;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background var(--fast);
+}
+.as-resize:hover::after,
+.as-resize:active::after {
+  background: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .as-resize::after { transition: none; }
+}
