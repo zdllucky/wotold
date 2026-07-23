@@ -47,7 +47,7 @@ describe('AnswerMsg', () => {
   });
 
   it('answer: текст, источники, контекст, mono-строка', () => {
-    render(<AnswerMsg answer={answer()} question="q" onOpenCall={() => {}} />);
+    render(<AnswerMsg messageId="m1" createdAt="2026-07-23T10:00:00Z" answer={answer()} question="q" onOpenCall={() => {}} />);
     expect(screen.getByText('Договорились о пилоте.')).toBeInTheDocument();
     // Чужие звонки: «Название · т/к» и «Название» без таймкода (чипы-кнопки).
     expect(screen.getByRole('button', { name: 'Синхрон по пилоту · 1:02' })).toBeInTheDocument();
@@ -60,7 +60,7 @@ describe('AnswerMsg', () => {
     const onSeek = vi.fn();
     const onOpenCall = vi.fn();
     render(
-      <AnswerMsg answer={answer()} question="q" callId="c1" onSeek={onSeek} onOpenCall={onOpenCall} />,
+      <AnswerMsg messageId="m1" createdAt="2026-07-23T10:00:00Z" answer={answer()} question="q" callId="c1" onSeek={onSeek} onOpenCall={onOpenCall} />,
     );
     fireEvent.click(screen.getByRole('button', { name: '1:02' }));
     expect(onSeek).toHaveBeenCalledWith(62000);
@@ -71,6 +71,8 @@ describe('AnswerMsg', () => {
   it('refusal: нота без «Контекста поиска» и без действий', () => {
     render(
       <AnswerMsg
+        messageId="m1"
+        createdAt="2026-07-23T10:00:00Z"
         answer={answer({ kind: 'refusal', sources: [], fragments: [], fragmentTokens: 0 })}
         question="q"
       />,
@@ -84,6 +86,8 @@ describe('AnswerMsg', () => {
     const onAskGlobal = vi.fn();
     render(
       <AnswerMsg
+        messageId="m1"
+        createdAt="2026-07-23T10:00:00Z"
         answer={answer({
           kind: 'empty',
           text: 'В этом звонке этого не нашлось.',
@@ -101,7 +105,7 @@ describe('AnswerMsg', () => {
   });
 
   it('copy: обычная и «с источниками» (формат SPEC)', async () => {
-    render(<AnswerMsg answer={answer()} question="q" />);
+    render(<AnswerMsg messageId="m1" createdAt="2026-07-23T10:00:00Z" answer={answer()} question="q" />);
     fireEvent.click(screen.getByLabelText('Скопировать'));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Договорились о пилоте.');
 

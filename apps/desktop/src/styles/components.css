@@ -1490,3 +1490,53 @@ button.chip::after {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ── [B26.6-8] Облачка ассистента: время сообщения + lazy-фрагменты ── */
+.msg-time {
+  display: block;
+  width: max-content;
+  margin: 6px 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.msg-time:hover { color: var(--text-3); }
+/* Выделение — только в раскрытом (кликнутом) состоянии. */
+.msg-time[data-expanded] { color: var(--text-2); }
+.msg-time:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.frag-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 11px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.frag-more:hover { color: var(--text); }
+.frag-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.frag-more svg { transition: transform var(--fast); }
+@media (prefers-reduced-motion: reduce) {
+  .frag-more svg { transition: none; }
+}
+.frag-error {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--warn);
+}
