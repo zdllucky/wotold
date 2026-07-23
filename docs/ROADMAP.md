@@ -104,6 +104,22 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 Итог батча: 804 rust + 562 vitest зелёные, clippy -D warnings чист, tsc чист.
 
+## B27 · Assistant polish 2: тултипы, share, composer, [N]-рефы, контакт-звонки
+
+Батч-фидбек юзера после B26 (9 пунктов).
+
+- [x] **B27.5** (M) Портальный `ui/Tooltip` вместо CSS `.tip::after` (тот резался краями/overflow: «уть список чатов», уплывший тултип statsChip): portal в body, position:fixed + viewport-clamp + флип, hover-delay 300ms / focus сразу / Esc / click-hide (SC 1.4.13); IconBtn переведён — все call-sites чинятся разом; мёртвый CSS `.tip*` выпилен.
+- [x] **B27.1** (S) `.ans-foot`: действия (copy/share) и время сообщения — один flex-ряд (лево/право).
+- [x] **B27.8** (M) Интерактивные `[N]`-ссылки в тексте ответа: `parseFragmentRefs` (валидны только все N в диапазоне), клик → controlled `<details>` раскрывается, скролл к фрагменту + `.frag--flash` подсветка (reduced-motion учтён).
+- [x] **B27.2** (S) Header панели чатов без inline-стилей: `.as-chats-head` (Новый чат + collapse) + поиск с иконкой (`.input>.iico`).
+- [x] **B27.3** (S) ViewHead: активный чат → его полное название (ellipsis); statsChip только без активного чата.
+- [x] **B27.4** (M) 50 обезличенных подсказок ×3 локали в `suggestions.ts` (контент-модуль, не i18n — DotPath-тип), случайные 4 на маунт (частичный Fisher-Yates).
+- [x] **B27.7** (M) Композер многострочный: textarea auto-grow по scrollHeight до ~6 строк (field-sizing в WKWebView нет), Enter = отправка / Shift+Enter = перенос, IME-guard; подушки треда подняты под высокий док.
+- [x] **B27.6** (L) Нативный share: Rust-команда `share_text` — NSSharingServicePicker (objc2-app-kit, typed FFI; thread_local Retained держит пикер; main-thread через run_on_main_thread; не-macOS → Err, R4-стиль); UI: кнопка зовёт пикер у своего rect, Dropdown copy/mailto удалён, фоллбек — копия с источниками.
+- [x] **B27.9** (M) «Контакт есть, а звонков нет»: (a) data-fix — 3 звонка с полными transcript/recap (июльский repair) переведены из зависшего `failed` в `ready` по явным id → backfill индексирует; (b) `contact_call_stats` считает ВСЕ confirmed-звонки + `indexed_count` по `assistant_index_state`, карточка честно «Звонков вместе: N (в поиске M)».
+
+Итог батча: 809 rust + 584 vitest зелёные, clippy -D warnings / fmt / tsc чисты.
+
 ---
 
 ## Беклог (groomed)
