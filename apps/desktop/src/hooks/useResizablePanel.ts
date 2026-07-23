@@ -2,7 +2,7 @@
 // B26.11 (панель чатов ассистента) и рейла App.tsx: drag правой грани с
 // clamp, авто-collapse ниже порога, persist в localStorage.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface UseResizablePanelOpts {
   min: number;
@@ -62,6 +62,12 @@ export function useResizablePanel(opts: UseResizablePanelOpts): ResizablePanel {
     }
   }, [width, collapsed, widthKey, collapsedKey]);
 
+  // [ревью B29 HIGH] Активный drag: страницы с панелями конditionally-рендерятся
+  // (смена view хоткеем посреди драга) — без unmount-cleanup листенеры и
+  // cursor/userSelect на body зависали бы до следующего mouseup.
+  const activeDragEnd = useRef<(() => void) | null>(null);
+  useEffect(() => () => activeDragEnd.current?.(), []);
+
   // Drag правой грани (канон рейла App.tsx onResizeStart).
   const onResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -73,6 +79,7 @@ export function useResizablePanel(opts: UseResizablePanelOpts): ResizablePanel {
         document.removeEventListener('mouseup', end);
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        activeDragEnd.current = null;
       };
       const move = (ev: MouseEvent) => {
         const w = sw + (ev.clientX - sx);
@@ -87,6 +94,7 @@ export function useResizablePanel(opts: UseResizablePanelOpts): ResizablePanel {
       document.addEventListener('mouseup', end);
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
+      activeDragEnd.current = end;
     },
     [width, min, max, collapseAt],
   );

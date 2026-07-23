@@ -87,3 +87,22 @@ describe('useResizablePanel', () => {
     expect(document.body.style.cursor).toBe('');
   });
 });
+
+describe('unmount-cleanup', () => {
+  it('unmount посреди драга снимает листенеры и body-стили', () => {
+    localStorage.clear();
+    const { result, unmount } = renderHook(() => useResizablePanel(OPTS));
+    act(() => {
+      result.current.onResizeStart({
+        preventDefault: () => {},
+        clientX: 232,
+      } as unknown as React.MouseEvent);
+    });
+    expect(document.body.style.cursor).toBe('col-resize');
+    unmount(); // смена view посреди драга (ревью B29 HIGH)
+    expect(document.body.style.cursor).toBe('');
+    expect(document.body.style.userSelect).toBe('');
+    // Поздний mousemove не падает и ничего не делает.
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 60 }));
+  });
+});
