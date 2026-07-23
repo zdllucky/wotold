@@ -1366,13 +1366,14 @@ html.recording-widget .rec-float {
 .navitem:focus-within .as-del { opacity: 1; }
 .as-main { flex: 1 1 auto; min-width: 0; position: relative; display: flex; flex-direction: column; }
 .as-scroll { flex: 1; min-height: 0; }
-.as-doc { max-width: 720px; margin: 0 auto; padding: 26px 24px 150px; }
+/* [B27.7] Подушка 190px: composer-dock с 6-строчным textarea выше прежнего. */
+.as-doc { max-width: 720px; margin: 0 auto; padding: 26px 24px 190px; }
 .as-empty {
   max-width: 540px;
   margin: 0 auto;
   /* Нижняя подушка 140px: подсказки-чипы не подлезают под composer-dock
      в невысоком окне (B24.7, замечание юзера по скрину). */
-  padding: 11vh 24px 140px;
+  padding: 11vh 24px 190px;
   display: flex;
   flex-direction: column;
   align-items: center;
