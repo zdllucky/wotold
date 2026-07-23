@@ -30,6 +30,9 @@ pub enum AssistantPassageKind {
     /// [M16.6] Синтетическая «карточка звонка»: титул + дата + участники —
     /// якорь для вопросов «в каком звонке / кто был / о чём» (глобально).
     CallMeta,
+    /// [B26.5] Карточка контакта (инжект-канал; в assistant_passages НЕ
+    /// хранится — только на wire в answer_json, sentinel call_id contact:*).
+    Contact,
 }
 
 impl AssistantPassageKind {
@@ -42,6 +45,7 @@ impl AssistantPassageKind {
             AssistantPassageKind::ActionItem => "action_item",
             AssistantPassageKind::OpenQuestion => "open_question",
             AssistantPassageKind::CallMeta => "call_meta",
+            AssistantPassageKind::Contact => "contact",
         }
     }
 
@@ -53,6 +57,7 @@ impl AssistantPassageKind {
             "action_item" => AssistantPassageKind::ActionItem,
             "open_question" => AssistantPassageKind::OpenQuestion,
             "call_meta" => AssistantPassageKind::CallMeta,
+            "contact" => AssistantPassageKind::Contact,
             _ => return None,
         })
     }

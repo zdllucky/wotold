@@ -15,7 +15,8 @@ export type AssistantPassageKind =
   | 'decision'
   | 'action_item'
   | 'open_question'
-  | 'call_meta';
+  | 'call_meta'
+  | 'contact';
 
 /**
  * Источник ответа: звонок + опциональный таймкод.

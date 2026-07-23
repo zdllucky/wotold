@@ -10,6 +10,7 @@
 pub mod answer;
 pub mod budget;
 pub mod classifier;
+pub mod contacts_ctx;
 pub mod embed_cache;
 pub mod embedder;
 #[cfg(test)]
@@ -147,8 +148,17 @@ pub async fn ask_core_with(
                     .await?;
             let ctx = budget::assemble(hits, retrieval::Scope::Call(&call_id));
             if !ctx.fragments.is_empty() {
-                return llm_answer_path(provider, pool, bus, chat.id, ctx, &history, &question)
-                    .await;
+                return llm_answer_path(
+                    provider,
+                    pool,
+                    bus,
+                    chat.id,
+                    ctx,
+                    &history,
+                    &question,
+                    HashMap::new(),
+                )
+                .await;
             }
             // Пассажей нет (звонок без артефактов) — обычный конвейер ниже.
         }
@@ -193,7 +203,18 @@ pub async fn ask_core_with(
     )
     .await?;
     let hits_total = hits.len();
-    let ctx = budget::assemble(hits, scope);
+    let mut ctx = budget::assemble(hits, scope);
+
+    // [B26.5b] Инжект контактов: имя контакта в вопросе → карточка контакта
+    // фрагментом-источником (kind=contact, sentinel call_id). Идёт ДО
+    // empty-проверки: вопрос «чем занимается X» без звонков честно отвечается
+    // карточкой.
+    let (contact_hits, contact_titles) =
+        contacts_ctx::contact_hits_for_question(pool, &question).await;
+    for hit in contact_hits {
+        ctx.token_total += hit.token_est;
+        ctx.fragments.push(hit);
+    }
 
     // [M16.1] Диагностика отбора — ТОЛЬКО id/метрики, без текста вопросов и
     // фрагментов (приватность контента, W5). Включается RUST_LOG=debug.
@@ -244,12 +265,23 @@ pub async fn ask_core_with(
     }
 
     // 4-6. Общий LLM-хвост (титулы/даты → генерация → сборка → persist).
-    llm_answer_path(provider, pool, bus, chat.id, ctx, &history, &question).await
+    llm_answer_path(
+        provider,
+        pool,
+        bus,
+        chat.id,
+        ctx,
+        &history,
+        &question,
+        contact_titles,
+    )
+    .await
 }
 
 /// [M16.5] Общий LLM-хвост `ask`: call_meta → generate_answer → сборка
 /// AssistantAnswer → finish. Используется и обычным конвейером (после
 /// retrieval+budget), и call-summary путём (рекап-пассажи мимо FTS).
+#[allow(clippy::too_many_arguments)]
 async fn llm_answer_path(
     provider: &dyn LlmProvider,
     pool: &SqlitePool,
@@ -258,10 +290,13 @@ async fn llm_answer_path(
     ctx: budget::BudgetedContext,
     history: &[AssistantMessage],
     question: &str,
+    // [B26.5] sentinel-титулы контакт-фрагментов (call_meta их не резолвит).
+    extra_titles: HashMap<String, String>,
 ) -> Result<AskOutcome, AppError> {
     // Титулы + даты звонков для промпта и источников ([M16.2] дата в
     // заголовке фрагмента — опора для «когда»-вопросов).
-    let (titles, dates) = call_meta(pool, &ctx.fragments).await?;
+    let (mut titles, dates) = call_meta(pool, &ctx.fragments).await?;
+    titles.extend(extra_titles);
 
     bus.assistant_status(&AssistantStatusEvent {
         chat_id: chat_id.clone(),
@@ -701,6 +736,44 @@ mod tests {
         assert_eq!(ans.kind, AssistantAnswerKind::Empty);
         assert_eq!(ans.text, EMPTY_PERIOD_TEXT);
         assert_eq!(mock.call_count(), 0);
+    }
+
+    // [B26.5b] Имя контакта в обычном вопросе → карточка контакта
+    // инжектится фрагментом-источником в контекст LLM.
+    #[tokio::test]
+    async fn contact_name_in_question_injects_card_fragment() {
+        let db = fresh_db().await;
+        seed_call_with_passages(&db.pool, "c1", "Синхрон", &["обсуждали бюджет проекта"]).await;
+        sqlx::query(
+            "INSERT INTO contacts (id, display_name, org, created_at, updated_at)
+             VALUES ('ct1', 'Иван Петров', 'Acme', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        let mock = MockProvider::scripted(vec![Ok(serde_json::json!({
+            "answer": "Иван — контакт Acme, обсуждали бюджет.",
+            "used_fragments": [1]
+        }))]);
+        let bus = EventBus::new(None);
+        let out = ask_core(&mock, &db.pool, &bus, args("что Иван говорил про бюджет"))
+            .await
+            .unwrap();
+        let ans = out.message.answer.as_ref().unwrap();
+        assert!(
+            mock.last_input().contains("Иван Петров — контакт, Acme"),
+            "карточка контакта в промпте: {}",
+            mock.last_input()
+        );
+        assert!(
+            ans.fragments
+                .iter()
+                .any(|f| f.kind == AssistantPassageKind::Contact
+                    && f.call_id.starts_with("contact:")
+                    && f.call_title == "Иван Петров"),
+            "контакт-фрагмент с sentinel и титулом-именем"
+        );
     }
 
     // [M16.4] Мета-вопрос → детерминированный ответ роутера, LLM не зовётся.
