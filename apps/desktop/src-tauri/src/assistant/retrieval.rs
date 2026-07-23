@@ -375,8 +375,8 @@ fn cosine_top_n(
             (None, Some(excl)) => r.call_id != excl,
             (None, None) => true,
         })
-        // [B26.2] темпоральный префильтр
-        .filter(|r| period.is_none_or(|set| set.contains(&r.call_id)))
+        // [B26.2] темпоральный префильтр (map_or: MSRV 1.77 без is_none_or)
+        .filter(|r| period.map_or(true, |set| set.contains(&r.call_id)))
         // dim-mismatch (вектор чужой модели, гонка с ensure) — не сравним.
         .filter(|r| r.vec.len() == query_vec.len())
         .map(|r| {
