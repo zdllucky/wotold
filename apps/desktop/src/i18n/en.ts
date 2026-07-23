@@ -975,10 +975,6 @@ export const en: TranslationStrings = {
     emptyTitle: 'Search across all calls',
     emptyDesc:
       'A question is a search across transcripts and recaps; answers cite their sources. Every dialog is a new chat.',
-    suggest1: 'When did we discuss privacy?',
-    suggest2: 'All of Dmitry’s tasks this week',
-    suggest3: 'What was promised to Kontur at the demo?',
-    suggest4: 'Product planning decisions',
     pendingGlobal: 'Searching {n} calls…',
     pendingCall: 'Searching…',
     refusalNote: 'Outside the assistant’s scope',
