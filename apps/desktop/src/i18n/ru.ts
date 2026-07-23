@@ -477,7 +477,6 @@ const ruInternal = {
     title: 'Настройки',
     saved: '✓ Сохранено',
     sectionAppearance: 'Внешний вид',
-    sectionAccount: 'Учётная запись',
     sectionPermissions: 'Разрешения',
     sectionProcessing: 'Обработка',
     sectionRecording: 'Запись',
@@ -499,10 +498,6 @@ const ruInternal = {
     themeLight: 'Светлая',
     themeDark: 'Тёмная',
     themeSystem: 'Системная',
-    engineLede:
-      'Где обрабатываются ваши звонки. Локальный — бесплатно и без сети, всё на устройстве. Облачный — лучшее качество, требуется интернет.',
-    sttLede:
-      'Поставщик STT и язык вывода для рекапа. Auto переключается между Soniox и Gladia при сбоях.',
     sttLangLabel: 'Распознавание речи',
     sttLangHint: 'На тихом микрофоне для русских звонков надёжнее выбрать «Русский».',
     sttRecapLangLabel: 'Рекап и задачи',
@@ -536,9 +531,6 @@ const ruInternal = {
     callDetectHint: 'Уведомление «Записать?» при обнаружении звонка. По умолчанию выключено для приватности.',
     callDetectCooldownLabel: 'Не предлагать снова в течение',
     callDetectCooldownOption: '{n} мин',
-    usageTitle: 'Использование.',
-    usageLede:
-      'Дневная квота managed-режима — STT-минуты и LLM-токены. Сбрасывается каждые 24 часа. В BYO-режиме счётчик не действует.',
     voiceLede:
       'Wotold может предлагать кто говорит на основе совпадения голоса — но только после скачивания биометрической модели (25 МБ, опционально). Финальное подтверждение всегда за тобой (R2 паспорта).',
     // [M14 T-14] Labs section — experimental flags.
@@ -567,25 +559,6 @@ const ruInternal = {
   },
 
   // ── Account / OIDC ──────────────────────────────────────────────────────
-  account: {
-    intro:
-      'Облачная синхронизация скоро. Сейчас вход в аккаунт ничего не разблокирует — Wotold полностью работает локально без логина.',
-    sessionUntil: 'Session действует до {date}',
-    signOut: 'Выйти',
-    needSessionToken: 'Введи session token из браузера.',
-    step1: 'Шаг 1.',
-    step1Body: 'В браузере открылась страница входа',
-    step1Body2: '. Войди и подтверди.',
-    step2: 'Шаг 2.',
-    step2Body:
-      'После успешного входа прокси покажет JSON с полем sessionId. Скопируй значение sessionId и вставь сюда.',
-    sessionIdLabel: 'Session ID',
-    sessionIdPlaceholder: 'UUID из ответа прокси',
-    deepLinkHint: 'Авто-перехват callback (без копи-пасты) — в плане через deep-link',
-    signInPrompt: 'Войти через SSO. Откроется браузер.',
-    soon: 'скоро',
-    insecureAuthUrl: 'Прокси вернул небезопасный authorize URL (не https://): {url}…',
-  },
 
   // ── Permissions ─────────────────────────────────────────────────────────
   permissions: {
@@ -618,32 +591,10 @@ const ruInternal = {
 
   // ── Usage ───────────────────────────────────────────────────────────────
   usage: {
-    refreshing: '…',
-    refreshLabel: '↻ Обновить',
-    loading: 'Загружаем данные…',
-    errorIntro:
-      'Не удалось получить данные использования. Это нормально если ты offline или прокси не настроен.',
-    tier: 'tier: {name}',
-    quotaTitle: 'Дневная квота',
-    sttLabel: 'STT (распознавание речи)',
-    llmLabel: 'LLM (рекапы, нудж-вопросы)',
-    secAbbr: '{n} сек',
-    minAbbr: '{n} мин',
-    minSecAbbr: '{m} мин {s} сек',
-    tokens: '{n} токенов',
-    resetAt: 'Сброс счётчиков: {date}',
     noLimit: 'лимит не настроен',
   },
 
   // ── [M12-v1.1] Engine chip labels ──────────────────────────────────────
-  engineChip: {
-    local: 'Локально',
-    cloud_managed: 'Облако',
-    cloud_byo: 'Свои ключи',
-    localAria: 'Обработано локально на устройстве',
-    cloud_managedAria: 'Обработано в облаке Wotold',
-    cloud_byoAria: 'Обработано через собственные ключи',
-  },
 
   // [M14 T-11] CallTypeBadge — 9 типов звонков из CallSummaryV2.
   callType: {
@@ -723,22 +674,11 @@ const ruInternal = {
 
   // ── Local engine (M12) ──────────────────────────────────────────────────
   localEngine: {
-    engineLabel: 'Где обрабатывать звонки',
     engine: {
       local: {
         title: 'Локально на устройстве',
         body: 'Без сети, без оплат, ваши данные не покидают Mac. Скачиваются модели один раз.',
         quality: '●●○ качество',
-      },
-      cloud_managed: {
-        title: 'Облако Wotold (Pro)',
-        body: 'Лучшее качество, быстро, без локальной нагрузки. Требуется интернет.',
-        quality: '●●● качество',
-      },
-      cloud_byo: {
-        title: 'Свои ключи провайдеров',
-        body: 'Напрямую к Soniox / Anthropic своими API-ключами. Без квоты Wotold.',
-        quality: '●●● качество',
       },
       active: 'активен',
     },
@@ -881,7 +821,6 @@ const ruInternal = {
       downloadCta: 'Скачать и продолжить (~{size} GB)',
       chooseAnotherCta: 'Выбрать другой пресет',
       collapsePickerCta: 'Скрыть пресеты',
-      useCloudCta: 'Использовать облако вместо локального',
       downloadingLabel: 'Качаем {id}',
       cancelDownloadCta: 'Отменить и продолжить с облаком',
       verifyFailed: 'Контрольная сумма не совпала для {id}. Попробуйте ещё раз.',

@@ -10,10 +10,6 @@ export function setSetting(key: string, value: string): Promise<void> {
 
 export const SETTINGS_KEYS = {
   ONBOARDING_DONE: 'onboarding_done',
-  STT_PROVIDER: 'stt_provider',
-  PROVIDER_PATH: 'provider_path',
-  LLM_MODEL: 'llm_model',
-  PROXY_BASE_URL: 'proxy_base_url',
   RECORDING_CONSENT_AT: 'recording_consent_at',
   /** [B13] BCP47 язык override для LLM-output. 'auto' = язык STT detection. */
   PREFERRED_LANGUAGE: 'preferred_language',
@@ -80,22 +76,11 @@ export const SETTINGS_KEYS = {
 // [B21] Rust-owned ключи settings-таблицы, НАМЕРЕННО отсутствующие в этом
 // реестре (persist/read только на стороне src-tauri; UI дёргает их через
 // dedicated Tauri-команды, не через get/set_setting):
-//   'local_engine.active'        — EngineKind (local_engine/engine.rs)
 //   'local_engine.active_preset' — preset (local_engine/preset.rs)
 //   'local_engine.keep_resident' — keep-resident флаг (pipeline/mod.rs)
 //   'local_engine.hw_report'     — кеш hardware probe (commands/local_engine.rs)
 
 export const SETTINGS_DEFAULTS = {
-  STT_PROVIDER: 'auto' as SttProvider,
-  PROVIDER_PATH: 'managed' as ProviderPath,
-  /** Пусто → прокси использует свой default (LLM_BACKEND-зависимый).
-   *  UI-override нет (сознательно спрятан) — только ручной DB-write. */
-  LLM_MODEL: '',
-  /** Default proxy URL — dev-сборка целится на staging, prod на production.
-   *  UI-override нет (сознательно спрятан) — только ручной DB-write. */
-  PROXY_BASE_URL: import.meta.env.DEV
-    ? 'https://wotold-proxy-staging.animereader.workers.dev'
-    : 'https://wotold-proxy.animereader.workers.dev',
   PREFERRED_LANGUAGE: 'auto' as PreferredLanguage,
   STT_LANG: 'auto' as PreferredLanguage,
   /** [V7] Default OFF — R2 паспорта: opt-in только. */
@@ -156,6 +141,3 @@ export const STT_LANGUAGES: Array<{ code: PreferredLanguage; label: string }> = 
   { code: 'en', label: 'English' },
   { code: 'kk', label: 'Қазақша' },
 ];
-
-export type SttProvider = 'auto' | 'soniox' | 'gladia';
-export type ProviderPath = 'managed' | 'byo';

@@ -446,7 +446,6 @@ export const kk: TranslationStrings = {
     title: 'Баптаулар',
     saved: '✓ Сақталды',
     sectionAppearance: 'Сыртқы түрі',
-    sectionAccount: 'Аккаунт',
     sectionPermissions: 'Рұқсаттар',
     sectionProcessing: 'Өңдеу',
     sectionRecording: 'Жазу',
@@ -468,10 +467,6 @@ export const kk: TranslationStrings = {
     themeLight: 'Жарық',
     themeDark: 'Қараңғы',
     themeSystem: 'Жүйелік',
-    engineLede:
-      'Қоңырауларыңыз қайда өңделеді. Жергілікті — тегін, желісіз, бәрі құрылғыда. Бұлт — ең жақсы сапа, интернет қажет.',
-    sttLede:
-      'STT провайдері және қорытынды тілі. Auto Soniox пен Gladia арасында ақаулар кезінде ауысады.',
     sttLangLabel: 'Сөзді тану',
     sttLangHint: 'Тыныш микрофонда орысша қоңырауларға «Орысша» таңдаған сенімдірек.',
     sttRecapLangLabel: 'Қорытынды мен тапсырмалар',
@@ -501,9 +496,6 @@ export const kk: TranslationStrings = {
     callDetectHint: 'Қоңырау анықталғанда «Жазу керек пе?» хабарламасы. Құпиялылық үшін әдепкіде өшірулі.',
     callDetectCooldownLabel: 'Қайта ұсынбау',
     callDetectCooldownOption: '{n} мин',
-    usageTitle: 'Пайдалану.',
-    usageLede:
-      'Managed режимінің күндік квотасы — STT минут пен LLM токендер. Әр 24 сағатта қалпына келеді. BYO режимінде есептегіш жоқ.',
     voiceLede:
       'Wotold дауысты сәйкестендіру арқылы кім сөйлеп жатқанын ұсынуы мүмкін — бірақ биометриялық модельді жүктегеннен кейін ғана (25 МБ, қосымша). Соңғы растау сізде (паспорттың R2).',
     summaryV2Label: 'Қорытындының жаңа форматы',
@@ -530,25 +522,6 @@ export const kk: TranslationStrings = {
       '✓ Барлық деректер жойылды. Таза орнатудан бастау үшін Wotold-ты жабып, қайта ашыңыз.',
   },
 
-  account: {
-    intro:
-      'Бұлттық синхрондау жақын арада. Қазір аккаунтқа кіру ештеңені ашпайды — Wotold логинсіз толық жергілікті жұмыс істейді.',
-    sessionUntil: 'Session {date} дейін жарамды',
-    signOut: 'Шығу',
-    needSessionToken: 'Браузерден session token енгізіңіз.',
-    step1: '1-қадам.',
-    step1Body: 'Браузерде кіру беті ашылды',
-    step1Body2: '. Кіріп, растаңыз.',
-    step2: '2-қадам.',
-    step2Body:
-      'Сәтті кіруден кейін прокси sessionId өрісі бар JSON көрсетеді. sessionId мәнін көшіріп осында қойыңыз.',
-    sessionIdLabel: 'Session ID',
-    sessionIdPlaceholder: 'Прокси жауабындағы UUID',
-    deepLinkHint: 'Авто-перехват callback (көшіру-қоюсыз) — deep-link арқылы жоспарда',
-    signInPrompt: 'SSO арқылы кіру. Браузер ашылады.',
-    soon: 'жақында',
-    insecureAuthUrl: 'Прокси қауіпсіз емес authorize URL қайтарды (https:// емес): {url}…',
-  },
 
   permissions: {
     rowMic: 'Микрофон',
@@ -579,31 +552,9 @@ export const kk: TranslationStrings = {
   },
 
   usage: {
-    refreshing: '…',
-    refreshLabel: '↻ Жаңарту',
-    loading: 'Деректерді жүктеудеміз…',
-    errorIntro:
-      'Пайдалану деректерін алу мүмкін болмады. Бұл offline болсаңыз немесе прокси бапталмаса — қалыпты жағдай.',
-    tier: 'tier: {name}',
-    quotaTitle: 'Күнделікті квота',
-    sttLabel: 'STT (сөйлеуді тану)',
-    llmLabel: 'LLM (қорытынды, сұрақтар)',
-    secAbbr: '{n} с',
-    minAbbr: '{n} мин',
-    minSecAbbr: '{m} мин {s} с',
-    tokens: '{n} токен',
-    resetAt: 'Есептегіш қалпына келуі: {date}',
     noLimit: 'лимит бапталмаған',
   },
 
-  engineChip: {
-    local: 'Жергілікті',
-    cloud_managed: 'Бұлт',
-    cloud_byo: 'Өз кілттер',
-    localAria: 'Осы құрылғыда өңделді',
-    cloud_managedAria: 'Wotold бұлтында өңделді',
-    cloud_byoAria: 'Өз API кілттерімен өңделді',
-  },
 
   callType: {
     sales_discovery: 'Сатылым танысуы',
@@ -677,22 +628,11 @@ export const kk: TranslationStrings = {
   },
 
   localEngine: {
-    engineLabel: 'Қоңырауларды өңдеу орны',
     engine: {
       local: {
         title: 'Осы құрылғыда',
         body: 'Желісіз, тегін, деректер Mac-та қалады. Модельдер бір рет жүктеледі.',
         quality: '●●○ сапа',
-      },
-      cloud_managed: {
-        title: 'Wotold бұлты (Pro)',
-        body: 'Ең жақсы сапа, жылдам, жергілікті жүктемесіз. Интернет қажет.',
-        quality: '●●● сапа',
-      },
-      cloud_byo: {
-        title: 'Өз провайдер кілттеріңіз',
-        body: 'Soniox / Anthropic тікелей өз API кілттеріңізбен. Wotold квотасы жоқ.',
-        quality: '●●● сапа',
       },
       active: 'белсенді',
     },
@@ -824,7 +764,6 @@ export const kk: TranslationStrings = {
       downloadCta: 'Жүктеп жалғастыру (~{size} ГБ)',
       chooseAnotherCta: 'Басқа пресет таңдау',
       collapsePickerCta: 'Пресеттерді жасыру',
-      useCloudCta: 'Оның орнына бұлтты қолдану',
       downloadingLabel: '{id} жүктелуде',
       cancelDownloadCta: 'Болдырмау және бұлтпен жалғастыру',
       verifyFailed: '{id} үшін бақылау сомасы сәйкес келмеді. Қайта көріңіз.',

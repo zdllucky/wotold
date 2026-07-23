@@ -49,7 +49,7 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
       duration_sec: 900,
       status: 'ready',
       path_label: '~/Wotold/2026-05-19',
-      provider: 'soniox',
+      provider: 'local',
       lang_detected: 'ru',
     },
     {
@@ -71,16 +71,14 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
       duration_sec: 305,
       status: 'failed',
       path_label: '~/Wotold/2026-05-15',
-      provider: 'gladia',
+      provider: 'local',
       lang_detected: null,
-      failed_reason:
-        'Квота STT исчерпана. Подожди до следующих суток или переключись на BYO.',
+      failed_reason: 'Локальная модель не установлена. Скачай модель в Настройках → Обработка.',
       recap_failed_reason: null,
     },
   ];
 
   const responses: Record<string, unknown> = {
-    get_device_id: 'dev-mock-device-id-0001',
     check_for_update: null,
     list_contacts: [ownerContact, sampleContact],
     list_calls: sampleCalls,
@@ -88,21 +86,11 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
     get_audio_permissions: { microphone: 'granted', screen_recording: 'not_determined' },
   };
 
-  // #47: in-memory BYO key store (dev only — production использует Keychain).
-  const byoKeys: Record<string, string> = {};
-
   const initialOnboarding =
     new URLSearchParams(window.location.search).get('onboarding') === '1' ? '0' : '1';
   const settings: Record<string, string> = {
     onboarding_done: initialOnboarding,
-    stt_provider: 'auto',
-    provider_path: 'managed',
-    llm_model: 'claude-sonnet-4-6',
-    proxy_base_url: 'http://dev-proxy.local',
   };
-
-  // #38: in-memory session store для AccountSection preview.
-  let accountSessionToken: string | null = null;
 
   // #26: in-memory speaker confirmations для preview. ключ "<callId>:<S-tag>".
   const speakerBindings: Record<string, string> = {};
@@ -291,43 +279,6 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
           { id: 't1', text: 'Прислать SOW до пятницы', owner_contact_id: sampleContact.id, due: '2026-05-23', done: false },
           { id: 't2', text: 'Подписать NDA', owner_contact_id: null, due: null, done: true },
         ];
-      }
-      // #38 account session
-      if (cmd === 'get_account_session_status') {
-        return { present: accountSessionToken !== null };
-      }
-      if (cmd === 'set_account_session') {
-        const v = (a.token as string)?.trim() ?? '';
-        accountSessionToken = v || null;
-        return null;
-      }
-      if (cmd === 'clear_account_session') {
-        accountSessionToken = null;
-        return null;
-      }
-      if (cmd === 'read_account_session_token') {
-        return accountSessionToken;
-      }
-      if (cmd === 'list_byo_status') {
-        return ['soniox', 'gladia', 'anthropic'].map((p) => ({
-          provider: p,
-          present: !!byoKeys[p],
-        }));
-      }
-      if (cmd === 'set_byo_key') {
-        const p = a.provider as string;
-        const v = (a.value as string)?.trim() ?? '';
-        if (!v) {
-          delete byoKeys[p];
-        } else {
-          byoKeys[p] = v;
-        }
-        return null;
-      }
-      if (cmd === 'delete_byo_key') {
-        const p = a.provider as string;
-        delete byoKeys[p];
-        return null;
       }
       // #26: in-memory speakers store для preview confirmation flow.
       if (cmd === 'list_call_speakers') {

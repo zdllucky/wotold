@@ -446,7 +446,6 @@ export const en: TranslationStrings = {
     title: 'Settings',
     saved: '✓ Saved',
     sectionAppearance: 'Appearance',
-    sectionAccount: 'Account',
     sectionPermissions: 'Permissions',
     sectionProcessing: 'Processing',
     sectionRecording: 'Recording',
@@ -468,10 +467,6 @@ export const en: TranslationStrings = {
     themeLight: 'Light',
     themeDark: 'Dark',
     themeSystem: 'System',
-    engineLede:
-      'Where your calls are processed. Local — free, offline, all on device. Cloud — best quality, needs internet.',
-    sttLede:
-      'STT provider and recap language. Auto switches between Soniox and Gladia on failure.',
     sttLangLabel: 'Speech recognition',
     sttLangHint: 'On a quiet microphone, Russian calls are safer with “Russian” selected.',
     sttRecapLangLabel: 'Recap and tasks',
@@ -502,9 +497,6 @@ export const en: TranslationStrings = {
     callDetectHint: '“Record?” notification when a call is detected. Off by default for privacy.',
     callDetectCooldownLabel: 'Do not suggest again for',
     callDetectCooldownOption: '{n} min',
-    usageTitle: 'Usage.',
-    usageLede:
-      'Daily quota for managed mode — STT minutes and LLM tokens. Resets every 24 hours. BYO mode is uncounted.',
     voiceLede:
       'Wotold can suggest who is speaking based on voice match — but only after downloading the biometric model (25 MB, optional). Final confirmation is always yours (passport R2).',
     summaryV2Label: 'New summary format',
@@ -529,26 +521,6 @@ export const en: TranslationStrings = {
     wipeConfirmOk: 'Delete everything',
     wipeDone:
       '✓ All data removed. Close and reopen Wotold to start from a clean install.',
-  },
-
-  account: {
-    intro:
-      'Cloud sync coming soon. For now, signing into the account unlocks nothing — Wotold works fully locally without login.',
-    sessionUntil: 'Session valid until {date}',
-    signOut: 'Sign out',
-    needSessionToken: 'Paste the session token from the browser.',
-    step1: 'Step 1.',
-    step1Body: 'A sign-in page opened in your browser',
-    step1Body2: '. Sign in and confirm.',
-    step2: 'Step 2.',
-    step2Body:
-      'After a successful sign-in the proxy will show JSON with a sessionId field. Copy the sessionId value and paste it here.',
-    sessionIdLabel: 'Session ID',
-    sessionIdPlaceholder: 'UUID from the proxy response',
-    deepLinkHint: 'Auto-capture callback (no copy-paste) — planned via deep-link',
-    signInPrompt: 'Sign in via SSO. A browser will open.',
-    soon: 'soon',
-    insecureAuthUrl: 'Proxy returned an unsafe authorize URL (not https://): {url}…',
   },
 
   permissions: {
@@ -582,30 +554,7 @@ export const en: TranslationStrings = {
   },
 
   usage: {
-    refreshing: '…',
-    refreshLabel: '↻ Refresh',
-    loading: 'Loading data…',
-    errorIntro:
-      'Could not fetch usage data. This is normal if you are offline or the proxy is not configured.',
-    tier: 'tier: {name}',
-    quotaTitle: 'Daily quota',
-    sttLabel: 'STT (speech recognition)',
-    llmLabel: 'LLM (recaps, nudge questions)',
-    secAbbr: '{n} sec',
-    minAbbr: '{n} min',
-    minSecAbbr: '{m} min {s} sec',
-    tokens: '{n} tokens',
-    resetAt: 'Counters reset: {date}',
     noLimit: 'no limit configured',
-  },
-
-  engineChip: {
-    local: 'Local',
-    cloud_managed: 'Cloud',
-    cloud_byo: 'Own keys',
-    localAria: 'Processed locally on this device',
-    cloud_managedAria: 'Processed in Wotold cloud',
-    cloud_byoAria: 'Processed via your own API keys',
   },
 
   callType: {
@@ -680,22 +629,11 @@ export const en: TranslationStrings = {
   },
 
   localEngine: {
-    engineLabel: 'Where to process calls',
     engine: {
       local: {
         title: 'Locally on this device',
         body: 'No network, no fees, your data stays on your Mac. Models download once.',
         quality: '●●○ quality',
-      },
-      cloud_managed: {
-        title: 'Wotold Cloud (Pro)',
-        body: 'Top quality, fast, no local load. Requires internet.',
-        quality: '●●● quality',
-      },
-      cloud_byo: {
-        title: 'Your own provider keys',
-        body: 'Direct to Soniox / Anthropic with your API keys. No Wotold quota.',
-        quality: '●●● quality',
       },
       active: 'active',
     },
@@ -827,7 +765,6 @@ export const en: TranslationStrings = {
       downloadCta: 'Download and continue (~{size} GB)',
       chooseAnotherCta: 'Pick a different preset',
       collapsePickerCta: 'Hide presets',
-      useCloudCta: 'Use cloud instead',
       downloadingLabel: 'Downloading {id}',
       cancelDownloadCta: 'Cancel and continue with cloud',
       verifyFailed: 'Checksum mismatch for {id}. Try again.',

@@ -6,14 +6,13 @@
 // не сам dialog), .dot--{success,accent,muted}, .btn--{primary,ghost,quiet},
 // .activity-strip pattern для progress.
 //
-// Flow (PRD §M12.7.3):
+// Flow (PRD §M12.7.3, LOCAL-ONLY):
 //   1. Probe выдаёт recommendation
 //   2. User видит карточку «recommended preset · size · что входит»
-//   3. Три кнопки:
+//   3. Кнопки:
 //      - «Скачать и продолжить» → запуск download → progress → onAdvance
 //      - «Выбрать другой» → раскрывает radio group Light/Balanced/Quality
-//      - «Использовать облако вместо» → engine=cloud_managed, advance
-//   4. Cancel во время download → cleanup partial + engine=cloud_managed + advance
+//   4. Cancel во время download → cleanup partial + advance (модели докачаются позже)
 
 import { useCallback, useEffect, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -24,12 +23,10 @@ import {
   localEngineModelDelete,
   localEngineModelDownload,
   localEngineModelStatus,
-  localEngineSetActiveEngine,
   localEngineSetActivePreset,
 } from '../api/local-engine';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
-import { EngineChip } from '../components/EngineChip';
 import { Button, OptionCard, Progress } from '../ui';
 
 const PRESETS: LocalEnginePreset[] = ['light', 'balanced', 'quality'];
@@ -147,9 +144,8 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
     if (!chosenPreset) return;
     setError(null);
     try {
-      // Engine + preset фиксируем в settings ДО download — если cancel,
-      // user остаётся на local engine с preset (модели докачаются позже).
-      await localEngineSetActiveEngine('local');
+      // Preset фиксируем в settings ДО download — если cancel, preset уже
+      // выбран (модели докачаются позже, on-demand).
       await localEngineSetActivePreset(chosenPreset);
 
       // Соберём список моделей которые нужно скачать (skip present).
@@ -173,16 +169,6 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
     }
   }, [chosenPreset, onAdvance]);
 
-  const useCloudInstead = useCallback(async () => {
-    setError(null);
-    try {
-      await localEngineSetActiveEngine('cloud_managed');
-      onAdvance();
-    } catch (e) {
-      setError(humanError(e));
-    }
-  }, [onAdvance]);
-
   const cancelDownload = useCallback(async () => {
     setError(null);
     setDownloading(false);
@@ -196,12 +182,8 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         // Best-effort; UI continues.
       }
     }
-    try {
-      await localEngineSetActiveEngine('cloud_managed');
-    } catch (e) {
-      setError(humanError(e));
-      return;
-    }
+    // Preset уже зафиксирован в startDownload — advance, модели докачаются
+    // позже on-demand.
     onAdvance();
   }, [onAdvance, progress]);
 
@@ -299,7 +281,6 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
             marginBottom: 24,
           }}
         >
-          <EngineChip kind="local" variant="inline" />
           <span className="muted" style={{ fontSize: 12 }}>
             {t('onboarding.engine.previewProcessed', { ms: '420' })}
           </span>
@@ -440,9 +421,6 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
           {pickerOpen
             ? t('onboarding.engine.collapsePickerCta')
             : t('onboarding.engine.chooseAnotherCta')}
-        </Button>
-        <Button variant="ghost" onClick={() => void useCloudInstead()}>
-          {t('onboarding.engine.useCloudCta')}
         </Button>
       </div>
     </>
