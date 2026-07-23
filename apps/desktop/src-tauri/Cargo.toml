@@ -86,6 +86,11 @@ ndarray = { version = "0.17", optional = true }
 # не успевает за быстрым tap-press-release циклом).
 [target."cfg(target_os = \"macos\")".dependencies]
 objc = "0.2"
+# [B27.6] Нативный share-пикер: типизированный objc2-стек (уже в Cargo.lock
+# транзитивно через wry) — NSRect/MainThreadOnly без ручного unsafe Encode.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSGeometry", "NSObject"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSharingService", "NSView", "NSWindow", "NSResponder", "NSGraphics"] }
 
 [dev-dependencies]
 httpmock = "0.7"

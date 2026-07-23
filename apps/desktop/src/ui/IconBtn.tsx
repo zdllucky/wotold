@@ -1,6 +1,8 @@
 // [B18.6c] Wotold v2 uikit — icon button (.iconbtn from wk.css).
 // [B27.5] tip рендерится портальным <Tooltip> (CSS .tip::after клипался краями).
 
+import type { MouseEvent } from 'react';
+
 import { Icon, type IconName } from './Icon';
 import { Tooltip } from './Tooltip';
 
@@ -12,7 +14,7 @@ interface IconBtnProps {
   tip?: string;
   tipSide?: 'right';
   iconSize?: number;
-  onClick?: () => void;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   title?: string;
   /** For dropdown/menu triggers — sets aria-haspopup="menu" + aria-expanded. */

@@ -3,14 +3,15 @@
 // answer (текст + источники + контекст + действия), refusal (нота shield,
 // без «Контекста поиска»), empty (текст + опц. эскалация).
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { AssistantAnswer, AssistantFragment, AssistantSource } from '@wotold/contracts';
 
+import { shareText } from '../../api/assistant';
 import { useI18n } from '../../i18n';
 import { FragmentRow } from './FragmentRow';
 import { parseFragmentRefs } from './fragmentRefs';
 import { MsgTime } from './MsgTime';
-import { Chip, Dropdown, Icon, IconBtn, MenuItem } from '../../ui';
+import { Chip, Icon, IconBtn } from '../../ui';
 
 const COPIED_RESET_MS = 1400;
 
@@ -115,19 +116,16 @@ export function AnswerMsg({
     }
   }, []);
 
-  const sendEmail = useCallback(() => {
-    const body = copyWithSourcesText(answer);
-    const href = `mailto:?body=${encodeURIComponent(body)}`;
-    const a = document.createElement('a');
-    a.href = href;
-    a.rel = 'noopener';
-    try {
-      a.click();
-    } catch {
-      // WKWebView без opener — фоллбек: копия с источниками (design-gate B24.0)
-      doCopy(body);
-    }
-  }, [answer, doCopy]);
+  // [B27.6] Нативный share-пикер macOS у кнопки; ошибка/не-macOS —
+  // тихий фоллбек копией с источниками.
+  const shareNative = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      const body = copyWithSourcesText(answer);
+      const r = e.currentTarget.getBoundingClientRect();
+      shareText(body, { x: r.x, y: r.y, w: r.width, h: r.height }).catch(() => doCopy(body));
+    },
+    [answer, doCopy],
+  );
 
   const sourceChip = (s: AssistantSource, i: number) => {
     // [B26.5] Контакт-источник (sentinel) — ведёт в раздел «Контакты».
@@ -231,28 +229,13 @@ export function AnswerMsg({
             tip={copied ? t('assistant.copied') : t('assistant.copy')}
             onClick={() => doCopy(answer.text)}
           />
-          <Dropdown
-            align="left"
-            width={238}
-            trigger={({ toggle, open }) => (
-              <IconBtn
-                icon="send"
-                size="sm"
-                label={t('assistant.share')}
-                tip={t('assistant.share')}
-                onClick={toggle}
-                hasPopup
-                expanded={open}
-              />
-            )}
-          >
-            <MenuItem icon="copy" onClick={() => doCopy(copyWithSourcesText(answer))}>
-              {t('assistant.shareWithSources')}
-            </MenuItem>
-            <MenuItem icon="external" onClick={sendEmail}>
-              {t('assistant.shareEmail')}
-            </MenuItem>
-          </Dropdown>
+          <IconBtn
+            icon="send"
+            size="sm"
+            label={t('assistant.share')}
+            tip={t('assistant.share')}
+            onClick={shareNative}
+          />
         </div>
         )}
         <MsgTime createdAt={createdAt} />

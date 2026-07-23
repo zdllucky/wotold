@@ -983,8 +983,6 @@ export const en: TranslationStrings = {
     copy: 'Copy',
     copied: 'Copied',
     share: 'Share',
-    shareWithSources: 'Copy with sources',
-    shareEmail: 'Send by email…',
     sourcesLabel: 'Sources',
     escalate: 'Search all calls',
     newChat: 'New chat',
