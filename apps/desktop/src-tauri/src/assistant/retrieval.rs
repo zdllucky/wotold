@@ -110,6 +110,30 @@ const RU_STOPWORDS: &[&str] = &[
     "всё",
     "все",
     "или",
+    // [B26.2] слова периодов — их семантику берёт темпоральный префильтр
+    // (router::period_range), в BM25 они только шумят
+    "сегодня",
+    "вчера",
+    "позавчера",
+    "назад",
+    "неделю",
+    "неделе",
+    "недели",
+    "неделя",
+    "месяц",
+    "месяца",
+    "месяце",
+    "году",
+    "года",
+    "год",
+    "квартал",
+    "квартала",
+    "квартале",
+    "прошлой",
+    "прошлом",
+    "прошлый",
+    "прошлую",
+    "прошлого",
 ];
 
 fn is_stopword(token: &str) -> bool {
@@ -202,9 +226,21 @@ pub async fn search_hybrid(
     scope: Scope<'_>,
     embedder: Option<std::sync::Arc<dyn crate::assistant::embedder::TextEmbedder>>,
     cache: &crate::assistant::embed_cache::EmbedCache,
+    period: Option<&std::collections::HashSet<String>>,
 ) -> Result<Vec<PassageHit>, AppError> {
+    // [B26.2] Темпоральный префильтр: набор разрешённых call_id за явный
+    // период из вопроса. BM25-ветки — пост-фильтр, cosine — в замыкании.
+    let keep = |hits: Vec<PassageHit>| -> Vec<PassageHit> {
+        match period {
+            Some(set) => hits
+                .into_iter()
+                .filter(|h| set.contains(&h.call_id))
+                .collect(),
+            None => hits,
+        }
+    };
     let Some(emb) = embedder else {
-        return search(pool, question, scope).await;
+        return Ok(keep(search(pool, question, scope).await?));
     };
     // Вопрос без валидных токенов — деген (Ph1 честно отдаёт пусто);
     // мусорный вектор по нему поднял бы случайные пассажи.
@@ -214,7 +250,7 @@ pub async fn search_hybrid(
     let rows = cache.snapshot(pool).await?;
     if rows.is_empty() {
         // Вектора ещё не насчитаны (backfill в пути) — чистый BM25.
-        return search(pool, question, scope).await;
+        return Ok(keep(search(pool, question, scope).await?));
     }
     // Вектор вопроса — вне async-потока (ONNX ~5-20мс).
     let q = question.to_string();
@@ -224,7 +260,19 @@ pub async fn search_hybrid(
         .map_err(|e| AppError::Other(format!("embed query join: {e}")))??;
 
     match scope {
-        Scope::Global => fuse_pass(pool, &expr, &rows, &query_vec, GLOBAL_LIMIT, None, None).await,
+        Scope::Global => {
+            fuse_pass(
+                pool,
+                &expr,
+                &rows,
+                &query_vec,
+                GLOBAL_LIMIT,
+                None,
+                None,
+                period,
+            )
+            .await
+        }
         Scope::Call(call_id) => {
             let mut own = fuse_pass(
                 pool,
@@ -234,6 +282,7 @@ pub async fn search_hybrid(
                 CALL_OWN_LIMIT,
                 Some(call_id),
                 None,
+                period,
             )
             .await?;
             let other = fuse_pass(
@@ -244,6 +293,7 @@ pub async fn search_hybrid(
                 CALL_OTHER_LIMIT,
                 None,
                 Some(call_id),
+                period,
             )
             .await?;
             own.extend(other);
@@ -254,6 +304,7 @@ pub async fn search_hybrid(
 
 /// Один проход гибрида: BM25 top-30 + cosine top-30 → RRF → обрезка до
 /// `final_limit` → материализация PassageHit (cosine-only id дозагружаются).
+#[allow(clippy::too_many_arguments)]
 async fn fuse_pass(
     pool: &SqlitePool,
     expr: &str,
@@ -262,8 +313,14 @@ async fn fuse_pass(
     final_limit: i64,
     only_call: Option<&str>,
     exclude_call: Option<&str>,
+    period: Option<&std::collections::HashSet<String>>,
 ) -> Result<Vec<PassageHit>, AppError> {
-    let bm25 = search_fts(pool, expr, FUSION_CANDIDATES, only_call, exclude_call).await?;
+    // [B26.2] BM25 — пост-фильтр по периоду (SQL не трогаем), cosine —
+    // условие в отборе кандидатов.
+    let mut bm25 = search_fts(pool, expr, FUSION_CANDIDATES, only_call, exclude_call).await?;
+    if let Some(set) = period {
+        bm25.retain(|h| set.contains(&h.call_id));
+    }
     let bm25_ids: Vec<i64> = bm25.iter().map(|h| h.id).collect();
     let cosine_ids = cosine_top_n(
         rows,
@@ -271,6 +328,7 @@ async fn fuse_pass(
         FUSION_CANDIDATES as usize,
         only_call,
         exclude_call,
+        period,
     );
     let fused =
         crate::assistant::fusion::rrf_fuse(&bm25_ids, &cosine_ids, crate::assistant::fusion::RRF_K);
@@ -308,6 +366,7 @@ fn cosine_top_n(
     n: usize,
     only_call: Option<&str>,
     exclude_call: Option<&str>,
+    period: Option<&std::collections::HashSet<String>>,
 ) -> Vec<i64> {
     let mut scored: Vec<(f32, i64)> = rows
         .iter()
@@ -316,6 +375,8 @@ fn cosine_top_n(
             (None, Some(excl)) => r.call_id != excl,
             (None, None) => true,
         })
+        // [B26.2] темпоральный префильтр
+        .filter(|r| period.is_none_or(|set| set.contains(&r.call_id)))
         // dim-mismatch (вектор чужой модели, гонка с ensure) — не сравним.
         .filter(|r| r.vec.len() == query_vec.len())
         .map(|r| {
@@ -620,7 +681,7 @@ mod tests {
 
         // Гибрид достаёт синонимный пассаж через cosine-канал, включая
         // материализацию cosine-only id (в BM25-листе его нет).
-        let hy = search_hybrid(&db.pool, "какие сроки?", Scope::Global, kw(), &cache)
+        let hy = search_hybrid(&db.pool, "какие сроки?", Scope::Global, kw(), &cache, None)
             .await
             .unwrap();
         assert!(!hy.is_empty(), "вектор обязан найти синоним");
@@ -636,7 +697,7 @@ mod tests {
         let cache = EmbedCache::new();
 
         let ph1 = search(&db.pool, "бюджет", Scope::Global).await.unwrap();
-        let hy = search_hybrid(&db.pool, "бюджет", Scope::Global, None, &cache)
+        let hy = search_hybrid(&db.pool, "бюджет", Scope::Global, None, &cache, None)
             .await
             .unwrap();
         let ids = |v: &[PassageHit]| v.iter().map(|h| h.id).collect::<Vec<_>>();
@@ -650,7 +711,7 @@ mod tests {
         // Векторов нет (backfill «ещё не бежал»).
         let cache = EmbedCache::new();
 
-        let hy = search_hybrid(&db.pool, "бюджет", Scope::Global, kw(), &cache)
+        let hy = search_hybrid(&db.pool, "бюджет", Scope::Global, kw(), &cache, None)
             .await
             .unwrap();
         assert_eq!(hy.len(), 1, "пустой кэш → чистый BM25");
@@ -666,7 +727,7 @@ mod tests {
         embed_all(&db.pool).await;
         let cache = EmbedCache::new();
 
-        let hy = search_hybrid(&db.pool, "бюджет", Scope::Call("c1"), kw(), &cache)
+        let hy = search_hybrid(&db.pool, "бюджет", Scope::Call("c1"), kw(), &cache, None)
             .await
             .unwrap();
         assert!(hy.len() >= 2);
@@ -686,10 +747,10 @@ mod tests {
         embed_all(&db.pool).await;
         let cache = EmbedCache::new();
 
-        let a = search_hybrid(&db.pool, "какие сроки?", Scope::Global, kw(), &cache)
+        let a = search_hybrid(&db.pool, "какие сроки?", Scope::Global, kw(), &cache, None)
             .await
             .unwrap();
-        let b = search_hybrid(&db.pool, "какие сроки?", Scope::Global, kw(), &cache)
+        let b = search_hybrid(&db.pool, "какие сроки?", Scope::Global, kw(), &cache, None)
             .await
             .unwrap();
         let ids = |v: &[PassageHit]| v.iter().map(|h| h.id).collect::<Vec<_>>();

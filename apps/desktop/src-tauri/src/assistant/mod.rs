@@ -45,6 +45,8 @@ const REFUSAL_TEXT: &str = "Составление текстов — вне о�
 pub(crate) const EMPTY_GLOBAL_TEXT: &str =
     "По звонкам ничего не найдено. Уточните имя участника, тему или период.";
 const EMPTY_CALL_TEXT: &str = "В этом звонке этого не нашлось.";
+// [B26.2] Явный период в вопросе, но звонков за него нет.
+const EMPTY_PERIOD_TEXT: &str = "За этот период записанных звонков не нашлось.";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -153,6 +155,25 @@ pub async fn ask_core_with(
         None => {}
     }
 
+    // 1c. [B26.2] Темпоральный префильтр: явный период («вчера», «в прошлом
+    // месяце», «в июне») сужает архив до звонков за период. Пустой период →
+    // честное «не нашлось» без похода в поиск и LLM.
+    let period_filter = router::period_call_filter(pool, &question).await?;
+    if let Some(set) = &period_filter {
+        if set.is_empty() {
+            let ans = AssistantAnswer {
+                kind: AssistantAnswerKind::Empty,
+                text: EMPTY_PERIOD_TEXT.to_string(),
+                sources: vec![],
+                fragments: vec![],
+                fragment_tokens: 0,
+                window_tokens: WINDOW_TOKENS,
+                escalate: None,
+            };
+            return finish(pool, chat.id, ans).await;
+        }
+    }
+
     // 2. Retrieval + budget.
     bus.assistant_status(&AssistantStatusEvent {
         chat_id: chat.id.clone(),
@@ -162,8 +183,15 @@ pub async fn ask_core_with(
         Some(id) => retrieval::Scope::Call(id),
         None => retrieval::Scope::Global,
     };
-    let hits =
-        retrieval::search_hybrid(pool, &question, scope, embedder, embed_cache::global()).await?;
+    let hits = retrieval::search_hybrid(
+        pool,
+        &question,
+        scope,
+        embedder,
+        embed_cache::global(),
+        period_filter.as_ref(),
+    )
+    .await?;
     let hits_total = hits.len();
     let ctx = budget::assemble(hits, scope);
 
@@ -651,6 +679,27 @@ mod tests {
             "NO_DIRECT теперь с fallback-источниками"
         );
         assert!(!ans.fragments.is_empty(), "контекст поиска сохраняется");
+    }
+
+    // [B26.2] Период без звонков → честный Empty без retrieval и LLM.
+    #[tokio::test]
+    async fn empty_period_answers_honestly_without_llm() {
+        let db = fresh_db().await;
+        seed_call_with_passages(&db.pool, "c1", "Синхрон", &["обсуждали бюджет"]).await;
+        let mock = MockProvider::scripted(vec![]);
+        let bus = EventBus::new(None);
+        let out = ask_core(
+            &mock,
+            &db.pool,
+            &bus,
+            args("что обсуждали в прошлом году про бюджет"),
+        )
+        .await
+        .unwrap();
+        let ans = out.message.answer.as_ref().unwrap();
+        assert_eq!(ans.kind, AssistantAnswerKind::Empty);
+        assert_eq!(ans.text, EMPTY_PERIOD_TEXT);
+        assert_eq!(mock.call_count(), 0);
     }
 
     // [M16.4] Мета-вопрос → детерминированный ответ роутера, LLM не зовётся.
