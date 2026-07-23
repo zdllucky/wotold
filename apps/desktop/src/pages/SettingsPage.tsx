@@ -264,8 +264,7 @@ export function SettingsPage() {
                   />
                 ))}
               </div>
-              <div className="as-chats-top" style={{ padding: '0 8px 8px' }}>
-                <span />
+              <div className="side-list-foot">
                 <IconBtn
                   icon="chevronLeft"
                   size="sm"

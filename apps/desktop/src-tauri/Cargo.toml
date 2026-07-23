@@ -89,8 +89,8 @@ objc = "0.2"
 # [B27.6] Нативный share-пикер: типизированный objc2-стек (уже в Cargo.lock
 # транзитивно через wry) — NSRect/MainThreadOnly без ручного unsafe Encode.
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSGeometry", "NSObject"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSharingService", "NSView", "NSWindow", "NSResponder", "NSGraphics"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSGeometry", "NSObject", "NSData"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSharingService", "NSView", "NSWindow", "NSResponder", "NSGraphics", "NSApplication", "NSImage"] }
 
 [dev-dependencies]
 httpmock = "0.7"

@@ -310,16 +310,6 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
             </div>
           ) : (
             <>
-          <div className="as-chats-top">
-            <span />
-            <IconBtn
-              icon="chevronLeft"
-              size="sm"
-              label={t('contacts.collapsePanel')}
-              tip={t('contacts.collapsePanel')}
-              onClick={() => panel.setCollapsed(true)}
-            />
-          </div>
           <div className="scroll" style={{ flex: 1, minHeight: 0, padding: 6 }}>
           {filtered.length === 0 ? (
             <div className="u-faint" style={{ padding: 16, fontSize: 13, textAlign: 'center' }}>
@@ -365,6 +355,16 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
               );
             })
           )}
+          </div>
+          {/* [B30.3] Collapse — в футере (единый паттерн всех панелей). */}
+          <div className="side-list-foot">
+            <IconBtn
+              icon="chevronLeft"
+              size="sm"
+              label={t('contacts.collapsePanel')}
+              tip={t('contacts.collapsePanel')}
+              onClick={() => panel.setCollapsed(true)}
+            />
           </div>
             </>
           )}

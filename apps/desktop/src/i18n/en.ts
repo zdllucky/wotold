@@ -958,11 +958,6 @@ export const en: TranslationStrings = {
   },
   assistant: {
     title: 'Assistant',
-    statsChip: 'searching {ready} of {total} {plural} · {dur}',
-    statsTooltip: 'Recordings that are processing or failed are not searchable',
-    callsPluralOne: 'call',
-    callsPluralFew: 'calls',
-    callsPluralMany: 'calls',
     msgYesterday: 'yesterday',
     searchChats: 'Search chats…',
     chatsPanel: 'Chats',

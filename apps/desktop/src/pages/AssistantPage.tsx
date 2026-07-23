@@ -11,8 +11,8 @@ import { AssistantComposer } from '../components/assistant/AssistantComposer';
 import { SUGGESTIONS, pickSuggestions } from '../components/assistant/suggestions';
 import { useAssistantChats } from '../hooks/useAssistantChats';
 import { useResizablePanel } from '../hooks/useResizablePanel';
-import { useI18n, type TranslationKey } from '../i18n';
-import { Button, Chip, Icon, IconBtn, Tooltip, useToast } from '../ui';
+import { useI18n } from '../i18n';
+import { Button, Chip, Icon, IconBtn, useToast } from '../ui';
 import { fuzzyFilter } from '../lib/fuzzy';
 import { ViewHead } from '../ui/ViewHead';
 
@@ -30,16 +30,6 @@ export interface AssistantPageProps {
 interface ChatGroup {
   label: string;
   items: AssistantChatMeta[];
-}
-
-/** 3-формный плюрал (ru-правило; en/kk-словари несут свои формы под теми же
- * ключами): 1/21/31 → One, 2–4/22–24 → Few, остальное → Many. */
-function ruPluralKey(n: number): TranslationKey {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'assistant.callsPluralOne';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'assistant.callsPluralFew';
-  return 'assistant.callsPluralMany';
 }
 
 export function AssistantPage({
@@ -143,22 +133,6 @@ export function AssistantPage({
     }
   }
 
-  const statsChip = (() => {
-    if (!stats) return null;
-    const totalMin = Math.round(stats.totalDurationSec / 60);
-    const dur =
-      totalMin >= 60
-        ? t('assistant.durHours', { h: Math.floor(totalMin / 60), m: totalMin % 60 })
-        : t('assistant.durMinutes', { m: totalMin });
-    const plural = t(ruPluralKey(stats.totalCalls));
-    return t('assistant.statsChip', {
-      ready: stats.indexedCalls,
-      total: stats.totalCalls,
-      plural,
-      dur,
-    });
-  })();
-
   const pendingText = t('assistant.pendingGlobal', { n: stats?.indexedCalls ?? 0 });
 
   // [B27.3] Название активного чата — в хедер вместо чипа статистики.
@@ -175,20 +149,8 @@ export function AssistantPage({
     // .as-layout получает всю высоту, composer-dock прижат к низу.
     <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
       <ViewHead icon="chat" title={t('assistant.title')}>
-        {/* [B27.3] Активный чат → его полное название; иначе — чип статистики. */}
-        {activeChatTitle ? (
-          <span className="as-head-chat u-trunc" title={activeChatTitle}>
-            {activeChatTitle}
-          </span>
-        ) : statsChip ? (
-          <Tooltip content={t('assistant.statsTooltip')} side="bottom">
-            <Chip size="sm" tone="line" icon="doc">
-              {statsChip}
-            </Chip>
-          </Tooltip>
-        ) : null}
-        {/* [B29.3] Поиск по чатам — по центру шапки (канон omni звонков). */}
-        <div style={{ flex: '1 1 auto', maxWidth: 300, minWidth: 120, marginLeft: 'var(--s2)' }}>
+        {/* [B30.4] Порядок: раздел → поиск → титул чата; статчип убран. */}
+        <div style={{ flex: '0 1 300px', minWidth: 120, marginLeft: 'var(--s2)' }}>
           <label className="input" style={{ height: 32 }}>
             <Icon name="search" size={14} className="iico" />
             <input
@@ -202,6 +164,11 @@ export function AssistantPage({
             />
           </label>
         </div>
+        {activeChatTitle && (
+          <span className="as-head-chat u-trunc" title={activeChatTitle}>
+            {activeChatTitle}
+          </span>
+        )}
         <div style={{ flex: 1 }} />
         {/* [B29.2] «Новый чат» — правое действие шапки (канон Контактов).
             При свёрнутой панели НЕ разворачивает её — просто открывает тред. */}
@@ -232,18 +199,11 @@ export function AssistantPage({
             </div>
           ) : (
             <>
-          {/* [B29.3] Слим-ряд панели: лейбл + collapse (контрол принадлежит панели). */}
+          {/* [B30.3] Лейбл сверху; collapse-кнопка — в футере (единый паттерн). */}
           <div className="as-chats-top">
             <span className="sec-label" style={{ padding: 0 }}>
               <span>{t('assistant.chatsPanel')}</span>
             </span>
-            <IconBtn
-              icon="chevronLeft"
-              size="sm"
-              label={t('assistant.collapsePanel')}
-              tip={t('assistant.collapsePanel')}
-              onClick={() => setPanelCollapsed(true)}
-            />
           </div>
           <div className="as-chats-list scroll">
             {groups.map((g) => (
@@ -295,6 +255,15 @@ export function AssistantPage({
               </div>
             )}
           </div>
+            <div className="side-list-foot">
+              <IconBtn
+                icon="chevronLeft"
+                size="sm"
+                label={t('assistant.collapsePanel')}
+                tip={t('assistant.collapsePanel')}
+                onClick={() => setPanelCollapsed(true)}
+              />
+            </div>
             </>
           )}
           {!panelCollapsed && (

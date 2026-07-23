@@ -155,6 +155,13 @@ pub fn run() {
             // ⌘Q / app menu". Без этого CloseRequested от красного крестика
             // сворачивает окно в трей; с флагом — даёт нашему graceful-stop
             // pipeline пути отработать и завершить процесс.
+            // [B30.1] Dock-иконка runtime'ом: в dev голый бинарь без .app-бандла —
+            // система берёт вшитую в бинарь иконку, а cargo не пересобирает при
+            // смене icons/* (иконка «застревала» старой). Явный setApplicationIconImage
+            // из padded-1024 PNG даёт корректный Dock и app-switcher в dev и проде.
+            #[cfg(target_os = "macos")]
+            set_dock_icon();
+
             let quitting = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             tauri::Manager::manage(app, quitting.clone());
 
@@ -793,6 +800,33 @@ pub fn run() {
 /// Кнопки в widget'е переопределяют CSS `-webkit-app-region: no-drag`, что
 /// блокирует window drag на этих субвью — клики работают.
 ///
+/// [B30.1] Установить Dock-иконку приложения из padded-1024 PNG (канонный
+/// macOS-паддинг ~10%). setup() бежит на main thread — AppKit-инвариант
+/// соблюдён; NSImage decode PNG сам. Ошибки — warn, не фатальны.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn set_dock_icon() {
+    use objc2::AnyThread;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::{MainThreadMarker, NSData};
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        log::warn!("set_dock_icon: not on main thread");
+        return;
+    };
+    let bytes: &[u8] = include_bytes!("../icons/source/app-icon-1024.png");
+    let data = NSData::with_bytes(bytes);
+    let Some(img) = NSImage::initWithData(NSImage::alloc(), &data) else {
+        log::warn!("set_dock_icon: NSImage decode failed");
+        return;
+    };
+    // SAFETY: main thread гарантирован mtm; img — валидный NSImage (decode
+    // проверен выше); setApplicationIconImage — no-throw AppKit-setter.
+    unsafe {
+        NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&img));
+    }
+}
+
 /// # Safety
 ///
 /// `ns_window` pointer гарантированно валиден от Tauri пока окно

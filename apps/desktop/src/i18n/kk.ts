@@ -954,11 +954,6 @@ export const kk: TranslationStrings = {
   },
   assistant: {
     title: 'Ассистент',
-    statsChip: 'іздеуде {total} ішінен {ready} {plural} · {dur}',
-    statsTooltip: 'Өңделіп жатқан және қателі жазбалар іздеуге қатыспайды',
-    callsPluralOne: 'қоңырау',
-    callsPluralFew: 'қоңырау',
-    callsPluralMany: 'қоңырау',
     msgYesterday: 'кеше',
     searchChats: 'Чаттардан іздеу…',
     chatsPanel: 'Чаттар',
