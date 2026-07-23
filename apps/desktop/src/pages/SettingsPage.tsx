@@ -8,7 +8,7 @@
 // BYO path / proxy URL override спрятаны сознательно: path хардкодим =
 // 'managed', usage встроен в Processing (cloud branch).
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { humanError } from '../api/errors';
 import {
@@ -28,12 +28,14 @@ import {
   Chip,
   GroupLabel,
   Icon,
+  IconBtn,
   NavItem,
   Select,
   SettingRow,
   Skeleton,
   Switch,
 } from '../ui';
+import { useResizablePanel } from '../hooks/useResizablePanel';
 import { type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -80,6 +82,15 @@ export function SettingsPage() {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState<SectionId>('appearance');
+  // [B29.5b] Панель разделов: drag-resize + collapse до полосы иконок.
+  const panel = useResizablePanel({
+    min: 180,
+    max: 320,
+    defaultWidth: 220,
+    collapseAt: 150,
+    widthKey: 'wk-setw',
+    collapsedKey: 'wk-set-collapsed',
+  });
   const [preferredLanguage, setPreferredLanguage] = useState<PreferredLanguage>(
     SETTINGS_DEFAULTS.PREFERRED_LANGUAGE,
   );
@@ -211,29 +222,61 @@ export function SettingsPage() {
         </span>
       </div>
       <div className="view-body">
-        {/* [B21, B22] v2 inner settings rail — 220px (300 из прототипа ломал
-            верстку контента справа на узких окнах). */}
+        {/* [B29.5b] v2 inner settings rail — .side-list с drag+collapse;
+            в свёрнутом виде навигация остаётся полосой иконок (канон minirail). */}
         <aside
-          style={{
-            width: 220,
-            flex: '0 0 220px',
-            borderRight: '1px solid var(--border)',
-            display: 'flex',
-            minHeight: 0,
-          }}
+          className="side-list"
+          data-collapsed={panel.collapsed || undefined}
+          style={{ ['--side-w' as string]: `${panel.width}px` } as CSSProperties}
         >
-          <div className="scroll" style={{ flex: 1, minHeight: 0, padding: 8 }}>
-            {NAV.filter((s) => !s.hidden).map((s) => (
-              <NavItem
-                key={s.id}
-                icon={SECTION_ICONS[s.id]}
-                label={s.label}
-                active={section === s.id}
-                current={section === s.id}
-                onClick={() => setSection(s.id)}
+          {panel.collapsed ? (
+            <div className="side-list-mini">
+              <IconBtn
+                icon="chevronRight"
+                label={t('settings.expandPanel')}
+                tip={t('settings.expandPanel')}
+                tipSide="right"
+                onClick={() => panel.setCollapsed(false)}
               />
-            ))}
-          </div>
+              {NAV.filter((s) => !s.hidden).map((s) => (
+                <IconBtn
+                  key={s.id}
+                  icon={SECTION_ICONS[s.id]}
+                  label={s.label}
+                  tip={s.label}
+                  tipSide="right"
+                  active={section === s.id}
+                  onClick={() => setSection(s.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="scroll" style={{ flex: 1, minHeight: 0, padding: 8 }}>
+                {NAV.filter((s) => !s.hidden).map((s) => (
+                  <NavItem
+                    key={s.id}
+                    icon={SECTION_ICONS[s.id]}
+                    label={s.label}
+                    active={section === s.id}
+                    current={section === s.id}
+                    onClick={() => setSection(s.id)}
+                  />
+                ))}
+              </div>
+              <div className="as-chats-top" style={{ padding: '0 8px 8px' }}>
+                <span />
+                <IconBtn
+                  icon="chevronLeft"
+                  size="sm"
+                  label={t('settings.collapsePanel')}
+                  tip={t('settings.collapsePanel')}
+                  onClick={() => panel.setCollapsed(true)}
+                />
+              </div>
+              <div className="panel-resize" onMouseDown={panel.onResizeStart} aria-hidden="true" />
+            </>
+          )}
         </aside>
 
         {/* Content — канон: paddingTop 28, bottom 80, ширина .set-group 560. */}

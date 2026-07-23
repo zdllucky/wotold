@@ -374,6 +374,8 @@ export const kk: TranslationStrings = {
   },
 
   contacts: {
+    collapsePanel: 'Контактілер тізімін жию',
+    expandPanel: 'Контактілер тізімін жаю',
     title: 'Контактілер',
     addAria: 'Контакт қосу',
     searchPlaceholder: 'Іздеу…',
@@ -439,6 +441,8 @@ export const kk: TranslationStrings = {
   },
 
   settings: {
+    collapsePanel: 'Бөлімдерді жию',
+    expandPanel: 'Бөлімдерді жаю',
     title: 'Баптаулар',
     saved: '✓ Сақталды',
     sectionAppearance: 'Сыртқы түрі',

@@ -39,7 +39,10 @@ vi.mock('./VoiceSamplesSection', () => ({ VoiceSamplesSection: () => null }));
 
 import { ContactsPage } from './ContactsPage';
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  localStorage.clear(); // [B29.5b] collapse-стейт панели не течёт между тестами
+});
 
 describe('ContactsPage', () => {
   it('add button opens dialog «Новый контакт»; no inline form in detail pane', async () => {
@@ -90,5 +93,27 @@ describe('ContactsPage', () => {
       const alert = dialog.querySelector('[role="alert"]');
       expect(alert?.textContent).toContain('db locked');
     });
+  });
+});
+
+// ── [B29.4-5b] Панель списка: side-list + collapse до полосы аватаров ──
+describe('ContactsPage панель', () => {
+  it('aside — .side-list (без .rrail); collapse → аватары, клик открывает, persist', async () => {
+    const { container } = render(<ContactsPage />);
+    await waitFor(() => expect(screen.getAllByText('Иван Петров').length).toBeGreaterThan(0));
+    const aside = container.querySelector('aside') as HTMLElement;
+    expect(aside.className).toContain('side-list');
+    expect(aside.className).not.toContain('rrail');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть список контактов' }));
+    expect(localStorage.getItem('wk-ct-collapsed')).toBe('1');
+    // Строк .lrow нет, вместо них аватар-кнопка с именем.
+    expect(container.querySelector('.lrow')).toBeNull();
+    const avatarBtn = container.querySelector('.side-list-mini .avatar') as HTMLElement;
+    expect(avatarBtn.getAttribute('aria-label')).toBe('Иван Петров');
+
+    fireEvent.click(avatarBtn); // клик открывает контакт (уже открыт — не падает)
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть список контактов' }));
+    await waitFor(() => expect(container.querySelector('.lrow')).not.toBeNull());
   });
 });
