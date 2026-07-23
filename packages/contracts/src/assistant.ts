@@ -36,6 +36,9 @@ export interface AssistantFragment {
   speaker: string | null;
   startMs: number | null;
   text: string;
+  /** [B26.4] Текст усечён на отдаче; полный текст —
+   * `assistant_get_fragment_text(messageId, fragmentIndex)`. */
+  textTruncated?: boolean;
 }
 
 /** Полный ответ ассистента (persist в assistant_messages.answer_json). */

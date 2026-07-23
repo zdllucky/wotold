@@ -287,6 +287,7 @@ async fn llm_answer_path(
             speaker: f.speaker.clone(),
             start_ms: f.start_ms,
             text: f.text.clone(),
+            text_truncated: false,
         })
         .collect();
     let ans = AssistantAnswer {

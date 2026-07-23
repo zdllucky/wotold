@@ -78,6 +78,11 @@ pub struct AssistantFragment {
     pub speaker: Option<String>,
     pub start_ms: Option<i64>,
     pub text: String,
+    /// [B26.4] Текст усечён при отдаче на фронт (полный — в answer_json,
+    /// ленивая подгрузка командой `assistant_get_fragment_text`).
+    /// `default` — старые answer_json без поля читаются как false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub text_truncated: bool,
 }
 
 /// Полный ответ (persist в `assistant_messages.answer_json`).
@@ -175,6 +180,7 @@ mod tests {
                 speaker: Some("Арман Сулейменов".into()),
                 start_ms: Some(62_000),
                 text: "И давайте зафиксируем: на демо показываем локальный режим.".into(),
+                text_truncated: false,
             }],
             fragment_tokens: 1_400,
             window_tokens: 8_192,
