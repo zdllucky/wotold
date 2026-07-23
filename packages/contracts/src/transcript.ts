@@ -17,7 +17,12 @@ export interface TranscriptSegment {
   confidence?: number;
 }
 
-export type TranscriptionProviderId = 'soniox' | 'gladia';
+/**
+ * Идентификатор движка транскрипции. Local-only: локальный движок пишет
+ * свой label (например `local-whisper`). Тип — свободная строка, чтобы не
+ * ограничивать локальные варианты (Rust-сторона сериализует `String`).
+ */
+export type TranscriptionProviderId = string;
 
 export interface DiarizedTranscript {
   /** Schema version. Bump on breaking changes. */

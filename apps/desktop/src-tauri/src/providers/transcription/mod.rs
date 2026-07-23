@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// Единый интерфейс STT с диаризацией. См. M2.1 паспорта.
-/// Реализации: SonioxProvider (primary), GladiaProvider (fallback).
+/// Реализация: `LocalWhisperProvider` (whisper.cpp sidecar, macOS).
 #[async_trait]
 pub trait TranscriptionProvider: Send + Sync {
     async fn transcribe(
@@ -51,6 +51,10 @@ pub struct DiarizedTranscript {
     pub segments: Vec<TranscriptSegment>,
 }
 
+// Local-only: STT-провайдер (LocalWhisperProvider) конструирует `Provider`
+// и `NotImplemented`. Auth/Network/QuotaExceeded — зарезервированная
+// таксономия под будущие внешние интеграции; пока не конструируются.
+#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum TranscriptionError {
     #[error("auth: {0}")]
@@ -61,17 +65,6 @@ pub enum TranscriptionError {
     QuotaExceeded,
     #[error("provider: {0}")]
     Provider(String),
-    // [B16] Зарезервировано для R4 Windows-impl и stub-провайдеров.
-    #[allow(dead_code)]
     #[error("not implemented")]
     NotImplemented,
 }
-
-mod gladia;
-mod proxy_managed;
-mod retry;
-mod soniox;
-
-pub use gladia::GladiaProvider;
-pub use retry::{failure_reason, transcribe_with_fallback, RetryConfig};
-pub use soniox::SonioxProvider;

@@ -1,6 +1,4 @@
 use std::path::Path;
-use std::sync::Arc;
-use std::time::Instant;
 
 use serde::Deserialize;
 use sqlx::SqlitePool;
@@ -18,10 +16,6 @@ use crate::{
         summary_validator::{
             self, strip_unverified_evidence, validate_schema, DEFAULT_FUZZY_THRESHOLD,
         },
-    },
-    providers::{
-        llm::{AnthropicProvider, LlmProvider, LlmRequest},
-        ProviderMode,
     },
     AppError,
 };
@@ -69,104 +63,6 @@ pub struct RecapParticipant {
     pub display_name: Option<String>,
     #[serde(default)]
     pub contact_id: Option<String>,
-}
-
-/// Контекст одного рекап-вызова. Собирается на стороне pipeline::run или
-/// команды regenerate_recap.
-pub struct RecapCtx<'a> {
-    pub call_id: &'a str,
-    pub call_dir: &'a Path,
-    pub transcript_md: &'a str,
-    pub lang_detected: Option<&'a str>,
-    pub proxy_base_url: &'a str,
-    pub device_id: &'a Arc<str>,
-    pub provider_path: &'a str,
-    pub model_override: Option<&'a str>,
-    /// [M14 T-02] Engine label сохраняется в `calls.summary_engine`.
-    /// `cloud-managed` для proxy path; локальный путь будет выставлять
-    /// `local-qwen-{1.5b|3b|7b}` в T-04..T-10.
-    pub engine_label: &'a str,
-    /// [M14 T-14] Summary v2 feature flag. true → cloud_universal v2 prompt.
-    /// false → legacy v1 markdown-only prompt (emergency disable).
-    pub summary_v2_enabled: bool,
-}
-
-/// Генерирует recap.md и action_items по уже сохранённому transcript.md.
-/// M4.2-4.4 паспорта. Вызывается:
-///   - автоматически после транскрипции (chain in pipeline::run)
-///   - из команды regenerate_recap (M4.5, перегенерация без re-STT)
-pub async fn run(pool: &SqlitePool, ctx: RecapCtx<'_>) -> Result<(), AppError> {
-    let mode = match ctx.provider_path {
-        "managed" => {
-            if ctx.proxy_base_url.is_empty() {
-                return Err(AppError::Other(
-                    "Proxy URL не настроен. Settings → Proxy URL (#22 / [B4]).".into(),
-                ));
-            }
-            ProviderMode::Managed {
-                proxy_base_url: ctx.proxy_base_url.to_string(),
-                device_id: ctx.device_id.to_string(),
-            }
-        }
-        "byo" => {
-            return Err(AppError::Other(
-                "BYO LLM key ещё не подключён. См. #47 в roadmap.".into(),
-            ));
-        }
-        other => return Err(AppError::Other(format!("unknown provider_path: {other}"))),
-    };
-
-    // [F2] Переписать заголовки подтверждённых спикеров на имена контактов
-    // (несколько тегов одного контакта → одно имя) + person-level Known
-    // participants блок. LLM видит одного человека, а не speaker:0/speaker:3.
-    let (prompt_transcript, known_speakers) =
-        crate::pipeline::speaker_prompt_ctx::build_prompt_transcript(
-            pool,
-            ctx.call_id,
-            ctx.transcript_md,
-        )
-        .await?;
-
-    // [M14 T-14] Branch prompt по feature flag. OFF → legacy v1 markdown-only
-    // (минимальный JSON, парсится через existing promote_legacy_to_v2 fallback).
-    let system_prompt = if ctx.summary_v2_enabled {
-        // Cloud path: no pre-classification, LLM решает call_type сам.
-        build_v2_system_prompt(ctx.lang_detected, known_speakers.as_deref(), None)
-    } else {
-        build_legacy_system_prompt(ctx.lang_detected, known_speakers.as_deref())
-    };
-
-    let provider = AnthropicProvider::new(mode);
-    let request = LlmRequest {
-        model: ctx.model_override.map(str::to_string),
-        system: system_prompt,
-        input: prompt_transcript.clone(),
-        max_tokens: Some(4096),
-        grammar: None,
-        json_schema: None,
-    };
-
-    let started = Instant::now();
-    let json_value = provider
-        .generate(request)
-        .await
-        .map_err(|e| AppError::Other(format!("llm: {e}")))?;
-    let generation_ms = started.elapsed().as_millis() as i64;
-
-    persist_recap_from_json(
-        pool,
-        ctx.call_id,
-        ctx.call_dir,
-        json_value,
-        ctx.engine_label,
-        // [F2] Evidence-валидатор должен матчить против текста, который видел
-        // LLM (заголовки уже переписаны на имена контактов).
-        &prompt_transcript,
-        Some(generation_ms),
-        Some(ctx.summary_v2_enabled),
-        "one_shot",
-    )
-    .await
 }
 
 /// [M12.6 Phase 3 / M14 T-02] Извлечь action_items, decisions, open_questions,
@@ -466,47 +362,6 @@ fn match_contact_id(contacts: &[db::Contact], hint: &str) -> Option<String> {
             dn.contains(&hint_lower) || hint_lower.contains(&dn)
         })
         .map(|c| c.id.clone())
-}
-
-/// [M14 T-14] Legacy v1 markdown-only prompt — fallback когда
-/// `summary_v2_enabled=false`. Минимальный JSON: title/summary/key_points/
-/// tasks/participants/lang. Без decisions/open_questions/evidence/call_type.
-/// Парсится через existing `promote_legacy_to_v2` envelope.
-pub(crate) fn build_legacy_system_prompt(
-    lang_detected: Option<&str>,
-    known_speakers: Option<&str>,
-) -> String {
-    let lang = lang_detected.unwrap_or("ru");
-    let known_block = known_speakers
-        .map(|s| format!("\n\n## Known participants\n{s}"))
-        .unwrap_or_default();
-    format!(
-        "You are a senior meeting analyst for Wotold. Produce a faithful JSON summary of a meeting transcript. Output language: {lang}.\n\
-\n\
-## RULES\n\
-1. NEVER invent facts, names, dates, numbers, or commitments not in transcript.\n\
-2. Action items: assign owner only on explicit acceptance ('я возьму', 'I'll take it'). Mere mention NOT enough.\n\
-3. Output ONLY ONE JSON object matching schema below. No prose, no markdown fences.\n\
-4. NEVER use 'Speaker 0' / 'Спикер 1' in summary/key_points — resolve via known participants OR self-introduction OR generic role ('клиент', 'collega').\n\
-\n\
-## SCHEMA\n\
-\n\
-{{\n\
-  \"schema_version\": 1,\n\
-  \"title\": string,                              // 3-7 слов, headline-style\n\
-  \"summary\": string,                            // 1-2 предложения TL;DR\n\
-  \"key_points\": string[],                       // 3-7 пунктов конкретики\n\
-  \"language\": \"ru\" | \"en\" | \"kk\" | \"mixed\",\n\
-  \"participants\": [{{ \"speaker_tag\": string, \"display_name\": string|null }}],\n\
-  \"action_items\": [{{\n\
-    \"text\": string,\n\
-    \"owner_hint\": string|null,\n\
-    \"due\": string|null\n\
-  }}]\n\
-}}{known_block}\n\
-\n\
-Output ONLY the JSON object. No prose. No markdown fences."
-    )
 }
 
 pub(crate) fn build_v2_system_prompt(
@@ -903,74 +758,6 @@ mod tests {
     use super::*;
     use serde_json::Value;
 
-    /// [Phase 3] recap::run должен корректно отрабатывать happy-error path:
-    /// если provider_path неизвестный — Err до любых I/O. Это покрывает
-    /// контракт «recap не пробрасывает успех на мусорных настройках».
-    #[tokio::test]
-    async fn recap_run_unknown_provider_path_returns_error() {
-        let db = crate::db::test_support::fresh_db().await;
-        let tmpdir = tempfile::tempdir().unwrap();
-        let device: std::sync::Arc<str> = std::sync::Arc::from("dev-1");
-        let ctx = RecapCtx {
-            call_id: "c1",
-            call_dir: tmpdir.path(),
-            transcript_md: "# transcript\n\nspeaker: hello",
-            lang_detected: Some("en"),
-            proxy_base_url: "https://example.com",
-            device_id: &device,
-            provider_path: "ghost-path",
-            model_override: None,
-            engine_label: "test-engine",
-            summary_v2_enabled: true,
-        };
-        let err = super::run(&db.pool, ctx).await.unwrap_err();
-        assert!(
-            err.to_string().contains("unknown provider_path"),
-            "got: {err}"
-        );
-    }
-
-    /// [Phase 3] recap::run в managed-режиме с пустым proxy_base_url должен
-    /// падать с UX-readable ошибкой («Proxy URL не настроен»). Покрывает
-    /// edge case настройки прокси.
-    #[tokio::test]
-    async fn recap_run_managed_empty_proxy_url_returns_error() {
-        let db = crate::db::test_support::fresh_db().await;
-        let tmpdir = tempfile::tempdir().unwrap();
-        let device: std::sync::Arc<str> = std::sync::Arc::from("dev-1");
-        let ctx = RecapCtx {
-            call_id: "c1",
-            call_dir: tmpdir.path(),
-            transcript_md: "stub",
-            lang_detected: None,
-            proxy_base_url: "",
-            device_id: &device,
-            provider_path: "managed",
-            model_override: None,
-            engine_label: "test-engine",
-            summary_v2_enabled: true,
-        };
-        let err = super::run(&db.pool, ctx).await.unwrap_err();
-        assert!(err.to_string().contains("Proxy URL"), "got: {err}");
-    }
-
-    /// [M14 T-14] Legacy prompt должен ссылаться на schema_version 1 и
-    /// НЕ упоминать decisions/open_questions/evidence/call_type — иначе LLM
-    /// продолжит выдавать v2 при выключенном флаге.
-    #[test]
-    fn legacy_system_prompt_targets_schema_v1_only() {
-        let prompt = build_legacy_system_prompt(Some("ru"), None);
-        assert!(prompt.contains("\"schema_version\": 1"));
-        assert!(!prompt.contains("decisions"));
-        assert!(!prompt.contains("open_questions"));
-        assert!(!prompt.contains("evidence"));
-        assert!(!prompt.contains("call_type"));
-        assert!(prompt.contains("action_items"));
-        assert!(prompt.contains("title"));
-        assert!(prompt.contains("summary"));
-        assert!(prompt.contains("key_points"));
-    }
-
     /// [M14 T-14] V2 prompt — sanity: содержит ключи которых нет в legacy
     /// (call_type, decisions, open_questions, evidence). Защищает от
     /// случайной деградации v2 prompt при future edits.
@@ -1079,22 +866,20 @@ mod tests {
     }
 
     /// [Phase 3] regenerate_recap при отсутствии transcript.md → AppError.
-    /// Хотя `recap::run` сам не читает файл (caller это делает), мы покрываем
-    /// контракт через pipeline-level wrapper, чтобы поймать regression если
-    /// recap внезапно станет читать transcript сам.
+    /// Local-путь читает transcript.md ДО обращения к sidecar. macOS-only
+    /// (regenerate_recap — local-движок).
+    #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn regenerate_recap_missing_transcript_md_returns_error() {
         let db = crate::db::test_support::fresh_db().await;
         let tmpdir = tempfile::tempdir().unwrap();
-        let device: std::sync::Arc<str> = std::sync::Arc::from("dev-1");
         // Создаём call row, но НЕ создаём transcript.md.
-        let call = crate::db::insert_recording(&db.pool, "managed")
+        let call = crate::db::insert_recording(&db.pool, "local")
             .await
             .unwrap();
-        let err =
-            crate::pipeline::regenerate_recap(&db.pool, tmpdir.path(), &device, &call.id, None)
-                .await
-                .unwrap_err();
+        let err = crate::pipeline::regenerate_recap(&db.pool, tmpdir.path(), &call.id, None)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("transcript.md"),
             "expected transcript.md error, got: {err}"

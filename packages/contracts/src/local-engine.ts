@@ -1,16 +1,11 @@
 // Local Engine contracts — M12 PRD §7.
 //
-// Третий путь обработки (см. [M12_LOCAL_ENGINE_PRD.md](../../../docs/M12_LOCAL_ENGINE_PRD.md)):
-// `local` параллельно `cloud_managed` и `cloud_byo`, всё на устройстве.
-//
-// `DiarizedTranscript` / `RecapJson` / `CallProgress` остаются без изменений —
-// local engine produces совместимые структуры (PRD §7).
+// Local-only: единственный путь обработки (whisper.cpp + sherpa-onnx диаризация
+// + llama.cpp, macOS). Cloud/proxy-путь удалён. `DiarizedTranscript` / `RecapJson`
+// / `CallProgress` — общие структуры local pipeline (PRD §7).
 
 /** Активный preset локального движка. См. PRD §2.5. */
 export type LocalEnginePreset = 'light' | 'balanced' | 'quality';
-
-/** Какой движок обрабатывает звонок. См. PRD §2.1. */
-export type EngineKind = 'local' | 'cloud_managed' | 'cloud_byo';
 
 /** Тип модели в каталоге. [M15.9] embedding — текст-эмбеддер ассистента. */
 export type LocalModelKind = 'stt' | 'llm' | 'diarization' | 'embedding';

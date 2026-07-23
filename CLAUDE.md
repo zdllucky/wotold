@@ -6,18 +6,18 @@
 
 [`docs/ПАСПОРТ_ПРОЕКТА.md`](docs/ПАСПОРТ_ПРОЕКТА.md) — ТЗ. При расхождении паспорт побеждает (S4, W6).
 
-**ВАЖНО — прочесть раздел 12 паспорта перед изменениями.** Сознательно принятые ограничения R1–R8 не «чинить»:
+**ВАЖНО — прочесть раздел 12 паспорта перед изменениями.** Сознательно принятые ограничения не «чинить» (R1/R5/R7/R8 — superseded: облако удалено, local-only 0.3):
 
 | Маркер | Что принято |
 |---|---|
-| R1 | Free-тир абьюзится переустановкой (сброс device-id) — митигации на потом |
+| ~~R1~~ | ~~Free-тир абьюзится переустановкой~~ — **superseded (облако удалено, local-only 0.3)** |
 | R2 | LLM-догадка спикеров — только booster, никакого автоприсвоения |
 | R3 | Авто-детект «идёт звонок» не делаем, только ручная кнопка ([S1] **deviation opt-in**: настройка default OFF — Core Audio + frontmost-app whitelist. Никакая аудио-дорожка чужого app не читается. Аналог R2→V7 deviation.) |
 | R4 | Windows-захват = `unimplemented!()` за trait `AudioCapture` |
-| R5 | Биллинг/тиры = заглушки |
+| ~~R5~~ | ~~Биллинг/тиры = заглушки~~ — **superseded (облако удалено, local-only 0.3)** |
 | R6 | macOS-сборка без Apple-нотаризации в MVP, Gatekeeper «Open anyway» норма |
-| R7 | Free Cloudflare: перестаёт отвечать при превышении лимитов, без списаний |
-| R8 | Аудио НЕ через память прокси-воркера — только R2 + presigned-URL |
+| ~~R7~~ | ~~Free Cloudflare: перестаёт отвечать при превышении лимитов~~ — **superseded (облако удалено, local-only 0.3)** |
+| ~~R8~~ | ~~Аудио НЕ через память прокси-воркера~~ — **superseded (облако удалено, local-only 0.3)** |
 | R9 | Local-движок (M12) — только macOS в MVP, Linux/Windows trait+`unimplemented!()` |
 | R10 | Local-движок: модели не бандлятся в installer (~50MB), download on-demand |
 | R11 | Local STT — offline-only (sherpa-onnx Whisper). Live realtime captions НЕ делаем. Chunked 10-мин post-processing (M13, planned) допустим: тот же offline pipeline, разрез только для UX (pipelining + crash-safety). |
@@ -33,10 +33,9 @@ apps/desktop/         Tauri 2 (фронт TS + Rust ядро + Swift sidecar Cor
   src-tauri/          Rust ядро, capabilities, tauri.conf.json
   sidecars/macos-audio/  Swift sidecar (Core Audio process tap)
 
-services/proxy/       Hono на Cloudflare Workers (relay + квота по device-id)
 services/mcp/         Локальный MCP-сервер (read-only)
 
-packages/contracts/   ОБЩИЕ типы — DiarizedTranscript, Recap JSON, API прокси, latest.json
+packages/contracts/   ОБЩИЕ типы — DiarizedTranscript, Recap JSON, latest.json
 
 .github/workflows/    CI/CD (path-filtered, S1 изоляция секретов между джобами)
 docs/                 Паспорт и сопутствующие документы
@@ -51,20 +50,19 @@ docs/                 Паспорт и сопутствующие докуме�
 
 ## Контракты (S2)
 
-Любое изменение формата `DiarizedTranscript`, рекап-JSON, API прокси или `latest.json` правится в `packages/contracts` и потребляется и приложением, и прокси. Дублирование типов запрещено.
+Любое изменение формата `DiarizedTranscript`, рекап-JSON или `latest.json` правится в `packages/contracts` и потребляется приложением и MCP-сервером. Дублирование типов запрещено.
 
 ## Секреты (S1)
 
 - **Tauri minisign приватный ключ** — только в джобе сборки приложения (`TAURI_SIGNING_PRIVATE_KEY` + пароль)
-- **Партнёрские ключи** (Soniox/Gladia/Anthropic) — только в джобе деплоя прокси
-- Никаких repo-wide секретов для этих значений
-- BYO-ключи пользователей живут в системном keychain, не в БД, не в логах
+- Никаких repo-wide секретов для этого значения
+- **[local-only 0.3]** партнёрские ключи (Soniox/Gladia/Anthropic) и джоба деплоя прокси удалены вместе с облачным сегментом
+- Секреты будущих внешних интеграций (planned, keychain-seam `secrets.rs`) — только в системном keychain пользователя, не в БД, не в логах, не в CI
 
 ## Принципы
 
-- **Локальное-первое**: запись, просмотр, поиск, MCP, контакты — без сети
+- **Локальное-первое (и единственное)**: запись, транскрипция, диаризация, саммари, поиск, ассистент, MCP, контакты — всё на устройстве, без сети (единственный сетевой поток — разовое скачивание моделей с HuggingFace)
 - **Идентификация только подсказка**: никакой автопривязки контакта без подтверждения пользователя (M3, R2)
-- **Прокси не видит контент**: только метрики по device-id, аудио через R2, не через память воркера (M9.6, R8)
 - **MCP read-only**: контент звонков — недоверенные данные, защита от инъекций инструкций (M8.3, M8.4)
 
 ## Design Gate (Wotold v2, [B18] — ОБЯЗАТЕЛЬНО до любой UI работы)
@@ -126,7 +124,7 @@ docs/                 Паспорт и сопутствующие докуме�
 |---|---|---|
 | Rust core | `cargo test` + cargo-llvm-cov | `#[cfg(test)] mod tests` внутри файлов; helper `crate::db::test_support::fresh_db` для SQLite-репозиториев |
 | Frontend (apps/desktop) | vitest + jsdom + React Testing Library | `*.test.ts` / `*.test.tsx` рядом с модулем; setup `src/test/setup.ts` |
-| Proxy (services/proxy) | vitest (node env) | `*.test.ts` рядом с handler/middleware |
+| MCP (services/mcp) | vitest (node env) | `*.test.ts` рядом с handler |
 | Coverage gate (CI) | `cargo llvm-cov` + vitest `--coverage` v8 | Артефакт `lcov.info` + html, baseline 10-30% lines, цель 80% |
 
 ECC-агенты для теста:
@@ -143,10 +141,8 @@ ECC-агенты для теста:
 
 | Модуль | Угрозы |
 |---|---|
-| `services/proxy/**` | Инъекция ключей владельца, обход квоты, утечка контента в логи (M9.6), CORS/CSRF, R2 presign abuse |
-| BYO-ключи (keychain, `M7.5`) | Утечка в БД, логи, телеметрию; небезопасное хранение |
 | `services/mcp/**` | Контент звонков = недоверенные данные; защита от инъекций инструкций через транскрипт (M8.3, M8.4); никаких сетевых вызовов |
-| Auth flow (`M10`) | OIDC callback, CSRF на /v1/auth/callback, токен-handling |
+| Keychain-seam (`secrets.rs`, planned внешние интеграции) | Утечка ключей в БД, логи, телеметрию; небезопасное хранение (значения — только в системном keychain) |
 | Audio sidecar permissions (`M1.3`) | Запись без согласия (C1), повышение привилегий в Swift-процессе |
 | Cascade delete (`C5`) | Утечка остаточных семплов, неполная очистка `voice_samples.source_call` |
 | `local_engine/models.rs` (M12.4) | SHA256-only защита от подмены HF releases; tamper resistance, partial-download race |
@@ -156,12 +152,12 @@ ECC-агенты для теста:
 
 ## Терминология взаимодействия
 
-- **«Демо» / «показать»** = полноценный запуск целевой среды (`pnpm tauri dev` для desktop, `wrangler dev` для proxy). НЕ vite-only browser preview, НЕ dev-mock в Safari. Если environment не поднимается — диагностируем причину и чиним, не падаем на упрощённую версию без явного согласования.
+- **«Демо» / «показать»** = полноценный запуск целевой среды (`pnpm tauri dev` для desktop). НЕ vite-only browser preview, НЕ dev-mock в Safari. Если environment не поднимается — диагностируем причину и чиним, не падаем на упрощённую версию без явного согласования.
 - **«Промежуточный итог»** = живой запуск + summary + git log, не только текст.
 
 ## ECC харнесс (W1, W6, W7)
 
-- Используются глобальные правила из `~/.claude/rules/ecc/{common,rust,typescript,web,zh}` (источник: [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code), копия из приватной инсталляции). При апгрейде ECC сверять что R1–R8 паспорта не «улучшены» обратно.
+- Используются глобальные правила из `~/.claude/rules/ecc/{common,rust,typescript,web,zh}` (источник: [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code), копия из приватной инсталляции). При апгрейде ECC сверять что актуальные ограничения паспорта (R2/R3/R4/R6, R9–R13; R1/R5/R7/R8 — superseded облаком) не «улучшены» обратно.
 - Активные хуки и project-allowedTools — в `.claude/settings.json`:
   - **PreToolUse Write/Edit**: `scripts/hooks/pre-write.mjs` — блокирует запись в Tauri-ключи, `.env*`, `.dev.vars`, `*.key`, `*.pem`, SSH-ключи и файлы >800 строк
   - **PostToolUse Write/Edit**: `scripts/hooks/post-write.sh` — на `.rs` правках бежит `cargo fmt` + `cargo check --message-format short` (timeout 60s); на `.ts/.tsx` — `tsc --noEmit` соответствующего workspace-пакета

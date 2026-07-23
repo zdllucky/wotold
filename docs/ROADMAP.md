@@ -12,7 +12,9 @@
 
 MVP реализован и работает (этапы 1–12 паспорта + local engine M12 + chunked pipeline M13 + summary v2 M14 + редизайн Wotold v2 B18). Полный лог — в [архиве](ROADMAP_ARCHIVE.md).
 
-**Блокеры публичного релиза** — секция A беклога ниже (#42 minisign, #44 CF production, security-scan, manual QA).
+**Переход на local-only (паспорт 0.3).** Облачный сегмент удалён из кода: прокси (`services/proxy`), cloud STT (Soniox/Gladia), cloud LLM (Anthropic/Groq через прокси), auth/SSO (M10), квота/usage, device-id, выбор движка cloud↔local. Локальный движок (whisper.cpp + sherpa-onnx диаризация + llama.cpp, только macOS) — единственный путь обработки. Ограничения R1/R5/R7/R8 паспорта помечены superseded. Будущая опциональная интеграция «внешний Claude-софт со своими ключами» — planned (keychain-seam `secrets.rs`).
+
+**Блокеры публичного релиза** — секция A беклога ниже (#42 minisign, security-scan, manual QA).
 
 ## B18 · остатки (открытое из редизайна)
 
@@ -164,7 +166,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 ### A. Release-блокеры (до публичного релиза)
 
 - [ ] **#42 X1 Tauri minisign keygen** — `pnpm tauri signer generate`; public → `tauri.conf.json`, private+password → GH Secret + офлайн-бэкап (M11.1/M11.9). Без этого updater не работает.
-- [~] **#44 X3 CF production provisioning** — staging закрыт полностью. Осталось: GH Secrets с суффиксом `_PRODUCTION`, Google OAuth Authorized redirect URI для prod callback, tag `v0.1.0` для триггера prod-деплоя. Процедура — `docs/DEPLOYMENT.md`.
+- [x] ~~**#44 X3 CF production provisioning**~~ **[REMOVED — local-only 0.3]** Прокси/Cloudflare/auth удалены из проекта; CF production provisioning больше не блокер релиза (`docs/DEPLOYMENT.md` удалён).
 - [ ] **`/security-scan` (W5)** на `local_engine/{models,llm,stt}.rs` + `capabilities/default.json` + `scripts/refresh-model-catalog.sh` — обязателен перед production release.
 - [ ] **Manual visual QA** — 6 theme×accent (light/dark × bordeaux/persian/ink) на всех экранах, включая Engine picker (M12.5) и ChunkProgressStrip (M13.3). Сюда же — live-реверификация двух бывших багов (playback модала + failed_reason badge).
 
@@ -178,7 +180,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 ### C. Code / feature debt
 
-- [~] **device-id HMAC-bind** — /16 IP rate-limit уже сделан. Осталось: HMAC-привязка device-id к server-side secret при первом контакте (контракт-change: клиент хранит bound-token).
+- [x] ~~**device-id HMAC-bind**~~ **[REMOVED — local-only 0.3]** Относилось к квоте прокси по device-id; прокси и device-id удалены — задача снята.
 - [ ] **M12.6 cancellation flow** — SIGTERM на sidecar при delete звонка during processing. `tauri_plugin_shell::Child::kill()` + spawn-handle tracking.
 - [ ] **identify_speakers pipeline wire / reconcile** — сверить, нужен ли старый `identify_speakers` orchestrator (#25: embedding+llm+merge_signals) при работающем B3.x cluster-path (`run_cluster_pipeline`), либо он вытеснен. Переформулировать/выпилить мёртвый путь.
 - [ ] **Settings auto-name из NSFullUserName** — default «Я» + edit в онбординге. Требует Swift bridge.
@@ -209,7 +211,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 ### G. После M15 (ассистент) — PRD §12
 
-- [ ] **Cloud-ответы ассистента** — `AnthropicProvider` через прокси на общем retrieval-слое (answer-engine switch + квоты + consent на отправку фрагментов в облако).
+- [ ] **Внешний Claude-коннектор для ассистента (planned)** — опциональная будущая интеграция: ответы ассистента через подключённый пользователем внешний Claude-софт со своими ключами (keychain-seam `secrets.rs`), на общем retrieval-слое (answer-engine switch + явный consent на отправку фрагментов наружу). Прокси-путь удалён в 0.3.
 - [ ] **Токен-стриминг** — llama-server SSE (`stream:true`) → событие `assistant:token`; требует resident ON.
 - [ ] **Map-reduce отчёты по архиву** («сводка недели по всем звонкам») — за пределами 8K, refine-chain; отдельный milestone.
 - [ ] **MCP-tool `search_passages`** — read-only чтение `assistant_passages`/`assistant_fts` из `services/mcp`.
@@ -271,8 +273,8 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 - **R3 deviation — auto-detect «идёт звонок»** как автозапуск. Запись всегда manual trigger; opt-in Labs-подсказка (Core Audio + frontmost-app whitelist) реализована (S-секция), но это подсказка, не автозапуск.
 - **R11 live realtime captions.** Local STT offline-only. Chunked 10-мин post-processing (M13) допустим, live — нет.
-- **Auto-fallback Cloud → Local** при cloud LLM fail. Risky — переключение движков требует явного user consent.
 - **Distributed chunk processing** (multi-process). Overkill для desktop.
+- **Возврат облачного сегмента** (прокси / cloud STT / cloud LLM / auth / квота). Удалён при переходе на local-only (0.3). Внешняя обработка вернётся только как planned opt-in внешняя интеграция со своими ключами, не как встроенный cloud-путь.
 
 ---
 
@@ -282,14 +284,14 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 | Маркер | Что |
 |---|---|
-| R1 | Free-тир абьюзится переустановкой |
+| ~~R1~~ | ~~Free-тир абьюзится переустановкой~~ — **superseded (облако удалено, local-only 0.3)** |
 | R2 | LLM-догадка спикеров — только booster |
 | R3 | Авто-детект звонка не делаем |
 | R4 | Windows-захват = `unimplemented!()` |
-| R5 | Биллинг = заглушка |
+| ~~R5~~ | ~~Биллинг = заглушка~~ — **superseded (облако удалено, local-only 0.3)** |
 | R6 | macOS-сборка без Apple-нотаризации |
-| R7 | Free Cloudflare без auto-апгрейда тарифа |
-| R8 | Аудио НЕ через память воркера |
+| ~~R7~~ | ~~Free Cloudflare без auto-апгрейда тарифа~~ — **superseded (облако удалено, local-only 0.3)** |
+| ~~R8~~ | ~~Аудио НЕ через память воркера~~ — **superseded (облако удалено, local-only 0.3)** |
 | R9 | Local-движок в MVP — только macOS (M1.4 / R4 для Win/Linux) |
 | R10 | Модели не бандлятся в installer (~50MB), download по требованию |
 | R11 | Real-time / streaming local STT (live captions) — НЕ делаем в MVP. Chunked post-processing с pipelining (M13) допустим и запланирован — он не нарушает offline-only характер STT, только разрезает входной аудио-файл на 10-мин куски для UX-выигрыша. |

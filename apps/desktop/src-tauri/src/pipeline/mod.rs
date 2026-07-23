@@ -1,12 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use serde_json::json;
 use sqlx::SqlitePool;
 use tauri::AppHandle;
-
-// [F3] Трейт в скоупе ради `.emit` на BusStepSink (cloud generate-шаги).
-use recap_steps::RecapStepSink as _;
 
 use crate::{
     db,
@@ -14,15 +10,9 @@ use crate::{
     events::{CallAutoBoundEvent, CallProgressEvent, EventBus, PipelineFinishedEvent},
     matching,
     pipeline::{clusters::extract_clusters, merge::OWNER_TAG},
-    providers::{
-        transcription::{
-            failure_reason, transcribe_with_fallback, DiarizedTranscript, GladiaProvider,
-            RetryConfig, SonioxProvider, TranscriptSegment, TranscriptionError, TranscriptionOpts,
-            TranscriptionProvider,
-        },
-        ProviderMode,
+    providers::transcription::{
+        DiarizedTranscript, TranscriptSegment, TranscriptionOpts, TranscriptionProvider,
     },
-    secrets::{self, ByoProvider},
     AppError,
 };
 
@@ -163,7 +153,6 @@ pub struct PipelineCtx {
     pub call_dir: PathBuf,
     pub mic_path: PathBuf,
     pub system_path: PathBuf,
-    pub device_id: Arc<str>,
     /// [B3.6] Корень app-данных для поиска `models/embedder.onnx`. Cluster pipeline
     /// fallback'ит на StubEmbedder если модель отсутствует или ONNX feature off.
     pub app_data_dir: PathBuf,
@@ -365,7 +354,6 @@ pub async fn run(
 pub async fn reprocess_call(
     pool: &SqlitePool,
     app_data_dir: &std::path::Path,
-    device_id: &Arc<str>,
     call_id: &str,
     app: Option<&AppHandle>,
 ) -> Result<(), AppError> {
@@ -432,7 +420,6 @@ pub async fn reprocess_call(
         call_dir,
         mic_path,
         system_path,
-        device_id: Arc::clone(device_id),
         app_data_dir: app_data_dir.to_path_buf(),
     };
 
@@ -461,10 +448,10 @@ async fn local_engine_label_from_pool(pool: &SqlitePool) -> Option<String> {
 /// Читает `transcript.md` с диска, перегенерит `recap.md` + `action_items`.
 /// transcript.md обязателен — иначе AppError. Ошибки LLM пробрасываются
 /// в UI как Err (а не silently skip как в pipeline::run).
+#[cfg(target_os = "macos")]
 pub async fn regenerate_recap(
     pool: &SqlitePool,
     app_data_dir: &std::path::Path,
-    device_id: &Arc<str>,
     call_id: &str,
     app: Option<&AppHandle>,
 ) -> Result<(), AppError> {
@@ -479,113 +466,56 @@ pub async fn regenerate_recap(
         .map_err(|e| AppError::Other(format!("transcript.md отсутствует: {e}")))?;
 
     // [Bug-fix] Pre-clear stale recap_failed_reason — чтобы баннер с прошлой
-    // ошибкой не сбивал юзера с толку пока новая попытка идёт. Если новая
-    // попытка упадёт, ниже перезапишется свежим текстом (с актуальным engine).
+    // ошибкой не сбивал юзера с толку пока новая попытка идёт.
     let _ = db::set_recap_failed_reason(pool, call_id, None).await;
 
     // [Phase 2 R3] Typed settings — один read, typed fields, edge cases
-    // (malformed threshold, empty proxy URL, "auto" lang) изолированы.
+    // (malformed threshold, "auto" lang) изолированы.
     let s = PipelineSettings::load(pool).await?;
     let effective_lang = s.effective_recap_lang(call.lang_detected.as_deref());
 
-    // [Bug-fix] Diagnostic — без этого лога невозможно понять какой движок
-    // на самом деле обслуживает regenerate. Юзер может видеть UI "Local"
-    // в Settings, но если PipelineSettings::load вернул CloudManaged
-    // (race condition или stale cache), regenerate уйдёт в cloud → 429.
-    log::info!(
-        "regenerate_recap dispatch: call_id={} engine={:?} provider_path={} model_override={:?} summary_v2={}",
+    let app = app.ok_or_else(|| {
+        AppError::Other("regenerate_recap требует AppHandle (внутренняя ошибка)".into())
+    })?;
+    let result = regenerate_recap_local(
+        pool,
+        app_data_dir,
+        &call_dir,
         call_id,
-        s.engine,
-        s.provider_path,
-        s.model_override(),
-        s.summary_v2_enabled,
-    );
-
-    // [Bug-fix] Раньше regenerate_recap всегда шёл через cloud Anthropic,
-    // игнорируя активный движок. Юзеры на local engine получали 429 от
-    // Cloudflare proxy на свой Cloud-managed quota. Теперь dispatch'имся
-    // на engine == Local → local Qwen через LocalLlamaProvider (no network,
-    // no quota). Cloud path остаётся unchanged для Cloud-managed users.
-    #[cfg(target_os = "macos")]
-    if s.engine == crate::local_engine::engine::EngineKind::Local {
-        let app = app.ok_or_else(|| {
-            AppError::Other(
-                "regenerate_recap для local-engine требует AppHandle (внутренняя ошибка)".into(),
-            )
-        })?;
-        let result = regenerate_recap_local(
-            pool,
-            app_data_dir,
-            &call_dir,
-            call_id,
-            &transcript_md,
-            effective_lang.as_deref(),
-            app,
-            &s,
-        )
-        .await;
-        return match result {
-            Ok(()) => {
-                let _ = db::set_recap_failed_reason(pool, call_id, None).await;
-                Ok(())
-            }
-            Err(e) => {
-                // [P5.1] Persist engine label atomically с reason —
-                // banner badge ↔ failure text всегда matched.
-                let engine_label = local_engine_label_from_pool(pool).await;
-                let _ = db::set_recap_failure(
-                    pool,
-                    call_id,
-                    Some(&e.to_string()),
-                    engine_label.as_deref(),
-                )
-                .await;
-                Err(e)
-            }
-        };
-    }
-
-    let recap_ctx = recap::RecapCtx {
-        call_id,
-        call_dir: &call_dir,
-        transcript_md: &transcript_md,
-        lang_detected: effective_lang.as_deref(),
-        proxy_base_url: &s.proxy_base_url,
-        device_id,
-        provider_path: &s.provider_path,
-        model_override: s.model_override(),
-        // [M14 T-02] cloud-managed = proxy auto-routes (Groq Llama 3.3 OR
-        // Anthropic Sonnet fallback). Не различаем поскольку proxy не
-        // возвращает per-call backend identifier.
-        engine_label: "cloud-managed",
-        summary_v2_enabled: s.summary_v2_enabled,
-    };
-
-    // [F3] Cloud regen — единственный generate-шаг thinking-блока.
-    let step_sink = recap_steps::BusStepSink {
-        app: app.cloned(),
-        call_id: call_id.to_string(),
-    };
-    step_sink.emit(recap_steps::step_event(0, 1, "generate", "started"));
-    match recap::run(pool, recap_ctx).await {
+        &transcript_md,
+        effective_lang.as_deref(),
+        app,
+        &s,
+    )
+    .await;
+    match result {
         Ok(()) => {
-            step_sink.emit(recap_steps::step_event(0, 1, "generate", "done"));
-            // [B16]: clear recap_failed_reason после успешной регенерации.
             let _ = db::set_recap_failed_reason(pool, call_id, None).await;
             Ok(())
         }
         Err(e) => {
-            step_sink.emit(recap_steps::step_event(0, 1, "generate", "failed"));
-            // Persist для UI + пробросываем (regenerate explicit user-action,
-            // надо показать ошибку прямо в кнопке).
-            // [P5.1] Engine label = "cloud-managed" — banner badge ↔ reason
-            // matched (без mismatch с stale local engine из prior attempt).
+            // [P5.1] Persist engine label atomically с reason —
+            // banner badge ↔ failure text всегда matched.
+            let engine_label = local_engine_label_from_pool(pool).await;
             let _ =
-                db::set_recap_failure(pool, call_id, Some(&e.to_string()), Some("cloud-managed"))
+                db::set_recap_failure(pool, call_id, Some(&e.to_string()), engine_label.as_deref())
                     .await;
             Err(e)
         }
     }
+}
+
+/// Non-macOS: local-движок недоступен (R9).
+#[cfg(not(target_os = "macos"))]
+pub async fn regenerate_recap(
+    _pool: &SqlitePool,
+    _app_data_dir: &std::path::Path,
+    _call_id: &str,
+    _app: Option<&AppHandle>,
+) -> Result<(), AppError> {
+    Err(AppError::Other(
+        "Локальный движок недоступен на этой платформе (только macOS, R9).".into(),
+    ))
 }
 
 /// [DRY] Собрать `LocalLlamaProvider` для активного preset'а: resolve preset
@@ -687,9 +617,6 @@ pub async fn warm_up_local_llm(pool: &SqlitePool, app_data_dir: &Path, app: &App
             return;
         }
     };
-    if s.engine != crate::local_engine::engine::EngineKind::Local {
-        return; // cloud-managed — llama не нужен, прогрев ни к чему
-    }
     // [B2] Резидентный режим: вместо разового прогрева поднимаем llama-server —
     // модель остаётся в RAM всю сессию (сам старт сервера и есть прогрев).
     if keep_resident_enabled(pool).await {
@@ -921,132 +848,23 @@ async fn run_inner(
     ctx: &PipelineCtx,
     app: Option<&AppHandle>,
 ) -> Result<(), AppError> {
-    // [Phase 2 R3] Все настройки одним проходом, typed. Раньше было 5+
-    // read_setting() inline + duplicate чтения preferred_language с regenerate_recap.
+    // [Phase 2 R3] Все настройки одним проходом, typed.
     let s = PipelineSettings::load(pool).await?;
 
-    // [M12.6 Phase 3] Local engine — отдельный route. Использует
-    // LocalWhisperProvider (sidecar) + LocalLlamaProvider (sidecar). Остальные
-    // stages (merge artifacts, recognize speakers через WeSpeaker, action_items
-    // persist) переиспользуются 1:1.
+    // Local-only: единственный движок обработки (whisper.cpp + sherpa-onnx
+    // диаризация + llama.cpp, macOS). Cloud/proxy-путь удалён при переходе на
+    // local-only. Не-macOS — движок недоступен (R9).
     #[cfg(target_os = "macos")]
-    if s.engine == crate::local_engine::engine::EngineKind::Local {
-        return run_local_inner(pool, ctx, app, &s).await;
+    {
+        run_local_inner(pool, ctx, app, &s).await
     }
-
-    let providers = build_providers(
-        &s.stt_provider,
-        &s.provider_path,
-        &s.proxy_base_url,
-        &ctx.device_id,
-    )?;
-    let opts = TranscriptionOpts {
-        lang: s.stt_lang.clone(),
-        diarization: true,
-        prompt: None,
-    };
-    let retry_cfg = RetryConfig::default();
-
-    log::info!(
-        "pipeline {} start: provider={} path={} lang={} fallbacks={}",
-        ctx.call_id,
-        s.stt_provider,
-        s.provider_path,
-        s.stt_lang,
-        providers.len()
-    );
-
-    // [Phase 3 R2] TIMING contract: stages эмитятся в порядке
-    // Upload(1) → Transcribe(2) → MergeArtifacts(4) → RecognizeSpeakers(3) → Recap(5).
-    // Шаг 3 идёт ПОСЛЕ 4: speaker recognition работает по уже персистированному
-    // транскрипту (transcript.md / raw_stt.json должны быть на диске до cluster pipeline'а).
-
-    // Stage 1: Upload — мгновенный псевдо-шаг (нет per-byte progress в provider API).
-    let upload_hint = audio_byte_total(&ctx.mic_path, &ctx.system_path).await;
-    run_stage(pool, app, &ctx.call_id, Stage::Upload, upload_hint, async {
-        stage_upload(upload_hint).await
-    })
-    .await?;
-
-    // Stage 2: Transcribe (STT) — долгий шаг, mic + system параллельно.
-    let (mic_t, sys_t) = run_stage(pool, app, &ctx.call_id, Stage::Transcribe, None, async {
-        stage_transcribe(&providers, ctx, opts, retry_cfg).await
-    })
-    .await?;
-
-    let lang_detected = mic_t
-        .lang_detected
-        .clone()
-        .or_else(|| sys_t.lang_detected.clone());
-    let provider_used = sys_t.provider.clone();
-
-    // Stage 4: MergeArtifacts — persist transcript.md + raw_stt.json. Идёт ДО
-    // RecognizeSpeakers (Stage::3), потому что cluster pipeline читает merged
-    // segments и пишет в DB; UI должен иметь транскрипт даже если cluster упал.
-    let merged = run_stage(
-        pool,
-        app,
-        &ctx.call_id,
-        Stage::MergeArtifacts,
-        None,
-        async { stage_merge_artifacts(&ctx.call_dir, &mic_t, &sys_t).await },
-    )
-    .await?;
-
-    db::set_call_meta(pool, &ctx.call_id, lang_detected.as_deref(), &provider_used).await?;
-
-    // M3.7: mic-дорожка по определению принадлежит владельцу устройства.
-    // Не нарушает R2 (никакой автопривязки): owner == юзер.
-    let owner = db::ensure_owner_contact(pool).await?;
-    if let Err(e) = db::auto_bind_owner_speaker(pool, &ctx.call_id, &owner.id, OWNER_TAG).await {
-        log::warn!("auto_bind_owner_speaker {} failed: {e}", ctx.call_id);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (ctx, app, &s);
+        Err(AppError::Other(
+            "Локальный движок недоступен на этой платформе (только macOS, R9).".into(),
+        ))
     }
-    ensure_anonymous_speakers_present(pool, &ctx.call_id, &merged).await;
-
-    // Stage 3: RecognizeSpeakers — cluster extraction + matching. Non-fatal:
-    // ошибки логируются и пропускаются (recap всё равно сгенерируется).
-    let cluster_result = run_stage(
-        pool,
-        app,
-        &ctx.call_id,
-        Stage::RecognizeSpeakers,
-        None,
-        async { stage_recognize_speakers(pool, ctx, &merged).await },
-    )
-    .await;
-    if let Err(e) = cluster_result {
-        log::warn!(
-            "cluster pipeline {} failed (non-fatal — skip voice match): {e}",
-            ctx.call_id
-        );
-    }
-
-    // [V7] Opt-in auto-bind — отдельный non-fatal шаг ПОСЛЕ RecognizeSpeakers,
-    // БЕЗ собственного progress event (R2 паспорта: invisible flow).
-    if let Err(e) = run_auto_bind(pool, app, &ctx.call_id, &s).await {
-        log::warn!("auto_bind {} failed (non-fatal): {e}", ctx.call_id);
-    }
-
-    // Stage 5: Recap (LLM). Ошибки рекапа НЕ роняют пайплайн — транскрипт
-    // сохранён, рекап можно регенерировать вручную (M4.5).
-    let recap_step = Stage::Recap.step();
-    emit_progress(pool, app, &ctx.call_id, recap_step, 0, None, None).await;
-    // [F3] Cloud one-shot — единственный generate-шаг thinking-блока.
-    let step_sink = recap_steps::BusStepSink {
-        app: app.cloned(),
-        call_id: ctx.call_id.clone(),
-    };
-    step_sink.emit(recap_steps::step_event(0, 1, "generate", "started"));
-    let recap_ok = stage_recap(pool, ctx, &s, &merged, lang_detected.as_deref()).await;
-    step_sink.emit(recap_steps::step_event(
-        0,
-        1,
-        "generate",
-        if recap_ok { "done" } else { "failed" },
-    ));
-    emit_progress(pool, app, &ctx.call_id, recap_step, 100, None, None).await;
-
-    Ok(())
 }
 
 /// [M12.6 Phase 3] Local-engine pipeline route. Полностью offline:
@@ -1068,14 +886,12 @@ async fn run_local_inner(
     s: &PipelineSettings,
 ) -> Result<(), AppError> {
     use crate::local_engine::{
-        engine::EngineKind,
         llm::LocalLlamaProvider,
         models::{self, ModelStatus},
         preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
         stt::{LocalWhisperProvider, TrackKind},
     };
 
-    debug_assert_eq!(s.engine, EngineKind::Local);
     let app = app.ok_or_else(|| {
         AppError::Other("local_engine_no_app_handle: pipeline requires Tauri runtime".into())
     })?;
@@ -1774,23 +1590,6 @@ async fn stage_upload(upload_bytes_hint: Option<i64>) -> Result<Option<i64>, App
     Ok(upload_bytes_hint)
 }
 
-/// [Phase 3 R2] Stage 2 — STT (mic + system параллельно с retry/fallback).
-/// Возвращает оба diarized-транскрипта; merge делается в Stage::MergeArtifacts.
-async fn stage_transcribe(
-    providers: &[Box<dyn TranscriptionProvider>],
-    ctx: &PipelineCtx,
-    opts: TranscriptionOpts,
-    retry_cfg: RetryConfig,
-) -> Result<(DiarizedTranscript, DiarizedTranscript), AppError> {
-    let (mic_res, sys_res) = tokio::join!(
-        transcribe_with_fallback(providers, &ctx.mic_path, opts.clone(), retry_cfg),
-        transcribe_with_fallback(providers, &ctx.system_path, opts.clone(), retry_cfg),
-    );
-    let mic_t = mic_res.map_err(stt_to_app_error)?;
-    let sys_t = sys_res.map_err(stt_to_app_error)?;
-    Ok((mic_t, sys_t))
-}
-
 /// [Phase 3 R2] Stage 4 — merge tracks + persist artifacts. Раньше это был
 /// `persist_artifacts` хелпер — теперь явно stage. Возвращает merged-сегменты
 /// для последующих stages (recognize_speakers + recap).
@@ -1841,55 +1640,6 @@ async fn stage_recognize_speakers(
         &ctx.app_data_dir,
     )
     .await
-}
-
-/// [Phase 3 R2] Stage 5 — LLM recap. Ошибки НЕ пробрасываются (non-fatal):
-/// persist'им reason в DB для UI banner. Pipeline всегда заканчивается Ok
-/// если транскрипт сохранён. Возвращает true при успешном рекапе — [F3]
-/// caller эмитит done/failed step-событие.
-async fn stage_recap(
-    pool: &SqlitePool,
-    ctx: &PipelineCtx,
-    s: &PipelineSettings,
-    merged: &[TranscriptSegment],
-    lang_detected: Option<&str>,
-) -> bool {
-    let transcript_md = render_transcript_md(merged);
-    let effective_lang = s.effective_recap_lang(lang_detected);
-    let recap_ctx = recap::RecapCtx {
-        call_id: &ctx.call_id,
-        call_dir: &ctx.call_dir,
-        transcript_md: &transcript_md,
-        lang_detected: effective_lang.as_deref(),
-        proxy_base_url: &s.proxy_base_url,
-        device_id: &ctx.device_id,
-        provider_path: &s.provider_path,
-        model_override: s.model_override(),
-        // [M14 T-02] Proxy auto-picks Groq/Anthropic; не различаем здесь.
-        engine_label: "cloud-managed",
-        summary_v2_enabled: s.summary_v2_enabled,
-    };
-    match recap::run(pool, recap_ctx).await {
-        Ok(()) => {
-            // Очищаем если был старый recap_failed_reason (например после reprocess).
-            let _ = db::set_recap_failed_reason(pool, &ctx.call_id, None).await;
-            true
-        }
-        Err(e) => {
-            let reason = e.to_string();
-            log::warn!("recap {} skipped: {reason}", ctx.call_id);
-            // [B16]: persist recap failure для UI banner. status='ready' остаётся.
-            // [P5.1] Atomic UPDATE c engine_label="cloud-managed" — match
-            // recap_ctx.engine_label выше. Banner badge ↔ reason consistent.
-            if let Err(e2) =
-                db::set_recap_failure(pool, &ctx.call_id, Some(&reason), Some("cloud-managed"))
-                    .await
-            {
-                log::error!("set_recap_failure {} failed: {e2}", ctx.call_id);
-            }
-            false
-        }
-    }
 }
 
 /// [B11] M7.4: добавить placeholder rows в call_speakers для всех distinct
@@ -1973,85 +1723,6 @@ async fn audio_byte_total(mic: &Path, sys: &Path) -> Option<i64> {
     } else {
         None
     }
-}
-
-/// Возвращает ProviderMode для конкретного партнёра с учётом path:
-/// - `managed` — общий прокси (#22), один URL/device-id для всех провайдеров
-/// - `byo` (#47) — индивидуальный ключ партнёра из keychain. Нет ключа → ошибка.
-fn mode_for(
-    provider: ByoProvider,
-    path: &str,
-    proxy_base_url: &str,
-    device_id: &Arc<str>,
-) -> Result<ProviderMode, AppError> {
-    match path {
-        "managed" => {
-            if proxy_base_url.is_empty() {
-                return Err(AppError::Other(
-                    "Proxy URL не настроен. Settings → Proxy URL (#22 follow-up).".into(),
-                ));
-            }
-            Ok(ProviderMode::Managed {
-                proxy_base_url: proxy_base_url.to_string(),
-                device_id: device_id.to_string(),
-            })
-        }
-        "byo" => {
-            let key = secrets::read_key(provider)?;
-            key.map(|api_key| ProviderMode::Byo { api_key })
-                .ok_or_else(|| {
-                    AppError::Other(format!(
-                        "BYO ключ для {:?} не задан. Settings → BYO Keys.",
-                        provider
-                    ))
-                })
-        }
-        other => Err(AppError::Other(format!("unknown provider_path: {other}"))),
-    }
-}
-
-/// M2.2 + #23 + #47: список провайдеров в порядке использования.
-/// - `auto` → пробуем оба, у каждого свой ключ (для BYO). Если BYO ключ отсутствует
-///   у одного провайдера — он молча пропускается; в `managed` оба доступны.
-/// - `soniox` / `gladia` → только указанный, требует свой ключ в BYO.
-fn build_providers(
-    id: &str,
-    path: &str,
-    proxy_base_url: &str,
-    device_id: &Arc<str>,
-) -> Result<Vec<Box<dyn TranscriptionProvider>>, AppError> {
-    let providers: Vec<Box<dyn TranscriptionProvider>> = match id {
-        "gladia" => {
-            let m = mode_for(ByoProvider::Gladia, path, proxy_base_url, device_id)?;
-            vec![Box::new(GladiaProvider::new(m))]
-        }
-        "soniox" => {
-            let m = mode_for(ByoProvider::Soniox, path, proxy_base_url, device_id)?;
-            vec![Box::new(SonioxProvider::new(m))]
-        }
-        _ => {
-            let mut out: Vec<Box<dyn TranscriptionProvider>> = vec![];
-            if let Ok(m) = mode_for(ByoProvider::Soniox, path, proxy_base_url, device_id) {
-                out.push(Box::new(SonioxProvider::new(m)));
-            }
-            if let Ok(m) = mode_for(ByoProvider::Gladia, path, proxy_base_url, device_id) {
-                out.push(Box::new(GladiaProvider::new(m)));
-            }
-            if out.is_empty() {
-                return Err(AppError::Other(
-                    "Ни один STT-провайдер не настроен. Добавь BYO-ключ или настрой Proxy URL в Settings.".into(),
-                ));
-            }
-            out
-        }
-    };
-    Ok(providers)
-}
-
-/// Мапит typed STT error на AppError с UX-readable причиной.
-/// Сообщение попадёт в `calls.failed_reason` (M2.7 / #23).
-fn stt_to_app_error(e: TranscriptionError) -> AppError {
-    AppError::Other(failure_reason(&e))
 }
 
 /// [B3.3-3.4] Извлекает voice clusters per speaker_tag, persist'ит в DB,
@@ -2174,10 +1845,6 @@ async fn run_cluster_pipeline(
 mod tests {
     use super::*;
     use crate::db::test_support::fresh_db;
-
-    fn arc_device(id: &str) -> Arc<str> {
-        Arc::from(id.to_string().into_boxed_str())
-    }
 
     // ============================================================
     // [P13] ensure_all_chunks_done — halt gate перед stage 2→3
@@ -2431,72 +2098,6 @@ mod tests {
     }
 
     // ============================================================
-    // [Phase 2] mode_for — provider mode resolution
-    // ============================================================
-
-    #[test]
-    fn mode_for_managed_returns_proxy_config() {
-        let device = arc_device("dev-1");
-        let m = mode_for(
-            ByoProvider::Soniox,
-            "managed",
-            "https://proxy.example.com",
-            &device,
-        )
-        .unwrap();
-        match m {
-            ProviderMode::Managed {
-                proxy_base_url,
-                device_id,
-            } => {
-                assert_eq!(proxy_base_url, "https://proxy.example.com");
-                assert_eq!(device_id, "dev-1");
-            }
-            _ => panic!("expected Managed mode"),
-        }
-    }
-
-    #[test]
-    fn mode_for_managed_empty_proxy_url_errors() {
-        let device = arc_device("dev-1");
-        let err = mode_for(ByoProvider::Soniox, "managed", "", &device).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("Proxy URL"), "got: {msg}");
-    }
-
-    #[test]
-    fn mode_for_unknown_path_errors() {
-        let device = arc_device("dev-1");
-        let err = mode_for(ByoProvider::Soniox, "ghost-path", "https://x", &device).unwrap_err();
-        assert!(err.to_string().contains("unknown provider_path"));
-    }
-
-    // BYO branch требует Keychain access. На CI keychain доступен, на dev
-    // тоже — но затронуть production ключи юзера было бы рискованно.
-    // Reading non-existent ключ должно вернуть Ok(None) → AppError "BYO ключ
-    // не задан". Используем ByoProvider::Anthropic поскольку в pipeline он
-    // не запрашивается через mode_for (STT-only), но enum его поддерживает —
-    // тестируем точку входа.
-    #[test]
-    fn mode_for_byo_missing_key_returns_error() {
-        let device = arc_device("dev-1");
-        // [Phase 2 R5 follow-up] secrets::read_key читает из Keychain.
-        // В test env на macOS он либо вернёт None (никогда не было ключа),
-        // либо ключ из dev-сессии. Считаем что ключ Anthropic для test
-        // env отсутствует (он используется только для proxy LLM, не для STT).
-        // Если кто-то залил ключ — тест станет flaky, но это говорит о
-        // запутанном test isolation, а не о баге кода.
-        let result = mode_for(ByoProvider::Anthropic, "byo", "", &device);
-        // Либо ошибка "BYO ключ не задан", либо Ok если ключ есть.
-        if let Err(e) = result {
-            assert!(
-                e.to_string().contains("BYO ключ"),
-                "expected BYO key error, got: {e}"
-            );
-        }
-    }
-
-    // ============================================================
     // [Phase 2] reprocess_call — guard rails
     // ============================================================
 
@@ -2504,11 +2105,10 @@ mod tests {
     async fn reprocess_call_missing_audio_returns_error() {
         let db = fresh_db().await;
         let tmpdir = tempfile::tempdir().unwrap();
-        let device = arc_device("dev-1");
 
-        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        let call = db::insert_recording(&db.pool, "local").await.unwrap();
         // Аудио намеренно не создаём — pipeline должен отвергнуть.
-        let err = reprocess_call(&db.pool, tmpdir.path(), &device, &call.id, None)
+        let err = reprocess_call(&db.pool, tmpdir.path(), &call.id, None)
             .await
             .unwrap_err();
         assert!(
@@ -2521,8 +2121,7 @@ mod tests {
     async fn reprocess_call_unknown_call_id_returns_not_found() {
         let db = fresh_db().await;
         let tmpdir = tempfile::tempdir().unwrap();
-        let device = arc_device("dev-1");
-        let err = reprocess_call(&db.pool, tmpdir.path(), &device, "ghost-id", None)
+        let err = reprocess_call(&db.pool, tmpdir.path(), "ghost-id", None)
             .await
             .unwrap_err();
         // [Phase 1 R6] typed NotFound теперь сериализуется как
@@ -2537,24 +2136,15 @@ mod tests {
     // [Phase 3 R2] run_auto_bind — typed config branching
     // ============================================================
 
-    use crate::pipeline::settings::{AutoBindConfig, DEFAULT_PROXY_BASE_URL};
+    use crate::pipeline::settings::AutoBindConfig;
 
     fn settings_with_auto_bind(auto_bind: Option<AutoBindConfig>) -> PipelineSettings {
         PipelineSettings {
-            stt_provider: "auto".into(),
-            provider_path: "managed".into(),
             stt_lang: "auto".into(),
-            llm_model: String::new(),
-            proxy_base_url: DEFAULT_PROXY_BASE_URL.into(),
             preferred_language: "auto".into(),
             auto_bind,
             summary_v2_enabled: true,
             summary_speculative_decoding: false,
-            // [M12.6] Тесты этого модуля проверяют auto_bind, не engine
-            // routing — фиксируем CloudManaged чтобы избежать fail-fast
-            // ветки в run_inner.
-            #[cfg(target_os = "macos")]
-            engine: crate::local_engine::engine::EngineKind::CloudManaged,
         }
     }
 
@@ -2662,10 +2252,9 @@ mod tests {
     async fn reprocess_call_resets_status_and_progress_when_audio_exists() {
         let db = fresh_db().await;
         let tmpdir = tempfile::tempdir().unwrap();
-        let device = arc_device("dev-1");
 
         // Подготовка: row в failed с прогрессом, аудио на диске.
-        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        let call = db::insert_recording(&db.pool, "local").await.unwrap();
         db::fail_recording_with_reason(&db.pool, &call.id, Some("стрый fail"))
             .await
             .unwrap();
@@ -2685,11 +2274,11 @@ mod tests {
             .await
             .unwrap();
 
-        // Pipeline упадёт (нет провайдеров / proxy), но reset SQL должен
+        // Pipeline упадёт (нет AppHandle для sidecar), но reset SQL должен
         // успеть выполниться раньше.
-        let _ = reprocess_call(&db.pool, tmpdir.path(), &device, &call.id, None).await;
+        let _ = reprocess_call(&db.pool, tmpdir.path(), &call.id, None).await;
 
-        // После reset+fail цикл: status='failed' снова (упал на providers),
+        // После reset+fail цикл: status='failed' снова (упал на sidecar),
         // но failed_reason обновится. Главное — pipeline_* очищены.
         let after = db::get_call(&db.pool, &call.id).await.unwrap().unwrap();
         // pipeline_step мог быть проставлен step=1 из emit_progress перед
@@ -2707,36 +2296,24 @@ mod tests {
     }
 
     // ============================================================
-    // [M12.6 Phase 2] EngineKind::Local — fail-fast guard
+    // Local engine route — AppHandle guard
     // ============================================================
 
-    /// [M12.6 Phase 3] Local engine route без AppHandle (headless test
-    /// runner) должен вернуть осмысленную ошибку, а не паниковать. Сейчас
-    /// run_local_inner требует AppHandle для shell sidecar — без него Err
-    /// с маркером `local_engine_no_app_handle`.
+    /// Local engine route без AppHandle (headless test runner) должен вернуть
+    /// осмысленную ошибку, а не паниковать: run_local_inner требует AppHandle
+    /// для shell sidecar — без него Err с маркером `local_engine_no_app_handle`.
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn pipeline_run_requires_app_handle_for_local_engine() {
         let db = fresh_db().await;
         let tmpdir = tempfile::tempdir().unwrap();
-        let device = arc_device("dev-1");
 
-        let engine = crate::local_engine::engine::load_or_default(&db.pool)
-            .await
-            .unwrap();
-        assert_eq!(
-            engine,
-            crate::local_engine::engine::EngineKind::Local,
-            "migration 0011 должна выставить Local для свежей установки"
-        );
-
-        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
+        let call = db::insert_recording(&db.pool, "local").await.unwrap();
         let ctx = PipelineCtx {
             call_id: call.id.clone(),
             call_dir: tmpdir.path().join(&call.id),
             mic_path: tmpdir.path().join("mic.wav"),
             system_path: tmpdir.path().join("sys.wav"),
-            device_id: device,
             app_data_dir: tmpdir.path().to_path_buf(),
         };
 
@@ -2753,45 +2330,5 @@ mod tests {
             .unwrap()
             .expect("call row");
         assert_eq!(after.status, "failed");
-    }
-
-    /// Контр-кейс: если пользователь явно переключился на CloudManaged
-    /// (через Settings M12.5), pipeline идёт по обычному cloud-пути и
-    /// упирается в отсутствие аудио — НЕ в engine fail-fast.
-    #[cfg(target_os = "macos")]
-    #[tokio::test]
-    async fn pipeline_run_does_not_fail_fast_when_cloud_managed_active() {
-        let db = fresh_db().await;
-        let tmpdir = tempfile::tempdir().unwrap();
-        let device = arc_device("dev-1");
-
-        // Переключаем engine на CloudManaged (имитация Settings UI swap).
-        crate::local_engine::engine::save(
-            &db.pool,
-            crate::local_engine::engine::EngineKind::CloudManaged,
-        )
-        .await
-        .unwrap();
-
-        let call = db::insert_recording(&db.pool, "managed").await.unwrap();
-        let ctx = PipelineCtx {
-            call_id: call.id.clone(),
-            call_dir: tmpdir.path().join(&call.id),
-            mic_path: tmpdir.path().join("mic.wav"),
-            system_path: tmpdir.path().join("sys.wav"),
-            device_id: device,
-            app_data_dir: tmpdir.path().to_path_buf(),
-        };
-
-        let _ = run(&db.pool, ctx, None).await;
-        let after = db::get_call(&db.pool, &call.id)
-            .await
-            .unwrap()
-            .expect("call row");
-        let reason = after.failed_reason.as_deref().unwrap_or("");
-        assert!(
-            !reason.contains("local_engine_not_yet_wired"),
-            "при CloudManaged engine fail-fast НЕ должен срабатывать, got: {reason}"
-        );
     }
 }

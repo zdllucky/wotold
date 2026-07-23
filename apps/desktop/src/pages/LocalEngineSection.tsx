@@ -4,14 +4,11 @@
 // только uikit-токены + классы (.field, .optioncard, .set-table, .panel, .wave,
 // .chip, .dot, .btn, .iconbtn). Иконки — <Icon/>.
 //
-// Логика секции:
-//   - Engine picker (Local / Cloud / BYO) — radiogroup из .optioncard-кнопок
-//     (role="radio"). Atomic swap через localEngineSetActiveEngine. Меняет
-//     следующую запись, не трогает существующие (PRD §M12.6.6).
+// Логика секции (local-only движок — единственный):
 //   - Hardware probe banner — accent-soft .panel на первом mount'е если
 //     recommendation != null и не совпадает с текущим preset'ом.
-//   - При выбранном Local — preset picker (Light / Balanced / Quality) на
-//     .optioncard со статус-.dot (ok/accent-pulse/faint) для моделей.
+//   - Preset picker (Light / Balanced / Quality) на .optioncard со
+//     статус-.dot (ok/accent-pulse/faint) для моделей.
 //   - «Освободить место» — .set-table со статусом и кнопками удаления.
 //
 // События `model:progress`/`model:done` слушаются глобально для всех id;
@@ -21,7 +18,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ask } from '@tauri-apps/plugin-dialog';
 import type {
-  EngineKind,
   HwReport,
   LocalEnginePreset,
   ModelStatus,
@@ -29,7 +25,6 @@ import type {
 } from '@wotold/contracts';
 
 import { DeleteModelConfirm } from '../components/DeleteModelConfirm';
-import { RediscoveryChip } from '../components/RediscoveryChip';
 import {
   Button,
   Dot,
@@ -42,9 +37,7 @@ import {
   Switch,
   Wave,
 } from '../ui';
-import { getSetting, setSetting, SETTINGS_KEYS } from '../api/settings';
 import {
-  localEngineGetActiveEngine,
   localEngineGetActivePreset,
   localEngineHwProbe,
   localEngineListCatalog,
@@ -52,7 +45,6 @@ import {
   localEngineModelDownload,
   localEngineModelStatus,
   localEngineGetKeepResident,
-  localEngineSetActiveEngine,
   localEngineSetActivePreset,
   localEngineSetKeepResident,
   localEngineStorageList,
@@ -63,7 +55,6 @@ import { getAssistantSemanticSearch, setAssistantSemanticSearch } from '../api/a
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
 import { modelLabel } from '../utils/modelLabel';
-import { UsageSection } from './UsageSection';
 
 const PRESETS: LocalEnginePreset[] = ['light', 'balanced', 'quality'];
 
@@ -123,7 +114,6 @@ function dotStyleForStatus(
 
 export function LocalEngineSection() {
   const { t } = useI18n();
-  const [engine, setEngine] = useState<EngineKind | null>(null);
   const [preset, setPreset] = useState<PresetSpec | null>(null);
   // [B2] Тумблер «держать модель активной» (resident llama-server).
   const [keepResident, setKeepResident] = useState(false);
@@ -136,7 +126,7 @@ export function LocalEngineSection() {
   const [error, setError] = useState<string | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [storageRows, setStorageRows] = useState<LocalEngineStorageRow[]>([]);
-  // [M12-v1.1] hwLoading — пока true рендерим skeleton вместо engine rows.
+  // [M12-v1.1] hwLoading — пока true рендерим skeleton вместо конфигурации движка.
   const [hwLoading, setHwLoading] = useState(true);
   // [M12-v1.1] deleteConfirmModel — pending confirm для активной модели.
   const [deleteConfirmModel, setDeleteConfirmModel] = useState<{
@@ -145,9 +135,6 @@ export function LocalEngineSection() {
     modelRole: string;
     currentPreset: string;
   } | null>(null);
-  // [M12-v1.1] rediscovery chip — показываем когда engine !== 'local'
-  // И invite не dismissed permanently.
-  const [showRediscovery, setShowRediscovery] = useState(false);
 
   const refreshStatuses = useCallback(async (ids: string[]) => {
     const entries = await Promise.all(
@@ -165,8 +152,7 @@ export function LocalEngineSection() {
   const refreshAll = useCallback(async () => {
     setHwLoading(true);
     try {
-      const [e, p, c, h, rows, resident, semantic] = await Promise.all([
-        localEngineGetActiveEngine(),
+      const [p, c, h, rows, resident, semantic] = await Promise.all([
         localEngineGetActivePreset(),
         localEngineListCatalog(),
         localEngineHwProbe(false),
@@ -175,7 +161,6 @@ export function LocalEngineSection() {
         // [B25] Тумблер семантического поиска; ошибка → default on.
         getAssistantSemanticSearch().catch(() => true),
       ]);
-      setEngine(e);
       setPreset(p);
       setCatalog(c);
       setHw(h);
@@ -183,11 +168,6 @@ export function LocalEngineSection() {
       setKeepResident(resident);
       setSemanticSearch(semantic);
       await refreshStatuses(c.map((m) => m.id));
-      // [M12-v1.1] Rediscovery: show when not local + invite not dismissed.
-      if (e !== 'local') {
-        const dismissed = await getSetting(SETTINGS_KEYS.LOCAL_ENGINE_INVITE_DISMISSED).catch(() => null);
-        if (!dismissed) setShowRediscovery(true);
-      }
       setError(null);
     } catch (e) {
       setError(humanError(e));
@@ -259,18 +239,6 @@ export function LocalEngineSection() {
       unDone?.();
     };
   }, [refreshStatuses, t]);
-
-  const onEngineChange = useCallback(
-    async (next: EngineKind) => {
-      try {
-        const saved = await localEngineSetActiveEngine(next);
-        setEngine(saved);
-      } catch (e) {
-        setError(humanError(e));
-      }
-    },
-    [],
-  );
 
   const onPresetChange = useCallback(
     async (next: LocalEnginePreset) => {
@@ -387,19 +355,6 @@ export function LocalEngineSection() {
         />
       )}
 
-      {showRediscovery && (
-        <RediscoveryChip
-          onInstall={() => {
-            setShowRediscovery(false);
-            void onEngineChange('local');
-          }}
-          onTerminalDismiss={async () => {
-            setShowRediscovery(false);
-            await setSetting(SETTINGS_KEYS.LOCAL_ENGINE_INVITE_DISMISSED, '1').catch(() => {});
-          }}
-        />
-      )}
-
       {error && (
         <p role="alert" style={{ color: 'var(--danger)', margin: 0 }}>
           {error}
@@ -467,41 +422,8 @@ export function LocalEngineSection() {
         </div>
       )}
 
-      {!hwLoading && (
-        <div>
-          <GroupLabel top={2}>{t('localEngine.engineLabel')}</GroupLabel>
-          <div
-            role="radiogroup"
-            aria-label={t('localEngine.engineLabel')}
-            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-          >
-            {/* [B21] Канон: Local первым. */}
-            {(['local', 'cloud_managed'] as EngineKind[]).map((k) => (
-              <OptionCard
-                key={k}
-                radio
-                active={engine === k}
-                icon={k === 'local' ? 'cpu' : 'cloud'}
-                title={t(`localEngine.engine.${k}.title`)}
-                sub={t(`localEngine.engine.${k}.body`)}
-                quality={k === 'local' ? 2 : 3}
-                meta={<span className="mono">{t(`localEngine.engine.${k}.quality`)}</span>}
-                onClick={() => void onEngineChange(k)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!hwLoading && engine === 'cloud_managed' && (
-        <div>
-          <GroupLabel>{t('usage.quotaTitle')}</GroupLabel>
-          <UsageSection />
-        </div>
-      )}
-
       {/* [B21] Канон :183-187 — sunken-плашка: Icon cpu + mono-спеки + ghost. */}
-      {!hwLoading && engine === 'local' && hw && (
+      {!hwLoading && hw && (
         <div
           style={{
             display: 'flex',
@@ -548,7 +470,7 @@ export function LocalEngineSection() {
         </div>
       )}
 
-      {!hwLoading && engine === 'local' && (
+      {!hwLoading && (
         <SettingRow
           label={t('localEngine.keepResidentLabel')}
           hint={t('localEngine.keepResidentHint')}
@@ -573,7 +495,7 @@ export function LocalEngineSection() {
 
       {/* [B25] Семантический поиск ассистента: тумблер + живой статус
           модели (скачивается %/активен) из общих statuses/progresses. */}
-      {!hwLoading && engine === 'local' && (
+      {!hwLoading && (
         <SettingRow
           label={t('localEngine.semanticLabel')}
           hint={t('localEngine.semanticHint')}
@@ -611,7 +533,7 @@ export function LocalEngineSection() {
         />
       )}
 
-      {!hwLoading && engine === 'local' && (
+      {!hwLoading && (
         <div>
           <GroupLabel>{t('localEngine.presetLabel')}</GroupLabel>
           <div
@@ -665,7 +587,7 @@ export function LocalEngineSection() {
         </div>
       )}
 
-      {!hwLoading && engine === 'local' && storageRows.length > 0 && (
+      {!hwLoading && storageRows.length > 0 && (
         <div>
           <GroupLabel>{t('localEngine.storageTitle')}</GroupLabel>
           <p className="set-hint" style={{ marginTop: 0, marginBottom: 12 }}>

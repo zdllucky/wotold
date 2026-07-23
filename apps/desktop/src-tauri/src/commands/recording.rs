@@ -14,7 +14,6 @@ use crate::{
     db::{self, Call},
     events::EventBus,
     local_engine::{
-        engine::{EngineKind, SETTING_ACTIVE_ENGINE},
         preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
         stt::{LocalWhisperProvider, TrackKind},
     },
@@ -443,7 +442,6 @@ fn spawn_finalize_and_pipeline(
 ) {
     let db = state.db.clone();
     let store = state.store.clone();
-    let device_id = state.device_id.clone();
     let pipeline_tasks = state.pipeline_tasks.clone();
     let app_data_dir = state.app_data_dir.clone();
     let app = app.clone();
@@ -476,7 +474,6 @@ fn spawn_finalize_and_pipeline(
         PipelineRunner::spawn_initial(
             db,
             store,
-            device_id,
             app,
             pipeline_tasks,
             call_id,
@@ -834,15 +831,6 @@ async fn prepare_chunked_setup(
         return Ok(None);
     }
 
-    let engine = db::get_setting(&state.db, SETTING_ACTIVE_ENGINE)
-        .await?
-        .as_deref()
-        .and_then(EngineKind::from_str);
-    if !matches!(engine, Some(EngineKind::Local)) {
-        log::debug!("chunked_pipeline flag set but engine != local; skipping orchestrator");
-        return Ok(None);
-    }
-
     // Build LocalWhisperProvider mirror'ом логики pipeline::run.
     let ChunkProviders {
         mic: mic_provider,
@@ -1082,18 +1070,7 @@ pub async fn retry_chunk(
     let start_ms = row.start_ms.max(0) as u64;
     let end_ms = row.end_ms.unwrap_or(start_ms as i64).max(0) as u64;
 
-    // 2. Engine check — chunked path только для Local. Cloud не chunked.
-    let engine = db::get_setting(&state.db, SETTING_ACTIVE_ENGINE)
-        .await?
-        .as_deref()
-        .and_then(EngineKind::from_str);
-    if !matches!(engine, Some(EngineKind::Local)) {
-        return Err(AppError::Other(
-            "retry_chunk: требуется локальный движок (Cloud не chunked)".into(),
-        ));
-    }
-
-    // 3. Build providers — shared helper (mirror prepare_chunked_setup).
+    // 2. Build providers — shared helper (mirror prepare_chunked_setup).
     let ChunkProviders {
         mic: mic_provider,
         system: system_provider,
@@ -1116,7 +1093,6 @@ pub async fn retry_chunk(
     let call_id_clone = call_id.clone();
     // [P11.1] Дополнительные клоны для post-success auto-resume hook.
     let store_for_resume = state.store.clone();
-    let device_for_resume = state.device_id.clone();
     let tasks_for_resume = state.pipeline_tasks.clone();
     let app_for_resume = app.clone();
     log::info!(
@@ -1162,7 +1138,6 @@ pub async fn retry_chunk(
                     &pool,
                     &call_id_clone,
                     store_for_resume,
-                    device_for_resume,
                     app_for_resume,
                     tasks_for_resume,
                 )
@@ -1192,7 +1167,6 @@ pub async fn recover_chunked_call(
     spawn_recover_chunked(
         state.db.clone(),
         state.store.clone(),
-        state.device_id.clone(),
         state.pipeline_tasks.clone(),
         state.app_data_dir.clone(),
         app,
@@ -1205,11 +1179,9 @@ pub async fn recover_chunked_call(
 /// `WOTOLD_RECOVER_CALL_ID` startup trigger (см. lib.rs setup). Валидирует
 /// call + engine, строит providers, spawn'ит фоновый task: reconstruct →
 /// STT недостающих chunk'ов → reprocess (assembly + merge + recap).
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn spawn_recover_chunked(
     pool: SqlitePool,
     store: Arc<CallStore>,
-    device_id: Arc<str>,
     tasks: crate::services::pipeline_runner::PipelineTasks,
     app_data_dir: std::path::PathBuf,
     app: AppHandle,
@@ -1222,18 +1194,7 @@ pub(crate) async fn spawn_recover_chunked(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("call {call_id} not found")))?;
 
-    // 2. Engine=Local (chunked путь только локальный).
-    let engine = db::get_setting(&pool, SETTING_ACTIVE_ENGINE)
-        .await?
-        .as_deref()
-        .and_then(EngineKind::from_str);
-    if !matches!(engine, Some(EngineKind::Local)) {
-        return Err(AppError::Other(
-            "recover_chunked_call: требуется локальный движок (Cloud не chunked)".into(),
-        ));
-    }
-
-    // 3. Providers (fail fast если preset/модель не выбраны).
+    // 2. Providers (fail fast если preset/модель не выбраны).
     let providers = build_chunk_providers(&pool, &app_data_dir, &app, &call_id).await?;
 
     // 4. Клоны для фонового task'а.
@@ -1299,7 +1260,6 @@ pub(crate) async fn spawn_recover_chunked(
         PipelineRunner::spawn_initial(
             db_bg,
             store,
-            device_id,
             app_bg,
             tasks,
             call_id.clone(),
@@ -1326,7 +1286,6 @@ pub(crate) async fn maybe_headless_recover(app: AppHandle) {
     if let Err(e) = spawn_recover_chunked(
         state.db.clone(),
         state.store.clone(),
-        state.device_id.clone(),
         state.pipeline_tasks.clone(),
         state.app_data_dir.clone(),
         app.clone(),
@@ -1423,7 +1382,6 @@ pub(crate) async fn auto_recover_interrupted_calls(app: AppHandle) {
         if let Err(e) = spawn_recover_chunked(
             state.db.clone(),
             state.store.clone(),
-            state.device_id.clone(),
             state.pipeline_tasks.clone(),
             state.app_data_dir.clone(),
             app.clone(),
@@ -1457,7 +1415,6 @@ async fn maybe_resume_pipeline_after_chunk(
     pool: &SqlitePool,
     call_id: &str,
     store: Arc<crate::call_store::CallStore>,
-    device_id: Arc<str>,
     app: AppHandle,
     tasks: crate::services::pipeline_runner::PipelineTasks,
 ) -> Result<(), AppError> {
@@ -1479,15 +1436,7 @@ async fn maybe_resume_pipeline_after_chunk(
         return Ok(());
     }
     log::info!("maybe_resume_pipeline_after_chunk[{call_id}]: all chunks done, spawning reprocess");
-    PipelineRunner::spawn_reprocess(
-        pool.clone(),
-        store,
-        device_id,
-        app,
-        tasks,
-        call_id.to_string(),
-    )
-    .await
+    PipelineRunner::spawn_reprocess(pool.clone(), store, app, tasks, call_id.to_string()).await
 }
 
 // [P-fix4] `force_restt_call` удалён — слит в `reprocess_call` («Переобработать
