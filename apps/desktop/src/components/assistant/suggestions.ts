@@ -176,7 +176,7 @@ export function pickSuggestions(
   const count = Math.min(n, arr.length);
   for (let i = 0; i < count; i += 1) {
     const j = i + Math.floor(rand() * (arr.length - i));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
   }
   return arr.slice(0, count);
 }

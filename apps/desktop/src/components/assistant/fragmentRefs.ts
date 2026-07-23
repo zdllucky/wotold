@@ -16,7 +16,7 @@ export function parseFragmentRefs(text: string, fragmentCount: number): AnswerSe
   let last = 0;
   REFS_RE.lastIndex = 0;
   for (let m = REFS_RE.exec(text); m != null; m = REFS_RE.exec(text)) {
-    const indices = m[1].split(',').map((s) => parseInt(s.trim(), 10));
+    const indices = (m[1] ?? '').split(',').map((s) => parseInt(s.trim(), 10));
     if (!indices.every((n) => n >= 1 && n <= fragmentCount)) continue; // не ссылка — текст
     if (m.index > last) out.push({ kind: 'text', text: text.slice(last, m.index) });
     out.push({ kind: 'refs', indices, raw: m[0] });

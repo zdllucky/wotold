@@ -403,6 +403,8 @@ const ruInternal = {
 
   // ── ContactsPage ────────────────────────────────────────────────────────
   contacts: {
+    collapsePanel: 'Свернуть список контактов',
+    expandPanel: 'Развернуть список контактов',
     title: 'Контакты',
     addAria: 'Добавить контакт',
     searchPlaceholder: 'Поиск…',
@@ -470,6 +472,8 @@ const ruInternal = {
 
   // ── Settings — sections + interior content ─────────────────────────────
   settings: {
+    collapsePanel: 'Свернуть разделы',
+    expandPanel: 'Развернуть разделы',
     title: 'Настройки',
     saved: '✓ Сохранено',
     sectionAppearance: 'Внешний вид',

@@ -181,8 +181,8 @@ export function AnswerMsg({
               key={`ref-${i}`}
               type="button"
               className="frag-ref mono"
-              aria-label={t('assistant.fragRefLabel', { n: seg.indices[0] })}
-              onClick={() => revealFragment(seg.indices[0] - 1)}
+              aria-label={t('assistant.fragRefLabel', { n: seg.indices[0]! })}
+              onClick={() => revealFragment(seg.indices[0]! - 1)}
             >
               {seg.raw}
             </button>

@@ -155,8 +155,8 @@ describe('AnswerMsg', () => {
     fireEvent.click(ref);
     expect(details.open).toBe(true);
     const wraps = container.querySelectorAll('.frag-wrap');
-    expect(wraps[1].className).toContain('frag--flash');
-    expect(wraps[0].className).not.toContain('frag--flash');
+    expect(wraps[1]!.className).toContain('frag--flash');
+    expect(wraps[0]!.className).not.toContain('frag--flash');
   });
 
   it('[N] вне диапазона остаётся текстом; controlled summary работает', () => {

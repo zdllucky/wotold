@@ -374,6 +374,8 @@ export const en: TranslationStrings = {
   },
 
   contacts: {
+    collapsePanel: 'Collapse contact list',
+    expandPanel: 'Expand contact list',
     title: 'Contacts',
     addAria: 'Add contact',
     searchPlaceholder: 'Search…',
@@ -439,6 +441,8 @@ export const en: TranslationStrings = {
   },
 
   settings: {
+    collapsePanel: 'Collapse sections',
+    expandPanel: 'Expand sections',
     title: 'Settings',
     saved: '✓ Saved',
     sectionAppearance: 'Appearance',
