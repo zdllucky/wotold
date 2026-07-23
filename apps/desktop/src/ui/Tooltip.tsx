@@ -99,7 +99,10 @@ export function Tooltip({ content, side = 'top', delayMs = 300, children }: Tool
   return (
     <span
       ref={wrapRef}
-      style={{ display: 'inline-flex' }}
+      // flexShrink:0 — обёртка не должна сжимать 26-34px кнопку в тесных
+      // flex-рядах (.as-chats-head-row, .ans-acts): .iconbtn имел flex:0 0 auto,
+      // теперь flex-item — этот span (ревью B27, HIGH).
+      style={{ display: 'inline-flex', flexShrink: 0 }}
       onMouseEnter={showDelayed}
       onMouseLeave={hide}
       onFocusCapture={show}
