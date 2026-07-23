@@ -45,8 +45,8 @@ case "$ext" in
         "$REPO"/apps/desktop/*)
           timeout 60 pnpm --filter @wotold/desktop typecheck 2>&1 || true
           ;;
-        "$REPO"/services/proxy/*)
-          timeout 60 pnpm --filter @wotold/proxy typecheck 2>&1 || true
+        "$REPO"/services/mcp/*)
+          timeout 60 pnpm --filter @wotold/mcp typecheck 2>&1 || true
           ;;
         "$REPO"/packages/contracts/*)
           timeout 60 pnpm --filter @wotold/contracts exec tsc --noEmit 2>&1 || true

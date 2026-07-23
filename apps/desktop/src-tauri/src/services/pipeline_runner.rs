@@ -62,7 +62,6 @@ impl PipelineRunner {
     pub async fn spawn_initial(
         pool: SqlitePool,
         store: Arc<CallStore>,
-        device_id: Arc<str>,
         app_handle: AppHandle,
         tasks: PipelineTasks,
         call_id: String,
@@ -72,7 +71,6 @@ impl PipelineRunner {
         Self::spawn_task(
             pool,
             store,
-            device_id,
             app_handle,
             tasks,
             call_id,
@@ -88,7 +86,6 @@ impl PipelineRunner {
     pub async fn spawn_reprocess(
         pool: SqlitePool,
         store: Arc<CallStore>,
-        device_id: Arc<str>,
         app_handle: AppHandle,
         tasks: PipelineTasks,
         call_id: String,
@@ -109,7 +106,6 @@ impl PipelineRunner {
         Self::spawn_task(
             pool,
             store,
-            device_id,
             app_handle,
             tasks,
             call_id,
@@ -132,7 +128,6 @@ impl PipelineRunner {
     pub async fn spawn_regen(
         pool: SqlitePool,
         store: Arc<CallStore>,
-        device_id: Arc<str>,
         app_handle: AppHandle,
         tasks: PipelineTasks,
         call_id: String,
@@ -169,7 +164,6 @@ impl PipelineRunner {
                         pipeline::regenerate_recap(
                             &pool,
                             &app_data_dir,
-                            &device_id,
                             &call_id_for_task,
                             Some(&app_handle),
                         )
@@ -178,7 +172,6 @@ impl PipelineRunner {
                     RegenKind::Title => pipeline::title_regen::regenerate_title(
                         &pool,
                         &app_data_dir,
-                        &device_id,
                         &call_id_for_task,
                         Some(&app_handle),
                     )
@@ -290,10 +283,10 @@ impl PipelineRunner {
     /// Внутренний helper: spawn'ит async task, регистрирует в `tasks`,
     /// при завершении удаляет себя из map'а.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     async fn spawn_task(
         pool: SqlitePool,
         store: Arc<CallStore>,
-        device_id: Arc<str>,
         app_handle: AppHandle,
         tasks: PipelineTasks,
         call_id: String,
@@ -310,7 +303,6 @@ impl PipelineRunner {
                 if let Err(e) = pipeline::reprocess_call(
                     &pool,
                     &app_data_dir,
-                    &device_id,
                     &call_id_for_task,
                     Some(&app_handle),
                 )
@@ -324,7 +316,6 @@ impl PipelineRunner {
                     call_dir: app_data_dir.join("calls").join(&call_id_for_task),
                     mic_path,
                     system_path,
-                    device_id,
                     app_data_dir: app_data_dir.clone(),
                 };
                 if let Err(e) = pipeline::run(&pool, ctx, Some(&app_handle)).await {

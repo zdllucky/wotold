@@ -43,7 +43,6 @@ jobs:
               - 'apps/desktop/vite.config.ts'
               - 'apps/desktop/vitest.config.ts'
               - 'apps/desktop/tsconfig*.json'
-              - 'services/proxy/**'
               - 'services/mcp/**'
               - 'packages/**'
               - 'pnpm-lock.yaml'
@@ -90,8 +89,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Typecheck @wotold/contracts
         run: pnpm --filter @wotold/contracts exec tsc --noEmit
-      - name: Typecheck @wotold/proxy
-        run: pnpm --filter @wotold/proxy typecheck
       - name: Typecheck @wotold/desktop
         run: pnpm --filter @wotold/desktop typecheck
       - name: Typecheck @wotold/mcp
@@ -112,10 +109,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Vitest @wotold/desktop (with coverage)
         run: pnpm --filter @wotold/desktop test:coverage
-      - name: Vitest @wotold/proxy unit (with coverage)
-        run: pnpm --filter @wotold/proxy test:coverage
-      - name: Vitest @wotold/proxy integration (миниframe)
-        run: pnpm --filter @wotold/proxy test:integration
       - name: Vitest @wotold/mcp (with coverage)
         run: pnpm --filter @wotold/mcp test:coverage
       - name: Upload coverage artefacts
@@ -125,7 +118,6 @@ jobs:
           name: ts-coverage
           path: |
             apps/desktop/coverage/**
-            services/proxy/coverage/**
             services/mcp/coverage/**
           if-no-files-found: warn
           retention-days: 7

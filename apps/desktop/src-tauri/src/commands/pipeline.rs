@@ -69,7 +69,6 @@ pub async fn regenerate_recap(
     PipelineRunner::spawn_regen(
         state.db.clone(),
         state.store.clone(),
-        state.device_id.clone(),
         app,
         state.pipeline_tasks.clone(),
         call_id,
@@ -90,7 +89,6 @@ pub async fn regenerate_title(
     PipelineRunner::spawn_regen(
         state.db.clone(),
         state.store.clone(),
-        state.device_id.clone(),
         app,
         state.pipeline_tasks.clone(),
         call_id,
@@ -179,7 +177,6 @@ pub async fn reprocess_call(
     PipelineRunner::spawn_reprocess(
         state.db.clone(),
         state.store.clone(),
-        state.device_id.clone(),
         app,
         state.pipeline_tasks.clone(),
         call_id,
@@ -287,7 +284,6 @@ pub async fn regenerate_empty_recaps(
 
     let pool = state.db.clone();
     let app_data_dir = state.app_data_dir.clone();
-    let device_id = state.device_id.clone();
     let cancel = state.bulk_recap_cancel.clone();
     let app_for_task = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -305,14 +301,8 @@ pub async fn regenerate_empty_recaps(
                 total,
                 call_id: id.clone(),
             });
-            match crate::pipeline::regenerate_recap(
-                &pool,
-                &app_data_dir,
-                &device_id,
-                id,
-                Some(&app_for_task),
-            )
-            .await
+            match crate::pipeline::regenerate_recap(&pool, &app_data_dir, id, Some(&app_for_task))
+                .await
             {
                 Ok(()) => regenerated += 1,
                 Err(e) => {

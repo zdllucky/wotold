@@ -17,16 +17,9 @@ use sqlx::SqlitePool;
 
 use crate::{db, AppError};
 
-#[cfg(target_os = "macos")]
-use crate::local_engine::engine::{self, EngineKind};
-
 // === Setting keys (private — наружу только typed PipelineSettings) ===
 
-const SETTING_STT_PROVIDER: &str = "stt_provider";
-const SETTING_PROVIDER_PATH: &str = "provider_path";
 const SETTING_STT_LANG: &str = "stt_lang";
-const SETTING_LLM_MODEL: &str = "llm_model";
-const SETTING_PROXY_BASE_URL: &str = "proxy_base_url";
 /// [B13] BCP47 язык override для LLM-output. 'auto' = язык STT detection.
 const SETTING_PREFERRED_LANGUAGE: &str = "preferred_language";
 /// [V7] Opt-in auto-bind speakers. '1' = enabled.
@@ -39,13 +32,6 @@ const SETTING_SUMMARY_V2_ENABLED: &str = "summary_v2_enabled";
 /// [M14 T-16 P2] Speculative decoding opt-in. Default OFF. Активируется
 /// только когда preset=Quality + draft model (0.5B) на диске.
 const SETTING_SUMMARY_SPECULATIVE_DECODING: &str = "summary_speculative_decoding";
-
-// === Default proxy URL ===
-
-#[cfg(debug_assertions)]
-pub const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy-staging.animereader.workers.dev";
-#[cfg(not(debug_assertions))]
-pub const DEFAULT_PROXY_BASE_URL: &str = "https://wotold-proxy.animereader.workers.dev";
 
 /// [V7] Допустимый диапазон auto-bind threshold (UI ограничивает 90/95/98).
 /// При мусорных значениях из БД clamp'имся внутрь — защита от ручных правок.
@@ -63,41 +49,23 @@ pub struct AutoBindConfig {
 
 #[derive(Debug, Clone)]
 pub struct PipelineSettings {
-    pub stt_provider: String,
-    pub provider_path: String,
     pub stt_lang: String,
-    pub llm_model: String,
-    pub proxy_base_url: String,
     pub preferred_language: String,
     pub auto_bind: Option<AutoBindConfig>,
-    /// [M14 T-14] Summary v2 feature flag. true = use cloud_universal v2
-    /// prompt (T-02 path). false = legacy v1 markdown-only prompt (emergency
-    /// disable). Default true.
+    /// [M14 T-14] Summary v2 feature flag. true = use v2 prompt (T-02 path).
+    /// false = legacy v1 markdown-only prompt (emergency disable). Default true.
     pub summary_v2_enabled: bool,
     /// [M14 T-16 P2] Opt-in speculative decoding с 0.5B draft model для
     /// 7B Quality preset. Default false. Активация:
     /// `summary_speculative_decoding=true && preset=Quality && 0.5B файл exists`.
     pub summary_speculative_decoding: bool,
-    /// [M12.6] Активный engine — резюмирует выбор пользователя в Settings →
-    /// «Движок распознавания». На macOS читается из `local_engine.active`
-    /// (наследие из миграции 0011 + Settings UI M12.5). На не-macOS — всегда
-    /// `cloud_managed` (R9 — local движок недоступен).
-    #[cfg(target_os = "macos")]
-    pub engine: EngineKind,
 }
 
 impl PipelineSettings {
     /// Прочитать все pipeline-related настройки одним проходом.
     /// Пустые/отсутствующие значения подставляются дефолтами.
     pub async fn load(pool: &SqlitePool) -> Result<Self, AppError> {
-        let stt_provider = read_setting(pool, SETTING_STT_PROVIDER, "auto").await?;
-        let provider_path = read_setting(pool, SETTING_PROVIDER_PATH, "managed").await?;
         let stt_lang = read_setting(pool, SETTING_STT_LANG, "auto").await?;
-        let llm_model = read_setting(pool, SETTING_LLM_MODEL, "").await?;
-        let proxy_base_url = db::get_setting(pool, SETTING_PROXY_BASE_URL)
-            .await?
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| DEFAULT_PROXY_BASE_URL.to_string());
         let preferred_language = read_setting(pool, SETTING_PREFERRED_LANGUAGE, "auto").await?;
 
         // Auto-bind: enabled только при явном "1". Threshold parse'ится с
@@ -130,21 +98,12 @@ impl PipelineSettings {
         let summary_speculative_decoding =
             read_setting(pool, SETTING_SUMMARY_SPECULATIVE_DECODING, "0").await? == "1";
 
-        #[cfg(target_os = "macos")]
-        let engine = engine::load_or_default(pool).await?;
-
         Ok(Self {
-            stt_provider,
-            provider_path,
             stt_lang,
-            llm_model,
-            proxy_base_url,
             preferred_language,
             auto_bind,
             summary_v2_enabled,
             summary_speculative_decoding,
-            #[cfg(target_os = "macos")]
-            engine,
         })
     }
 
@@ -155,16 +114,6 @@ impl PipelineSettings {
             lang_detected.map(|s| s.to_string())
         } else {
             Some(self.preferred_language.clone())
-        }
-    }
-
-    /// LLM model override. Пустая строка → None (прокси сам выберет по
-    /// LLM_BACKEND); иначе конкретная модель.
-    pub fn model_override(&self) -> Option<&str> {
-        if self.llm_model.is_empty() {
-            None
-        } else {
-            Some(self.llm_model.as_str())
         }
     }
 }
@@ -189,12 +138,8 @@ mod tests {
     async fn load_uses_defaults_for_unset_keys() {
         let db = fresh_db().await;
         let s = PipelineSettings::load(&db.pool).await.unwrap();
-        assert_eq!(s.stt_provider, "auto");
-        assert_eq!(s.provider_path, "managed");
         assert_eq!(s.stt_lang, "auto");
-        assert_eq!(s.llm_model, "");
         assert_eq!(s.preferred_language, "auto");
-        assert_eq!(s.proxy_base_url, DEFAULT_PROXY_BASE_URL);
         assert!(s.auto_bind.is_none(), "auto_bind off by default (R2)");
         assert!(s.summary_v2_enabled, "summary_v2_enabled default ON (T-14)");
     }
@@ -240,40 +185,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_respects_explicit_overrides() {
+    async fn load_respects_explicit_language_override() {
         let db = fresh_db().await;
-        db::set_setting(&db.pool, SETTING_STT_PROVIDER, "soniox")
-            .await
-            .unwrap();
-        db::set_setting(&db.pool, SETTING_PROVIDER_PATH, "byo")
-            .await
-            .unwrap();
         db::set_setting(&db.pool, SETTING_PREFERRED_LANGUAGE, "ru")
             .await
             .unwrap();
-        db::set_setting(&db.pool, SETTING_LLM_MODEL, "claude-3-5-sonnet")
-            .await
-            .unwrap();
-        db::set_setting(&db.pool, SETTING_PROXY_BASE_URL, "https://example.com")
-            .await
-            .unwrap();
-
         let s = PipelineSettings::load(&db.pool).await.unwrap();
-        assert_eq!(s.stt_provider, "soniox");
-        assert_eq!(s.provider_path, "byo");
         assert_eq!(s.preferred_language, "ru");
-        assert_eq!(s.model_override(), Some("claude-3-5-sonnet"));
-        assert_eq!(s.proxy_base_url, "https://example.com");
-    }
-
-    #[tokio::test]
-    async fn empty_proxy_url_falls_back_to_default() {
-        let db = fresh_db().await;
-        db::set_setting(&db.pool, SETTING_PROXY_BASE_URL, "   ")
-            .await
-            .unwrap();
-        let s = PipelineSettings::load(&db.pool).await.unwrap();
-        assert_eq!(s.proxy_base_url, DEFAULT_PROXY_BASE_URL);
     }
 
     #[tokio::test]
@@ -361,28 +279,13 @@ mod tests {
         assert_eq!(s.effective_recap_lang(None), Some("ru".into()));
     }
 
-    #[test]
-    fn model_override_empty_returns_none() {
-        let mut s = settings_with_preferred("auto");
-        s.llm_model = String::new();
-        assert_eq!(s.model_override(), None);
-        s.llm_model = "claude-3-5-sonnet".into();
-        assert_eq!(s.model_override(), Some("claude-3-5-sonnet"));
-    }
-
     fn settings_with_preferred(lang: &str) -> PipelineSettings {
         PipelineSettings {
-            stt_provider: "auto".into(),
-            provider_path: "managed".into(),
             stt_lang: "auto".into(),
-            llm_model: String::new(),
-            proxy_base_url: DEFAULT_PROXY_BASE_URL.into(),
             preferred_language: lang.into(),
             auto_bind: None,
             summary_v2_enabled: true,
             summary_speculative_decoding: false,
-            #[cfg(target_os = "macos")]
-            engine: EngineKind::CloudManaged,
         }
     }
 }

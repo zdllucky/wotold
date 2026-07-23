@@ -2,7 +2,7 @@
 
 use tauri::{AppHandle, State};
 
-use crate::{secrets, state::AppState, updater::AvailableUpdate, AppError};
+use crate::{state::AppState, updater::AvailableUpdate, AppError};
 
 /// [B16 audit P2 / GDPR Art. 17]: полный wipe всех пользовательских данных.
 /// Удаляет:
@@ -31,18 +31,9 @@ pub async fn wipe_all_data(state: State<'_, AppState>) -> Result<(), AppError> {
         }
     }
 
-    // 4. device-id — пусть на следующий запуск получит новый.
-    let device_file = state.app_data_dir.join("device.json");
-    if device_file.exists() {
-        let _ = tokio::fs::remove_file(&device_file).await;
-    }
-
-    // 5. Keychain — удаляем все BYO ключи и session-токен. Ошибки не fail —
-    // ключа могло не быть.
-    let _ = secrets::delete_key(secrets::ByoProvider::Soniox);
-    let _ = secrets::delete_key(secrets::ByoProvider::Gladia);
-    let _ = secrets::delete_key(secrets::ByoProvider::Anthropic);
-    let _ = secrets::clear_account_session();
+    // Keychain: cloud/BYO-ключи и auth-session удалены (local-only). Будущие
+    // секреты внешних интеграций (secrets::* generic-seam) должны вычищаться
+    // здесь по мере их появления.
 
     log::warn!("wipe_all_data: пользователь стёр всё. Перезапуск приложения требуется.");
     Ok(())

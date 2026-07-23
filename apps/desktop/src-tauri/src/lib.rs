@@ -19,7 +19,6 @@ mod audio_io;
 mod call_store;
 mod commands;
 mod db;
-mod device;
 #[allow(dead_code)]
 mod embeddings;
 // [B3.7] OnnxEmbedder подключается только под фичей. Default build (dev)
@@ -319,43 +318,6 @@ pub fn run() {
                             let _ = main.close();
                         } else {
                             app.exit(0);
-                        }
-                    }
-                });
-            }
-
-            // [B9]: подписка на wotold:// deep-link. Прокси редиректит сюда после OIDC.
-            // Парсим URL → emit 'auth:deep-link' с распакованным session+account.
-            // Никаких side-effects в Rust — frontend в AccountSection сам сохранит
-            // токен в Keychain и обновит /me. Это держит security flow simple
-            // и сосредоточенным в одном TypeScript-месте.
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
-                let app_for_dl = handle.clone();
-                handle.deep_link().on_open_url(move |event| {
-                    for url in event.urls() {
-                        if url.scheme() != "wotold" {
-                            continue;
-                        }
-                        let mut payload = serde_json::Map::new();
-                        payload.insert(
-                            "path".into(),
-                            serde_json::Value::String(url.path().to_string()),
-                        );
-                        for (k, v) in url.query_pairs() {
-                            // session — sensitive: не логируем значение.
-                            payload.insert(k.to_string(), serde_json::Value::String(v.to_string()));
-                        }
-                        let event_name = match url.host_str() {
-                            Some("auth") => "auth:deep-link",
-                            _ => "deep-link",
-                        };
-                        if let Err(e) = tauri::Emitter::emit(
-                            &app_for_dl,
-                            event_name,
-                            serde_json::Value::Object(payload),
-                        ) {
-                            log::error!("emit {event_name} failed: {e}");
                         }
                     }
                 });
@@ -675,7 +637,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             set_main_traffic_lights_hidden,
-            commands::get_device_id,
             commands::get_owner_contact,
             commands::list_contacts,
             commands::create_contact,
@@ -700,13 +661,6 @@ pub fn run() {
             commands::open_system_privacy_pane,
             commands::check_for_update,
             commands::apply_update,
-            commands::set_byo_key,
-            commands::delete_byo_key,
-            commands::list_byo_status,
-            commands::get_account_session_status,
-            commands::set_account_session,
-            commands::clear_account_session,
-            commands::read_account_session_token,
             commands::list_call_speakers,
             commands::confirm_call_speaker,
             commands::unbind_call_speaker,
@@ -769,10 +723,6 @@ pub fn run() {
             commands::local_engine_set_active_preset,
             #[cfg(target_os = "macos")]
             commands::local_engine_hw_probe,
-            #[cfg(target_os = "macos")]
-            commands::local_engine_get_active_engine,
-            #[cfg(target_os = "macos")]
-            commands::local_engine_set_active_engine,
             #[cfg(target_os = "macos")]
             commands::local_engine_storage_list,
             #[cfg(target_os = "macos")]

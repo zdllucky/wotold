@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-/// Генерация рекапа/МоМ/задач (M4.1 паспорта). Реализация — Anthropic.
+/// Генерация рекапа/МоМ/задач (M4.1 паспорта). Реализация —
+/// `LocalLlamaProvider` (llama.cpp sidecar, macOS).
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     async fn generate(&self, request: LlmRequest) -> Result<serde_json::Value, LlmError>;
@@ -26,6 +27,10 @@ pub struct LlmRequest {
     pub json_schema: Option<String>,
 }
 
+// Local-only: LLM-провайдер (LocalLlamaProvider) конструирует `Provider` и
+// `NotImplemented`. Auth/Network/QuotaExceeded — зарезервированная таксономия
+// под будущие внешние интеграции; пока конструируются только в тестах.
+#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
     #[error("auth: {0}")]
@@ -36,12 +41,6 @@ pub enum LlmError {
     QuotaExceeded,
     #[error("provider: {0}")]
     Provider(String),
-    // [B16] Зарезервировано для будущих stub-провайдеров.
-    #[allow(dead_code)]
     #[error("not implemented")]
     NotImplemented,
 }
-
-mod anthropic;
-
-pub use anthropic::AnthropicProvider;
