@@ -244,6 +244,35 @@ export function inferSpeakers(call: Call): string[] {
   return out;
 }
 
+/// [B29.1] Confirmed-участники звонка БЕЗ дублей: несколько speaker-тегов
+/// одного контакта («Д Д») схлопываются по contact_id (fallback — имя).
+/// Дедуп строго по ключу, НЕ по инициалам: два разных контакта с равными
+/// инициалами остаются двумя аватарами.
+export interface ConfirmedParticipants {
+  initials: string[];
+  names: string[];
+}
+
+export function confirmedParticipants(
+  rows: ReadonlyArray<{
+    confirmed: boolean;
+    contact_id: string | null;
+    contact_display_name: string | null;
+  }>,
+): ConfirmedParticipants {
+  const seen = new Set<string>();
+  const out: ConfirmedParticipants = { initials: [], names: [] };
+  for (const s of rows) {
+    if (!s.confirmed || !s.contact_display_name) continue;
+    const key = s.contact_id ?? s.contact_display_name;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.initials.push(initials(s.contact_display_name));
+    out.names.push(s.contact_display_name);
+  }
+  return out;
+}
+
 export function initials(name: string): string {
   return (
     name
