@@ -18,6 +18,9 @@ export interface AssistantPageProps {
   onOpenCall: (callId: string) => void;
   /** [B26.9] Запрос открыть чат (клик в «Недавних»); seq — повторные клики. */
   openChatRequest?: { id: string; seq: number } | null;
+  /** [B26.R] Ack: запрос потреблён — родитель сбрасывает его в null, иначе
+   *  ремаунт страницы (смена view) заново откроет старый чат. */
+  onOpenChatHandled?: () => void;
   /** [B26.5] Чип контакт-источника → раздел «Контакты». */
   onOpenContacts?: () => void;
 }
@@ -73,7 +76,12 @@ function ruPluralKey(n: number): TranslationKey {
   return 'assistant.callsPluralMany';
 }
 
-export function AssistantPage({ onOpenCall, openChatRequest, onOpenContacts }: AssistantPageProps) {
+export function AssistantPage({
+  onOpenCall,
+  openChatRequest,
+  onOpenChatHandled,
+  onOpenContacts,
+}: AssistantPageProps) {
   const { t, locale } = useI18n();
   const toast = useToast();
   const {
@@ -139,8 +147,13 @@ export function AssistantPage({ onOpenCall, openChatRequest, onOpenContacts }: A
   }, []);
 
   // [B26.9] Открытие чата по клику из «Недавних» (seq — повторные клики).
+  // [B26.R] После потребления ack'аем родителю — без сброса запрос пережил бы
+  // ремаунт страницы и молча перебил бы выбранный руками чат.
   useEffect(() => {
-    if (openChatRequest) void openChat(openChatRequest.id);
+    if (openChatRequest) {
+      void openChat(openChatRequest.id);
+      onOpenChatHandled?.();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openChatRequest?.seq]);
 

@@ -52,14 +52,11 @@ interface RailProps extends RailHandlers {
   queue: QueueState | null;
 }
 
-/** [B26.9] Микс «Недавних»: звонки (started_at) + чаты (updatedAt), top-N. */
-export interface RecentEntry {
-  kind: 'call' | 'chat';
-  id: string;
-  label: string;
-  at: string;
-  call?: Call;
-}
+/** [B26.9] Микс «Недавних»: звонки (started_at) + чаты (updatedAt), top-N.
+ *  Discriminated union — у call-ветки `call` обязателен, каст не нужен. */
+export type RecentEntry =
+  | { kind: 'call'; id: string; label: string; at: string; call: Call }
+  | { kind: 'chat'; id: string; label: string; at: string };
 
 export function mergeRecent(
   calls: Call[],
@@ -295,7 +292,7 @@ export function Sidebar(props: RailProps) {
                   />
                 );
               }
-              const c = entry.call as Call;
+              const c = entry.call;
               const openHere = view === 'call' && activeCallId === c.id;
               return (
                 <NavItem

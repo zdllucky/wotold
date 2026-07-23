@@ -568,6 +568,7 @@ function AppShell() {
           <AssistantPage
             onOpenCall={onOpenCall}
             openChatRequest={openChatReq}
+            onOpenChatHandled={() => setOpenChatReq(null)}
             onOpenContacts={() => onNav('contacts')}
           />
         )}
