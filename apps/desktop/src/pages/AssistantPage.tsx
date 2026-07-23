@@ -188,8 +188,9 @@ export function AssistantPage({
           style={{ ['--side-w' as string]: `${panelW}px` } as React.CSSProperties}
         >
           {panelCollapsed ? (
-            // [B29.3] Свёрнутая панель: только развернуть («Новый чат» — в шапке).
+            // [B30.5] Свёрнутая панель: развернуть — снизу (симметрия collapse).
             <div className="side-list-mini">
+              <span style={{ flex: 1 }} />
               <IconBtn
                 icon="chevronRight"
                 label={t('assistant.expandPanel')}
@@ -266,10 +267,9 @@ export function AssistantPage({
             </div>
             </>
           )}
-          {!panelCollapsed && (
-            // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-            <div className="panel-resize" onMouseDown={onPanelResizeStart} aria-hidden="true" />
-          )}
+          {/* [B30.5] Хэндл живёт и в свёрнутом виде — drag разворачивает. */}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+          <div className="panel-resize" onMouseDown={onPanelResizeStart} aria-hidden="true" />
         </div>
 
         <div className="as-main">

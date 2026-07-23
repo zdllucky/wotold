@@ -275,14 +275,19 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
         >
           {panel.collapsed ? (
             // [B29.5b] Свёрнуто: expand + полоса аватаров (клик = открыть).
-            <div className="side-list-mini scroll">
-              <IconBtn
-                icon="chevronRight"
-                label={t('contacts.expandPanel')}
-                tip={t('contacts.expandPanel')}
-                tipSide="right"
-                onClick={() => panel.setCollapsed(false)}
-              />
+            <div className="side-list-mini">
+              <div
+                className="scroll"
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 6,
+                  width: '100%',
+                }}
+              >
               {filtered.map((c) => (
                 <button
                   key={c.id}
@@ -307,6 +312,14 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
                   {initials(c.display_name)}
                 </button>
               ))}
+              </div>
+              <IconBtn
+                icon="chevronRight"
+                label={t('contacts.expandPanel')}
+                tip={t('contacts.expandPanel')}
+                tipSide="right"
+                onClick={() => panel.setCollapsed(false)}
+              />
             </div>
           ) : (
             <>
@@ -368,9 +381,8 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
           </div>
             </>
           )}
-          {!panel.collapsed && (
-            <div className="panel-resize" onMouseDown={panel.onResizeStart} aria-hidden="true" />
-          )}
+          {/* [B30.5] Хэндл живёт и в свёрнутом виде — drag разворачивает. */}
+          <div className="panel-resize" onMouseDown={panel.onResizeStart} aria-hidden="true" />
         </aside>
 
         {/* ── Detail / Add / Edit ── */}
