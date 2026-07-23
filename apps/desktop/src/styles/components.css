@@ -1336,6 +1336,30 @@ html.recording-widget .rec-float {
   min-height: 0;
 }
 .as-chats-list { flex: 1; min-height: 0; padding: 6px 8px 10px; }
+/* [B27.2] Header панели чатов: кнопка+collapse и поиск — единая секция. */
+.as-chats-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 6px;
+}
+.as-chats-head-row {
+  display: flex;
+  gap: 6px;
+}
+.as-chats-head-row .btn {
+  flex: 1;
+}
+.as-search {
+  height: 28px;
+}
+/* [B27.3] Название активного чата в хедере раздела. */
+.as-head-chat {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-size: var(--t-13);
+  color: var(--text-2);
+}
 .as-chats .navitem { position: relative; cursor: pointer; }
 .as-del { opacity: 0; margin-left: auto; flex: 0 0 auto; display: inline-flex; }
 .navitem:hover .as-del,

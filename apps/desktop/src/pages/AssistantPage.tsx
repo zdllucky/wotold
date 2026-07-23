@@ -221,19 +221,29 @@ export function AssistantPage({
 
   const pendingText = t('assistant.pendingGlobal', { n: stats?.indexedCalls ?? 0 });
 
+  // [B27.3] Название активного чата — в хедер вместо чипа статистики.
+  const activeChatTitle = activeChatId
+    ? chats.find((c) => c.id === activeChatId)?.title ?? null
+    : null;
+
   return (
     // [B24.7] Shared shell (канон Inbox/Contacts, B18.9-fix): bleed мимо
     // паддинга .app-main 34/44 + fill вьюпорта — .view-head флашится к краям,
     // .as-layout получает всю высоту, composer-dock прижат к низу.
     <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
       <ViewHead icon="chat" title={t('assistant.title')}>
-        {statsChip && (
+        {/* [B27.3] Активный чат → его полное название; иначе — чип статистики. */}
+        {activeChatTitle ? (
+          <span className="as-head-chat u-trunc" title={activeChatTitle}>
+            {activeChatTitle}
+          </span>
+        ) : statsChip ? (
           <Tooltip content={t('assistant.statsTooltip')} side="bottom">
             <Chip size="sm" tone="line" icon="doc">
               {statsChip}
             </Chip>
           </Tooltip>
-        )}
+        ) : null}
       </ViewHead>
       <div className="as-layout">
         <div
@@ -262,37 +272,38 @@ export function AssistantPage({
             </div>
           ) : (
             <>
-          <div style={{ display: 'flex', gap: 6, padding: '10px 10px 4px' }}>
-            <Button
-              variant="default"
-              size="sm"
-              block
-              leading={<Icon name="plus" size={14} />}
-              onClick={startNewChat}
-              style={{ flex: 1 }}
-            >
-              {t('assistant.newChat')}
-            </Button>
-            <IconBtn
-              icon="chevronLeft"
-              label={t('assistant.collapsePanel')}
-              tip={t('assistant.collapsePanel')}
-              onClick={() => setPanelCollapsed(true)}
-            />
-          </div>
-          <div style={{ padding: '0 10px 6px' }}>
+          {/* [B27.2] Цельный header панели: кнопка+collapse и поиск с иконкой. */}
+          <div className="as-chats-head">
+            <div className="as-chats-head-row">
+              <Button
+                variant="default"
+                size="sm"
+                block
+                leading={<Icon name="plus" size={14} />}
+                onClick={startNewChat}
+              >
+                {t('assistant.newChat')}
+              </Button>
+              <IconBtn
+                icon="chevronLeft"
+                label={t('assistant.collapsePanel')}
+                tip={t('assistant.collapsePanel')}
+                onClick={() => setPanelCollapsed(true)}
+              />
+            </div>
             {/* [B26.11] Fuzzy-поиск по титулам чатов; Esc — сброс. */}
-            <input
-              className="input"
-              style={{ width: '100%' }}
-              placeholder={t('assistant.searchChats')}
-              aria-label={t('assistant.searchChats')}
-              value={chatQuery}
-              onChange={(e) => setChatQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setChatQuery('');
-              }}
-            />
+            <label className="input as-search">
+              <Icon name="search" size={14} className="iico" />
+              <input
+                placeholder={t('assistant.searchChats')}
+                aria-label={t('assistant.searchChats')}
+                value={chatQuery}
+                onChange={(e) => setChatQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setChatQuery('');
+                }}
+              />
+            </label>
           </div>
           <div className="as-chats-list scroll">
             {groups.map((g) => (
