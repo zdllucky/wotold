@@ -2,7 +2,7 @@
 // УСЕЧЁННЫМ (B26.4) — chevron-раскрытие лениво грузит полный текст командой
 // и при сворачивании ВЫЧИЩАЕТ его из state (ушёл из DOM и JS-памяти).
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { AssistantFragment } from '@wotold/contracts';
 
 import { getAssistantFragmentText } from '../../api/assistant';
@@ -24,25 +24,34 @@ export function FragmentRow({ fragment: f, index, messageId }: FragmentRowProps)
   const [fullText, setFullText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  // [B26.R] Токен запроса: collapse до resolve инвалидирует in-flight fetch,
+  // иначе поздний resolve вернул бы полный текст в state свёрнутой строки.
+  const reqSeq = useRef(0);
 
   const toggle = async () => {
     if (open) {
       // Сворачивание: полный текст вычищается из state → DOM/память чистые.
+      reqSeq.current += 1;
       setOpen(false);
       setFullText(null);
+      setLoading(false);
       return;
     }
     setError(false);
     setOpen(true);
     if (fullText == null) {
+      const seq = ++reqSeq.current;
       setLoading(true);
       try {
-        setFullText(await getAssistantFragmentText(messageId, index));
+        const text = await getAssistantFragmentText(messageId, index);
+        if (seq !== reqSeq.current) return; // свернули пока грузилось
+        setFullText(text);
       } catch {
+        if (seq !== reqSeq.current) return;
         setError(true);
         setOpen(false);
       } finally {
-        setLoading(false);
+        if (seq === reqSeq.current) setLoading(false);
       }
     }
   };
@@ -59,7 +68,7 @@ export function FragmentRow({ fragment: f, index, messageId }: FragmentRowProps)
       </span>
       <br />
       {body}
-      {loading && <span className="u-muted">{t('assistant.fragLoading')}</span>}
+      {open && loading && <span className="u-muted">{t('assistant.fragLoading')}</span>}
       {f.textTruncated && (
         <button
           type="button"

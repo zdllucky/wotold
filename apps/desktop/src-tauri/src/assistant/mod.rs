@@ -211,10 +211,7 @@ pub async fn ask_core_with(
     // карточкой.
     let (contact_hits, contact_titles) =
         contacts_ctx::contact_hits_for_question(pool, &question).await;
-    for hit in contact_hits {
-        ctx.token_total += hit.token_est;
-        ctx.fragments.push(hit);
-    }
+    budget::inject_priority_hits(&mut ctx, contact_hits);
 
     // [M16.1] Диагностика отбора — ТОЛЬКО id/метрики, без текста вопросов и
     // фрагментов (приватность контента, W5). Включается RUST_LOG=debug.

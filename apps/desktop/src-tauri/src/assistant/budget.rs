@@ -86,6 +86,30 @@ pub fn assemble(hits: Vec<PassageHit>, scope: Scope<'_>) -> BudgetedContext {
     }
 }
 
+/// [B26.5b] Пост-инжект приоритетных хитов (карточки контактов) с сохранением
+/// инварианта «token_total ≤ FRAGMENT_BUDGET_TOKENS»: хвостовые (низкоранговые)
+/// фрагменты вытесняются ДО добавления, одним проходом на весь пакет — иначе
+/// вторая карточка вытеснила бы первую.
+pub fn inject_priority_hits(ctx: &mut BudgetedContext, extra: Vec<PassageHit>) {
+    if extra.is_empty() {
+        return;
+    }
+    let extra_tokens: i64 = extra.iter().map(|h| h.token_est).sum();
+    while ctx.token_total + extra_tokens > FRAGMENT_BUDGET_TOKENS {
+        match ctx.fragments.pop() {
+            Some(dropped) => {
+                ctx.token_total -= dropped.token_est;
+                ctx.skipped_budget += 1;
+            }
+            None => break,
+        }
+    }
+    for hit in extra {
+        ctx.token_total += hit.token_est;
+        ctx.fragments.push(hit);
+    }
+}
+
 /// Transcript-пассаж, чей start_ms попадает в уже взятый интервал того же
 /// звонка, — overlap-сосед взятого окна (нарезка M15.3 с перекрытием).
 fn is_transcript_overlap(taken: &HashMap<String, Vec<(i64, i64)>>, hit: &PassageHit) -> bool {
@@ -124,6 +148,61 @@ mod tests {
             token_est: tokens,
             rank: -1.0,
         }
+    }
+
+    // [B26.R] Инжект контактов не пробивает бюджет: хвост вытесняется,
+    // порядок карточек сохраняется, недобюджетный ctx не трогается.
+    #[test]
+    fn inject_priority_hits_keeps_budget_invariant() {
+        let hits: Vec<PassageHit> = (0..11)
+            .map(|i| {
+                hit(
+                    &format!("c{i}"),
+                    "decision",
+                    None,
+                    None,
+                    500,
+                    &format!("t{i}"),
+                )
+            })
+            .collect();
+        let mut ctx = assemble(hits, Scope::Global);
+        assert_eq!(ctx.token_total, 5_500); // забит под завязку
+
+        let cards = vec![
+            hit("contact:a", "contact", None, None, 150, "карточка А"),
+            hit("contact:b", "contact", None, None, 150, "карточка Б"),
+        ];
+        inject_priority_hits(&mut ctx, cards);
+
+        assert!(ctx.token_total <= FRAGMENT_BUDGET_TOKENS);
+        // Обе карточки на месте и в исходном порядке (вторая не вытеснила первую).
+        let tail: Vec<&str> = ctx
+            .fragments
+            .iter()
+            .filter(|f| f.kind == "contact")
+            .map(|f| f.call_id.as_str())
+            .collect();
+        assert_eq!(tail, vec!["contact:a", "contact:b"]);
+    }
+
+    #[test]
+    fn inject_priority_hits_noop_paths() {
+        let mut ctx = assemble(
+            vec![hit("c1", "decision", None, None, 100, "мелкий")],
+            Scope::Global,
+        );
+        // Пустой пакет — ничего не меняется.
+        inject_priority_hits(&mut ctx, vec![]);
+        assert_eq!(ctx.token_total, 100);
+        // Влезает без вытеснения.
+        inject_priority_hits(
+            &mut ctx,
+            vec![hit("contact:a", "contact", None, None, 150, "карточка")],
+        );
+        assert_eq!(ctx.token_total, 250);
+        assert_eq!(ctx.fragments.len(), 2);
+        assert_eq!(ctx.skipped_budget, 0);
     }
 
     #[test]

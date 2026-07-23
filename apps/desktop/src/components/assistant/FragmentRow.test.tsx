@@ -62,6 +62,33 @@ describe('FragmentRow', () => {
     expect(getText).not.toHaveBeenCalled();
   });
 
+  // [B26.R] Collapse до resolve: поздний resolve не должен вернуть полный
+  // текст в state и не должен оставить висящий «загрузка…».
+  it('collapse до resolve инвалидирует in-flight fetch', async () => {
+    let resolveFetch: (text: string) => void = () => {};
+    getText.mockImplementation(
+      () => new Promise<string>((resolve) => (resolveFetch = resolve)),
+    );
+    render(<FragmentRow fragment={frag()} index={0} messageId="m1" />);
+
+    const btn = screen.getByRole('button', { name: /показать целиком/ });
+    fireEvent.click(btn); // раскрыли — fetch завис
+    expect(screen.getByText(/загрузка/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /свернуть/ })); // свернули
+    resolveFetch('поздний полный текст');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /показать целиком/ })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      ),
+    );
+    // Поздний resolve проигнорирован: ни полного текста, ни «загрузки».
+    expect(screen.queryByText(/поздний полный текст/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/загрузка/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/короткое превью/)).toBeInTheDocument();
+  });
+
   it('ошибка загрузки показывает ноту и откатывает раскрытие', async () => {
     getText.mockRejectedValue(new Error('boom'));
     render(<FragmentRow fragment={frag()} index={0} messageId="m1" />);

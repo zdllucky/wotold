@@ -116,11 +116,12 @@ pub async fn get_chat_meta(
     pool: &SqlitePool,
     chat_id: &str,
 ) -> Result<Option<AssistantChatMeta>, AppError> {
-    let row: Option<(String, Option<String>, String, String, String)> =
-        sqlx::query_as("SELECT id, call_id, title, created_at, updated_at FROM assistant_chats WHERE id = ?1")
-            .bind(chat_id)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(String, Option<String>, String, String, String)> = sqlx::query_as(
+        "SELECT id, call_id, title, created_at, updated_at FROM assistant_chats WHERE id = ?1",
+    )
+    .bind(chat_id)
+    .fetch_optional(pool)
+    .await?;
     Ok(row.map(|r| AssistantChatMeta {
         id: r.0,
         call_id: r.1,
