@@ -464,6 +464,7 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
       }
       // [B26.4] Полный текст фрагмента: мок хранит полные тексты в answer —
       // отдаём как есть (мок не усекает).
+      if (cmd === 'share_text') return null; // [B27.6] нативный пикер в браузере недоступен
       if (cmd === 'assistant_get_fragment_text') {
         const mid = a.messageId as string;
         const idx = a.fragmentIndex as number;

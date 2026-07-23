@@ -62,3 +62,11 @@ export function getAssistantSemanticSearch(): Promise<boolean> {
 export function setAssistantSemanticSearch(enabled: boolean): Promise<void> {
   return invoke<void>('assistant_set_semantic_search', { enabled });
 }
+
+/** [B27.6] Нативный share-пикер macOS у прямоугольника кнопки (CSS px). */
+export function shareText(
+  text: string,
+  anchor: { x: number; y: number; w: number; h: number },
+): Promise<void> {
+  return invoke<void>('share_text', { text, ...anchor });
+}

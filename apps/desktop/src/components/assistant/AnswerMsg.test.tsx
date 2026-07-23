@@ -2,8 +2,15 @@
 // i18n падает на ru (navigator пиннится в test/setup.ts).
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AssistantAnswer } from '@wotold/contracts';
+
+// [B27.6] share_text — Rust-команда; мокаем api-модуль (канон FragmentRow.test).
+const shareMock = vi.fn();
+vi.mock('../../api/assistant', () => ({
+  shareText: (...args: unknown[]) => shareMock(...args),
+  getAssistantFragmentText: vi.fn(),
+}));
 
 import { AnswerMsg, fmtSourceClock, speakerColor } from './AnswerMsg';
 
@@ -41,6 +48,7 @@ function answer(overrides: Partial<AssistantAnswer> = {}): AssistantAnswer {
 
 describe('AnswerMsg', () => {
   beforeEach(() => {
+    shareMock.mockReset();
     Object.assign(navigator, {
       clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
     });
@@ -104,15 +112,27 @@ describe('AnswerMsg', () => {
     expect(onAskGlobal).toHaveBeenCalledWith('мой вопрос');
   });
 
-  it('copy: обычная и «с источниками» (формат SPEC)', async () => {
+  it('copy копирует текст; share зовёт нативный пикер с источниками', () => {
+    shareMock.mockResolvedValue(undefined);
     render(<AnswerMsg messageId="m1" createdAt="2026-07-23T10:00:00Z" answer={answer()} question="q" />);
     fireEvent.click(screen.getByLabelText('Скопировать'));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Договорились о пилоте.');
 
     fireEvent.click(screen.getByLabelText('Поделиться'));
-    fireEvent.click(await screen.findByText('Скопировать с источниками'));
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+    expect(shareMock).toHaveBeenCalledWith(
       'Договорились о пилоте.\n\nИсточники: Синхрон по пилоту · 1:02; Планёрка',
+      expect.objectContaining({ x: expect.any(Number), w: expect.any(Number) }),
+    );
+  });
+
+  it('share: отказ команды → тихий фоллбек копией с источниками', async () => {
+    shareMock.mockRejectedValue(new Error('unsupported platform'));
+    render(<AnswerMsg messageId="m1" createdAt="2026-07-23T10:00:00Z" answer={answer()} question="q" />);
+    fireEvent.click(screen.getByLabelText('Поделиться'));
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        'Договорились о пилоте.\n\nИсточники: Синхрон по пилоту · 1:02; Планёрка',
+      ),
     );
   });
 

@@ -979,8 +979,6 @@ export const kk: TranslationStrings = {
     copy: 'Көшіру',
     copied: 'Көшірілді',
     share: 'Бөлісу',
-    shareWithSources: 'Дереккөздерімен көшіру',
-    shareEmail: 'Поштаға жіберу…',
     sourcesLabel: 'Дереккөздер',
     escalate: 'Барлық қоңыраулардан іздеу',
     newChat: 'Жаңа чат',

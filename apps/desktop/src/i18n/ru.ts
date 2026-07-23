@@ -1058,8 +1058,6 @@ const ruInternal = {
     copy: 'Скопировать',
     copied: 'Скопировано',
     share: 'Поделиться',
-    shareWithSources: 'Скопировать с источниками',
-    shareEmail: 'Отправить в почту…',
     sourcesLabel: 'Источники',
     escalate: 'Искать во всех звонках',
     newChat: 'Новый чат',
