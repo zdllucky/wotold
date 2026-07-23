@@ -6,6 +6,8 @@ import { CallDetailPage } from './pages/CallDetailPage';
 import { InboxView } from './pages/InboxView';
 import { Coachmarks } from './pages/Coachmarks';
 import { AssistantPage } from './pages/AssistantPage';
+import { listAssistantChats } from './api/assistant';
+import type { AssistantChatMeta } from '@wotold/contracts';
 import { requestGlobalQuestion } from './hooks/useAssistantChats';
 import { ContactsPage } from './pages/ContactsPage';
 import { DesignSystemPage } from './pages/DesignSystemPage';
@@ -78,6 +80,9 @@ function AppShell() {
   });
   const [activePipelines, setActivePipelines] = useState(0);
   const [recent, setRecent] = useState<Call[]>([]);
+  // [B26.9] Чаты ассистента для микса «Недавних» + запрос открытия чата.
+  const [recentChats, setRecentChats] = useState<AssistantChatMeta[]>([]);
+  const [openChatReq, setOpenChatReq] = useState<{ id: string; seq: number } | null>(null);
   const [callsCount, setCallsCount] = useState(0);
   const [contactsCount, setContactsCount] = useState(0);
 
@@ -141,6 +146,10 @@ function AppShell() {
       void listContacts()
         .then((cs) => setContactsCount(cs.length))
         .catch((e: unknown) => console.warn('listContacts (rail) failed', e));
+      // [B26.9] Чаты ассистента — микс в «Недавних».
+      void listAssistantChats()
+        .then((cs) => setRecentChats(cs.slice(0, 10)))
+        .catch((e: unknown) => console.warn('listAssistantChats (rail) failed', e));
     };
     void load();
     let unlisten: UnlistenFn | null = null;
@@ -151,6 +160,14 @@ function AppShell() {
       .catch(() => {});
     return () => unlisten?.();
   }, []);
+
+  // [B26.9] Свежесть чатов в «Недавних»: рефетч при каждой смене вида —
+  // дешевле и стабильнее, чем слушать assistant:status.
+  useEffect(() => {
+    void listAssistantChats()
+      .then((cs) => setRecentChats(cs.slice(0, 10)))
+      .catch(() => {});
+  }, [view]);
 
   // [V8.2/V9] Active-pipeline counter — full resync on every lifecycle event
   // (точен; реестр in-memory). НЕ менять на ±1 (дрейфовал).
@@ -472,12 +489,18 @@ function AppShell() {
     busy: rec.busy,
     pipelineCount: activePipelines,
     recent,
+    recentChats,
     callsCount,
     contactsCount,
     activeCallId: view === 'call' ? detailCallId : null,
     isDev: IS_DEV,
     queue,
     onRecord: onRecordToggle,
+    onOpenAssistantChat: (id: string) => {
+      // [B26.9] Клик по чату в «Недавних»: раздел ассистента + открыть чат.
+      setOpenChatReq((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
+      onNav('assistant');
+    },
     onPause: onPauseToggle,
     onNav,
     onOpenCall,
@@ -541,7 +564,13 @@ function AppShell() {
             onAskGlobal={onAskAssistant}
           />
         )}
-        {view === 'assistant' && <AssistantPage onOpenCall={onOpenCall} />}
+        {view === 'assistant' && (
+          <AssistantPage
+            onOpenCall={onOpenCall}
+            openChatRequest={openChatReq}
+            onOpenContacts={() => onNav('contacts')}
+          />
+        )}
         {view === 'contacts' && <ContactsPage onOpenCall={onOpenCall} />}
         {view === 'settings' && <SettingsPage />}
         {view === 'ds' && IS_DEV && <DesignSystemPage />}

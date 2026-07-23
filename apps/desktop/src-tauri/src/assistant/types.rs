@@ -118,6 +118,10 @@ pub struct AssistantChatMeta {
     /// Первый вопрос, усечённый до ~42 симв.
     pub title: String,
     pub created_at: String,
+    /// [B26.9] Последняя активность — сортировка микса «Недавних».
+    /// `default` — старые сериализации без поля.
+    #[serde(default)]
+    pub updated_at: String,
 }
 
 /// Роль сообщения.

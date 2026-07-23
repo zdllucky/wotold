@@ -65,6 +65,8 @@ export interface AssistantChatMeta {
   /** Первый вопрос, усечённый до ~42 симв. */
   title: string;
   createdAt: string;
+  /** [B26.9] Последняя активность — сортировка микса «Недавних». */
+  updatedAt: string;
 }
 
 /** Сообщение чата. Для role='assistant' поле answer заполнено. */

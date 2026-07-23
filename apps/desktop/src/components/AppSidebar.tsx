@@ -13,6 +13,7 @@ import { QueueMonitor } from './QueueMonitor';
 import type { Call } from '../api/recording';
 import type { QueueState } from '../api/queue';
 import { useI18n } from '../i18n';
+import type { AssistantChatMeta } from '@wotold/contracts';
 
 export type RailView = 'inbox' | 'call' | 'contacts' | 'assistant' | 'settings' | 'ds';
 export type RailRecKind = 'idle' | 'recording' | 'paused';
@@ -38,6 +39,9 @@ interface RailProps extends RailHandlers {
   busy: boolean;
   pipelineCount: number;
   recent: Call[];
+  /** [B26.9] Чаты ассистента — микс в «Недавних». */
+  recentChats: AssistantChatMeta[];
+  onOpenAssistantChat: (id: string) => void;
   /** Total calls / contacts — shown as nav count badges. */
   callsCount: number;
   contactsCount: number;
@@ -46,6 +50,39 @@ interface RailProps extends RailHandlers {
   isDev: boolean;
   /** [Q] Снапшот очередей ресурсов для QueueMonitor (null до первого фетча). */
   queue: QueueState | null;
+}
+
+/** [B26.9] Микс «Недавних»: звонки (started_at) + чаты (updatedAt), top-N. */
+export interface RecentEntry {
+  kind: 'call' | 'chat';
+  id: string;
+  label: string;
+  at: string;
+  call?: Call;
+}
+
+export function mergeRecent(
+  calls: Call[],
+  chats: AssistantChatMeta[],
+  limit = 5,
+): RecentEntry[] {
+  const entries: RecentEntry[] = [
+    ...calls.map((c) => ({
+      kind: 'call' as const,
+      id: c.id,
+      label: c.title ?? c.id.slice(0, 8),
+      at: c.started_at,
+      call: c,
+    })),
+    ...chats.map((ch) => ({
+      kind: 'chat' as const,
+      id: ch.id,
+      label: ch.title,
+      at: ch.updatedAt || ch.createdAt,
+    })),
+  ];
+  // RFC3339 сортируется лексикографически; свежие сверху.
+  return entries.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
 }
 
 function fmtDur(sec: number | null): string {
@@ -92,6 +129,8 @@ export function Sidebar(props: RailProps) {
     busy,
     pipelineCount,
     recent,
+    recentChats,
+    onOpenAssistantChat,
     callsCount,
     contactsCount,
     activeCallId,
@@ -107,7 +146,8 @@ export function Sidebar(props: RailProps) {
   } = props;
   const recording = recKind !== 'idle';
   const paused = recKind === 'paused';
-  const recentTop = recent.slice(0, 5);
+  // [B26.9] Микс звонков и чатов по времени активности.
+  const recentTop = mergeRecent(recent, recentChats, 5);
   const onInbox = view === 'inbox' || view === 'call';
 
   // Inbox meta: live processing badge when calls are in the pipeline, else the
@@ -239,14 +279,29 @@ export function Sidebar(props: RailProps) {
           <>
             <div style={{ height: 8 }} />
             <div className="sec-label">{t('rail.recent')}</div>
-            {recentTop.map((c) => {
-              const label = c.title ?? c.id.slice(0, 8);
+            {recentTop.map((entry) => {
+              if (entry.kind === 'chat') {
+                return (
+                  <NavItem
+                    key={`chat-${entry.id}`}
+                    label={entry.label}
+                    title={entry.label}
+                    leading={
+                      <span className="nav-ico">
+                        <Icon name="chat" size={15} />
+                      </span>
+                    }
+                    onClick={() => onOpenAssistantChat(entry.id)}
+                  />
+                );
+              }
+              const c = entry.call as Call;
               const openHere = view === 'call' && activeCallId === c.id;
               return (
                 <NavItem
                   key={c.id}
-                  label={label}
-                  title={label}
+                  label={entry.label}
+                  title={entry.label}
                   active={openHere}
                   current={openHere}
                   leading={

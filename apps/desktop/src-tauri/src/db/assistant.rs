@@ -61,7 +61,8 @@ pub async fn create_global_chat(
         id,
         call_id: None,
         title,
-        created_at: now,
+        created_at: now.clone(),
+        updated_at: now,
     })
 }
 
@@ -105,7 +106,8 @@ pub async fn get_or_create_call_chat(
         id,
         call_id: Some(call_id.to_string()),
         title,
-        created_at: now,
+        created_at: now.clone(),
+        updated_at: now,
     })
 }
 
@@ -114,8 +116,8 @@ pub async fn get_chat_meta(
     pool: &SqlitePool,
     chat_id: &str,
 ) -> Result<Option<AssistantChatMeta>, AppError> {
-    let row: Option<(String, Option<String>, String, String)> =
-        sqlx::query_as("SELECT id, call_id, title, created_at FROM assistant_chats WHERE id = ?1")
+    let row: Option<(String, Option<String>, String, String, String)> =
+        sqlx::query_as("SELECT id, call_id, title, created_at, updated_at FROM assistant_chats WHERE id = ?1")
             .bind(chat_id)
             .fetch_optional(pool)
             .await?;
@@ -124,6 +126,7 @@ pub async fn get_chat_meta(
         call_id: r.1,
         title: r.2,
         created_at: r.3,
+        updated_at: r.4,
     }))
 }
 
@@ -132,8 +135,8 @@ pub async fn get_call_chat(
     pool: &SqlitePool,
     call_id: &str,
 ) -> Result<Option<AssistantChatMeta>, AppError> {
-    let row: Option<(String, Option<String>, String, String)> = sqlx::query_as(
-        "SELECT id, call_id, title, created_at FROM assistant_chats WHERE call_id = ?1",
+    let row: Option<(String, Option<String>, String, String, String)> = sqlx::query_as(
+        "SELECT id, call_id, title, created_at, updated_at FROM assistant_chats WHERE call_id = ?1",
     )
     .bind(call_id)
     .fetch_optional(pool)
@@ -143,13 +146,14 @@ pub async fn get_call_chat(
         call_id: r.1,
         title: r.2,
         created_at: r.3,
+        updated_at: r.4,
     }))
 }
 
 /// Глобальные чаты раздела, свежие сверху (updated_at DESC).
 pub async fn list_global_chats(pool: &SqlitePool) -> Result<Vec<AssistantChatMeta>, AppError> {
-    let rows: Vec<(String, Option<String>, String, String)> = sqlx::query_as(
-        "SELECT id, call_id, title, created_at
+    let rows: Vec<(String, Option<String>, String, String, String)> = sqlx::query_as(
+        "SELECT id, call_id, title, created_at, updated_at
          FROM assistant_chats
          WHERE call_id IS NULL
          ORDER BY updated_at DESC",
@@ -163,6 +167,7 @@ pub async fn list_global_chats(pool: &SqlitePool) -> Result<Vec<AssistantChatMet
             call_id: r.1,
             title: r.2,
             created_at: r.3,
+            updated_at: r.4,
         })
         .collect())
 }
