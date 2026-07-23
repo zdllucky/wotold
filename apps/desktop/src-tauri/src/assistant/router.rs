@@ -160,7 +160,53 @@ pub async fn try_route(
         return Ok(Some(list_calls(pool, &ws).await?));
     }
 
+    // [B26.5a] «Кто такой/такая X» → карточка контакта. Контакт не найден →
+    // None: обычный конвейер (упоминания в звонках).
+    if has(&ws, "кто") && has_any(&ws, &["такой", "такая", "такое", "это"]) {
+        if let Some(routed) = who_is(pool, &ws).await? {
+            return Ok(Some(routed));
+        }
+    }
+
     Ok(None)
+}
+
+/// [B26.5a] Карточка(и) контакта по имени из вопроса (до 3 совпадений).
+async fn who_is(pool: &SqlitePool, ws: &[String]) -> Result<Option<RoutedAnswer>, AppError> {
+    use crate::assistant::contacts_ctx;
+
+    const WHO_STRIP: &[&str] = &["кто", "такой", "такая", "такое", "это", "вообще"];
+    let name_part = ws
+        .iter()
+        .filter(|w| !WHO_STRIP.contains(&w.as_str()))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if name_part.is_empty() {
+        return Ok(None);
+    }
+    let contacts = contacts_ctx::list_contact_briefs(pool).await?;
+    let matched = contacts_ctx::match_contacts(&contacts, &name_part);
+    if matched.is_empty() {
+        return Ok(None);
+    }
+    let mut lines = Vec::new();
+    let mut sources = Vec::new();
+    for c in matched.iter().take(3) {
+        let stats = contacts_ctx::contact_call_stats(pool, &c.id).await?;
+        lines.push(contacts_ctx::contact_card_text(c, &stats));
+        if let Some((id, title, _)) = &stats.last_call {
+            sources.push(AssistantSource {
+                call_id: id.clone(),
+                call_title: title.clone(),
+                start_ms: None,
+            });
+        }
+    }
+    Ok(Some(RoutedAnswer::Direct {
+        text: lines.join("\n"),
+        sources,
+    }))
 }
 
 /// «Записано N звонков (M в поиске), суммарно X ч Y мин» — из index_stats.
@@ -775,6 +821,34 @@ mod tests {
         assert_eq!(range_of("месячный отчёт по проекту", now), None);
         assert_eq!(range_of("что решили по командам", now), None);
         assert_eq!(range_of("сколько звонков записано", now), None);
+    }
+
+    // [B26.5a] «Кто такой X» → карточка контакта; нет контакта → None.
+    #[tokio::test]
+    async fn who_is_returns_contact_card_or_falls_through() {
+        let db = fresh_db().await;
+        sqlx::query(
+            "INSERT INTO contacts (id, display_name, org, created_at, updated_at)
+             VALUES ('ct1', 'Ренат Буланов', 'Acme', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        let routed = try_route(&db.pool, "Кто такой Буланов Ренат", None, None)
+            .await
+            .unwrap();
+        let Some(RoutedAnswer::Direct { text, .. }) = routed else {
+            panic!("контакт найден — должен быть Direct");
+        };
+        assert!(text.contains("Ренат Буланов — контакт, Acme"), "{text}");
+        assert!(text.contains("Совместных звонков не записано"), "{text}");
+
+        // Контакта нет → None (уходит в retrieval за упоминаниями).
+        assert!(try_route(&db.pool, "Кто такой Александр", None, None)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[test]
