@@ -3,11 +3,12 @@
 // answer (текст + источники + контекст + действия), refusal (нота shield,
 // без «Контекста поиска»), empty (текст + опц. эскалация).
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AssistantAnswer, AssistantFragment, AssistantSource } from '@wotold/contracts';
 
 import { useI18n } from '../../i18n';
 import { FragmentRow } from './FragmentRow';
+import { parseFragmentRefs } from './fragmentRefs';
 import { MsgTime } from './MsgTime';
 import { Chip, Dropdown, Icon, IconBtn, MenuItem } from '../../ui';
 
@@ -73,6 +74,30 @@ export function AnswerMsg({
 }: AnswerMsgProps) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  // [B27.8] «Контекст поиска» — controlled: клик по [N]-ссылке раскрывает
+  // блок и подсвечивает фрагмент.
+  const [ctxOpen, setCtxOpen] = useState(false);
+  const [flashIdx, setFlashIdx] = useState<number | null>(null);
+  const fragEls = useRef<(HTMLDivElement | null)[]>([]);
+  const flashTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (flashTimer.current != null) window.clearTimeout(flashTimer.current);
+    },
+    [],
+  );
+
+  const revealFragment = useCallback((i: number) => {
+    setCtxOpen(true);
+    setFlashIdx(i);
+    if (flashTimer.current != null) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlashIdx(null), 1600);
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    requestAnimationFrame(() => {
+      fragEls.current[i]?.scrollIntoView({ block: 'nearest', behavior: smooth ? 'smooth' : 'auto' });
+    });
+  }, []);
 
   const doCopy = useCallback((text: string) => {
     // «Скопировано» — только после успешной записи (ревью H6); отказ
@@ -124,14 +149,22 @@ export function AnswerMsg({
   };
 
   // [B26.6] Управляемая строка: усечённый текст + lazy-раскрытие.
+  // [B27.8] Обёртка .frag-wrap — якорь скролла и flash-подсветки [N]-ссылок.
   const frag = (f: AssistantFragment, i: number) => (
-    <FragmentRow
+    <div
       key={`${f.callId}-${f.startMs ?? 'x'}-${i}`}
-      fragment={f}
-      index={i}
-      messageId={messageId}
-    />
+      className={'frag-wrap' + (flashIdx === i ? ' frag--flash' : '')}
+      ref={(el) => {
+        fragEls.current[i] = el;
+      }}
+    >
+      <FragmentRow fragment={f} index={i} messageId={messageId} />
+    </div>
   );
+
+  // [B27.8] Текст ответа: «[2]» / «[2, 4]» → кликабельные ссылки на фрагменты.
+  const fragmentCount = answer.kind === 'refusal' ? 0 : answer.fragments.length;
+  const textSegments = parseFragmentRefs(answer.text, fragmentCount);
 
   return (
     <div className="ask-bubble" data-selectable>
@@ -141,7 +174,23 @@ export function AnswerMsg({
           {t('assistant.refusalNote')}
         </div>
       )}
-      <div style={{ whiteSpace: 'pre-line' }}>{answer.text}</div>
+      <div style={{ whiteSpace: 'pre-line' }}>
+        {textSegments.map((seg, i) =>
+          seg.kind === 'text' ? (
+            seg.text
+          ) : (
+            <button
+              key={`ref-${i}`}
+              type="button"
+              className="frag-ref mono"
+              aria-label={t('assistant.fragRefLabel', { n: seg.indices[0] })}
+              onClick={() => revealFragment(seg.indices[0] - 1)}
+            >
+              {seg.raw}
+            </button>
+          ),
+        )}
+      </div>
       {answer.sources.length > 0 && <div className="src-row">{answer.sources.map(sourceChip)}</div>}
       {answer.escalate && onAskGlobal && (
         <div className="src-row">
@@ -151,8 +200,14 @@ export function AnswerMsg({
         </div>
       )}
       {answer.kind !== 'refusal' && answer.fragments.length > 0 && (
-        <details className="ctx">
-          <summary>
+        <details className="ctx" open={ctxOpen}>
+          {/* [B27.8] preventDefault — иначе двойной toggle (native + state). */}
+          <summary
+            onClick={(e) => {
+              e.preventDefault();
+              setCtxOpen((v) => !v);
+            }}
+          >
             <Icon name="chevronRight" size={11} className="ctx-arr" />
             {t('assistant.ctxSummary')}
           </summary>
@@ -165,7 +220,9 @@ export function AnswerMsg({
           </div>
         </details>
       )}
-      {answer.kind === 'answer' && (
+      {/* [B27.1] Один ряд: действия слева (hover-reveal), время справа. */}
+      <div className="ans-foot">
+        {answer.kind === 'answer' && (
         <div className="ans-acts">
           <IconBtn
             icon={copied ? 'check' : 'copy'}
@@ -197,8 +254,9 @@ export function AnswerMsg({
             </MenuItem>
           </Dropdown>
         </div>
-      )}
-      <MsgTime createdAt={createdAt} />
+        )}
+        <MsgTime createdAt={createdAt} />
+      </div>
     </div>
   );
 }

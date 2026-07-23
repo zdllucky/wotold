@@ -969,6 +969,7 @@ export const en: TranslationStrings = {
     fragCollapse: 'collapse',
     fragLoading: 'loading…',
     fragLoadError: 'Failed to load fragment',
+    fragRefLabel: 'Fragment {n}',
     durHours: '{h} h {m} min',
     durMinutes: '{m} min',
     emptyTitle: 'Search across all calls',

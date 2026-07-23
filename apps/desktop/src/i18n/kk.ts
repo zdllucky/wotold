@@ -965,6 +965,7 @@ export const kk: TranslationStrings = {
     fragCollapse: 'жию',
     fragLoading: 'жүктелуде…',
     fragLoadError: 'Фрагмент жүктелмеді',
+    fragRefLabel: '{n}-фрагмент',
     durHours: '{h} сағ {m} мин',
     durMinutes: '{m} мин',
     emptyTitle: 'Барлық қоңыраулар бойынша іздеу',
