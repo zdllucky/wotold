@@ -22,10 +22,7 @@ use crate::{
     llm_hint::{self, LlmHintContact},
     matching, merge_signals,
     pipeline::merge::OWNER_TAG,
-    providers::{
-        llm::{AnthropicProvider, LlmProvider},
-        transcription::DiarizedTranscript,
-    },
+    providers::{llm::LlmProvider, transcription::DiarizedTranscript},
     AppError,
 };
 
@@ -40,7 +37,7 @@ pub struct IdentifyCtx<'a> {
     pub transcript_md: &'a str,
     pub embedder: &'a dyn Embedder,
     /// Optional LLM provider. None → embedding-only matching.
-    pub llm: Option<&'a AnthropicProvider>,
+    pub llm: Option<&'a dyn LlmProvider>,
     pub llm_model: Option<&'a str>,
 }
 
@@ -103,14 +100,10 @@ pub async fn identify_speakers(pool: &SqlitePool, ctx: IdentifyCtx<'_>) -> Resul
     if let (Some(provider), Some(model)) = (ctx.llm, ctx.llm_model) {
         let hint_contacts = llm_hint_contacts(pool).await?;
         if !hint_contacts.is_empty() {
-            llm_hints = llm_hint::request_speaker_hints(
-                provider as &dyn LlmProvider,
-                ctx.transcript_md,
-                &hint_contacts,
-                model,
-            )
-            .await
-            .unwrap_or_default();
+            llm_hints =
+                llm_hint::request_speaker_hints(provider, ctx.transcript_md, &hint_contacts, model)
+                    .await
+                    .unwrap_or_default();
         }
     }
 

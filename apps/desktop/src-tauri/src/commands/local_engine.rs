@@ -21,7 +21,6 @@ use tauri::{AppHandle, State};
 
 use crate::{
     local_engine::{
-        engine::{self, EngineKind},
         hw_probe::{self, HwReport},
         models::{self, ModelKind, ModelStatus, MODEL_CATALOG},
         preset::{LocalEnginePreset, PresetSpec, SETTING_ACTIVE_PRESET},
@@ -153,26 +152,6 @@ pub async fn local_engine_set_active_preset(
         .ok_or_else(|| AppError::Other(format!("unknown preset: {preset}")))?;
     crate::db::set_setting(&state.db, SETTING_ACTIVE_PRESET, parsed.as_str()).await?;
     Ok(PresetSpec::from(parsed))
-}
-
-/// [M12.6] Текущий engine — `local | cloud_managed | cloud_byo`.
-#[tauri::command]
-pub async fn local_engine_get_active_engine(
-    state: State<'_, AppState>,
-) -> Result<EngineKind, AppError> {
-    engine::load_or_default(&state.db).await
-}
-
-/// [M12.6] Atomic swap engine. Влияет на следующую запись; старые звонки
-/// сохраняют свой движок (PRD §M12.6.6).
-#[tauri::command]
-pub async fn local_engine_set_active_engine(
-    state: State<'_, AppState>,
-    engine: String,
-) -> Result<EngineKind, AppError> {
-    let parsed = EngineKind::from_str(&engine)
-        .ok_or_else(|| AppError::Other(format!("unknown engine: {engine}")))?;
-    engine::save(&state.db, parsed).await
 }
 
 /// [M12.7] Hardware probe + cache. Первый вызов делает реальный probe и

@@ -4,7 +4,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  EngineKind,
   HwReport,
   LocalEnginePreset,
   ModelStatus,
@@ -42,14 +41,6 @@ export function localEngineGetActivePreset(): Promise<PresetSpec | null> {
 
 export function localEngineSetActivePreset(preset: LocalEnginePreset): Promise<PresetSpec> {
   return invoke<PresetSpec>('local_engine_set_active_preset', { preset });
-}
-
-export function localEngineGetActiveEngine(): Promise<EngineKind> {
-  return invoke<EngineKind>('local_engine_get_active_engine');
-}
-
-export function localEngineSetActiveEngine(engine: EngineKind): Promise<EngineKind> {
-  return invoke<EngineKind>('local_engine_set_active_engine', { engine });
 }
 
 export function localEngineHwProbe(force = false): Promise<HwReport> {

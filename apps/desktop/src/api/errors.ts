@@ -15,7 +15,7 @@ interface ErrorPattern {
 }
 
 const PATTERNS: ErrorPattern[] = [
-  // Network / proxy
+  // Network
   {
     match: /(econnrefused|networkerror|failed to fetch|networkerror when attempting|err_internet)/i,
     human: 'Нет соединения с сервером Wotold.',
@@ -102,32 +102,6 @@ const PATTERNS: ErrorPattern[] = [
     human: 'Запрос занял слишком долго.',
     hint: 'Попробуй ещё раз. Если повторится — проверь интернет.',
   },
-  // Quota — реальный hard-cap (R7 паспорта). Только code:"quota_exceeded"
-  // / "quota exceeded" / "too many requests". Transient 429/upstream-error
-  // ловится отдельным паттерном ниже (не путать).
-  {
-    match: /quota[_-]?exceeded|quota exceeded|too many requests/i,
-    human: 'Превышен дневной лимит на бесплатном тарифе.',
-    hint: 'Подожди до завтра или переключись на свои API-ключи в Настройках.',
-  },
-  // [Bug-fix #1] Транзиентные ошибки upstream (Anthropic throttle через
-  // Cloudflare Workers proxy) — wrapped как provider_error с 429/upstream
-  // tokens. Бэкенд уже ретраит 3 раза с backoff — сюда попадает только
-  // exhausted случай. Не путать с настоящей quota.
-  {
-    match: /(upstream error|bad gateway|llm upstream|rate limit|provider busy|\b429\b|\b502\b|\b503\b|\b504\b)/i,
-    human: 'Сервис временно занят.',
-    hint: 'Попробуй ещё раз через минуту — это временный сбой.',
-  },
-  {
-    match: /(unauthorized|401)/i,
-    human: 'Сессия истекла или ключ невалидный.',
-    hint: 'Войди заново или проверь API-ключи в Настройках.',
-  },
-  {
-    match: /(forbidden|403)/i,
-    human: 'Доступ запрещён.',
-  },
 
   // Permissions
   {
@@ -180,24 +154,9 @@ const PATTERNS: ErrorPattern[] = [
 
   // STT/LLM specifics
   {
-    match: /presign failed/i,
-    human: 'Не получилось подготовить загрузку аудио.',
-    hint: 'Это временная ошибка прокси — попробуй ещё раз.',
-  },
-  {
-    match: /staging_object_not_found/i,
-    human: 'Файл звука пропал с сервера.',
-    hint: 'Перезапусти обработку звонка.',
-  },
-  {
     match: /transcript.*shape|missing field/i,
     human: 'Сервис распознавания вернул неожиданный формат.',
     hint: 'Перезапусти обработку звонка — иногда помогает.',
-  },
-  {
-    match: /llm.*not.*configured|no llm provider/i,
-    human: 'LLM не настроен.',
-    hint: 'Подожди пока админ зальёт ключи, либо подключи свой ключ Anthropic в Настройках.',
   },
 
   // Validation

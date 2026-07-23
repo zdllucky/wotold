@@ -1,12 +1,9 @@
-// SettingsPage — Wotold v2 (uikit) settings shell + 9 sections (B18.5, B21).
+// SettingsPage — Wotold v2 (uikit) settings shell + 8 sections (B18.5, B21).
 //
 // Канон wk-settings.jsx: breadcrumb view-head + «✓ Сохранено», левый aside-rail
 // 300px c NavItem, контент-колонка max-width 560. Каждая секция: SecLede
 // (muted-абзац), группы GroupLabel (.rrail-sec) и плотные SettingRow
 // (label+hint слева, контрол справа, divider между строками).
-//
-// BYO path / proxy URL override спрятаны сознательно: path хардкодим =
-// 'managed', usage встроен в Processing (cloud branch).
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -40,7 +37,6 @@ import { type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
-import { AccountSection } from './AccountSection';
 import { AppearanceSection } from './AppearanceSection';
 import { LabsSection } from './LabsSection';
 import { LocalEngineSection } from './LocalEngineSection';
@@ -50,7 +46,6 @@ import { VoiceModelSection } from './VoiceModelSection';
 // [B22] «Обслуживание» (bulk recap) удалено по фидбеку юзера — Rust-команды
 // regenerate_empty_recaps/cancel_bulk_recap остаются без UI-потребителя.
 type SectionId =
-  | 'account'
   | 'appearance'
   | 'permissions'
   | 'processing'
@@ -69,7 +64,6 @@ interface SectionMeta {
 // permissions=shield, privacy=lock).
 const SECTION_ICONS: Record<SectionId, IconName> = {
   appearance: 'sun',
-  account: 'user',
   processing: 'cpu',
   permissions: 'shield',
   recording: 'mic',
@@ -154,14 +148,14 @@ export function SettingsPage() {
   }, [savedTick]);
 
   if (loading) {
-    // [V8.1] Rail (300px, 9 строк) + content shimmer mimics Settings layout.
+    // [V8.1] Rail (300px, 8 строк) + content shimmer mimics Settings layout.
     return (
       <section
         style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 32 }}
         aria-busy="true"
       >
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {Array.from({ length: 9 }, (_, i) => (
+          {Array.from({ length: 8 }, (_, i) => (
             <Skeleton key={i} width="80%" height="1em" />
           ))}
         </aside>
@@ -183,8 +177,7 @@ export function SettingsPage() {
   // Sidebar — 9 sections (канонный порядок wk-settings.jsx).
   const NAV: SectionMeta[] = [
     { id: 'appearance', label: t('settings.sectionAppearance') },
-    { id: 'account', label: t('settings.sectionAccount') },
-    // «Обработка» — engine choice + (для cloud) дневная квота.
+    // «Обработка» — локальная обработка (движок + модели).
     { id: 'processing', label: t('settings.sectionProcessing') },
     { id: 'permissions', label: t('settings.sectionPermissions') },
     // «Запись» — языки, hotkeys, call-detect probe.
@@ -298,7 +291,6 @@ export function SettingsPage() {
 
           <SectionShell label={activeMeta.label}>
             {section === 'appearance' && <AppearanceSection />}
-            {section === 'account' && <AccountSection />}
             {section === 'processing' && <LocalEngineSection />}
             {section === 'permissions' && <PermissionsSection />}
             {section === 'recording' && (

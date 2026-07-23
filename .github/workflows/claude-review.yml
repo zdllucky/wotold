@@ -75,9 +75,9 @@ jobs:
             Review this PR per the project's CLAUDE.md and ECC rules.
 
             FOCUS (priorities from паспорт раздел W5 + B7):
-            1. Security triggers — `services/proxy/**`, BYO keys (keychain),
-               `services/mcp/**` (untrusted transcript injection M8.3-8.4),
-               auth flow OIDC callback CSRF, audio sidecar permissions C1,
+            1. Security triggers — `services/mcp/**` (untrusted transcript
+               injection M8.3-8.4), keychain secrets seam, audio sidecar
+               permissions C1, local_engine sidecar args/path-traversal (M12.4),
                cascade delete C5 — flag any change here as CRITICAL if
                authorization/validation/PII handling is touched.
             2. R1-R8 constraints (CLAUDE.md раздел 12 паспорта) — do NOT
