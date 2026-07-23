@@ -225,6 +225,26 @@ pub async fn list_call_passages_for_summary(
         .collect())
 }
 
+/// [B26.4] answer_json сообщения — источник ПОЛНОГО текста фрагмента для
+/// ленивой подгрузки (на wire фрагменты усечены). Живёт здесь по той же
+/// причине, что fetch_passages_by_ids: db/assistant.rs на пределе 800 строк.
+/// Битый JSON → None с warn (не роняем команду).
+pub async fn get_message_answer(
+    pool: &SqlitePool,
+    message_id: &str,
+) -> Result<Option<crate::assistant::types::AssistantAnswer>, AppError> {
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT answer_json FROM assistant_messages WHERE id = ?1")
+            .bind(message_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|(json,)| json).and_then(|json| {
+        serde_json::from_str(&json)
+            .map_err(|e| log::warn!("assistant message {message_id}: bad answer_json: {e}"))
+            .ok()
+    }))
+}
+
 /// Текущий штамп инвалидации кэша — один дешёвый запрос перед поиском.
 pub async fn embedding_stamp(pool: &SqlitePool) -> Result<EmbeddingStamp, AppError> {
     let (indexed_calls, last_indexed_at, embedding_count): (i64, String, i64) = sqlx::query_as(

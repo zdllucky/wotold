@@ -462,6 +462,18 @@ if (import.meta.env.DEV && !window.__TAURI_INTERNALS__) {
         if (i !== -1) assistantChats.splice(i, 1);
         return null;
       }
+      // [B26.4] Полный текст фрагмента: мок хранит полные тексты в answer —
+      // отдаём как есть (мок не усекает).
+      if (cmd === 'assistant_get_fragment_text') {
+        const mid = a.messageId as string;
+        const idx = a.fragmentIndex as number;
+        for (const c of assistantChats) {
+          const m = c.messages.find((m) => m.id === mid);
+          const t = m?.answer?.fragments[idx]?.text;
+          if (t != null) return t;
+        }
+        throw new Error('fragment not found');
+      }
       // [B25] Тумблер семантического поиска: в моке просто in-memory флаг.
       if (cmd === 'assistant_get_semantic_search') {
         return mockSemanticSearch;

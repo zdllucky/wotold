@@ -44,6 +44,14 @@ export function askAssistant(args: AssistantAskArgs): Promise<AssistantAskOutcom
   return invoke<AssistantAskOutcome>('assistant_ask', { args });
 }
 
+/** [B26.4] Полный текст усечённого фрагмента «Контекста поиска». */
+export function getAssistantFragmentText(
+  messageId: string,
+  fragmentIndex: number,
+): Promise<string> {
+  return invoke<string>('assistant_get_fragment_text', { messageId, fragmentIndex });
+}
+
 /** [B25] Тумблер «Семантический поиск» (default on). */
 export function getAssistantSemanticSearch(): Promise<boolean> {
   return invoke<boolean>('assistant_get_semantic_search');
