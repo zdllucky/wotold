@@ -25,9 +25,22 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use hound::{WavReader, WavSpec, WavWriter};
 use thiserror::Error;
+
+/// [B28.1] Уникальный суффикс tmp-файла. Раньше все merge писали в один
+/// `mic.wav.tmp` — параллельные вызовы (плеер запрашивает mic+system,
+/// pipeline step 1, ретраи UI) делили tmp: победитель rename'ил, остальные
+/// падали ENOENT (живой кейс: 7 «wav write failed» на звонке 3df01365).
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Stale tmp старше этого возраста — мусор от краша посреди merge (штатный
+/// merge живёт секунды и убирает за собой). Свежие не трогаем: их может
+/// писать параллельный merge.
+const STALE_TMP_AGE: Duration = Duration::from_secs(3600);
 
 /// Канал для merge — mic-дорожка или system-дорожка. Имя файла внутри
 /// chunk-директории определяется этим enum'ом.
@@ -162,6 +175,38 @@ pub(crate) fn promote_root_to_chunk0(
     }
 }
 
+/// [B28.1] Удалить осиротевшие `<track>.wav.tmp*`-файлы старше часа —
+/// остатки merge, прерванного крашем. Свежие пропускаем: их может писать
+/// параллельный merge прямо сейчас.
+fn cleanup_stale_tmps(output_path: &Path, kind: TrackKind) {
+    let Some(parent) = output_path.parent() else {
+        return;
+    };
+    let prefix = format!("{}.tmp", kind.filename());
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+        let is_stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > STALE_TMP_AGE);
+        if is_stale {
+            if let Err(e) = fs::remove_file(entry.path()) {
+                log::warn!("audio_merger: stale tmp cleanup failed ({name}): {e}");
+            } else {
+                log::info!("audio_merger: removed stale tmp {name}");
+            }
+        }
+    }
+}
+
 /// Склеить все chunk WAV-файлы данного трека в один root WAV.
 ///
 /// - `chunks_dir` — `calls/{call_id}/chunks`.
@@ -196,10 +241,19 @@ pub fn merge_track(
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    // Temp-file pattern: пишем в `output_path.tmp`, потом rename → атомарный
+    // Temp-file pattern: пишем во временный файл, потом rename → атомарный
     // swap. Защищает от partial WAV при interrupted merge (next reprocess
     // увидит either old-truncated или new-full, не corrupt-half).
-    let tmp_path = output_path.with_extension("wav.tmp");
+    // [B28.1] Имя УНИКАЛЬНО per-вызов (pid+seq): параллельные merge одного
+    // трека больше не делят tmp — каждый rename'ит свой, last-writer-wins
+    // (результат идентичен — идемпотентно). Заодно подметаем stale tmp от
+    // прошлых крашей.
+    cleanup_stale_tmps(output_path, kind);
+    let tmp_path = output_path.with_extension(format!(
+        "wav.tmp{}-{}",
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     let mut writer = WavWriter::create(&tmp_path, spec)
         .map_err(|e| MergeError::Write(tmp_path.clone(), e.to_string()))?;
 
@@ -399,6 +453,17 @@ mod tests {
         }
     }
 
+    /// [B28.1] Ни одного tmp-огрызка в директории output'а.
+    fn assert_no_tmp_leftovers(dir: &Path) {
+        let leftovers: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "tmp leftovers: {leftovers:?}");
+    }
+
     #[test]
     fn merge_three_chunks_concatenates_samples() {
         let dir = tempdir().unwrap();
@@ -465,7 +530,7 @@ mod tests {
         let err = merge_track(&chunks_dir, &out, TrackKind::Mic).unwrap_err();
         assert!(matches!(err, MergeError::NoChunks(TrackKind::Mic, _)));
         // Tmp file должен быть очищен.
-        assert!(!out.with_extension("wav.tmp").exists());
+        assert_no_tmp_leftovers(dir.path());
     }
 
     #[test]
@@ -482,7 +547,50 @@ mod tests {
         let out = dir.path().join("mic.wav");
         let err = merge_track(&chunks_dir, &out, TrackKind::Mic).unwrap_err();
         assert!(matches!(err, MergeError::SpecMismatch { .. }));
-        assert!(!out.with_extension("wav.tmp").exists());
+        assert_no_tmp_leftovers(dir.path());
+    }
+
+    // [B28.1] Регресс гонки звонка 3df01365: N параллельных merge одного
+    // трека — все успешны (уникальные tmp), output корректен, tmp не остаются.
+    #[test]
+    fn concurrent_merges_of_same_track_all_succeed() {
+        let dir = tempdir().unwrap();
+        let chunks_dir = dir.path().join("chunks");
+        let spec = spec_16k_mono_i16();
+        write_stub_wav(&chunks_dir.join("0/mic.wav"), spec, &[1, 2, 3]);
+        write_stub_wav(&chunks_dir.join("1/mic.wav"), spec, &[4, 5]);
+        let out = dir.path().join("mic.wav");
+
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let cd = chunks_dir.clone();
+                let o = out.clone();
+                std::thread::spawn(move || {
+                    merge_track(&cd, &o, TrackKind::Mic).map(|r| r.total_samples)
+                })
+            })
+            .collect();
+        for h in handles {
+            // Раньше 7 из 8 падали MergeError::Write (ENOENT на shared tmp).
+            assert_eq!(h.join().unwrap().unwrap(), 5);
+        }
+        let samples: Vec<i16> = WavReader::open(&out)
+            .unwrap()
+            .into_samples::<i16>()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(samples, vec![1, 2, 3, 4, 5]);
+        assert_no_tmp_leftovers(dir.path());
+    }
+
+    // [B28.1] Stale tmp (моложе часа НЕ трогаем, старше — подметаем).
+    #[test]
+    fn cleanup_removes_only_old_tmps() {
+        let dir = tempdir().unwrap();
+        let fresh = dir.path().join("mic.wav.tmp999-0");
+        fs::write(&fresh, b"fresh").unwrap();
+        cleanup_stale_tmps(&dir.path().join("mic.wav"), TrackKind::Mic);
+        assert!(fresh.exists(), "свежий tmp параллельного merge не трогаем");
     }
 
     #[test]
