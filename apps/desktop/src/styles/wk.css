@@ -293,8 +293,10 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 /* — Table (database list) — */
 .tbl { display: flex; flex-direction: column; }
 .tbl-head, .trow {
-  display: grid; grid-template-columns: 20px minmax(0,1fr) 96px 64px 84px 28px;
-  align-items: center; gap: var(--s3); padding: 0 var(--s4); height: 38px;
+  /* [B30.2] Первая колонка = ширина точки: зазор старт→точка (s3-паддинг)
+     равен зазору точка→название (grid gap s3) — симметрия. */
+  display: grid; grid-template-columns: 8px minmax(0,1fr) 96px 64px 84px 28px;
+  align-items: center; gap: var(--s3); padding: 0 var(--s4) 0 var(--s3); height: 38px;
 }
 .tbl-head { height: 32px; position: sticky; top: 0; z-index: 2; background: var(--bg);
   border-bottom: 1px solid var(--border); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-faint); }
@@ -306,7 +308,7 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .trow .t-cell { font-size: var(--t-12); color: var(--text-3); }
 .trow .t-more { opacity: 0; }
 .trow:hover .t-more { opacity: 1; }
-.tbl-group { padding: var(--s5) var(--s4) 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
+.tbl-group { padding: var(--s5) var(--s4) 4px var(--s3); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
 
 /* — generic list row (recents, contacts) — */
 .lrow { display: flex; align-items: center; gap: var(--s3); width: 100%; padding: 9px 10px; border-radius: var(--r); text-align: left; transition: background var(--fast); }

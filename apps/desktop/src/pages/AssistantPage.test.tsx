@@ -49,7 +49,7 @@ describe('AssistantPage', () => {
     });
   });
 
-  it('empty-состояние: заголовок, 4 случайные подсказки из пула, чип статистики', async () => {
+  it('empty-состояние: заголовок, 4 случайные подсказки из пула, без статчипа', async () => {
     const { container } = renderPage();
     expect(screen.getByText('Поиск по всем звонкам')).toBeInTheDocument();
     // [B27.4] Ровно 4 чипа, каждый из ru-пула 50 подсказок.
@@ -58,10 +58,9 @@ describe('AssistantPage', () => {
     for (const chip of Array.from(chips)) {
       expect(SUGGESTIONS.ru).toContain(chip.textContent);
     }
-    await waitFor(() =>
-      expect(screen.getByText('в поиске 9 из 19 звонков · 1 ч 2 мин')).toBeInTheDocument(),
-    );
-    expect(screen.getByText('Чатов пока нет')).toBeInTheDocument();
+    // [B30.4] Статчип из шапки убран совсем.
+    expect(screen.queryByText(/в поиске \d+ из/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Чатов пока нет')).toBeInTheDocument());
   });
 
   it('вопрос из композера создаёт новый чат (chatId null)', async () => {
@@ -155,7 +154,6 @@ describe('панель чатов', () => {
       const head = container.querySelector('.view-head') as HTMLElement;
       expect(head.querySelector('.as-head-chat')?.textContent).toBe('Планёрки итоги июня');
     });
-    expect(screen.queryByText(/в поиске 1 из 1/)).not.toBeInTheDocument();
   });
 
   it('collapse скрывает список, expand возвращает; persist; «Новый чат» в шапке', async () => {

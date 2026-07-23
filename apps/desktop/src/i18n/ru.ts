@@ -1033,11 +1033,6 @@ const ruInternal = {
   // ── [B24] Ассистент (тексты SPEC хендоффа дословно, деловой регистр) ────
   assistant: {
     title: 'Ассистент',
-    statsChip: 'в поиске {ready} из {total} {plural} · {dur}',
-    statsTooltip: 'Записи в обработке и с ошибкой не участвуют в поиске',
-    callsPluralOne: 'звонок',
-    callsPluralFew: 'звонка',
-    callsPluralMany: 'звонков',
     msgYesterday: 'вчера',
     searchChats: 'Поиск по чатам…',
     chatsPanel: 'Чаты',

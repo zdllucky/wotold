@@ -1353,12 +1353,20 @@ html.recording-widget .rec-float {
 }
 .side-list .lrow[data-active='true'] { background: var(--active); }
 .as-chats-list { flex: 1; min-height: 0; padding: 6px 8px 10px; }
-/* [B29.3] Слим-ряд панели чатов: лейбл + collapse-шеврон. */
+/* [B29.3] Слим-ряд панели чатов: лейбл сверху. */
 .as-chats-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 10px 0 12px;
+}
+/* [B30.3] Футер панели: collapse-кнопка ВЕЗДЕ снизу (единый паттерн). */
+.side-list-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 6px 8px 8px;
+  flex: 0 0 auto;
 }
 /* [B27.3] Название активного чата в хедере раздела. */
 .as-head-chat {
