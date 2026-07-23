@@ -957,6 +957,7 @@ export const kk: TranslationStrings = {
     callsPluralMany: 'қоңырау',
     msgYesterday: 'кеше',
     searchChats: 'Чаттардан іздеу…',
+    chatsPanel: 'Чаттар',
     searchEmpty: 'Сұранысқа чат табылмады',
     searchResults: 'Табылды',
     collapsePanel: 'Чат тізімін жию',

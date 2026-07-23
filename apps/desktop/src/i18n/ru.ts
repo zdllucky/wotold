@@ -1036,6 +1036,7 @@ const ruInternal = {
     callsPluralMany: 'звонков',
     msgYesterday: 'вчера',
     searchChats: 'Поиск по чатам…',
+    chatsPanel: 'Чаты',
     searchEmpty: 'Чатов по запросу не найдено',
     searchResults: 'Найдено',
     collapsePanel: 'Свернуть список чатов',

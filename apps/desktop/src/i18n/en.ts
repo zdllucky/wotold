@@ -961,6 +961,7 @@ export const en: TranslationStrings = {
     callsPluralMany: 'calls',
     msgYesterday: 'yesterday',
     searchChats: 'Search chats…',
+    chatsPanel: 'Chats',
     searchEmpty: 'No chats match your search',
     searchResults: 'Results',
     collapsePanel: 'Collapse chat list',

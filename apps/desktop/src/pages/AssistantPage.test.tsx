@@ -14,7 +14,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 import { invoke } from '@tauri-apps/api/core';
 import { ToastProvider } from '../ui';
 import { resetAssistantChatsCacheForTests } from '../hooks/useAssistantChats';
-import { AssistantPage, clampChatsWidth } from './AssistantPage';
+import { AssistantPage } from './AssistantPage';
 import { SUGGESTIONS } from '../components/assistant/suggestions';
 
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
@@ -158,23 +158,25 @@ describe('панель чатов', () => {
     expect(screen.queryByText(/в поиске 1 из 1/)).not.toBeInTheDocument();
   });
 
-  it('clampChatsWidth держит границы 180-400', () => {
-    expect(clampChatsWidth(100)).toBe(180);
-    expect(clampChatsWidth(500)).toBe(400);
-    expect(clampChatsWidth(250)).toBe(250);
-  });
-
-  it('collapse скрывает список/поиск, expand возвращает; persist в localStorage', async () => {
-    renderPage();
+  it('collapse скрывает список, expand возвращает; persist; «Новый чат» в шапке', async () => {
+    const { container } = renderPage();
     await waitFor(() =>
       expect(screen.getByText('Планёрки итоги июня')).toBeInTheDocument(),
     );
+    // [B29.2-3] Поиск и «Новый чат» живут в ViewHead.
+    const head = container.querySelector('.view-head') as HTMLElement;
+    expect(head.contains(screen.getByLabelText('Поиск по чатам…'))).toBe(true);
+    expect(head.contains(screen.getByRole('button', { name: 'Новый чат' }))).toBe(true);
+
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть список чатов' }));
     expect(screen.queryByText('Планёрки итоги июня')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Поиск по чатам…')).not.toBeInTheDocument();
     expect(localStorage.getItem('wk-aschats-collapsed')).toBe('1');
-    // «Новый чат» остаётся доступен иконкой.
+    // «Новый чат» и поиск остаются в шапке даже при свёрнутой панели.
     expect(screen.getByRole('button', { name: 'Новый чат' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Поиск по чатам…')).toBeInTheDocument();
+    // Клик «Новый чат» НЕ разворачивает панель.
+    fireEvent.click(screen.getByRole('button', { name: 'Новый чат' }));
+    expect(localStorage.getItem('wk-aschats-collapsed')).toBe('1');
 
     fireEvent.click(screen.getByRole('button', { name: 'Развернуть список чатов' }));
     expect(await screen.findByText('Планёрки итоги июня')).toBeInTheDocument();
