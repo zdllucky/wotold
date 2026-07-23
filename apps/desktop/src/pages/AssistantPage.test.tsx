@@ -15,6 +15,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { ToastProvider } from '../ui';
 import { resetAssistantChatsCacheForTests } from '../hooks/useAssistantChats';
 import { AssistantPage, clampChatsWidth } from './AssistantPage';
+import { SUGGESTIONS } from '../components/assistant/suggestions';
 
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
@@ -48,11 +49,15 @@ describe('AssistantPage', () => {
     });
   });
 
-  it('empty-состояние: заголовок, 4 подсказки, чип статистики', async () => {
-    renderPage();
+  it('empty-состояние: заголовок, 4 случайные подсказки из пула, чип статистики', async () => {
+    const { container } = renderPage();
     expect(screen.getByText('Поиск по всем звонкам')).toBeInTheDocument();
-    expect(screen.getByText('Когда обсуждали приватность?')).toBeInTheDocument();
-    expect(screen.getByText('Решения планёрки продукта')).toBeInTheDocument();
+    // [B27.4] Ровно 4 чипа, каждый из ru-пула 50 подсказок.
+    const chips = container.querySelectorAll('.ask-suggest button');
+    expect(chips).toHaveLength(4);
+    for (const chip of Array.from(chips)) {
+      expect(SUGGESTIONS.ru).toContain(chip.textContent);
+    }
     await waitFor(() =>
       expect(screen.getByText('в поиске 9 из 19 звонков · 1 ч 2 мин')).toBeInTheDocument(),
     );

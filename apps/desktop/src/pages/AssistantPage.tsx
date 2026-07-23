@@ -2,12 +2,13 @@
 // Колонка чатов 232px (группировка по дням, trash по hover) + тред + композер.
 // Данные: useAssistantChats (module-кэш = keep-alive между видами).
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getAssistantIndexStats } from '../api/assistant';
 import type { AssistantChatMeta, AssistantIndexStats } from '@wotold/contracts';
 import { AskThread } from '../components/assistant/AskThread';
 import { AssistantComposer } from '../components/assistant/AssistantComposer';
+import { SUGGESTIONS, pickSuggestions } from '../components/assistant/suggestions';
 import { useAssistantChats } from '../hooks/useAssistantChats';
 import { useI18n, type TranslationKey } from '../i18n';
 import { Button, Chip, Icon, IconBtn, Tooltip, useToast } from '../ui';
@@ -24,13 +25,6 @@ export interface AssistantPageProps {
   /** [B26.5] Чип контакт-источника → раздел «Контакты». */
   onOpenContacts?: () => void;
 }
-
-const SUGGEST_KEYS: TranslationKey[] = [
-  'assistant.suggest1',
-  'assistant.suggest2',
-  'assistant.suggest3',
-  'assistant.suggest4',
-];
 
 interface ChatGroup {
   label: string;
@@ -226,6 +220,9 @@ export function AssistantPage({
     ? chats.find((c) => c.id === activeChatId)?.title ?? null
     : null;
 
+  // [B27.4] Случайные подсказки на маунт; смена языка перевыбирает.
+  const suggests = useMemo(() => pickSuggestions(SUGGESTIONS[locale]), [locale]);
+
   return (
     // [B24.7] Shared shell (канон Inbox/Contacts, B18.9-fix): bleed мимо
     // паддинга .app-main 34/44 + fill вьюпорта — .view-head флашится к краям,
@@ -375,9 +372,9 @@ export function AssistantPage({
                   {t('assistant.emptyDesc')}
                 </p>
                 <div className="ask-suggest" style={{ justifyContent: 'center', marginTop: 10 }}>
-                  {SUGGEST_KEYS.map((key) => (
-                    <Chip key={key} tone="line" icon="arrowRight" onClick={() => void ask(t(key))}>
-                      {t(key)}
+                  {suggests.map((s) => (
+                    <Chip key={s} tone="line" icon="arrowRight" onClick={() => void ask(s)}>
+                      {s}
                     </Chip>
                   ))}
                 </div>
