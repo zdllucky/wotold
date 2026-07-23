@@ -231,13 +231,6 @@ export function SettingsPage() {
         >
           {panel.collapsed ? (
             <div className="side-list-mini">
-              <IconBtn
-                icon="chevronRight"
-                label={t('settings.expandPanel')}
-                tip={t('settings.expandPanel')}
-                tipSide="right"
-                onClick={() => panel.setCollapsed(false)}
-              />
               {NAV.filter((s) => !s.hidden).map((s) => (
                 <IconBtn
                   key={s.id}
@@ -249,6 +242,14 @@ export function SettingsPage() {
                   onClick={() => setSection(s.id)}
                 />
               ))}
+              <span style={{ flex: 1 }} />
+              <IconBtn
+                icon="chevronRight"
+                label={t('settings.expandPanel')}
+                tip={t('settings.expandPanel')}
+                tipSide="right"
+                onClick={() => panel.setCollapsed(false)}
+              />
             </div>
           ) : (
             <>
@@ -273,9 +274,10 @@ export function SettingsPage() {
                   onClick={() => panel.setCollapsed(true)}
                 />
               </div>
-              <div className="panel-resize" onMouseDown={panel.onResizeStart} aria-hidden="true" />
             </>
           )}
+          {/* [B30.5] Хэндл живёт и в свёрнутом виде — drag разворачивает. */}
+          <div className="panel-resize" onMouseDown={panel.onResizeStart} aria-hidden="true" />
         </aside>
 
         {/* Content — канон: paddingTop 28, bottom 80, ширина .set-group 560. */}

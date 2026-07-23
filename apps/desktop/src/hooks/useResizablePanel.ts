@@ -24,6 +24,9 @@ export interface ResizablePanel {
   onResizeStart: (e: React.MouseEvent) => void;
 }
 
+/** Ширина свёрнутой панели (совпадает с CSS .side-list[data-collapsed]). */
+const COLLAPSED_W = 48;
+
 /** Чистый clamp ширины (юнит-тестируется; наследник clampChatsWidth B26.11). */
 export function clampPanelWidth(w: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, w));
@@ -68,12 +71,16 @@ export function useResizablePanel(opts: UseResizablePanelOpts): ResizablePanel {
   const activeDragEnd = useRef<(() => void) | null>(null);
   useEffect(() => () => activeDragEnd.current?.(), []);
 
-  // Drag правой грани (канон рейла App.tsx onResizeStart).
+  // Drag правой грани в ОБЕ стороны (канон рейла App.tsx onResizeStart +
+  // onExpandResize): из развёрнутого — сжатие с авто-collapse; из свёрнутого
+  // (48px) — вытягивание разворачивает при w > collapseAt (и обратно, пока
+  // кнопка мыши зажата — [B30.5]).
   const onResizeStart = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       const sx = e.clientX;
-      const sw = width;
+      const fromCollapsed = collapsed;
+      const sw = fromCollapsed ? COLLAPSED_W : width;
       const end = () => {
         document.removeEventListener('mousemove', move);
         document.removeEventListener('mouseup', end);
@@ -83,6 +90,15 @@ export function useResizablePanel(opts: UseResizablePanelOpts): ResizablePanel {
       };
       const move = (ev: MouseEvent) => {
         const w = sw + (ev.clientX - sx);
+        if (fromCollapsed) {
+          if (w > collapseAt) {
+            setCollapsed(false);
+            setWidth(clampPanelWidth(w, min, max));
+          } else {
+            setCollapsed(true);
+          }
+          return;
+        }
         if (w < collapseAt) {
           setCollapsed(true);
           end();
@@ -96,7 +112,7 @@ export function useResizablePanel(opts: UseResizablePanelOpts): ResizablePanel {
       document.body.style.userSelect = 'none';
       activeDragEnd.current = end;
     },
-    [width, min, max, collapseAt],
+    [width, collapsed, min, max, collapseAt],
   );
 
   return { width, collapsed, setCollapsed, onResizeStart };

@@ -106,3 +106,39 @@ describe('unmount-cleanup', () => {
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 60 }));
   });
 });
+
+describe('drag-expand из свёрнутого состояния', () => {
+  it('вытягивание за collapseAt разворачивает; недотяг оставляет свёрнутой', () => {
+    localStorage.clear();
+    localStorage.setItem('test-collapsed', '1');
+    const { result } = renderHook(() => useResizablePanel(OPTS));
+    expect(result.current.collapsed).toBe(true);
+
+    act(() => {
+      result.current.onResizeStart({
+        preventDefault: () => {},
+        clientX: 48,
+      } as unknown as React.MouseEvent);
+    });
+    // Недотяг: 48 + 50 = 98 < 150 → остаёмся свёрнутыми.
+    act(() => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 98 }));
+    });
+    expect(result.current.collapsed).toBe(true);
+    // Дотянули: 48 + 200 = 248 > 150 → развернулись на 248.
+    act(() => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 248 }));
+    });
+    expect(result.current.collapsed).toBe(false);
+    expect(result.current.width).toBe(248);
+    // Пока мышь зажата — можно утащить обратно в collapse.
+    act(() => {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 90 }));
+    });
+    expect(result.current.collapsed).toBe(true);
+    act(() => {
+      document.dispatchEvent(new MouseEvent('mouseup'));
+    });
+    expect(document.body.style.cursor).toBe('');
+  });
+});
