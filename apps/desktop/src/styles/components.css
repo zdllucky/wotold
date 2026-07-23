@@ -1484,11 +1484,18 @@ button.chip::after {
   position: absolute;
   inset: -3px;
 }
-/* H3: тултип доступен и по клавиатурному фокусу (SC 1.4.13). */
-.tip:focus-visible::after,
-.tip:focus-within::after {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
+/* [B27.5] Портальный тултип (ui/Tooltip): визуал бывшего .tip::after,
+   но с переносом строк и max-width — не клипается краями/overflow. */
+.tooltip {
+  background: var(--raised);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 550;
+  padding: 3px 7px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border-2);
+  box-shadow: var(--shadow-sm);
+  max-width: 260px;
 }
 
 /* ── [B26.6-8] Облачка ассистента: время сообщения + lazy-фрагменты ── */

@@ -10,7 +10,7 @@ import { AskThread } from '../components/assistant/AskThread';
 import { AssistantComposer } from '../components/assistant/AssistantComposer';
 import { useAssistantChats } from '../hooks/useAssistantChats';
 import { useI18n, type TranslationKey } from '../i18n';
-import { Button, Chip, Icon, IconBtn, useToast } from '../ui';
+import { Button, Chip, Icon, IconBtn, Tooltip, useToast } from '../ui';
 import { fuzzyFilter } from '../lib/fuzzy';
 import { ViewHead } from '../ui/ViewHead';
 
@@ -228,11 +228,11 @@ export function AssistantPage({
     <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
       <ViewHead icon="chat" title={t('assistant.title')}>
         {statsChip && (
-          <span className="tip tip--bottom" data-tip={t('assistant.statsTooltip')}>
+          <Tooltip content={t('assistant.statsTooltip')} side="bottom">
             <Chip size="sm" tone="line" icon="doc">
               {statsChip}
             </Chip>
-          </span>
+          </Tooltip>
         )}
       </ViewHead>
       <div className="as-layout">
