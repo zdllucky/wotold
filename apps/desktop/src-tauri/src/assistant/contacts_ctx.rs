@@ -40,6 +40,9 @@ pub struct ContactBrief {
 #[derive(Debug, Clone, Default)]
 pub struct ContactCallStats {
     pub call_count: i64,
+    /// [B27.9] Сколько из них в поиске (есть в assistant_index_state) —
+    /// failed/обрабатывающиеся звонки считаются в call_count, но помечаются.
+    pub indexed_count: i64,
     /// (id, титул, «ДД.ММ.ГГГГ») последнего звонка.
     pub last_call: Option<(String, String, String)>,
 }
@@ -104,14 +107,26 @@ pub async fn list_contact_briefs(pool: &SqlitePool) -> Result<Vec<ContactBrief>,
 }
 
 /// Совместные звонки контакта (подтверждённые привязки call_speakers).
+/// [B27.9] Без фильтра `c.status='ready'`: failed-звонок с транскриптом —
+/// всё ещё реальный совместный звонок (кейс «Буланов: 2 звонка, оба failed
+/// после repair — карточка говорила „не записано"»). Отдельно считаем
+/// сколько в поиске (assistant_index_state — истинный критерий, тот же,
+/// что у index_stats).
 pub async fn contact_call_stats(
     pool: &SqlitePool,
     contact_id: &str,
 ) -> Result<ContactCallStats, AppError> {
     let (call_count,): (i64,) = sqlx::query_as(
         "SELECT COUNT(DISTINCT cs.call_id) FROM call_speakers cs
-         JOIN calls c ON c.id = cs.call_id
-         WHERE cs.contact_id = ?1 AND cs.confirmed = 1 AND c.status = 'ready'",
+         WHERE cs.contact_id = ?1 AND cs.confirmed = 1",
+    )
+    .bind(contact_id)
+    .fetch_one(pool)
+    .await?;
+    let (indexed_count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(DISTINCT cs.call_id) FROM call_speakers cs
+         JOIN assistant_index_state s ON s.call_id = cs.call_id
+         WHERE cs.contact_id = ?1 AND cs.confirmed = 1",
     )
     .bind(contact_id)
     .fetch_one(pool)
@@ -119,7 +134,7 @@ pub async fn contact_call_stats(
     let last_call: Option<(String, Option<String>, String)> = sqlx::query_as(
         "SELECT c.id, c.title, c.started_at FROM call_speakers cs
          JOIN calls c ON c.id = cs.call_id
-         WHERE cs.contact_id = ?1 AND cs.confirmed = 1 AND c.status = 'ready'
+         WHERE cs.contact_id = ?1 AND cs.confirmed = 1
          ORDER BY c.started_at DESC LIMIT 1",
     )
     .bind(contact_id)
@@ -127,6 +142,7 @@ pub async fn contact_call_stats(
     .await?;
     Ok(ContactCallStats {
         call_count,
+        indexed_count,
         last_call: last_call.map(|(id, title, started_at)| {
             let title = title
                 .filter(|t| !t.trim().is_empty())
@@ -163,6 +179,11 @@ pub fn contact_card_text(c: &ContactBrief, stats: &ContactCallStats) -> String {
     }
     if stats.call_count > 0 {
         text.push_str(&format!(" Звонков вместе: {}", stats.call_count));
+        // [B27.9] Часть звонков вне поиска (failed/в обработке) — честно
+        // помечаем, чтобы модель не обещала контент, которого нет в индексе.
+        if stats.indexed_count < stats.call_count {
+            text.push_str(&format!(" (в поиске {})", stats.indexed_count));
+        }
         if let Some((_, title, date)) = &stats.last_call {
             text.push_str(&format!(", последний — «{title}», {date}"));
         }
@@ -268,9 +289,15 @@ mod tests {
         .execute(&db.pool)
         .await
         .unwrap();
+        // [B27.9] Звонок в индексе — карточка без пометки «(в поиске M)».
+        sqlx::query("INSERT INTO assistant_index_state (call_id) VALUES ('c1')")
+            .execute(&db.pool)
+            .await
+            .unwrap();
 
         let stats = contact_call_stats(&db.pool, "ct1").await.unwrap();
         assert_eq!(stats.call_count, 1);
+        assert_eq!(stats.indexed_count, 1);
         let (_, title, date) = stats.last_call.as_ref().unwrap();
         assert_eq!(title, "Синхрон");
         assert_eq!(date, "01.07.2026");
@@ -289,6 +316,65 @@ mod tests {
             card,
             "Иван Петров — контакт, Acme. Заметки: Партнёр по инвойсу. \
              Звонков вместе: 1, последний — «Синхрон», 01.07.2026."
+        );
+    }
+
+    // [B27.9] Failed-звонок с confirmed-привязкой считается, но помечается
+    // «(в поиске M)» — кейс Буланова (repair оставил status='failed').
+    #[tokio::test]
+    async fn failed_call_counted_but_marked_not_indexed() {
+        let db = fresh_db().await;
+        sqlx::query(
+            "INSERT INTO contacts (id, display_name, created_at, updated_at)
+             VALUES ('ct1', 'Ренат Буланов', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        for (id, title, status, day) in [
+            ("c1", "Big Data", "failed", "02"),
+            ("c2", "Перерегистрация", "ready", "01"),
+        ] {
+            sqlx::query(
+                "INSERT INTO calls (id, title, started_at, duration_sec, status, path_label, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, 60, ?4, 'managed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            )
+            .bind(id)
+            .bind(title)
+            .bind(format!("2026-07-{day}T09:00:00+00:00"))
+            .bind(status)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO call_speakers (id, call_id, speaker_tag, contact_id, confirmed)
+                 VALUES (?1, ?2, 'speaker:1', 'ct1', 1)",
+            )
+            .bind(format!("cs-{id}"))
+            .bind(id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        }
+        // В индексе только ready-звонок.
+        sqlx::query("INSERT INTO assistant_index_state (call_id) VALUES ('c2')")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let stats = contact_call_stats(&db.pool, "ct1").await.unwrap();
+        assert_eq!(stats.call_count, 2);
+        assert_eq!(stats.indexed_count, 1);
+        // Последний звонок — failed «Big Data» (02.07): без status-фильтра.
+        let (_, title, date) = stats.last_call.as_ref().unwrap();
+        assert_eq!(title, "Big Data");
+        assert_eq!(date, "02.07.2026");
+
+        let card = contact_card_text(&brief("Ренат Буланов"), &stats);
+        assert!(card.contains("Звонков вместе: 2 (в поиске 1)"), "{card}");
+        assert!(
+            card.contains("последний — «Big Data», 02.07.2026"),
+            "{card}"
         );
     }
 
