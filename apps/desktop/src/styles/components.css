@@ -1327,31 +1327,38 @@ html.recording-widget .rec-float {
    Канон: docs/design/wotold-v2/assistant.md. Базовые .ask-* / .composer-* /
    .fade-up живут в wk.css — здесь только фиче-классы раздела. */
 .as-layout { display: flex; flex: 1 1 auto; min-height: 0; }
-.as-chats {
-  flex: 0 0 232px;
-  width: 232px;
+/* [B29.4] Универсальная левая панель-список (Assistant/Contacts/Settings):
+   прозрачный фон, ширина var(--side-w), collapse до 48px-полосы. */
+.side-list {
+  position: relative;
+  flex: 0 0 var(--side-w, 240px);
+  width: var(--side-w, 240px);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-.as-chats-list { flex: 1; min-height: 0; padding: 6px 8px 10px; }
-/* [B27.2] Header панели чатов: кнопка+collapse и поиск — единая секция. */
-.as-chats-head {
+.side-list[data-collapsed] {
+  flex-basis: 48px;
+  width: 48px;
+}
+.side-list-mini {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 6px;
-  padding: 10px 10px 6px;
-}
-.as-chats-head-row {
-  display: flex;
-  gap: 6px;
-}
-.as-chats-head-row .btn {
+  padding: 10px 0;
   flex: 1;
+  min-height: 0;
 }
-.as-search {
-  height: 28px;
+.side-list .lrow[data-active='true'] { background: var(--active); }
+.as-chats-list { flex: 1; min-height: 0; padding: 6px 8px 10px; }
+/* [B29.3] Слим-ряд панели чатов: лейбл + collapse-шеврон. */
+.as-chats-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 0 12px;
 }
 /* [B27.3] Название активного чата в хедере раздела. */
 .as-head-chat {
@@ -1626,25 +1633,9 @@ button.chip::after {
   color: var(--warn);
 }
 
-/* ── [B26.11] Панель чатов: resize + collapse ── */
-.as-chats {
-  position: relative;
-  flex-basis: var(--aschats-w, 232px);
-  width: var(--aschats-w, 232px);
-}
-.as-chats[data-collapsed] {
-  flex-basis: 48px;
-  width: 48px;
-}
-.as-chats-mini {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 0;
-}
-/* Хэндл — копия канонного .rail-resize (wk.css:72). */
-.as-resize {
+/* ── [B26.11→B29.5a] Resize-хэндл панелей (side-list) ──
+   Хэндл — копия канонного .rail-resize (wk.css:72). */
+.panel-resize {
   position: absolute;
   top: 0;
   right: -3px;
@@ -1653,7 +1644,7 @@ button.chip::after {
   cursor: col-resize;
   z-index: 5;
 }
-.as-resize::after {
+.panel-resize::after {
   content: '';
   position: absolute;
   top: 0;
@@ -1663,10 +1654,10 @@ button.chip::after {
   background: transparent;
   transition: background var(--fast);
 }
-.as-resize:hover::after,
-.as-resize:active::after {
+.panel-resize:hover::after,
+.panel-resize:active::after {
   background: var(--accent);
 }
 @media (prefers-reduced-motion: reduce) {
-  .as-resize::after { transition: none; }
+  .panel-resize::after { transition: none; }
 }

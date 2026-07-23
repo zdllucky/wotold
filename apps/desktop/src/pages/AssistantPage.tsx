@@ -2,7 +2,7 @@
 // Колонка чатов 232px (группировка по дням, trash по hover) + тред + композер.
 // Данные: useAssistantChats (module-кэш = keep-alive между видами).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { getAssistantIndexStats } from '../api/assistant';
 import type { AssistantChatMeta, AssistantIndexStats } from '@wotold/contracts';
@@ -10,6 +10,7 @@ import { AskThread } from '../components/assistant/AskThread';
 import { AssistantComposer } from '../components/assistant/AssistantComposer';
 import { SUGGESTIONS, pickSuggestions } from '../components/assistant/suggestions';
 import { useAssistantChats } from '../hooks/useAssistantChats';
+import { useResizablePanel } from '../hooks/useResizablePanel';
 import { useI18n, type TranslationKey } from '../i18n';
 import { Button, Chip, Icon, IconBtn, Tooltip, useToast } from '../ui';
 import { fuzzyFilter } from '../lib/fuzzy';
@@ -29,35 +30,6 @@ export interface AssistantPageProps {
 interface ChatGroup {
   label: string;
   items: AssistantChatMeta[];
-}
-
-// [B26.11] Панель чатов: границы resize + persist в localStorage
-// (паттерн рейла: App.tsx readSavedRailW / wk-railw).
-const ASCHATS_MIN = 180;
-const ASCHATS_MAX = 400;
-const ASCHATS_DEFAULT = 232;
-const ASCHATS_COLLAPSE_AT = 150;
-
-/** Чистый clamp ширины панели (unit-тестируется). */
-export function clampChatsWidth(w: number): number {
-  return Math.max(ASCHATS_MIN, Math.min(ASCHATS_MAX, w));
-}
-
-function readSavedChatsW(): number {
-  try {
-    const v = parseInt(localStorage.getItem('wk-aschatsw') ?? '', 10);
-    return v >= ASCHATS_MIN && v <= ASCHATS_MAX ? v : ASCHATS_DEFAULT;
-  } catch {
-    return ASCHATS_DEFAULT;
-  }
-}
-
-function readSavedChatsCollapsed(): boolean {
-  try {
-    return localStorage.getItem('wk-aschats-collapsed') === '1';
-  } catch {
-    return false;
-  }
 }
 
 /** 3-формный плюрал (ru-правило; en/kk-словари несут свои формы под теми же
@@ -91,48 +63,22 @@ export function AssistantPage({
   } = useAssistantChats();
   const [stats, setStats] = useState<AssistantIndexStats | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  // [B26.11] Панель чатов: ширина/collapse (persist) + fuzzy-поиск.
-  const [panelW, setPanelW] = useState<number>(readSavedChatsW);
-  const [panelCollapsed, setPanelCollapsed] = useState<boolean>(readSavedChatsCollapsed);
+  // [B29.5a] Панель чатов на общем хуке (B26.11-паттерн); ключи прежние —
+  // сохранённое состояние юзеров переживает апдейт.
+  const {
+    width: panelW,
+    collapsed: panelCollapsed,
+    setCollapsed: setPanelCollapsed,
+    onResizeStart: onPanelResizeStart,
+  } = useResizablePanel({
+    min: 180,
+    max: 400,
+    defaultWidth: 232,
+    collapseAt: 150,
+    widthKey: 'wk-aschatsw',
+    collapsedKey: 'wk-aschats-collapsed',
+  });
   const [chatQuery, setChatQuery] = useState('');
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('wk-aschatsw', String(panelW));
-      localStorage.setItem('wk-aschats-collapsed', panelCollapsed ? '1' : '0');
-    } catch {
-      // localStorage недоступен — не критично
-    }
-  }, [panelW, panelCollapsed]);
-
-  // Drag правой грани (паттерн рейла App.tsx onResizeStart).
-  const onPanelResizeStart = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      const sx = e.clientX;
-      const sw = panelW;
-      const end = () => {
-        document.removeEventListener('mousemove', move);
-        document.removeEventListener('mouseup', end);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      };
-      const move = (ev: MouseEvent) => {
-        const w = sw + (ev.clientX - sx);
-        if (w < ASCHATS_COLLAPSE_AT) {
-          setPanelCollapsed(true);
-          end();
-          return;
-        }
-        setPanelW(clampChatsWidth(w));
-      };
-      document.addEventListener('mousemove', move);
-      document.addEventListener('mouseup', end);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-    },
-    [panelW],
-  );
 
   useEffect(() => {
     getAssistantIndexStats()
@@ -241,25 +187,42 @@ export function AssistantPage({
             </Chip>
           </Tooltip>
         ) : null}
+        {/* [B29.3] Поиск по чатам — по центру шапки (канон omni звонков). */}
+        <div style={{ flex: '1 1 auto', maxWidth: 300, minWidth: 120, marginLeft: 'var(--s2)' }}>
+          <label className="input" style={{ height: 32 }}>
+            <Icon name="search" size={14} className="iico" />
+            <input
+              placeholder={t('assistant.searchChats')}
+              aria-label={t('assistant.searchChats')}
+              value={chatQuery}
+              onChange={(e) => setChatQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setChatQuery('');
+              }}
+            />
+          </label>
+        </div>
+        <div style={{ flex: 1 }} />
+        {/* [B29.2] «Новый чат» — правое действие шапки (канон Контактов).
+            При свёрнутой панели НЕ разворачивает её — просто открывает тред. */}
+        <Button
+          variant="primary"
+          size="sm"
+          leading={<Icon name="plus" size={14} />}
+          onClick={startNewChat}
+        >
+          {t('assistant.newChat')}
+        </Button>
       </ViewHead>
       <div className="as-layout">
         <div
-          className="as-chats"
+          className="side-list as-chats"
           data-collapsed={panelCollapsed || undefined}
-          style={{ ['--aschats-w' as string]: `${panelW}px` } as React.CSSProperties}
+          style={{ ['--side-w' as string]: `${panelW}px` } as React.CSSProperties}
         >
           {panelCollapsed ? (
-            // [B26.11] Свёрнутая панель: «Новый чат» иконкой + развернуть.
-            <div className="as-chats-mini">
-              <IconBtn
-                icon="plus"
-                label={t('assistant.newChat')}
-                tip={t('assistant.newChat')}
-                onClick={() => {
-                  setPanelCollapsed(false);
-                  startNewChat();
-                }}
-              />
+            // [B29.3] Свёрнутая панель: только развернуть («Новый чат» — в шапке).
+            <div className="side-list-mini">
               <IconBtn
                 icon="chevronRight"
                 label={t('assistant.expandPanel')}
@@ -269,38 +232,18 @@ export function AssistantPage({
             </div>
           ) : (
             <>
-          {/* [B27.2] Цельный header панели: кнопка+collapse и поиск с иконкой. */}
-          <div className="as-chats-head">
-            <div className="as-chats-head-row">
-              <Button
-                variant="default"
-                size="sm"
-                block
-                leading={<Icon name="plus" size={14} />}
-                onClick={startNewChat}
-              >
-                {t('assistant.newChat')}
-              </Button>
-              <IconBtn
-                icon="chevronLeft"
-                label={t('assistant.collapsePanel')}
-                tip={t('assistant.collapsePanel')}
-                onClick={() => setPanelCollapsed(true)}
-              />
-            </div>
-            {/* [B26.11] Fuzzy-поиск по титулам чатов; Esc — сброс. */}
-            <label className="input as-search">
-              <Icon name="search" size={14} className="iico" />
-              <input
-                placeholder={t('assistant.searchChats')}
-                aria-label={t('assistant.searchChats')}
-                value={chatQuery}
-                onChange={(e) => setChatQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') setChatQuery('');
-                }}
-              />
-            </label>
+          {/* [B29.3] Слим-ряд панели: лейбл + collapse (контрол принадлежит панели). */}
+          <div className="as-chats-top">
+            <span className="sec-label" style={{ padding: 0 }}>
+              <span>{t('assistant.chatsPanel')}</span>
+            </span>
+            <IconBtn
+              icon="chevronLeft"
+              size="sm"
+              label={t('assistant.collapsePanel')}
+              tip={t('assistant.collapsePanel')}
+              onClick={() => setPanelCollapsed(true)}
+            />
           </div>
           <div className="as-chats-list scroll">
             {groups.map((g) => (
@@ -356,7 +299,7 @@ export function AssistantPage({
           )}
           {!panelCollapsed && (
             // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-            <div className="as-resize" onMouseDown={onPanelResizeStart} aria-hidden="true" />
+            <div className="panel-resize" onMouseDown={onPanelResizeStart} aria-hidden="true" />
           )}
         </div>
 
