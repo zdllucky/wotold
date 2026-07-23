@@ -141,6 +141,18 @@ describe('панель чатов', () => {
     });
   });
 
+  // [B27.3] Открытый чат показывает свой титул в хедере вместо чипа статистики.
+  it('активный чат → его название в .view-head, statsChip скрыт', async () => {
+    const { container } = renderPage();
+    await waitFor(() => expect(screen.getByText('Планёрки итоги июня')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Планёрки итоги июня/ }));
+    await waitFor(() => {
+      const head = container.querySelector('.view-head') as HTMLElement;
+      expect(head.querySelector('.as-head-chat')?.textContent).toBe('Планёрки итоги июня');
+    });
+    expect(screen.queryByText(/в поиске 1 из 1/)).not.toBeInTheDocument();
+  });
+
   it('clampChatsWidth держит границы 180-400', () => {
     expect(clampChatsWidth(100)).toBe(180);
     expect(clampChatsWidth(500)).toBe(400);
