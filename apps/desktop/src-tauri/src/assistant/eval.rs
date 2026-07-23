@@ -368,6 +368,7 @@ async fn eval_level_b_hybrid_real_model() {
             scope_of(&case),
             Some(emb.clone()),
             &cache,
+            None,
         )
         .await
         .unwrap();

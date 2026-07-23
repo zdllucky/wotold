@@ -173,6 +173,7 @@ pub fn build_input(
     dates: &HashMap<String, String>,
     history: &[AssistantMessage],
     question: &str,
+    today: &str,
 ) -> String {
     let mut out = String::new();
 
@@ -216,6 +217,9 @@ pub fn build_input(
         }
     }
 
+    // [B26.3] Текущая дата — модель соотносит «вчера/в июне» из вопроса
+    // с датами в заголовках фрагментов (M16.2).
+    out.push_str(&format!("\nСегодня: {today}."));
     out.push_str(&format!("\nВОПРОС: {question}"));
     out
 }
@@ -286,7 +290,8 @@ pub async fn generate_answer(
 ) -> Result<(String, Vec<usize>), AppError> {
     let mode = detect_prompt_mode(question);
     let system = build_system_prompt(mode);
-    let input = build_input(fragments, titles, dates, history, question);
+    let today = chrono::Local::now().format("%d.%m.%Y").to_string();
+    let input = build_input(fragments, titles, dates, history, question, &today);
 
     let mut parsed = generate_once(provider, system.to_string(), input.clone()).await?;
     if parsed.answer.trim().is_empty() {
@@ -365,6 +370,7 @@ mod tests {
             &HashMap::new(),
             &history,
             "О чём договорились?",
+            "23.07.2026",
         );
 
         assert!(input.contains("[1] «Синхрон по пилоту» · owner · 1:02:\nпро приватность"));
@@ -384,7 +390,7 @@ mod tests {
         let frags = vec![frag("c1", Some("owner"), Some(62_000), "текст")];
         let titles = HashMap::from([("c1".to_string(), "Синхрон".to_string())]);
         let dates = HashMap::from([("c1".to_string(), "01.07.2026".to_string())]);
-        let input = build_input(&frags, &titles, &dates, &[], "вопрос?");
+        let input = build_input(&frags, &titles, &dates, &[], "вопрос?", "23.07.2026");
         assert!(
             input.contains("[1] «Синхрон» · 01.07.2026 · owner · 1:02:"),
             "got: {input}"
@@ -428,7 +434,14 @@ mod tests {
             msg(AssistantRole::User, "вопрос-3"),
             msg(AssistantRole::Assistant, "ответ-3"),
         ];
-        let input = build_input(&[], &HashMap::new(), &HashMap::new(), &history, "q");
+        let input = build_input(
+            &[],
+            &HashMap::new(),
+            &HashMap::new(),
+            &history,
+            "q",
+            "23.07.2026",
+        );
         assert!(!input.contains("старый-старый"), "только 2 последние пары");
         assert!(input.contains("вопрос-2"));
         // Длинный ответ усечён до ~600 байт.
@@ -441,7 +454,14 @@ mod tests {
 
     #[test]
     fn empty_history_and_fragments_still_render() {
-        let input = build_input(&[], &HashMap::new(), &HashMap::new(), &[], "вопрос?");
+        let input = build_input(
+            &[],
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+            "вопрос?",
+            "23.07.2026",
+        );
         assert!(input.contains("<<<ФРАГМЕНТЫ>>>"));
         assert!(input.contains("<<<КОНЕЦ ФРАГМЕНТОВ>>>"));
         assert!(!input.contains("Предыдущий диалог"));
@@ -460,7 +480,14 @@ mod tests {
             AssistantRole::Assistant,
             "прошлый ответ с <<<маркером>>>",
         )];
-        let input = build_input(&frags, &titles, &HashMap::new(), &history, "вопрос?");
+        let input = build_input(
+            &frags,
+            &titles,
+            &HashMap::new(),
+            &history,
+            "вопрос?",
+            "23.07.2026",
+        );
 
         // Ровно один настоящий открывающий и один закрывающий маркер — наши.
         assert_eq!(input.matches("<<<ФРАГМЕНТЫ>>>").count(), 1);
@@ -477,7 +504,14 @@ mod tests {
     #[test]
     fn unknown_title_falls_back_to_call_id() {
         let frags = vec![frag("c-unknown", None, None, "текст")];
-        let input = build_input(&frags, &HashMap::new(), &HashMap::new(), &[], "q");
+        let input = build_input(
+            &frags,
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+            "q",
+            "23.07.2026",
+        );
         assert!(input.contains("[1] «c-unknown»"));
     }
 
