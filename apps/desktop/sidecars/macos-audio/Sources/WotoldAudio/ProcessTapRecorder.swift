@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import WotoldAudioCore
 
 // macOS 14.4+ Core Audio Process Tap для захвата ВСЕГО системного аудио,
 // включая приложения которые маршрутизируют звук в обход системного микса
@@ -186,6 +187,10 @@ final class ProcessTapRecorder: NSObject {
             }
             try wavWriter?.close()
             let oldBytes = bytesWritten
+            // [TD-06] См. AudioRecorder.rotate: обнуляем до открытия, чтобы при
+            // провале не писать в закрытый handle и дать следующей ротации
+            // поднять системную дорожку заново.
+            wavWriter = nil
 
             let newWriter = try WAVWriter(url: url, sampleRate: 16_000, channels: 1)
             wavWriter = newWriter
