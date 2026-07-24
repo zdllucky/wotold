@@ -232,13 +232,20 @@ pub async fn local_engine_eval_recap(
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<RecapEvalDto, AppError> {
-    let call_dir = state.app_data_dir.join("calls").join(&call_id);
-    let recap = tokio::fs::read_to_string(call_dir.join("recap.md"))
-        .await
-        .map_err(|e| AppError::Other(format!("recap.md read: {e}")))?;
-    let transcript = tokio::fs::read_to_string(call_dir.join("transcript.md"))
-        .await
-        .map_err(|e| AppError::Other(format!("transcript.md read: {e}")))?;
+    // [TD-05] Раньше здесь был ручной `app_data_dir.join("calls").join(&call_id)`
+    // мимо CallStore — то есть чтение произвольного recap.md/transcript.md в ФС
+    // по `call_id = "../../.."`. Теперь id валидируется, а путь строит store.
+    let parsed_id = crate::call_id::CallId::parse(&call_id)?;
+    let recap = state
+        .store
+        .read_artifact(&parsed_id, crate::call_store::ArtifactKind::Recap)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("recap.md для звонка {call_id}")))?;
+    let transcript = state
+        .store
+        .read_artifact(&parsed_id, crate::call_store::ArtifactKind::Transcript)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("transcript.md для звонка {call_id}")))?;
     let call = crate::db::get_call(&state.db, &call_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;

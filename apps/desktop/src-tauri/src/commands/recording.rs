@@ -1,5 +1,6 @@
 //! Commands for start/stop recording + audio permissions.
 
+use crate::call_id::CallId;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -62,9 +63,9 @@ pub struct RecordingState {
 /// [W2] Снимок DB-полей паузы для построения RecordingState.
 async fn pause_snapshot(
     state: &State<'_, AppState>,
-    call_id: &str,
+    call_id: &CallId,
 ) -> Result<(Option<String>, i64), AppError> {
-    let call = crate::db::get_call(&state.db, call_id)
+    let call = crate::db::get_call(&state.db, call_id.as_str())
         .await?
         .ok_or_else(|| AppError::Other(format!("call {call_id} not found")))?;
     Ok((call.paused_at, call.paused_total_ms))
@@ -83,7 +84,7 @@ pub async fn get_recording_state(
     // Освобождаем lock до DB-запроса, чтобы pause/resume не блокировались.
     drop(guard);
 
-    let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
+    let (paused_at, paused_total_ms) = pause_snapshot(&state, &CallId::from_db(&call_id)).await?;
     Ok(Some(RecordingState {
         call_id,
         started_at,
@@ -120,14 +121,15 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     // в #20/#21 (когда провайдеры реально начнут вызываться).
     let path_label = "managed";
     let call = crate::db::insert_recording(&state.db, path_label).await?;
-    let mic_path = state.store.mic_path(&call.id);
-    let system_path = state.store.system_path(&call.id);
+    let mic_path = state.store.mic_path(&CallId::from_db(&call.id));
+    let system_path = state.store.system_path(&CallId::from_db(&call.id));
 
     // [M13.1.5c] Если CHUNKED_PIPELINE=ON + engine=local — настраиваем каналы
     // для chunk_orchestrator. Cloud engine ignor'ит флаг (server-side streaming
     // даёт минимальный win от chunking). При любых ошибках setup (preset не
     // задан, модель не скачана) — откатываемся на happy path без chunked.
-    let chunked_setup = match prepare_chunked_setup(&app, &state, &call.id).await {
+    let chunked_setup = match prepare_chunked_setup(&app, &state, &CallId::from_db(&call.id)).await
+    {
         Ok(setup) => setup,
         Err(e) => {
             log::warn!("chunked_pipeline disabled (setup failed): {e}; falling back to full-file");
@@ -141,9 +143,13 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     // `chunk_mic_path(0)`. Root `mic.wav`/`system.wav` — цель финального merge.
     // В non-chunked режиме sidecar пишет в root (прежнее поведение).
     let chunked = chunked_setup.is_some();
-    let (sidecar_mic, sidecar_system) = sidecar_write_paths(&state.store, &call.id, chunked);
+    let (sidecar_mic, sidecar_system) =
+        sidecar_write_paths(&state.store, &CallId::from_db(&call.id), chunked);
     if chunked {
-        state.store.ensure_chunk_dir(&call.id, 0).await?;
+        state
+            .store
+            .ensure_chunk_dir(&CallId::from_db(&call.id), 0)
+            .await?;
     }
 
     match audio_macos::start(
@@ -164,7 +170,7 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
             // Spawn orchestrator только если setup succeed'ил — session уже
             // в state.recording, rotate_fn будет lock'ать тот же Mutex.
             if let Some(setup) = chunked_setup {
-                spawn_orchestrator(&state, &app, &call.id, setup).await;
+                spawn_orchestrator(&state, &app, &CallId::from_db(&call.id), setup).await;
             }
 
             EventBus::new(Some(&app)).recording_state_changed();
@@ -249,7 +255,7 @@ pub async fn reconcile_orphan_recordings(
     let ids = db::list_orphan_recording_ids(pool).await?;
     let mut handled = 0usize;
     for id in ids {
-        let dur = wav_duration_secs(&store.mic_path(&id));
+        let dur = wav_duration_secs(&store.mic_path(&CallId::from_db(&id)));
         match dur {
             Some(d) if d >= MIN_RECORDING_SEC => {
                 // Per-id non-fatal: одна битая строка не должна блокировать остальные.
@@ -267,7 +273,7 @@ pub async fn reconcile_orphan_recordings(
                 // remove_call_dir сносит весь calls/<id>/ (вкл. chunks/) — C5.
                 match db::delete_call_and_samples(pool, &id).await {
                     Ok(()) => {
-                        let _ = store.remove_call_dir(&id).await;
+                        let _ = store.remove_call_dir(&CallId::from_db(&id)).await;
                         log::warn!(
                             "orphan recording {id}: discarded (interrupted <30s or no audio)"
                         );
@@ -365,7 +371,10 @@ pub async fn stop_recording(
                 // residual-аудио при chunked-записи.
                 match crate::db::delete_call_and_samples(&state.db, &call_id).await {
                     Ok(()) => {
-                        let _ = state.store.remove_call_dir(&call_id).await;
+                        let _ = state
+                            .store
+                            .remove_call_dir(&CallId::from_db(&call_id))
+                            .await;
                     }
                     Err(e) => {
                         log::warn!("min-duration discard: delete call {call_id} failed: {e}");
@@ -395,7 +404,7 @@ pub async fn stop_recording(
     spawn_finalize_and_pipeline(
         &state,
         &app,
-        call_id,
+        CallId::from_db(&call_id),
         mic_path,
         system_path,
         orch_handle,
@@ -434,7 +443,7 @@ fn plan_final_chunk(rows: &[db::chunks::ChunkRow], k: u32) -> FinalChunkAction {
 fn spawn_finalize_and_pipeline(
     state: &State<'_, AppState>,
     app: &AppHandle,
-    call_id: String,
+    call_id: CallId,
     mic_path: std::path::PathBuf,
     system_path: std::path::PathBuf,
     orch_handle: Option<tauri::async_runtime::JoinHandle<chunk_orchestrator::OrchestratorSummary>>,
@@ -476,7 +485,7 @@ fn spawn_finalize_and_pipeline(
             store,
             app,
             pipeline_tasks,
-            call_id,
+            call_id.as_str().to_string(),
             mic_path,
             system_path,
         )
@@ -493,12 +502,12 @@ async fn process_final_chunk(
     store: &Arc<CallStore>,
     app_data_dir: &std::path::Path,
     app: &AppHandle,
-    call_id: &str,
+    call_id: &CallId,
     summary: &chunk_orchestrator::OrchestratorSummary,
     total_ms: u64,
 ) -> Result<(), AppError> {
     let k = summary.final_chunk_idx;
-    let rows = db::chunks::list_chunks_by_call(db, call_id).await?;
+    let rows = db::chunks::list_chunks_by_call(db, call_id.as_str()).await?;
     let action = plan_final_chunk(&rows, k);
     if action == FinalChunkAction::Skip {
         log::debug!("final chunk {call_id}/{k}: skip (already tracked as done/processing)");
@@ -531,10 +540,11 @@ async fn process_final_chunk(
     // Гарантировать pending-строку перед run_chunk (он делает pending→processing).
     match action {
         FinalChunkAction::RunAfterReset => {
-            db::chunks::mark_chunk_pending(db, call_id, k).await?;
+            db::chunks::mark_chunk_pending(db, call_id.as_str(), k).await?;
         }
         FinalChunkAction::Run => {
-            db::chunks::insert_chunk(db, call_id, k, start_ms, &mic_path, &system_path).await?;
+            db::chunks::insert_chunk(db, call_id.as_str(), k, start_ms, &mic_path, &system_path)
+                .await?;
         }
         FinalChunkAction::Skip => unreachable!(),
     }
@@ -593,7 +603,7 @@ pub async fn pause_recording(
     if let Some(tx) = state.orchestrator_pause_tx.lock().await.as_ref() {
         let _ = tx.try_send(true);
     }
-    let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
+    let (paused_at, paused_total_ms) = pause_snapshot(&state, &CallId::from_db(&call_id)).await?;
     EventBus::new(Some(&app)).recording_state_changed();
     Ok(RecordingState {
         call_id,
@@ -624,7 +634,7 @@ pub async fn resume_recording(
     if let Some(tx) = state.orchestrator_pause_tx.lock().await.as_ref() {
         let _ = tx.try_send(false);
     }
-    let (paused_at, paused_total_ms) = pause_snapshot(&state, &call_id).await?;
+    let (paused_at, paused_total_ms) = pause_snapshot(&state, &CallId::from_db(&call_id)).await?;
     EventBus::new(Some(&app)).recording_state_changed();
     Ok(RecordingState {
         call_id,
@@ -678,7 +688,7 @@ pub fn open_system_privacy_pane(pane: String) -> Result<(), AppError> {
 /// Pure (без side-effects); создание `chunks/0/` — на caller'е (ensure_chunk_dir).
 fn sidecar_write_paths(
     store: &CallStore,
-    call_id: &str,
+    call_id: &CallId,
     chunked: bool,
 ) -> (std::path::PathBuf, std::path::PathBuf) {
     if chunked {
@@ -712,7 +722,7 @@ pub(crate) async fn build_chunk_providers(
     app_data_dir: &std::path::Path,
     app: &AppHandle,
     // [Q] call_id → STT-очередь (QueueMonitor видит чей звонок у whisper'а).
-    call_id: &str,
+    call_id: &CallId,
 ) -> Result<ChunkProviders, AppError> {
     let preset = db::get_setting(db, SETTING_ACTIVE_PRESET)
         .await?
@@ -727,11 +737,11 @@ pub(crate) async fn build_chunk_providers(
     // TrackKind влияет на дефолтные speaker tags ("owner" для mic, "speaker:0"
     // для system) — их потом переcassign'ает cluster pipeline.
     let mic = LocalWhisperProvider::for_preset(app_data_dir, whisper_id, TrackKind::MicOwner)
-        .with_call(call_id)
+        .with_call(call_id.as_str())
         .with_app(app.clone())
         .await;
     let system = LocalWhisperProvider::for_preset(app_data_dir, whisper_id, TrackKind::System)
-        .with_call(call_id)
+        .with_call(call_id.as_str())
         .with_app(app.clone())
         .await;
     let mic: Arc<dyn TranscriptionProvider> = Arc::new(mic);
@@ -814,7 +824,7 @@ struct ChunkedSetup {
 async fn prepare_chunked_setup(
     app: &AppHandle,
     state: &State<'_, AppState>,
-    call_id: &str,
+    call_id: &CallId,
 ) -> Result<Option<ChunkedSetup>, AppError> {
     let _ = call_id;
 
@@ -868,7 +878,7 @@ async fn prepare_chunked_setup(
 async fn spawn_orchestrator(
     state: &State<'_, AppState>,
     app: &AppHandle,
-    call_id: &str,
+    call_id: &CallId,
     setup: ChunkedSetup,
 ) {
     let ChunkedSetup {
@@ -891,9 +901,9 @@ async fn spawn_orchestrator(
     let store = state.store.clone();
     let call_id_str = call_id.to_string();
 
-    let rotate_fn = make_rotate_fn(call_id_str.clone(), store.clone(), session_ref);
+    let rotate_fn = make_rotate_fn(call_id.clone(), store.clone(), session_ref);
     let enqueue_fn = make_enqueue_fn(
-        call_id_str.clone(),
+        call_id.clone(),
         pool.clone(),
         store.clone(),
         mic_provider,
@@ -939,7 +949,7 @@ async fn spawn_orchestrator(
 /// Closure factory для rotate-callback. Lock'аем `state.recording` Mutex чтобы
 /// получить `&mut RecordingSession` для `audio_macos::rotate`.
 fn make_rotate_fn(
-    call_id: String,
+    call_id: CallId,
     store: Arc<CallStore>,
     session: Arc<Mutex<Option<RecordingSession>>>,
 ) -> impl Fn(u32) -> chunk_orchestrator::RotateFut + Send + Sync + 'static {
@@ -971,7 +981,7 @@ fn make_rotate_fn(
 /// prev_prompt следующего chunk'а.
 #[allow(clippy::too_many_arguments)]
 fn make_enqueue_fn(
-    call_id: String,
+    call_id: CallId,
     pool: SqlitePool,
     store: Arc<CallStore>,
     mic_provider: Arc<dyn TranscriptionProvider>,
@@ -999,7 +1009,7 @@ fn make_enqueue_fn(
             let system_path = store.chunk_system_path(&call_id, chunk_idx);
             db::chunks::insert_chunk(
                 &pool,
-                &call_id,
+                call_id.as_str(),
                 chunk_idx,
                 start_ms,
                 &mic_path,
@@ -1009,7 +1019,7 @@ fn make_enqueue_fn(
             .map_err(|e| format!("insert_chunk({chunk_idx}): {e}"))?;
 
             let input = ChunkRunInput {
-                call_id: call_id.clone(),
+                call_id: call_id.as_str().to_string(),
                 chunk_idx,
                 start_ms,
                 end_ms,
@@ -1052,6 +1062,8 @@ pub async fn retry_chunk(
     call_id: String,
     chunk_idx: u32,
 ) -> Result<(), AppError> {
+    // [TD-05] call_id из webview — валидируем до любых путей.
+    let parsed_id = CallId::parse(&call_id)?;
     use crate::pipeline::chunk_runner;
 
     // 1. Validate chunk существует + status == failed (mark_chunk_pending
@@ -1077,7 +1089,7 @@ pub async fn retry_chunk(
         lang: stt_lang,
         mic_diarization,
         mic_diarization_num_speakers,
-    } = build_chunk_providers(&state.db, &state.app_data_dir, &app, &call_id).await?;
+    } = build_chunk_providers(&state.db, &state.app_data_dir, &app, &parsed_id).await?;
 
     // 4. FSM gate failed → pending. После этого chunk_runner внутри сделает
     //    pending → processing → done|failed.
@@ -1085,8 +1097,8 @@ pub async fn retry_chunk(
 
     // 5. Background spawn — не блокируем UI. Errors handled внутри
     //    chunk_runner (mark_failed + emit chunk_done event).
-    let mic_path = state.store.chunk_mic_path(&call_id, chunk_idx);
-    let system_path = state.store.chunk_system_path(&call_id, chunk_idx);
+    let mic_path = state.store.chunk_mic_path(&parsed_id, chunk_idx);
+    let system_path = state.store.chunk_system_path(&parsed_id, chunk_idx);
     let pool = state.db.clone();
     let app_data_dir = state.app_data_dir.clone();
     let app_for_task = app.clone();
@@ -1136,7 +1148,7 @@ pub async fn retry_chunk(
                 // через `spawn_reprocess` abort+respawn для same call_id.
                 if let Err(e) = maybe_resume_pipeline_after_chunk(
                     &pool,
-                    &call_id_clone,
+                    &CallId::from_db(&call_id_clone),
                     store_for_resume,
                     app_for_resume,
                     tasks_for_resume,
@@ -1164,13 +1176,15 @@ pub async fn recover_chunked_call(
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<(), AppError> {
+    // [TD-05] call_id из webview — валидируем до любых путей.
+    let parsed_id = CallId::parse(&call_id)?;
     spawn_recover_chunked(
         state.db.clone(),
         state.store.clone(),
         state.pipeline_tasks.clone(),
         state.app_data_dir.clone(),
         app,
-        call_id,
+        parsed_id,
     )
     .await
 }
@@ -1185,12 +1199,12 @@ pub(crate) async fn spawn_recover_chunked(
     tasks: crate::services::pipeline_runner::PipelineTasks,
     app_data_dir: std::path::PathBuf,
     app: AppHandle,
-    call_id: String,
+    call_id: CallId,
 ) -> Result<(), AppError> {
     use crate::pipeline::chunk_recovery;
 
     // 1. Валидируем существование звонка.
-    db::get_call(&pool, &call_id)
+    db::get_call(&pool, call_id.as_str())
         .await?
         .ok_or_else(|| AppError::NotFound(format!("call {call_id} not found")))?;
 
@@ -1221,7 +1235,7 @@ pub(crate) async fn spawn_recover_chunked(
             let mic_path = store.chunk_mic_path(&call_id, rc.idx);
             let system_path = store.chunk_system_path(&call_id, rc.idx);
             let input = ChunkRunInput {
-                call_id: call_id.clone(),
+                call_id: call_id.as_str().to_string(),
                 chunk_idx: rc.idx,
                 start_ms: rc.start_ms,
                 end_ms: rc.end_ms,
@@ -1262,7 +1276,7 @@ pub(crate) async fn spawn_recover_chunked(
             store,
             app_bg,
             tasks,
-            call_id.clone(),
+            call_id.as_str().to_string(),
             mic_path,
             system_path,
         )
@@ -1289,7 +1303,7 @@ pub(crate) async fn maybe_headless_recover(app: AppHandle) {
         state.pipeline_tasks.clone(),
         state.app_data_dir.clone(),
         app.clone(),
-        call_id.clone(),
+        CallId::from_db(&call_id),
     )
     .await
     {
@@ -1339,16 +1353,17 @@ pub(crate) async fn auto_recover_interrupted_calls(app: AppHandle) {
         if headless_id.as_deref() == Some(call_id.as_str()) {
             continue;
         }
-        let call_dir = state.store.call_dir(&call_id);
+        let recovered_id = CallId::from_db(call_id.as_str());
+        let call_dir = state.store.call_dir(&recovered_id);
         // Уже обработан (транскрипт есть) — failed относится к хвосту
         // (recap?), не к аудио: не наш кейс.
         if call_dir.join("transcript.md").exists() {
             continue;
         }
         // Аудио должно существовать: root wav или chunk wav.
-        let chunks_dir = state.store.chunks_dir(&call_id);
-        let has_audio = state.store.mic_path(&call_id).exists()
-            || state.store.system_path(&call_id).exists()
+        let chunks_dir = state.store.chunks_dir(&recovered_id);
+        let has_audio = state.store.mic_path(&recovered_id).exists()
+            || state.store.system_path(&recovered_id).exists()
             || !crate::pipeline::audio_merger::list_chunk_wavs(
                 &chunks_dir,
                 crate::pipeline::audio_merger::TrackKind::Mic,
@@ -1385,7 +1400,7 @@ pub(crate) async fn auto_recover_interrupted_calls(app: AppHandle) {
             state.pipeline_tasks.clone(),
             state.app_data_dir.clone(),
             app.clone(),
-            call_id.clone(),
+            CallId::from_db(&call_id),
         )
         .await
         {
@@ -1413,16 +1428,16 @@ pub(crate) async fn auto_recover_interrupted_calls(app: AppHandle) {
 /// `pipeline::run` через chunked path (load_chunked_transcripts skip STT).
 async fn maybe_resume_pipeline_after_chunk(
     pool: &SqlitePool,
-    call_id: &str,
+    call_id: &CallId,
     store: Arc<crate::call_store::CallStore>,
     app: AppHandle,
     tasks: crate::services::pipeline_runner::PipelineTasks,
 ) -> Result<(), AppError> {
-    if !db::chunks::all_chunks_done(pool, call_id).await? {
+    if !db::chunks::all_chunks_done(pool, call_id.as_str()).await? {
         log::debug!("maybe_resume_pipeline_after_chunk[{call_id}]: not all chunks done, skip");
         return Ok(());
     }
-    let Some(call) = db::get_call(pool, call_id).await? else {
+    let Some(call) = db::get_call(pool, call_id.as_str()).await? else {
         return Err(AppError::NotFound(format!("call {call_id}")));
     };
     if call.status == "recording" {
@@ -1505,7 +1520,7 @@ mod tests {
     #[test]
     fn sidecar_write_paths_chunked_uses_chunk0() {
         let store = CallStore::new(std::path::PathBuf::from("/data"));
-        let (mic, sys) = sidecar_write_paths(&store, "c1", true);
+        let (mic, sys) = sidecar_write_paths(&store, &CallId::from_db("c1"), true);
         assert!(
             mic.ends_with("chunks/0/mic.wav"),
             "chunked mic → chunks/0/, got {}",
@@ -1517,7 +1532,7 @@ mod tests {
     #[test]
     fn sidecar_write_paths_non_chunked_uses_root() {
         let store = CallStore::new(std::path::PathBuf::from("/data"));
-        let (mic, sys) = sidecar_write_paths(&store, "c1", false);
+        let (mic, sys) = sidecar_write_paths(&store, &CallId::from_db("c1"), false);
         assert!(
             mic.ends_with("c1/mic.wav"),
             "root mic, got {}",
@@ -1590,8 +1605,12 @@ mod tests {
     /// `secs` of audio (byte_rate=1000 → file_len ≈ secs*1000).
     async fn seed_orphan(pool: &SqlitePool, store: &CallStore, secs: usize) -> String {
         let call = db::insert_recording(pool, "managed").await.unwrap();
-        std::fs::create_dir_all(store.call_dir(&call.id)).unwrap();
-        std::fs::write(store.mic_path(&call.id), wav_bytes(1000, secs * 1000, 0)).unwrap();
+        std::fs::create_dir_all(store.call_dir(&CallId::from_db(&call.id))).unwrap();
+        std::fs::write(
+            store.mic_path(&CallId::from_db(&call.id)),
+            wav_bytes(1000, secs * 1000, 0),
+        )
+        .unwrap();
         call.id
     }
 
@@ -1611,7 +1630,10 @@ mod tests {
             "≥30s interrupted → recoverable failed"
         );
         assert_eq!(after.failed_reason.as_deref(), Some("Запись прервана"));
-        assert!(store.mic_path(&id).exists(), "audio kept for recovery");
+        assert!(
+            store.mic_path(&CallId::from_db(&id)).exists(),
+            "audio kept for recovery"
+        );
     }
 
     #[tokio::test]
@@ -1629,7 +1651,7 @@ mod tests {
             "<30s interrupted → row deleted"
         );
         assert!(
-            !store.call_dir(&id).exists(),
+            !store.call_dir(&CallId::from_db(&id)).exists(),
             "call dir (incl. chunks) removed"
         );
     }

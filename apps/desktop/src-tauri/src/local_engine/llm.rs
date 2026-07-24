@@ -36,6 +36,7 @@ use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
+use crate::call_id::ensure_path_under;
 use crate::pipeline::resource_queue::{self, Resource};
 use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 
@@ -486,30 +487,6 @@ impl LlmProvider for LocalLlamaProvider {
                     .map_err(|e| LlmError::Provider(format!("malformed JSON: {e}")))
             })
     }
-}
-
-/// [Security M-3] Defense-in-depth: проверить что path не содержит `..`
-/// сегментов И начинается с разрешённого prefix. Capability validator
-/// `^[A-Za-z0-9._/\-]+$` пропускает `../../etc/passwd` — это последняя
-/// граница. Канонических `.canonicalize()` НЕ делаем (path может не
-/// существовать на момент проверки — например, output stem whisper-cli).
-///
-/// Returns Err если найден `..` сегмент или prefix не совпадает.
-pub(super) fn ensure_path_under(path: &Path, allowed_prefix: &Path) -> Result<(), String> {
-    if path
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return Err(format!("path {} contains '..' segment", path.display()));
-    }
-    if !path.starts_with(allowed_prefix) {
-        return Err(format!(
-            "path {} not under prefix {}",
-            path.display(),
-            allowed_prefix.display()
-        ));
-    }
-    Ok(())
 }
 
 /// [Security M-2] Запись в файл с mode 0o600 (owner read/write only).
@@ -964,47 +941,6 @@ mod tests {
         let err = write_user_only(&path, b"new").await.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
     }
-
-    // ── ensure_path_under ───────────────────────────────────────────────
-
-    #[test]
-    fn ensure_path_under_accepts_path_inside_prefix() {
-        assert!(ensure_path_under(
-            Path::new("/data/local_engine/models/whisper-small.bin"),
-            Path::new("/data/local_engine"),
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn ensure_path_under_rejects_dotdot_segment() {
-        let err = ensure_path_under(
-            Path::new("/data/local_engine/../etc/passwd"),
-            Path::new("/data/local_engine"),
-        )
-        .expect_err("`..` сегмент → Err");
-        assert!(err.contains("'..' segment"));
-    }
-
-    #[test]
-    fn ensure_path_under_rejects_path_outside_prefix() {
-        let err = ensure_path_under(Path::new("/etc/passwd"), Path::new("/data/local_engine"))
-            .expect_err("вне prefix → Err");
-        assert!(err.contains("not under prefix"));
-    }
-
-    #[test]
-    fn ensure_path_under_handles_relative_paths_safely() {
-        // Relative paths не starts_with absolute prefix — должны быть отклонены.
-        let err = ensure_path_under(
-            Path::new("models/whisper.bin"),
-            Path::new("/data/local_engine"),
-        )
-        .expect_err("relative → Err");
-        assert!(err.contains("not under prefix"));
-    }
-
-    // ── [M14 T-16 P2] Speculative decoding draft model plumbing ─────────
 
     #[test]
     fn provider_default_has_no_draft_model() {

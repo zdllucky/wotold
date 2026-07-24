@@ -173,7 +173,7 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 )));
             }
         }
-        super::llm::ensure_path_under(&stem, &self.tmp_dir)
+        crate::call_id::ensure_path_under(&stem, &self.tmp_dir)
             .map_err(TranscriptionError::Provider)?;
 
         let model_str = self
