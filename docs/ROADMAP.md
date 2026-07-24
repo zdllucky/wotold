@@ -33,7 +33,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 ## M15 · Ассистент (RAG-чат по звонкам)
 
-> PRD: [`M15_ASSISTANT_PRD.md`](M15_ASSISTANT_PRD.md) · дизайн-канон: [`design/wotold-v2/assistant.md`](design/wotold-v2/assistant.md) · хендофф: `~/Downloads/design_handoff_wotold_assistant/`.
+> PRD: [`M15_ASSISTANT_PRD.md`](M15_ASSISTANT_PRD.md) · дизайн-канон: [`design/wotold-v2/assistant.md`](design/wotold-v2/assistant.md) · хендофф: [`design/wotold-v2/_reference-assistant/`](design/wotold-v2/_reference-assistant/).
 > Решения: v1 local-only (cloud → беклог G); retrieval гибрид поэтапно (Ph1 FTS5 → Ph2 эмбеддер+RRF, обе до закрытия M15); окно 8K, источники через json_schema `used_fragments` (детерминированная привязка). UI-часть — батч B24 ниже (параллелится с Ph1 после M15.1).
 
 ### Ph1 — FTS5 retrieval end-to-end

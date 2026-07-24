@@ -1,6 +1,6 @@
 // [B18.6c] DesignSystemPage — Wotold v2 "uikit" showroom (dev-only route 'ds').
 // Living catalog of tokens + ui primitives so we never hallucinate components.
-// Mirrors prototype ~/Downloads/Wotold v2/wk-designsystem.jsx. 0 legacy tokens.
+// Mirrors prototype docs/design/wotold-v2/_reference/wk-designsystem.jsx. 0 legacy tokens.
 
 import { useState } from 'react';
 import {

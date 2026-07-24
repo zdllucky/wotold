@@ -1,0 +1,35 @@
+/* WOTOLD · assistant page add-on (загружается только страницей «Ассистент») */
+.as-layout{display:flex;flex:1 1 auto;min-height:0}
+.as-chats{flex:0 0 232px;width:232px;border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.as-chats-list{flex:1;min-height:0;padding:6px 8px 10px}
+.as-chats .navitem{position:relative;cursor:pointer}
+.as-del{opacity:0;margin-left:auto;flex:0 0 auto;display:inline-flex}
+.navitem:hover .as-del{opacity:1}
+.as-main{flex:1 1 auto;min-width:0;position:relative;display:flex;flex-direction:column}
+.as-scroll{flex:1;min-height:0}
+.as-doc{max-width:720px;margin:0 auto;padding:26px 24px 150px}
+.as-empty{max-width:540px;margin:0 auto;padding:11vh 24px 24px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+/* AI-градиент: только поля «найти/спросить», палитра и композеры. Элементы и лого не перекрашиваются. */
+@property --ai-a{syntax:'<angle>';initial-value:0deg;inherits:false}
+.ai-field{--ai-bg:var(--raised);border:1px solid transparent !important;
+  background:linear-gradient(var(--ai-bg),var(--ai-bg)) padding-box,
+  conic-gradient(from var(--ai-a),var(--sp1),var(--sp5),var(--sp2),var(--sp4),var(--sp1)) border-box !important;
+  animation:aiSpin 7s linear infinite}
+.ai-field--panel{--ai-bg:var(--panel)}
+.ai-field:hover{animation-duration:2.8s}
+@keyframes aiSpin{to{--ai-a:360deg}}
+.ans-acts{display:flex;align-items:center;gap:2px;margin-top:7px;margin-left:-4px;opacity:0;transition:opacity var(--fast)}
+.ask-row:hover .ans-acts,.ans-acts:focus-within{opacity:1}
+.as-empty-ico{width:44px;height:44px;border-radius:12px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--text-3);margin-bottom:4px}
+.as-doc .ask-row[data-me="false"] .ask-bubble{max-width:90%}
+.ask-pend{display:inline-flex;align-items:center;gap:8px;color:var(--text-3);font-size:13px}
+.ask-note{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:5px}
+.src-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.ctx{margin-top:9px}
+.ctx summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--text-faint);user-select:none}
+.ctx summary::-webkit-details-marker{display:none}
+.ctx summary:hover{color:var(--text-3)}
+.ctx .ctx-arr{transition:transform var(--fast)}
+.ctx[open] .ctx-arr{transform:rotate(90deg)}
+.frag{border-left:2px solid var(--border-strong);padding:1px 0 1px 10px;margin-top:8px;font-size:12.5px;color:var(--text-2);line-height:1.5}
+.ctx-meta{margin-top:9px;font-size:11px;color:var(--text-faint)}

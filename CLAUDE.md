@@ -82,16 +82,16 @@ docs/                 Паспорт и сопутствующие докуме�
 
 ## Design Gate (Wotold v2, [B18] — ОБЯЗАТЕЛЬНО до любой UI работы)
 
-> **Wotold v2 (uikit) — действующий дизайн** (миграция Atelier→v2 завершена в B18.6; shim `wotold.css`/`legacy-tokens.css` удалён). Канон — [`docs/design/wotold-v2/`](docs/design/wotold-v2/README.md) + код: `wk.css` (примитивы) / `components.css` (app-классы) / `tokens.css`. Источник истины = прототип `~/Downloads/Wotold v2/` (`uikit.css` + `wk-*.jsx`). Для поверхностей **Ассистента** (M15/B24) — addendum [`docs/design/wotold-v2/assistant.md`](docs/design/wotold-v2/assistant.md) + хендофф `~/Downloads/design_handoff_wotold_assistant/`.
+> **Wotold v2 (uikit) — действующий дизайн** (миграция Atelier→v2 завершена в B18.6; shim `wotold.css`/`legacy-tokens.css` удалён). Канон — [`docs/design/wotold-v2/`](docs/design/wotold-v2/README.md) + код: `wk.css` (примитивы) / `components.css` (app-классы) / `tokens.css`. Источник истины = прототип [`docs/design/wotold-v2/_reference/`](docs/design/wotold-v2/_reference/) (`uikit.css` + `wk-*.jsx`, открывается `index.html`). Для поверхностей **Ассистента** (M15/B24) — addendum [`docs/design/wotold-v2/assistant.md`](docs/design/wotold-v2/assistant.md) + хендофф [`docs/design/wotold-v2/_reference-assistant/`](docs/design/wotold-v2/_reference-assistant/).
 
 Перед **любой** правкой `.tsx`/`.css`/`*.module.css`, или инлайн-стилей, **до** Plan/Implement:
 
-1. Прочесть [`docs/design/wotold-v2/README.md`](docs/design/wotold-v2/README.md) (канон) и сверить экран с прототипом `~/Downloads/Wotold v2/wk-*.jsx` / `uikit.css`.
+1. Прочесть [`docs/design/wotold-v2/README.md`](docs/design/wotold-v2/README.md) (канон) и сверить экран с прототипом [`docs/design/wotold-v2/_reference/`](docs/design/wotold-v2/_reference/) (`wk-*.jsx` / `uikit.css`).
 2. Запустить `/design-gate <surface>` или прочесть [`.claude/skills/design-gate/SKILL.md`](.claude/skills/design-gate/SKILL.md).
 3. В чате выдать alignment-блок:
    ```text
    [design-gate] Surface: <page/component>
-   Reference: docs/design/wotold-v2/ + ~/Downloads/Wotold v2/<wk-file>|uikit.css
+   Reference: docs/design/wotold-v2/_reference/<wk-file>|uikit.css
    Tokens used: <list>
    Classes used: <list>
    New tokens needed: <none | list>
