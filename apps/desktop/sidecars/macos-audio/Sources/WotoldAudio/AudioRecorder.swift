@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import WotoldAudioCore
 
 // AVAudioEngine читает с inputNode в его «нативном» формате (обычно 44.1/48 kHz float32).
 // Конвертируем в 16-bit PCM 16 kHz mono на лету через AVAudioConverter — это
@@ -159,6 +160,12 @@ final class AudioRecorder {
             try self.wavWriter?.close()
             let oldDuration = self.startTime.map { Date().timeIntervalSince($0) } ?? 0
             let oldBytes = self.bytesWritten
+            // [TD-06] Обнуляем ДО открытия нового: если WAVWriter бросит, в
+            // self.wavWriter иначе останется уже закрытый writer, и каждый
+            // следующий кадр будет уходить в него (write-after-close). С nil
+            // processBuffer просто пропускает кадры, а следующая ротация
+            // поднимет дорожку заново.
+            self.wavWriter = nil
 
             // Open new chunk WAV — same format (16kHz mono i16).
             let newWriter = try WAVWriter(url: url, sampleRate: 16_000, channels: 1)

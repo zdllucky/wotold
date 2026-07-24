@@ -7,13 +7,13 @@ import Foundation
 // закрытие — в close(). Не thread-safe — вызывается из последовательной
 // очереди AudioRecorder/SystemAudioRecorder.
 
-final class WAVWriter {
+public final class WAVWriter {
     private let handle: FileHandle
     private let sampleRate: UInt32
     private let channels: UInt16
     private var dataBytes: UInt32 = 0
 
-    init(url: URL, sampleRate: UInt32, channels: UInt16) throws {
+    public init(url: URL, sampleRate: UInt32, channels: UInt16) throws {
         self.sampleRate = sampleRate
         self.channels = channels
 
@@ -62,7 +62,7 @@ final class WAVWriter {
     }
 
     /// Пишет содержимое interleaved Int16 буфера, возвращает количество записанных байт.
-    func write(buffer: AVAudioPCMBuffer) throws -> Int {
+    public func write(buffer: AVAudioPCMBuffer) throws -> Int {
         guard let channelData = buffer.int16ChannelData else { return 0 }
         let channelCount = Int(buffer.format.channelCount)
         let frameLength = Int(buffer.frameLength)
@@ -81,7 +81,7 @@ final class WAVWriter {
     /// Курсор возвращается на конец, синхронизация на диск через synchronize().
     /// M1.5 паспорта: краш между периодическими flush'ами оставляет валидный
     /// WAV до последнего успешного flush'а.
-    func flushHeader() throws {
+    public func flushHeader() throws {
         let endOffset = try handle.offset()
         try handle.seek(toOffset: 4)
         try handle.write(contentsOf: u32(dataBytes &+ 36))
@@ -91,7 +91,7 @@ final class WAVWriter {
         try handle.synchronize()
     }
 
-    func close() throws {
+    public func close() throws {
         try flushHeader()
         try handle.close()
     }
