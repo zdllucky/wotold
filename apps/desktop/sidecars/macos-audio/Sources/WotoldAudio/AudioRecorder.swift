@@ -22,7 +22,19 @@ final class AudioRecorder {
     // {"event":"level","mic":..,"system":..} stdout эмит'ы каждые 100ms.
     // Не thread-safe чтение из main thread — но atomic-fast enough.
     private var latestRms: Float = 0
+    private var isPaused = false
+
     var currentRms: Float { latestRms }
+
+    /// [TD-07] Пауза на уровне ЗАХВАТА: кадры дропаются до записи в WAV.
+    /// До этого пауза жила только в БД, и сказанное «на паузе» попадало в
+    /// файл, транскрипт и саммари.
+    ///
+    /// Флаг читается и пишется на той же serial queue, что и обработчик
+    /// кадров, поэтому отдельная синхронизация не нужна.
+    func setPaused(_ paused: Bool) {
+        queue.sync { self.isPaused = paused }
+    }
 
     func start(micURL: URL) throws {
         // Если уже пишем — стопаем предыдущий чтобы не потерять состояние.
@@ -93,6 +105,13 @@ final class AudioRecorder {
     }
 
     private func processBuffer(_ inBuffer: AVAudioPCMBuffer) {
+        // [TD-07] На паузе кадр не доходит до WAV. RMS обнуляем: индикатор
+        // уровня должен показывать, что звук НЕ пишется, а не замирать на
+        // последнем значении — для privacy-фичи это часть контракта.
+        if isPaused {
+            latestRms = 0
+            return
+        }
         // Reads writer/converter/outFormat из self.* — rotate(to:) может
         // атомарно swap'нуть wavWriter под нами без замены tap'а.
         guard let converter = self.converter,

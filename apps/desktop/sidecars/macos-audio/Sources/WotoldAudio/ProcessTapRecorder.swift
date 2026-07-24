@@ -45,7 +45,19 @@ final class ProcessTapRecorder: NSObject {
     // [B14] Running RMS для live level meter — тот же контракт что был у
     // SystemAudioRecorder.currentRms, чтобы App.swift не различал.
     private var latestRms: Float = 0
+    private var isPaused = false
+
     var currentRms: Float { latestRms }
+
+    /// [TD-07] Пауза на уровне ЗАХВАТА: кадры дропаются до записи в WAV.
+    /// До этого пауза жила только в БД, и сказанное «на паузе» попадало в
+    /// файл, транскрипт и саммари.
+    ///
+    /// Флаг читается и пишется на той же serial queue, что и обработчик
+    /// кадров, поэтому отдельная синхронизация не нужна.
+    func setPaused(_ paused: Bool) {
+        queue.sync { self.isPaused = paused }
+    }
 
     func start(systemURL: URL) async throws {
         guard let outFormat = AVAudioFormat(
@@ -233,6 +245,12 @@ final class ProcessTapRecorder: NSObject {
     // MARK: - IOProc
 
     private func handleAudio(inputData: UnsafePointer<AudioBufferList>) {
+        // [TD-07] См. AudioRecorder.processBuffer — системная дорожка на паузе
+        // тоже не пишется, иначе собеседника было бы слышно в «приватной» части.
+        if isPaused {
+            latestRms = 0
+            return
+        }
         guard let inFormat = inputFormat,
               let outFormat = outputFormat,
               let writer = wavWriter

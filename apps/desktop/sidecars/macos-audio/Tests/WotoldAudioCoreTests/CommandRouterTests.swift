@@ -18,6 +18,9 @@ private final class MockMic: MicRecording {
     private(set) var started = false
     private(set) var stopped = false
     private(set) var rotatedTo: [String] = []
+    private(set) var pauseCalls: [Bool] = []
+
+    func setPaused(_ paused: Bool) { pauseCalls.append(paused) }
 
     func start(micURL: URL) throws {
         if let startError { throw startError }
@@ -40,6 +43,9 @@ private final class MockSystem: SystemRecording {
     var rotateError: Error?
     var stopError: Error?
     private(set) var started = false
+    private(set) var pauseCalls: [Bool] = []
+
+    func setPaused(_ paused: Bool) { pauseCalls.append(paused) }
 
     func start(systemURL: URL) async throws {
         if let startError { throw startError }
@@ -250,5 +256,57 @@ struct RouterMiscTests {
         let events = await h.router().handle(.requestPermissions(target: "microphone"))
         #expect(h.permissions.requestedTargets == ["microphone"])
         #expect(events[0].jsonObject["event"] as? String == "permissions")
+    }
+}
+
+@Suite("CommandRouter — пауза (TD-07)")
+struct RouterPauseTests {
+    @Test("pause останавливает захват на ОБЕИХ дорожках")
+    func pauseStopsBothLegs() async {
+        // Суть задачи: раньше пауза жила только в БД, сайдкар продолжал писать,
+        // и сказанное «на паузе» уезжало в транскрипт и саммари.
+        let h = Harness()
+        let events = await h.router().handle(.pause)
+        #expect(eventNames(events) == ["paused"])
+        #expect(h.mic.pauseCalls == [true])
+        #expect(h.system.pauseCalls == [true])
+    }
+
+    @Test("resume возвращает захват обеим дорожкам")
+    func resumeRestoresBothLegs() async {
+        let h = Harness()
+        let r = h.router()
+        _ = await r.handle(.pause)
+        let events = await r.handle(.resume)
+        #expect(eventNames(events) == ["resumed"])
+        #expect(h.mic.pauseCalls == [true, false])
+        #expect(h.system.pauseCalls == [true, false])
+    }
+
+    @Test("повторная пауза идемпотентна — не ошибка")
+    func pauseIsIdempotent() async {
+        // UI-кнопка и хоткей могут прийти почти одновременно.
+        let h = Harness()
+        let r = h.router()
+        for _ in 0..<3 { #expect(eventNames(await r.handle(.pause)) == ["paused"]) }
+        #expect(h.mic.pauseCalls == [true, true, true])
+    }
+
+    @Test("pause/resume разбираются из строки протокола")
+    func parsedFromLine() async {
+        let h = Harness()
+        let r = h.router()
+        #expect(eventNames(await r.handle(line: #"{"cmd":"pause"}"#)) == ["paused"])
+        #expect(eventNames(await r.handle(line: #"{"cmd":"resume"}"#)) == ["resumed"])
+        #expect(h.mic.pauseCalls == [true, false])
+    }
+
+    @Test("пауза не трогает таймер уровней — UI должен видеть, что приложение живо")
+    func pauseKeepsLevelTimer() async {
+        let h = Harness()
+        let r = h.router()
+        _ = await r.handle(.start(micPath: "/m.wav", systemPath: "/s.wav"))
+        _ = await r.handle(.pause)
+        #expect(h.timer.running)
     }
 }

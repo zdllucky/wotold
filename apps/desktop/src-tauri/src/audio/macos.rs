@@ -266,6 +266,28 @@ pub async fn stop(mut session: RecordingSession) -> Result<StopResult, AppError>
 /// [M13.1.5b] Если orchestrator каналы переданы — фан-аутит `"level"` →
 /// `rms_tx` (с timestamp_ms от `started_at`) + `"rotated"` → `rotate_tx`.
 /// Webview emit'ы всегда happen независимо от orchestrator state.
+/// [TD-07] Остановить захват на обеих дорожках. Не завершает сессию: тап и
+/// IOProc остаются живыми, просто кадры дропаются до записи в WAV.
+///
+/// Ack (`paused`) приходит в диспатчер и логируется как passthrough — команда
+/// не ждёт его, чтобы не блокировать UI на времени round-trip'а.
+pub async fn pause(session: &mut RecordingSession) -> Result<(), AppError> {
+    write_cmd(session, "pause")
+}
+
+/// [TD-07] Возобновить захват.
+pub async fn resume(session: &mut RecordingSession) -> Result<(), AppError> {
+    write_cmd(session, "resume")
+}
+
+fn write_cmd(session: &mut RecordingSession, cmd: &str) -> Result<(), AppError> {
+    let line = serde_json::json!({ "cmd": cmd }).to_string() + "\n";
+    session
+        .child
+        .write(line.as_bytes())
+        .map_err(|e| AppError::Other(format!("sidecar {cmd} write failed: {e}")))
+}
+
 /// [TD-06] Класс события сайдкара. Вынесен из `run_dispatcher` отдельной
 /// чистой функцией, потому что сам диспатчер принимает `Receiver<CommandEvent>`
 /// и `AppHandle` — в юнит-тесте их не сконструировать. Тестируем решение,
