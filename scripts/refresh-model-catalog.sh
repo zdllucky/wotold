@@ -67,6 +67,10 @@ MODELS=(
   "qwen25-1_5b|bartowski/Qwen2.5-1.5B-Instruct-GGUF|Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
   "qwen25-3b|bartowski/Qwen2.5-3B-Instruct-GGUF|Qwen2.5-3B-Instruct-Q4_K_M.gguf"
   "qwen25-7b|bartowski/Qwen2.5-7B-Instruct-GGUF|Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+  # [TD-16 draft] Speculative-decoding draft для Quality-пресета.
+  "qwen25-0_5b|bartowski/Qwen2.5-0.5B-Instruct-GGUF|Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"
+  # [P15.2] Silero VAD для whisper-cli --vad. kind=Stt (см. case ниже).
+  "silero-vad-v5|ggml-org/whisper-vad|ggml-silero-v5.1.2.bin"
   # [M12-D5] Speaker diarization (sherpa-onnx OfflineSpeakerDiarization).
   # pyannote segmentation — single model.onnx ~6 MB на HF mirror.
   # WeSpeaker embedding — reuse `voice_model.rs` (B3.7c) ~26 MB, не в этом
@@ -121,6 +125,7 @@ for line in "${MODELS[@]}"; do
   # Определяем kind по id
   case "$id" in
     whisper-*)        kind="ModelKind::Stt" ;;
+    silero-*)         kind="ModelKind::Stt" ;;
     pyannote-*)       kind="ModelKind::Diarization" ;;
     e5-*)             kind="ModelKind::Embedding" ;;
     *)                kind="ModelKind::Llm" ;;
@@ -134,6 +139,8 @@ for line in "${MODELS[@]}"; do
     qwen25-1_5b)           display="Qwen 2.5 (1.5B)" ;;
     qwen25-3b)             display="Qwen 2.5 (3B)" ;;
     qwen25-7b)             display="Qwen 2.5 (7B)" ;;
+    qwen25-0_5b)           display="Qwen 2.5 (0.5B) — draft model" ;;
+    silero-vad-v5)         display="Silero VAD v5" ;;
     pyannote-segmentation) display="Pyannote Segmentation 3.0" ;;
     e5-small-qint8)        display="Multilingual E5 Small (поиск)" ;;
     e5-small-tokenizer)    display="Multilingual E5 Tokenizer" ;;
