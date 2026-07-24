@@ -1,5 +1,11 @@
 name: Commitlint
 
+# [TD-02] Все actions запинены на полный commit-SHA; трейлинг-комментарий (# vX.Y.Z)
+# — машинный контракт с Dependabot, он бампает SHA и версию вместе.
+# Причина: mutable-теги (@v4, @beta, @stable) переписываются владельцем action'а,
+# и компрометация тега = выполнение чужого кода на раннере с нашими секретами.
+# Не заменять SHA обратно на тег — Dependabot сам предложит апгрейд PR'ом.
+
 # [B8.7]: проверяет conventional commits в PR заголовке и в каждом коммите
 # которые PR добавляет к base. Config в .commitlintrc.json.
 #
@@ -18,20 +24,20 @@ jobs:
     name: Lint PR title + commits
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       # wagoid/commitlint-github-action использует Docker action со встроенным
       # commitlint + @commitlint/config-conventional. Не плодим dev-deps в repo.
       - name: Lint commits in PR
-        uses: wagoid/commitlint-github-action@v6
+        uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
           configFile: .commitlintrc.json
           failOnWarnings: false
           helpURL: https://www.conventionalcommits.org/
 
       - name: Lint PR title
-        uses: amannn/action-semantic-pull-request@v5
+        uses: amannn/action-semantic-pull-request@e32d7e603df1aa1ba07e981f2a23455dee596825 # v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
