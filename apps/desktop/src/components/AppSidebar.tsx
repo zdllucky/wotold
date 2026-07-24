@@ -1,5 +1,5 @@
 // [B18.1a] Wotold v2 shell rail — collapsible Sidebar (256px) + MiniRail (56px).
-// Port of ~/Downloads/Wotold v2/wk-app.jsx (Sidebar/MiniRail), wired to real
+// Port of docs/design/wotold-v2/_reference/wk-app.jsx (Sidebar/MiniRail), wired to real
 // data: i18n labels, RecordingContext status, pipeline badge, recent calls.
 // Uses raw uikit classes from wk.css (.rail/.minirail/.navitem/.btn/...) +
 // <Icon/>. Логика записи/навигации — в App.tsx; здесь только presentation.

@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
 // Wotold v2 · Icon — line icon set (24 viewBox, 1.6 stroke, currentColor).
-// Port of ~/Downloads/Wotold v2/uikit-icons.jsx (ROADMAP §B18.0).
+// Port of docs/design/wotold-v2/_reference/uikit-icons.jsx (ROADMAP §B18.0).
 // Usage: <Icon name="mic" size={16} />
 // ─────────────────────────────────────────────────────────────
 import type { CSSProperties, ReactNode } from 'react';

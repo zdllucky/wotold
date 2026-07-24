@@ -1,4 +1,4 @@
-// [B18.1c] ⌘K command palette — Wotold v2. Port of ~/Downloads/Wotold v2
+// [B18.1c] ⌘K command palette — Wotold v2. Port of docs/design/wotold-v2/_reference
 // wk-app.jsx Palette. Global launcher: actions (record / inbox / contacts /
 // settings) + call search over `recent` (title). Keyboard: ↑/↓ move, Enter
 // run, Esc / overlay-click close. Focus-trapped. Only triggers existing

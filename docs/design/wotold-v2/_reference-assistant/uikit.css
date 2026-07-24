@@ -1,9 +1,140 @@
-/* ─────────────────────────────────────────────────────────────
-   Wotold v2 · component layer (uikit) — primitives (BASE + LAYOUT).
-   Источник: docs/design/wotold-v2/_reference/uikit.css §2–5. ROADMAP §B18.
-   Парный слой — styles/components.css (app-специфичные классы).
-   Токены — из tokens.css (uikit).
-   ───────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   WOTOLD UIKIT — a standalone product design system
+   Built from scratch. Functional, dense, calm. Notion structure
+   meets ChatGPT composer patterns. Light + dark, 3 accents.
+
+   Layers: 1) tokens  2) base/reset  3) layout  4) components
+   Every screen is composed ONLY from the classes defined here.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ───────────────── 1 · TOKENS ───────────────── */
+:root {
+  /* type */
+  --font: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --t-11: 11px; --t-12: 12px; --t-13: 13px; --t-14: 14px;
+  --t-15: 15px; --t-16: 16px; --t-18: 18px; --t-22: 22px; --t-28: 28px;
+
+  /* spacing — 4px base */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px;
+  --s6: 24px; --s7: 32px; --s8: 40px; --s9: 56px;
+
+  /* radius */
+  --r-xs: 4px; --r-sm: 6px; --r: 8px; --r-md: 10px; --r-lg: 14px; --r-xl: 18px; --r-pill: 999px;
+
+  /* motion */
+  --fast: 110ms; --base: 180ms; --slow: 320ms;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+
+  /* speaker palette (theme-tuned below for dark) */
+  --sp1: #5B5BD6; --sp2: #0E9888; --sp3: #C2410C; --sp4: #9333EA; --sp5: #1D7AD1;
+
+  --rail-w: 256px;
+}
+
+/* LIGHT */
+:root, [data-theme="light"] {
+  --bg: #FAFAFB;
+  --sunken: #F2F3F5;
+  --panel: #FFFFFF;
+  --raised: #FFFFFF;
+  --hover: #F3F4F6;
+  --active: #ECEDF1;
+
+  --border: #E9EAEE;
+  --border-2: #DFE1E6;
+  --border-strong: #CFD2DA;
+
+  --text: #1A1B23;
+  --text-2: #4A4C57;
+  --text-3: #71747F;
+  --text-faint: #9C9FAB;
+
+  --accent: #9A2D4D;
+  --accent-hover: #8A2845;
+  --accent-press: #7B233D;
+  --accent-soft: #F8E9EE;
+  --accent-line: #ECD0D9;
+  --accent-text: #8E2A47;
+  --on-accent: #FFFFFF;
+
+  --danger: #E0484D;
+  --danger-soft: #FDECEC;
+  --danger-text: #C5363B;
+  --ok: #1F9D63;
+  --ok-soft: #E7F6EE;
+  --warn: #C2710C;
+  --warn-soft: #FBF0DE;
+  --info-soft: #E8F1FC;
+
+  --shadow-sm: 0 1px 2px rgba(17,18,28,.06);
+  --shadow: 0 4px 14px -2px rgba(17,18,28,.10), 0 1px 3px rgba(17,18,28,.06);
+  --shadow-lg: 0 18px 44px -14px rgba(17,18,28,.26), 0 4px 12px rgba(17,18,28,.08);
+  --blur: 8px;
+}
+
+/* DARK */
+[data-theme="dark"] {
+  --bg: #0D0D11;
+  --sunken: #141419;
+  --panel: #17171D;
+  --raised: #1E1E25;
+  --hover: #20212A;
+  --active: #282935;
+
+  --border: #26272F;
+  --border-2: #2E2F39;
+  --border-strong: #3A3B47;
+
+  --text: #ECEDF1;
+  --text-2: #B4B6C0;
+  --text-3: #83868F;
+  --text-faint: #5C5E68;
+
+  --accent: #E07A93;
+  --accent-hover: #E68DA2;
+  --accent-press: #EB9DAF;
+  --accent-soft: #2A1419;
+  --accent-line: #3E1E27;
+  --accent-text: #E890A4;
+  --on-accent: #15151E;
+
+  --danger: #F0686C;
+  --danger-soft: #2A1719;
+  --danger-text: #F58A8D;
+  --ok: #4ED08A;
+  --ok-soft: #14241B;
+  --warn: #E0A24A;
+  --warn-soft: #2A2113;
+  --info-soft: #142133;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+  --shadow: 0 6px 18px rgba(0,0,0,.55);
+  --shadow-lg: 0 24px 56px rgba(0,0,0,.7);
+  --blur: 10px;
+
+  --sp1: #8B8BF7; --sp2: #3FCBA9; --sp3: #E68A55; --sp4: #BE82F0; --sp5: #5BA7E8;
+  color-scheme: dark;
+}
+
+/* ACCENTS (brand: bordeaux default in :root) — orthogonal to theme */
+[data-accent="persian"] {
+  --accent: #2A5BD7; --accent-hover: #2350C4; --accent-press: #1E47B0;
+  --accent-soft: #E9EFFC; --accent-line: #D2DEF8; --accent-text: #2350C0;
+}
+[data-theme="dark"][data-accent="persian"] {
+  --accent: #6F9BF0; --accent-hover: #84ABF4; --accent-press: #97B9F7;
+  --accent-soft: #121C30; --accent-line: #1F2F4C; --accent-text: #8BB0F5;
+}
+[data-accent="ink"] {
+  --accent: #3C3D49; --accent-hover: #30313B; --accent-press: #282933;
+  --accent-soft: #EDEEF1; --accent-line: #DEDFE5; --accent-text: #3C3D49;
+}
+[data-theme="dark"][data-accent="ink"] {
+  --accent: #C8CAD3; --accent-hover: #D5D7DE; --accent-press: #DEE0E6;
+  --accent-soft: #20212A; --accent-line: #2F303A; --accent-text: #D1D3DB;
+}
 
 /* ───────────────── 2 · BASE ───────────────── */
 * { box-sizing: border-box; }
@@ -38,13 +169,16 @@ a { color: inherit; text-decoration: none; }
 .minirail .mr-rec { width: 38px; height: 38px; border-radius: var(--r-md); background: var(--accent); color: var(--on-accent);
   display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; transition: background var(--fast), transform var(--fast); }
 .minirail .mr-rec:hover { background: var(--accent-hover); }
-/* Запись: красный фон → белый контент (дорожка), как .btn--danger. */
-.minirail .mr-rec[data-rec="true"] { background: var(--danger); color: #fff; }
+.minirail .mr-rec[data-rec="true"] { background: var(--danger); }
 .minirail .mr-rec[data-rec="true"]:hover { filter: brightness(1.06); }
 .minirail-sep { width: 26px; height: 1px; background: var(--border); margin: 4px 0; flex: 0 0 auto; }
 .minirail .mr-spacer { flex: 1 1 auto; }
 .minirail .iconbtn[data-active="true"] { background: var(--active); color: var(--accent-text); }
-/* [B27.5] tooltip перенесён в портальный ui/Tooltip (.tooltip в components.css) */
+/* tooltip on right side for the rail */
+.tip--right::after { bottom: auto; top: 50%; left: calc(100% + 8px); transform: translateY(-50%) translateX(-3px); }
+.tip--right:hover::after { transform: translateY(-50%) translateX(0); }
+.tip--bottom::after { bottom: auto; top: calc(100% + 7px); transform: translateX(-50%) translateY(-3px); }
+.tip--bottom:hover::after { transform: translateX(-50%) translateY(0); }
 /* inbox omni-bar + toolbar bits */
 .vh-sep { width: 1px; height: 20px; background: var(--border); flex: 0 0 auto; margin: 0 2px; }
 .omni { position: relative; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px;
@@ -242,11 +376,11 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 
 /* — Modal / Dialog — */
 .overlay { position: fixed; inset: 0; z-index: 100; background: rgba(13,13,17,.4); backdrop-filter: blur(var(--blur)); display: flex; align-items: flex-start; justify-content: center; }
-.modal { margin-top: 14vh; width: 440px; max-width: 92vw; max-height: calc(100vh - 16vh); background: var(--raised); border: 1px solid var(--border-2); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden auto; }
+.modal { margin-top: 14vh; width: 440px; max-width: 92vw; background: var(--raised); border: 1px solid var(--border-2); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
 .modal-head { padding: 18px 20px 0; }
 .modal-title { font-size: var(--t-16); font-weight: 650; }
 .modal-body { padding: 12px 20px 0; color: var(--text-2); font-size: var(--t-13); line-height: 1.55; }
-.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 18px 20px 20px; position: sticky; bottom: 0; background: var(--raised); }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 18px 20px 20px; }
 
 /* — Command palette — */
 .palette { margin-top: 11vh; width: 580px; max-width: 92vw; background: var(--raised); border: 1px solid var(--border-2); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
@@ -273,6 +407,16 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .empty .empty-ico { width: 44px; height: 44px; border-radius: var(--r-md); background: var(--sunken); display: flex; align-items: center; justify-content: center; color: var(--text-faint); }
 .empty .empty-title { font-size: var(--t-15); font-weight: 600; color: var(--text); }
 
+/* — Tooltip — */
+.tip { position: relative; }
+.tip::after {
+  content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%) translateY(2px);
+  background: var(--raised); color: var(--text-2); font-size: 11px; font-weight: 550; padding: 3px 7px; border-radius: var(--r-xs);
+  border: 1px solid var(--border-2); box-shadow: var(--shadow-sm);
+  white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity var(--fast), transform var(--fast); z-index: 80;
+}
+.tip:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+
 /* — divider — */
 .hr { height: 1px; background: var(--border); border: none; margin: var(--s5) 0; }
 
@@ -293,10 +437,8 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 /* — Table (database list) — */
 .tbl { display: flex; flex-direction: column; }
 .tbl-head, .trow {
-  /* [B30.2] Первая колонка = ширина точки: зазор старт→точка (s3-паддинг)
-     равен зазору точка→название (grid gap s3) — симметрия. */
-  display: grid; grid-template-columns: 8px minmax(0,1fr) 96px 64px 84px 28px;
-  align-items: center; gap: var(--s3); padding: 0 var(--s4) 0 var(--s3); height: 38px;
+  display: grid; grid-template-columns: 20px minmax(0,1fr) 96px 64px 84px 28px;
+  align-items: center; gap: var(--s3); padding: 0 var(--s4); height: 38px;
 }
 .tbl-head { height: 32px; position: sticky; top: 0; z-index: 2; background: var(--bg);
   border-bottom: 1px solid var(--border); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-faint); }
@@ -308,7 +450,7 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .trow .t-cell { font-size: var(--t-12); color: var(--text-3); }
 .trow .t-more { opacity: 0; }
 .trow:hover .t-more { opacity: 1; }
-.tbl-group { padding: var(--s5) var(--s4) 4px var(--s3); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
+.tbl-group { padding: var(--s5) var(--s4) 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
 
 /* — generic list row (recents, contacts) — */
 .lrow { display: flex; align-items: center; gap: var(--s3); width: 100%; padding: 9px 10px; border-radius: var(--r); text-align: left; transition: background var(--fast); }
@@ -316,7 +458,7 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 
 /* — Call doc — */
 .doc-wrap { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 0; position: relative; }
-.doc-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: none; scrollbar-gutter: stable both-edges; }
+.doc-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable both-edges; }
 .doc { max-width: 720px; margin: 0 auto; padding: var(--s7) var(--s6) var(--s6); }
 .doc-title { font-size: var(--t-22); font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
 
@@ -344,22 +486,17 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 /* ─── Settings ─── */
 .set-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 9px; }
 .set-display { font-size: var(--t-22); font-weight: 700; letter-spacing: -.01em; line-height: 1.2; margin: 0 0 10px; }
+.set-lead { font-size: var(--t-14); line-height: 1.55; color: var(--text-2); max-width: 560px; margin: 0; }
 .set-group { display: grid; gap: 20px; max-width: 560px; }
 .set-field-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 9px; }
 .set-hint { font-size: 12px; line-height: 1.5; color: var(--text-3); margin-top: 7px; }
 .set-divider { height: 1px; background: var(--border); margin: 4px 0; max-width: 560px; }
 .set-toggle { display: flex; align-items: flex-start; gap: 16px; padding: 2px 0; }
 .set-toggle-label { font-size: 14px; font-weight: 550; }
-/* SettingRow (kit) — [B21] канонизирован под Row-идиому прототипа
-   (wk-settings.jsx Row: label+hint слева, контрол справа, 13px vertical,
-   divider между строками; у последней divider снимается data-last). */
-.setting-row { display: flex; align-items: center; gap: 24px; padding: 13px 0; border-bottom: 1px solid var(--border); }
-.setting-row[data-align="top"] { align-items: flex-start; }
-.setting-row[data-last="true"] { border-bottom: none; }
-.setting-row[data-disabled="true"] { opacity: 0.55; }
+/* SettingRow (kit) */
+.setting-row { display: flex; align-items: flex-start; gap: 16px; padding: 2px 0; }
 .setting-row-text { flex: 1 1 auto; min-width: 0; }
-.setting-row-label { font-size: 13.5px; font-weight: 550; display: flex; align-items: center; gap: 8px; }
-.setting-row-control { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.setting-row-label { font-size: 14px; font-weight: 550; }
 /* OptionCard (kit) */
 .optioncard { display: flex; gap: 12px; padding: 13px; text-align: left; align-items: flex-start; width: 100%; max-width: 560px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); transition: border-color var(--fast), box-shadow var(--fast); }
 .optioncard:hover { border-color: var(--border-strong); }
@@ -411,16 +548,9 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .composer { max-width: 720px; margin: 0 auto; background: var(--raised); border: 1px solid var(--border-strong);
   border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 8px 8px 8px 10px; display: flex; align-items: center; gap: var(--s3); }
 .composer--rec { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft), var(--shadow); }
-.composer-ask { padding: 6px 6px 6px 14px; align-items: flex-end; }
-/* [B27.7] Многострочный композер: auto-grow textarea 1→6 строк, дальше scroll. */
-.composer-ask textarea {
-  flex: 1; border: none; outline: none; background: none; font: inherit;
-  font-size: var(--t-14); line-height: 1.5; color: var(--text); min-width: 0;
-  resize: none; max-height: 132px; overflow-y: auto; padding: 4px 0;
-}
-.composer-ask textarea::placeholder { color: var(--text-faint); }
-.composer-ask > svg { margin-bottom: 8px; }
-.composer-ask .iconbtn { margin-bottom: 1px; }
+.composer-ask { padding: 6px 6px 6px 14px; }
+.composer-ask input { flex: 1; border: none; outline: none; background: none; font-size: var(--t-14); color: var(--text); min-width: 0; }
+.composer-ask input::placeholder { color: var(--text-faint); }
 
 .eng-trigger { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px; border-radius: var(--r); border: 1px solid var(--border-2); background: var(--panel); color: var(--text-2); font-size: var(--t-12); font-weight: 550; white-space: nowrap; }
 .eng-trigger:hover { background: var(--hover); }
@@ -452,28 +582,3 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .md-rich .md-tasks { list-style: none; margin: 0; padding: 0; }
 .md-rich .md-tasks li { display: flex; gap: 9px; padding: 5px 0; font-size: 14px; line-height: 1.5; align-items: flex-start; }
 .md-rich .md-code { font-family: var(--mono); font-size: 12px; background: var(--sunken); border: 1px solid var(--border); border-radius: var(--r-xs); padding: 2px 7px; color: var(--text-2); }
-/* [recap] md-rich — полное покрытие markdown-элементов (Wotold v2). */
-.md-rich .md-ol { margin: 0; padding-left: 22px; list-style: decimal; }
-.md-rich .md-ol li { font-size: 14px; line-height: 1.5; padding: 3px 0; }
-.md-rich .md-ol li::marker { color: var(--accent); font-variant-numeric: tabular-nums; }
-.md-rich li > .md-ul, .md-rich li > .md-ol { margin: 4px 0 2px; }
-.md-rich .md-p + .md-h, .md-rich .md-ul + .md-h, .md-rich .md-ol + .md-h { margin-top: 22px; }
-/* вертикальный ритм между блоками документа (заголовки/hr держат свой отступ) */
-.md-rich > * + *:not(.md-h):not(hr) { margin-top: 12px; }
-.md-rich blockquote { margin: 0; padding: 2px 0 2px 14px; border-left: 2px solid var(--accent-line); color: var(--text-2); }
-.md-rich blockquote .md-p { color: var(--text-2); }
-.md-rich .md-a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--accent-line); transition: text-decoration-color var(--fast); }
-.md-rich .md-a:hover { text-decoration-color: var(--accent); }
-.md-rich strong { font-weight: 650; color: var(--text); }
-.md-rich em { font-style: italic; }
-.md-rich del { text-decoration: line-through; color: var(--text-faint); }
-.md-rich hr { height: 1px; border: none; background: var(--border); margin: var(--s5) 0; }
-.md-rich pre { font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: var(--text-2); background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; overflow-x: auto; margin: 0; }
-.md-rich pre .md-code { background: none; border: none; padding: 0; font-size: inherit; color: inherit; }
-.md-rich table { width: 100%; border-collapse: collapse; font-size: var(--t-13); margin: 0; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
-.md-rich thead th { background: var(--sunken); font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint); text-align: left; }
-.md-rich th, .md-rich td { padding: 7px 10px; border: 1px solid var(--border); vertical-align: top; line-height: 1.5; }
-.md-rich .contains-task-list { list-style: none; padding-left: 2px; }
-.md-rich li.task-list-item { display: flex; gap: 9px; align-items: flex-start; padding: 5px 0; font-size: 14px; line-height: 1.5; }
-.md-rich li.task-list-item::marker { content: none; }
-.md-rich li.task-list-item input[type="checkbox"] { margin-top: 3px; accent-color: var(--accent); width: 14px; height: 14px; flex: 0 0 auto; }
