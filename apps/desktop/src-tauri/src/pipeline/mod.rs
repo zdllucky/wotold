@@ -307,40 +307,97 @@ pub async fn run(
     bus.pipeline_started(&ctx.call_id);
 
     let result = run_inner(pool, &ctx, app).await;
-    let event = match &result {
-        Ok(()) => {
-            db::mark_call_ready(pool, &ctx.call_id).await?;
+
+    // [TD-12] Причина провала пайплайна (если был).
+    let pipeline_err = result.as_ref().err().map(|e| {
+        log::error!("pipeline {} failed: {e}", ctx.call_id);
+        // M2.7 (#23): UX-readable reason для UI. Сама технодеталь в логах.
+        match e {
+            AppError::Other(s) => s.clone(),
+            other => other.to_string(),
+        }
+    });
+
+    // [TD-12] mark_call_ready может упасть ПОСЛЕ успешного пайплайна (busy
+    // pool, disk full). Раньше здесь стоял `?`, и он выходил из run() ДО
+    // bus.pipeline_finished и минуя fail_recording — звонок навсегда висел в
+    // `processing`, а фронт не получал ни finished, ни failed. Теперь ошибка
+    // не короткозамыкает, а становится failed-исходом; событие эмитится всегда.
+    let mark_ready_err = if pipeline_err.is_none() {
+        match db::mark_call_ready(pool, &ctx.call_id).await {
+            Ok(()) => None,
+            Err(e) => {
+                log::error!(
+                    "mark_call_ready({}) failed после успешного пайплайна: {e}",
+                    ctx.call_id
+                );
+                Some(format!("не удалось записать статус ready: {e}"))
+            }
+        }
+    } else {
+        None
+    };
+
+    let event = finish_event(&ctx.call_id, pipeline_err, mark_ready_err);
+
+    match event.status {
+        "ready" => {
             // [M15.3] Индексация ассистента — fire-and-forget; headless
-            // (app=None) добирается startup-backfill'ом.
+            // (app=None) добирается startup-backfill'ом. Только на настоящем ready.
             if let Some(app) = app {
                 crate::assistant::indexer::spawn_index(app, &ctx.call_id);
             }
-            PipelineFinishedEvent {
-                call_id: ctx.call_id.clone(),
-                status: "ready",
-                failed_reason: None,
-            }
         }
-        Err(e) => {
-            log::error!("pipeline {} failed: {e}", ctx.call_id);
-            // M2.7 (#23): UX-readable reason для UI. Сама технодеталь в логах.
-            let reason = match e {
-                AppError::Other(s) => s.clone(),
-                other => other.to_string(),
-            };
-            let _ = db::fail_recording_with_reason(pool, &ctx.call_id, Some(&reason)).await;
-            PipelineFinishedEvent {
-                call_id: ctx.call_id.clone(),
-                status: "failed",
-                failed_reason: Some(reason),
-            }
+        _ => {
+            // failed (пайплайн ИЛИ mark_ready) — persist reason, чтобы звонок не
+            // залип в `processing`. Один вызов покрывает оба случая.
+            let _ =
+                db::fail_recording_with_reason(pool, &ctx.call_id, event.failed_reason.as_deref())
+                    .await;
         }
-    };
+    }
 
     // [B5]: фронт слушает 'pipeline:finished' для realtime-обновления Calls list.
+    // [TD-12] Эмитится безусловно — это и был сломанный инвариант.
     bus.pipeline_finished(&event);
 
-    result
+    match event.status {
+        "ready" => Ok(()),
+        // mark-ready-fail и раньше давал Err (через `?`) — контракт потребителей
+        // сохранён, но теперь с эмитом события и persist'ом статуса.
+        _ => Err(AppError::Other(
+            event
+                .failed_reason
+                .unwrap_or_else(|| "pipeline failed".to_string()),
+        )),
+    }
+}
+
+/// [TD-12] Решение о финальном событии пайплайна. Вынесено чистой функцией,
+/// потому что сам `run()` требует pool + полный пайплайн и юнитом не тестируем
+/// (тот же приём, что `classify_event` и `plan_final_chunk`).
+///
+/// Инвариант: если пайплайн успешен, но `mark_call_ready` не записался, звонок
+/// ОБЯЗАН стать `failed` (артефакты на диске, юзер сможет reprocess), а не
+/// остаться `ready`/висящим.
+fn finish_event(
+    call_id: &str,
+    pipeline_err: Option<String>,
+    mark_ready_err: Option<String>,
+) -> PipelineFinishedEvent {
+    let failed_reason = pipeline_err.or(mark_ready_err);
+    match failed_reason {
+        Some(reason) => PipelineFinishedEvent {
+            call_id: call_id.to_string(),
+            status: "failed",
+            failed_reason: Some(reason),
+        },
+        None => PipelineFinishedEvent {
+            call_id: call_id.to_string(),
+            status: "ready",
+            failed_reason: None,
+        },
+    }
 }
 
 /// Перезапустить полный pipeline (STT + recap) для существующего звонка.
@@ -1849,6 +1906,49 @@ async fn run_cluster_pipeline(
 mod tests {
     use super::*;
     use crate::db::test_support::fresh_db;
+
+    // ============================================================
+    // [TD-12] finish_event — событие пайплайна эмитится всегда
+    // ============================================================
+
+    #[test]
+    fn finish_event_ready_when_no_errors() {
+        let e = finish_event("call-1", None, None);
+        assert_eq!(e.status, "ready");
+        assert!(e.failed_reason.is_none());
+        assert_eq!(e.call_id, "call-1");
+    }
+
+    #[test]
+    fn finish_event_failed_on_pipeline_error() {
+        let e = finish_event("call-1", Some("stt timeout".into()), None);
+        assert_eq!(e.status, "failed");
+        assert_eq!(e.failed_reason.as_deref(), Some("stt timeout"));
+    }
+
+    #[test]
+    fn finish_event_failed_when_mark_ready_fails_after_success() {
+        // Регрессия TD-12: пайплайн успешен, но статус ready не записался
+        // (busy pool / disk full). Раньше `?` выходил из run() до эмита
+        // события — звонок навсегда висел в `processing`. Теперь исход failed,
+        // и событие всё равно эмитится.
+        let e = finish_event("call-1", None, Some("database is locked".into()));
+        assert_eq!(e.status, "failed");
+        assert_eq!(e.failed_reason.as_deref(), Some("database is locked"));
+    }
+
+    #[test]
+    fn finish_event_pipeline_error_wins_over_mark_ready() {
+        // Defensive: mark_ready пробуется только на success, но если оба Some —
+        // причина пайплайна информативнее.
+        let e = finish_event(
+            "call-1",
+            Some("pipeline boom".into()),
+            Some("mark boom".into()),
+        );
+        assert_eq!(e.status, "failed");
+        assert_eq!(e.failed_reason.as_deref(), Some("pipeline boom"));
+    }
 
     // ============================================================
     // [P13] ensure_all_chunks_done — halt gate перед stage 2→3
