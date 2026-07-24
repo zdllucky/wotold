@@ -40,7 +40,7 @@ use crate::providers::transcription::{
 };
 
 use super::models::{model_path, ModelId};
-use super::sidecar::SidecarGuard;
+use super::sidecar::{SidecarGuard, TempFileGuard};
 
 /// Имя whisper.cpp sidecar бинаря.
 const SIDECAR_NAME: &str = "wotold-whisper";
@@ -154,10 +154,28 @@ impl TranscriptionProvider for LocalWhisperProvider {
             return Err(TranscriptionError::NotImplemented);
         };
 
-        // Уникальный stem для output JSON. Whisper-cli добавляет `.json`.
-        let stem = self
+        // [TD-11] Whisper-cli пишет output JSON (расшифровка звонка) с дефолтным
+        // umask (0644). Раньше stem лежал прямо в общем tmp_dir, и chmod 0600
+        // накладывался только ПОСЛЕ окончания транскрипции — весь этот период
+        // файл читаем чужим UID. Теперь output идёт в приватную поддиректорию
+        // 0o700, созданную ДО спавна: содержимое неважно, войти внутрь чужой
+        // UID не может. Guard рекурсивно чистит директорию при любом выходе,
+        // включая abort (ручной remove_file на await этого не давал).
+        let mut temp_guard = TempFileGuard::new();
+        let work_dir = self
             .tmp_dir
-            .join(format!("wotold-whisper-{}", uuid::Uuid::new_v4()));
+            .join(format!("wotold-stt-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&work_dir)
+            .await
+            .map_err(|e| TranscriptionError::Provider(format!("mkdir stt work-dir: {e}")))?;
+        temp_guard.push_dir(&work_dir);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ =
+                tokio::fs::set_permissions(&work_dir, std::fs::Permissions::from_mode(0o700)).await;
+        }
+        let stem = work_dir.join("out");
         let json_path = stem.with_extension("json");
 
         // [Security M-3] Defense-in-depth: блокируем `..` в любом из путей.
@@ -324,9 +342,9 @@ impl TranscriptionProvider for LocalWhisperProvider {
             );
         }
 
-        // Cleanup temp JSON (best-effort).
-        let _ = tokio::fs::remove_file(&json_path).await;
-
+        // [TD-11] cleanup — на temp_guard (Drop, рекурсивно по work_dir).
+        // Ручной remove_file убран: не срабатывал при отмене задачи.
+        drop(temp_guard);
         parse_result
     }
 }
