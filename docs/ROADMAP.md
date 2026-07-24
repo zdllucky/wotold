@@ -162,10 +162,15 @@ MVP реализован и работает (этапы 1–12 паспорта
 > Единый groomed-беклог пост-MVP работ. Прежний `CHUNKED_PIPELINE_BACKLOG.md` влит сюда и удалён — это единственный источник истины по открытым задачам. Сгруппировано по приоритету. Когда задачу забираем в работу — оформляется как полноценная (deps, чек-боксы) и синхронизируется с TaskList харнесса.
 >
 > **Закрыто при последнем грумминге (не в беклоге):** live duration tracking (`[P5.2]`) · SpeakerConfirmModal sample playback (`[P-fix6]/[P-fix8]`) · recap `failed_reason`↔engine-label mismatch (`[P5.1]`) · split `db/calls.rs` · storage UI при смене preset (M12.5, R12-bis). Follow-up в manual-QA (секция A): live-переверить два бывших бага на реальном звонке.
+>
+> **Технический долг** (аудит 2026-07-23) — отдельный groomed-беклог [`TECH_DEBT.md`](TECH_DEBT.md): TD-01…TD-40, волны W1–W9. Сюда не дублируется; release-критичное поднято в секцию A маркером. Системные выводы аудита оформлены правилами в [`../CLAUDE.md`](../CLAUDE.md) §«Инженерные правила».
 
 ### A. Release-блокеры (до публичного релиза)
 
 - [ ] **#42 X1 Tauri minisign keygen** — `pnpm tauri signer generate`; public → `tauri.conf.json`, private+password → GH Secret + офлайн-бэкап (M11.1/M11.9). Без этого updater не работает.
+- [ ] **⚑ CI-хардening релизного пути** — [`TECH_DEBT.md`](TECH_DEBT.md) TD-01 (дубль `args:` в `release-app.yml` → прод-DMG без `voice-onnx`; codesign после аплоада → артефакт неподписан) + TD-02 (SHA-pin 38 actions, `tauri-action@v0` держит ключ подписи апдейтов). Workflow ни разу не исполнялся — обязателен dry-run на тестовом теге.
+- [ ] **LICENSE** — файла нет, README «Лицензия → TBD» при инструкции скачивать .dmg из публичных Releases: юридически «all rights reserved». Для ЦА (privacy-чувствительные профессионалы) — блокер доверия. Выбрать лицензию или proprietary EULA для бинарей.
+- [ ] **Consent-notice** — two-party consent (Калифорния + ~10 штатов, ЕС): продукт пишет системный звук без уведомления второй стороны, у бот-конкурентов consent встроен появлением бота в звонке. Нужен минимум FAQ/уведомление в онбординге — сейчас нет ничего. Формулировка — решение владельца.
 - [x] ~~**#44 X3 CF production provisioning**~~ **[REMOVED — local-only 0.3]** Прокси/Cloudflare/auth удалены из проекта; CF production provisioning больше не блокер релиза (`docs/DEPLOYMENT.md` удалён).
 - [ ] **`/security-scan` (W5)** на `local_engine/{models,llm,stt}.rs` + `capabilities/default.json` + `scripts/refresh-model-catalog.sh` — обязателен перед production release.
 - [ ] **Manual visual QA** — 6 theme×accent (light/dark × bordeaux/persian/ink) на всех экранах, включая Engine picker (M12.5) и ChunkProgressStrip (M13.3). Сюда же — live-реверификация двух бывших багов (playback модала + failed_reason badge).
