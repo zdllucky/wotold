@@ -42,7 +42,7 @@ use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 
 use super::models::{model_path, ModelId};
 use super::preset::LocalEnginePreset;
-use super::sidecar::SidecarGuard;
+use super::sidecar::{SidecarGuard, TempFileGuard};
 
 // [Q] Сериализация LLM-вызовов (llama-cli грузит 1.5-7B GGUF, ~3-5 GB RAM;
 // параллель = OOM/contention) жила в локальном `LLM_SEMAPHORE`; мигрировала
@@ -312,6 +312,12 @@ impl LlmProvider for LocalLlamaProvider {
         //    транскрипт не должен быть readable other users в shared /tmp.
         //    `std::env::temp_dir()` на macOS обычно даёт user-scoped
         //    /var/folders, но defense-in-depth: explicit perms.
+        // [TD-11] Все temp-файлы несут транскрипт. Guard чистит их при ЛЮБОМ
+        // выходе — happy-path, ранний `?` (ниже их несколько), panic, abort.
+        // Раньше был ручной cleanup после await: при отмене задачи или раннем
+        // `?` он не выполнялся, и файл оставался в /tmp.
+        let mut temp_guard = TempFileGuard::new();
+
         let prompt = build_prompt(&request);
         let prompt_path = self
             .tmp_dir
@@ -319,6 +325,7 @@ impl LlmProvider for LocalLlamaProvider {
         write_user_only(&prompt_path, prompt.as_bytes())
             .await
             .map_err(|e| LlmError::Provider(format!("prompt write: {e}")))?;
+        temp_guard.push_file(&prompt_path);
 
         // 2. Спавним sidecar. Args строго соответствуют capability validator'ам.
         // [Security M-3] Defense-in-depth path checks ДО передачи в sidecar:
@@ -346,6 +353,7 @@ impl LlmProvider for LocalLlamaProvider {
             write_user_only(&path, grammar_text.as_bytes())
                 .await
                 .map_err(|e| LlmError::Provider(format!("grammar write: {e}")))?;
+            temp_guard.push_file(&path);
             ensure_path_under(&path, &self.tmp_dir).map_err(LlmError::Provider)?;
             Some(path)
         } else {
@@ -362,6 +370,7 @@ impl LlmProvider for LocalLlamaProvider {
             write_user_only(&path, schema_text.as_bytes())
                 .await
                 .map_err(|e| LlmError::Provider(format!("json-schema write: {e}")))?;
+            temp_guard.push_file(&path);
             ensure_path_under(&path, &self.tmp_dir).map_err(LlmError::Provider)?;
             Some(path)
         } else {
@@ -481,15 +490,8 @@ impl LlmProvider for LocalLlamaProvider {
 
         let result = run_sidecar_with_timeout(sidecar, self.timeout).await;
 
-        // 3. Чистим prompt + grammar + schema файлы (если были) вне зависимости от исхода.
-        let _ = tokio::fs::remove_file(&prompt_path).await;
-        if let Some(g) = grammar_path.as_ref() {
-            let _ = tokio::fs::remove_file(g).await;
-        }
-        if let Some(s) = schema_path.as_ref() {
-            let _ = tokio::fs::remove_file(s).await;
-        }
-
+        // [TD-11] cleanup — на `temp_guard` (Drop). Ручные remove_file убраны:
+        // они не срабатывали при отмене задачи и на ранних `?`.
         let stdout = result?;
         // 4. Извлекаем JSON из stdout (модель может выдать echo / whitespace
         //    даже с no-display-prompt).
