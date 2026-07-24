@@ -574,15 +574,15 @@ async fn process_final_chunk(
     Ok(())
 }
 
-/// [W2] Pause активную запись. DB-only: проставляет `paused_at = now()` чтобы
-/// UI и timer могли корректно показать состояние паузы и накопленное «на паузе»
-/// время. На уровне Swift sidecar v1 пауза не отправляется — audio frames
-/// продолжают писаться в WAV (тишина/тихая комната через STT отрежется в
-/// silence trim, см. W2 §4 — Rust-level pause).
+/// [TD-07] Pause активную запись — включая сам ЗАХВАТ.
 ///
-/// TODO(W2 v2): wire NDJSON `{"cmd":"pause"}` в Swift sidecar когда
-/// AudioRecorder.swift получит pause/resume API. Сейчас sidecar не знает о
-/// паузе, frames продолжают писаться. Это безопасный default для MVP.
+/// Порядок принципиален: сначала команда сайдкару, только потом БД. Если
+/// запись в сайдкар упала, возвращаем Err и БД не трогаем — UI останется в
+/// состоянии «идёт запись». Обратный порядок дал бы ровно ту багу, которую
+/// чиним: интерфейс говорит «на паузе», а микрофон пишет.
+///
+/// До TD-07 пауза была DB-only: сайдкар о ней не знал, кадры продолжали
+/// писаться в WAV, и сказанное «на паузе» уезжало в транскрипт и саммари.
 #[tauri::command]
 pub async fn pause_recording(
     app: AppHandle,
@@ -596,6 +596,13 @@ pub async fn pause_recording(
         (session.call_id.clone(), session.started_at.to_rfc3339())
     };
 
+    // Сайдкар первым — см. rationale выше.
+    {
+        let mut guard = state.recording.lock().await;
+        if let Some(session) = guard.as_mut() {
+            crate::audio::macos::pause(session).await?;
+        }
+    }
     crate::db::pause_call(&state.db, &call_id).await?;
     // [M13.2.1] Fire-and-forget pause сигнал в orchestrator (если активен).
     // Channel buffer=8 покрывает burst pause/resume; на full — drop OK
@@ -613,7 +620,7 @@ pub async fn pause_recording(
     })
 }
 
-/// [W2] Resume записи с паузы. DB-only (см. `pause_recording` rationale).
+/// [TD-07] Resume записи с паузы — возобновляет захват (см. `pause_recording`).
 /// Идемпотентно: если запись не была на паузе — вернёт текущий state без
 /// изменений.
 #[tauri::command]
@@ -629,6 +636,12 @@ pub async fn resume_recording(
         (session.call_id.clone(), session.started_at.to_rfc3339())
     };
 
+    {
+        let mut guard = state.recording.lock().await;
+        if let Some(session) = guard.as_mut() {
+            crate::audio::macos::resume(session).await?;
+        }
+    }
     crate::db::resume_call(&state.db, &call_id).await?;
     // [M13.2.1] Fire-and-forget resume сигнал в orchestrator.
     if let Some(tx) = state.orchestrator_pause_tx.lock().await.as_ref() {

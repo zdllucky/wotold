@@ -7,6 +7,8 @@ import Foundation
 /// Микрофонная дорожка (AVAudioEngine).
 public protocol MicRecording: AnyObject {
     func start(micURL: URL) throws
+    /// [TD-07] На паузе кадры дропаются до записи в WAV.
+    func setPaused(_ paused: Bool)
     func rotate(to url: URL) throws -> (durationSec: Double, micBytes: UInt64)
     func stop() throws -> (durationSec: Double, micBytes: UInt64)
 }
@@ -18,6 +20,8 @@ public protocol MicRecording: AnyObject {
 /// с другим типом не даёт автоматического соответствия.
 public protocol SystemRecording: AnyObject {
     func start(systemURL: URL) async throws
+    /// [TD-07] См. `MicRecording.setPaused`.
+    func setPaused(_ paused: Bool)
     func rotate(to url: URL) throws -> UInt64
     func stopRecording() async throws -> UInt64
 }
@@ -105,6 +109,20 @@ public final class CommandRouter {
 
         case let .rotate(nextMic, nextSystem):
             return rotate(nextMic: nextMic, nextSystem: nextSystem)
+
+        // [TD-07] Пауза опускается до уровня захвата. Раньше она жила только в
+        // БД: сайдкар о ней не знал и продолжал писать кадры, поэтому сказанное
+        // «на паузе» попадало в WAV, в транскрипт и в саммари. Идемпотентно —
+        // повторная пауза не ошибка (UI и хоткей могут прийти одновременно).
+        case .pause:
+            mic.setPaused(true)
+            system.setPaused(true)
+            return [.paused]
+
+        case .resume:
+            mic.setPaused(false)
+            system.setPaused(false)
+            return [.resumed]
 
         case .stop:
             levelTimer.stopLevelTimer()

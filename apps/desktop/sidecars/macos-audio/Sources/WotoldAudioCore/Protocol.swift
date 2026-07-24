@@ -13,6 +13,9 @@ public enum Command: Equatable {
     case requestPermissions(target: String)
     case start(micPath: String, systemPath: String)
     case rotate(nextMicPath: String, nextSystemPath: String)
+    /// [TD-07] Приостановить/возобновить ЗАХВАТ, а не только счётчик времени.
+    case pause
+    case resume
     case stop
     case callDetectStart
     case callDetectStop
@@ -72,6 +75,10 @@ extension Command {
                     .missingFields("next_mic_path and next_system_path required for rotate"))
             }
             return .success(.rotate(nextMicPath: mic, nextSystemPath: system))
+        case "pause":
+            return .success(.pause)
+        case "resume":
+            return .success(.resume)
         case "stop":
             return .success(.stop)
         case "call_detect_start":
@@ -106,6 +113,9 @@ public enum SidecarEvent {
     case rotated(durationSec: Double, micBytes: UInt64, systemBytes: UInt64, warning: String?)
     case rotateError(leg: RotateLeg, micRotated: Bool, message: String)
     case stopped(durationSec: Double, micBytes: UInt64, systemBytes: UInt64, warning: String?)
+    /// [TD-07] Захват фактически остановлен/возобновлён на обеих дорожках.
+    case paused
+    case resumed
     case error(String)
     case callDetectStarted
     case callDetectStopped
@@ -145,6 +155,10 @@ public enum SidecarEvent {
             ]
             if let warning { d["warning"] = warning }
             return d
+        case .paused:
+            return ["event": "paused"]
+        case .resumed:
+            return ["event": "resumed"]
         case let .error(message):
             return ["event": "error", "message": message]
         case .callDetectStarted:
