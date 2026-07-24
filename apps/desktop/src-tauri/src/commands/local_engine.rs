@@ -60,7 +60,7 @@ pub async fn local_engine_model_status(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<ModelStatus, AppError> {
-    // Fast path: file-existence only. SHA256 is verified lazily before model use.
+    // Fast path: file-existence only. SHA256 verified only at download time; runtime checks are size-only [TD-10].
     models::check_status_fast(&state.app_data_dir, &id).await
 }
 
@@ -98,7 +98,7 @@ pub async fn local_engine_storage_list(
 
     let mut rows = Vec::with_capacity(MODEL_CATALOG.len());
     for entry in MODEL_CATALOG.iter() {
-        // Fast path: file-existence only, no SHA256. Corruption is detected
+        // Fast path: file-existence only, no SHA256. A same-size swap after install is NOT detected at runtime [TD-10]; corruption
         // lazily before the model is actually used (check_status in STT/LLM init).
         let status = models::check_status_fast(&state.app_data_dir, entry.id.as_str()).await?;
         rows.push(StorageRow {

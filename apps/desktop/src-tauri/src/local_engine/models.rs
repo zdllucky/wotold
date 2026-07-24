@@ -31,7 +31,9 @@
 //! `model:progress` — `{ id, pct, bytes_done, bytes_total }`
 //! `model:done`     — `{ id, status: "ok" | "verify_failed" | "io_error" }`
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex as StdMutex, OnceLock};
 
 use futures_util::StreamExt;
 use serde::Serialize;
@@ -142,14 +144,14 @@ pub const MODEL_CATALOG: [ModelEntry; 11] = [
         // используется (slug в preset.rs не указывает на 0.5B). При активации
         // SUMMARY_SPECULATIVE_DECODING flag + preset=Quality, llama-cli
         // получает `--model-draft <path>` указывающий на этот файл.
-        // **TODO:** SHA256 + size_bytes — placeholder. Перед production:
-        // запустить `scripts/refresh-model-catalog.sh` для verification.
+        // [TD-10] SHA256/size сняты с HF (x-linked-etag + content-length),
+        // раньше были placeholder — модель была недокачиваема, а size — оценка.
         id: ModelId::QWEN25_0_5B,
         kind: ModelKind::Llm,
         display_name: "Qwen 2.5 (0.5B) — draft model",
         url: "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
-        sha256: "PLACEHOLDER_REFRESH_VIA_SCRIPT_BEFORE_PRODUCTION",
-        size_bytes: 380_000_000,
+        sha256: "6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653",
+        size_bytes: 397_808_192,
         license_url: "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF",
     },
     ModelEntry {
@@ -189,17 +191,18 @@ pub const MODEL_CATALOG: [ModelEntry; 11] = [
         license_url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0",
     },
     // [P15.2] Silero VAD model для whisper-cli `--vad`. ggml-org официально
-    // публикует ggml-silero-v5.1.2.bin (~1.6 MB). SHA256 + size — placeholder,
-    // нужен refresh через scripts/refresh-model-catalog.sh ДО production.
-    // Если SHA mismatch — download_model отказывает; pipeline gracefully
-    // fallback'ится без `--vad`.
+    // публикует ggml-silero-v5.1.2.bin. [TD-10] SHA256/size сняты с HF —
+    // раньше были placeholder, а заявленный размер (~1.6 MB) был вдвое больше
+    // реального (885 KB), из-за чего check_status_fast пометил бы корректно
+    // скачанный файл как Corrupted. Если SHA mismatch — download отказывает,
+    // pipeline gracefully fallback'ится без `--vad`.
     ModelEntry {
         id: ModelId::SILERO_VAD,
         kind: ModelKind::Stt,
         display_name: "Silero VAD v5",
         url: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin",
-        sha256: "PLACEHOLDER_REFRESH_VIA_SCRIPT_BEFORE_PRODUCTION",
-        size_bytes: 1_627_136,
+        sha256: "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf",
+        size_bytes: 885_098,
         license_url: "https://huggingface.co/ggml-org/whisper-vad",
     },
     // [M15.9] Эмбеддер ассистента. SHA256/size сняты в спайке 2026-07-22 с
@@ -430,6 +433,30 @@ fn emit<T: Serialize + Clone>(app: Option<&AppHandle>, name: &str, payload: &T) 
 /// Скачать модель. Идемпотентно: если уже Present — no-op + emit
 /// `AlreadyPresent`. Atomic rename `.partial → final` после SHA256 match.
 /// Партиал при mismatch удаляется. См. PRD §M12.4.2, §M12.4.5.
+/// [TD-10] Per-id async-мьютекс скачивания. Раньше два параллельных
+/// `download` одного id (кнопка/авто-догрузка пресета + фоновой авто-download
+/// ассистента) писали в один партиал `{id}.bin.partial`, и SHA считался по
+/// сетевому потоку каждого — оба могли «сойтись», пока на диске лежал
+/// интерливинг. Лок берётся ДО идемпотентной проверки, поэтому второй вызов
+/// дожидается первого и коротко замыкается на `AlreadyPresent`.
+///
+/// `OnceLock`, не `LazyLock` — MSRV 1.77 (см. resource_queue.rs).
+fn download_lock(id: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: OnceLock<StdMutex<HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>> =
+        OnceLock::new();
+    let map = LOCKS.get_or_init(|| StdMutex::new(HashMap::new()));
+    // PoisonError::into_inner: реестр — просто HashMap<id, Arc>, паника
+    // держателя лока его не портит (тот же приём, что в resource_queue).
+    let mut guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    guard.entry(id.to_string()).or_default().clone()
+}
+
+/// [TD-10] Имя временного файла скачивания. Уникально между вызовами, чтобы
+/// параллельные писатели одного id не делили файл (см. `download_lock`).
+fn partial_name(id: &str) -> String {
+    format!("{}.{}.partial", id, uuid::Uuid::new_v4().simple())
+}
+
 pub async fn download(
     app_data_dir: &Path,
     id: &str,
@@ -437,6 +464,11 @@ pub async fn download(
 ) -> Result<PathBuf, AppError> {
     let entry = lookup(id).ok_or_else(|| AppError::Other(format!("unknown model id: {id}")))?;
     let dest = model_path(app_data_dir, id);
+
+    // [TD-10] Сериализуем скачивания одного id: держим лок на всё время
+    // проверки + скачивания, чтобы конкурент дождался и увидел AlreadyPresent.
+    let lock = download_lock(id);
+    let _dl_guard = lock.lock().await;
 
     // Идемпотентность (M12.4.5): уже Present → no-op.
     if let Ok(ModelStatus::Present { .. }) = check_status(app_data_dir, id).await {
@@ -475,8 +507,9 @@ async fn download_inner(
         .await
         .map_err(|e| AppError::Other(format!("mkdir {}: {e}", parent.display())))?;
 
-    let tmp = parent.join(format!("{}.bin.partial", entry.id.as_str()));
-    let _ = fs::remove_file(&tmp).await;
+    // [TD-10] Уникальное имя партиала: даже при обходе лока писатели не делят
+    // файл. UUID вместо фиксированного `{id}.bin.partial`.
+    let tmp = parent.join(partial_name(entry.id.as_str()));
 
     let client = reqwest::Client::builder()
         .user_agent("wotold/0.0.1")
@@ -499,7 +532,6 @@ async fn download_inner(
     let mut file = File::create(&tmp)
         .await
         .map_err(|e| AppError::Other(format!("create {}: {e}", tmp.display())))?;
-    let mut hasher = Sha256::new();
     let mut downloaded: u64 = 0;
     let mut next_emit_at: u64 = 0;
     // Throttle событий — модели до 4.5GB, эмит на каждые 256KB заспамит UI.
@@ -512,7 +544,6 @@ async fn download_inner(
         file.write_all(&bytes)
             .await
             .map_err(|e| AppError::Other(format!("write {}: {e}", tmp.display())))?;
-        hasher.update(&bytes);
         downloaded += bytes.len() as u64;
         if downloaded >= next_emit_at {
             let pct = if total > 0 {
@@ -538,7 +569,12 @@ async fn download_inner(
         .map_err(|e| AppError::Other(format!("flush {}: {e}", tmp.display())))?;
     drop(file);
 
-    let got = format!("{:x}", hasher.finalize());
+    // [TD-10] Хешируем ЗАПИСАННЫЙ файл, а не сетевой поток: проверяются ровно
+    // те байты, что легли на диск. Ловит и интерливинг конкурентов, и
+    // повреждение при записи, которые stream-hasher пропускал.
+    let (got, _) = file_sha256(&tmp)
+        .await
+        .map_err(|e| AppError::Other(format!("sha256 {}: {e}", tmp.display())))?;
     if !got.eq_ignore_ascii_case(entry.sha256) {
         // Corrupted / placeholder SHA → удаляем партиал, сообщаем юзеру.
         let _ = fs::remove_file(&tmp).await;
@@ -760,17 +796,51 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_status_fast_placeholder_entry_falls_back_to_nonzero() {
-        // Placeholder-энтри каталога (silero-vad) — размер не авторитетен,
-        // прежняя семантика len>0 → Present.
+    async fn check_status_fast_rejects_wrong_size_for_silero() {
+        // [TD-10] Регрессия: раньше silero был placeholder-записью и обходил
+        // size-check (len>0 → Present), поэтому любой мусорный файл нужного
+        // имени скармливался whisper-cli как VAD-модель. Теперь размер
+        // авторитетен для всех — маленький файл → Corrupted.
         let dir = tempdir().unwrap();
         let id = ModelId::SILERO_VAD.as_str();
-        assert!(lookup(id).unwrap().sha256.starts_with("PLACEHOLDER"));
         let p = model_path(dir.path(), id);
         fs::create_dir_all(p.parent().unwrap()).await.unwrap();
         fs::write(&p, b"tiny").await.unwrap();
         let status = check_status_fast(dir.path(), id).await.unwrap();
-        assert!(matches!(status, ModelStatus::Present { .. }));
+        assert!(
+            matches!(status, ModelStatus::Corrupted { .. }),
+            "мусорный файл нужного имени не должен считаться моделью, got {status:?}"
+        );
+    }
+
+    #[test]
+    fn partial_name_is_unique_per_call() {
+        let a = partial_name("qwen25-3b");
+        let b = partial_name("qwen25-3b");
+        assert_ne!(a, b, "имена партиалов должны различаться между вызовами");
+        assert!(a.starts_with("qwen25-3b."));
+        assert!(a.ends_with(".partial"));
+    }
+
+    #[test]
+    fn catalog_has_no_placeholder_entries() {
+        // [TD-10] Инвариант вместо прежней тихой деградации: placeholder-SHA
+        // делал модель недокачиваемой И отключал size-check. Тест не даёт
+        // вернуть его незаметно.
+        for e in MODEL_CATALOG.iter() {
+            assert!(
+                !e.sha256.contains("PLACEHOLDER"),
+                "{} — placeholder SHA",
+                e.id.as_str()
+            );
+            assert_eq!(e.sha256.len(), 64, "{}: SHA не 64 hex", e.id.as_str());
+            assert!(
+                e.sha256.chars().all(|c| c.is_ascii_hexdigit()),
+                "{}: SHA не hex",
+                e.id.as_str()
+            );
+            assert!(e.size_bytes > 0, "{}: нулевой размер", e.id.as_str());
+        }
     }
 
     #[tokio::test]
@@ -842,5 +912,32 @@ mod tests {
     async fn delete_rejects_unknown_id() {
         let dir = tempdir().unwrap();
         assert!(delete(dir.path(), "no-such-model").await.is_err());
+    }
+
+    /// [TD-10] Живая проверка: скачать silero (885KB) настоящим кодом и
+    /// убедиться, что SHA сходится и статус становится Present. Требует сети,
+    /// поэтому `#[ignore]` — запуск: `cargo test live_download_silero -- --ignored --nocapture`.
+    #[tokio::test]
+    #[ignore]
+    async fn live_download_silero_verifies_sha() {
+        let dir = tempdir().unwrap();
+        let id = ModelId::SILERO_VAD.as_str();
+        let path = download(dir.path(), id, None)
+            .await
+            .expect("download silero");
+        assert!(path.exists());
+        // full-SHA путь: check_status считает хеш по файлу.
+        let status = check_status(dir.path(), id).await.unwrap();
+        assert!(
+            matches!(status, ModelStatus::Present { .. }),
+            "после скачивания silero должен быть Present, got {status:?}"
+        );
+        // партиалы не должны остаться.
+        let leftover: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".partial"))
+            .collect();
+        assert!(leftover.is_empty(), "остались партиалы: {leftover:?}");
     }
 }
