@@ -173,9 +173,10 @@ ECC-агенты для теста:
 ## ECC харнесс (W1, W6, W7)
 
 - Используются глобальные правила из `~/.claude/rules/ecc/{common,rust,typescript,web,zh}` (источник: [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code), копия из приватной инсталляции). При апгрейде ECC сверять что актуальные ограничения паспорта (R2/R3/R4/R6, R9–R13; R1/R5/R7/R8 — superseded облаком) не «улучшены» обратно.
-- Активные хуки и project-allowedTools — в `.claude/settings.json`:
-  - **PreToolUse Write/Edit**: `scripts/hooks/pre-write.mjs` — блокирует запись в Tauri-ключи, `.env*`, `.dev.vars`, `*.key`, `*.pem`, SSH-ключи и файлы >800 строк
-  - **PostToolUse Write/Edit**: `scripts/hooks/post-write.sh` — на `.rs` правках бежит `cargo fmt` + `cargo check --message-format short` (timeout 60s); на `.ts/.tsx` — `tsc --noEmit` соответствующего workspace-пакета
-  - **PostToolUse Write/Edit**: `scripts/hooks/design-gate.mjs` ([B17]) — warns на сырых hex/oklch/legacy `--color-*` вне whitelisted handoff sources
+- Активные хуки и project-allowedTools — в `.claude/settings.json`. Все матчатся на `Write|Edit|MultiEdit` и получают payload JSON'ом на stdin:
+  - **PreToolUse**: `scripts/hooks/pre-write.mjs` — блокирует (exit 2) запись в Tauri-ключи, `.env*`, `.dev.vars`, `*.key`, `*.pem`, SSH-ключи; и файлы >800 строк, считая **итоговый** размер файла (для Edit/MultiEdit — текущий файл ± дельта, а не размер фрагмента)
+  - **PostToolUse**: `scripts/hooks/post-write.mjs` — на `.rs` бежит `cargo fmt` + `cargo check --message-format short`; на `.ts/.tsx` — `typecheck` соответствующего пакета (`packages/contracts` проверяется через потребителя `@wotold/desktop`, своего tsc у него нет). Таймаут 60s через Node — не через `timeout`, которого на macOS нет
+  - **PostToolUse**: `scripts/hooks/tdd-warn.mjs` — warns если правишь source без соседнего теста (не блокирует)
+  - **PostToolUse**: `scripts/hooks/design-gate.mjs` ([B18.6]) — warns на сырых hex/oklch/legacy `--color-*` вне whitelisted sources. Whitelist считается по пути **относительно корня репо**: абсолютный матч ломался в git-worktree (`<repo>/.claude/worktrees/…` попадал под правило `.claude/` и гейт пропускал всё)
 - Личные настройки разработчика — в `.claude/settings.local.json` (в `.gitignore`).
 - При конфликте рекомендаций ECC и паспорта побеждает паспорт. `.claude/` не часть сборки продукта (W6, W7).
