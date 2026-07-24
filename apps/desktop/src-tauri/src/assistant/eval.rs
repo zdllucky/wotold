@@ -194,7 +194,7 @@ async fn eval_level_a_bm25_baseline() {
 /// реальной БД + resident llama-server. Acceptance M16: ≥14/18 содержательных.
 ///
 /// Запуск:
-/// `WOTOLD_LIVE_DB_DIR=<dir с app.db> WOTOLD_LIVE_LLM_URL=http://127.0.0.1:47331 \
+/// `WOTOLD_LIVE_DB_DIR=<dir с app.db> WOTOLD_LIVE_LLM_URL=http://127.0.0.1:<порт из лога старта> \
 ///  WOTOLD_LIVE_APPDATA=<app-data с calls/> [WOTOLD_EVAL_MODEL_DIR=<e5 dir>] \
 ///  cargo test -- --ignored live_gate_m16 --nocapture`
 ///
@@ -260,7 +260,12 @@ async fn live_gate_m16_user_questions() {
         std::path::Path::new(&appdata),
         preset.llm_model_id(),
     )
-    .with_server(Some(url))
+    .with_server(Some(crate::local_engine::llm::ServerHandle {
+        url,
+        // [TD-08] Ключ вручную поднятого сервера. Пусто — сервер без
+        // LLAMA_API_KEY, авторизации не требует.
+        api_key: std::env::var("WOTOLD_LIVE_LLM_KEY").unwrap_or_default(),
+    }))
     .with_cache_prompt(true);
     let bus = EventBus::new(None);
 
