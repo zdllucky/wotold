@@ -898,7 +898,7 @@ mod tests {
     /// поднятого llama-server (HTTP-путь провайдера не требует AppHandle).
     /// Запуск только явно:
     /// ```sh
-    /// WOTOLD_LIVE_DB_DIR=<dir-с-копией-app.db> WOTOLD_LIVE_LLM_URL=http://127.0.0.1:47331 \
+    /// WOTOLD_LIVE_DB_DIR=<dir-с-копией-app.db> WOTOLD_LIVE_LLM_URL=http://127.0.0.1:<порт из лога старта> \
     ///   cargo test --lib live_gate_ph1 -- --ignored --nocapture
     /// ```
     #[cfg(target_os = "macos")]
@@ -919,7 +919,12 @@ mod tests {
             std::path::Path::new(&db_dir),
             preset.llm_model_id(),
         )
-        .with_server(Some(url))
+        .with_server(Some(crate::local_engine::llm::ServerHandle {
+            url,
+            // [TD-08] Ключ вручную поднятого сервера. Пусто — сервер без
+            // LLAMA_API_KEY, авторизации не требует.
+            api_key: std::env::var("WOTOLD_LIVE_LLM_KEY").unwrap_or_default(),
+        }))
         .with_cache_prompt(true);
         let bus = EventBus::new(None);
 

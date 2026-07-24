@@ -93,6 +93,14 @@ pub const fn timeout_for_preset(preset: LocalEnginePreset) -> Duration {
 }
 
 /// Локальный LLM на llama.cpp. Owns путь к GGUF модели + sidecar config.
+/// [TD-08] Координаты живого resident-сервера. Ключ обязателен: без заголовка
+/// `Authorization` сервер отвечает 401 на всё, кроме публичного `/health`.
+#[derive(Debug, Clone)]
+pub struct ServerHandle {
+    pub url: String,
+    pub api_key: String,
+}
+
 pub struct LocalLlamaProvider {
     /// `$APP_DATA/local_engine/models/{qwen25-1_5b|qwen25-3b|qwen25-7b}.bin`.
     model_path: PathBuf,
@@ -108,10 +116,12 @@ pub struct LocalLlamaProvider {
     /// arg. Когда file отсутствует — graceful skip (log warn) и fall back
     /// на non-speculative path.
     draft_model_path: Option<PathBuf>,
-    /// [B2] Если `Some(url)` — resident `llama-server` поднят; `generate()`
-    /// идёт HTTP `POST {url}/completion` вместо one-shot `llama-cli` спавна
-    /// (модель уже в RAM). `None` — обычный one-shot путь.
-    server_url: Option<String>,
+    /// [B2] Если `Some` — resident `llama-server` поднят; `generate()` идёт
+    /// HTTP `POST {url}/completion` вместо one-shot `llama-cli` спавна (модель
+    /// уже в RAM). `None` — обычный one-shot путь.
+    ///
+    /// [TD-08] Кроме URL несёт api-key: сервер теперь требует авторизацию.
+    server: Option<ServerHandle>,
     /// [Q] call_id для QueueMonitor: чей звонок держит/ждёт LLM-ресурс.
     /// `None` — служебная задача (warm-up).
     queue_call_id: Option<String>,
@@ -130,17 +140,17 @@ impl LocalLlamaProvider {
             app: Mutex::new(None),
             tmp_dir: std::env::temp_dir(),
             draft_model_path: None,
-            server_url: None,
+            server: None,
             queue_call_id: None,
             cache_prompt: false,
         }
     }
 
-    /// [B2] Прикрепить URL живого resident-сервера. `Some` → HTTP-путь,
+    /// [B2] Прикрепить координаты живого resident-сервера. `Some` → HTTP-путь,
     /// `None` → one-shot. Caller (build_local_llm_provider) читает handle из
     /// AppState.
-    pub fn with_server(mut self, url: Option<String>) -> Self {
-        self.server_url = url;
+    pub fn with_server(mut self, server: Option<ServerHandle>) -> Self {
+        self.server = server;
         self
     }
 
@@ -208,7 +218,11 @@ impl LocalLlamaProvider {
     /// [B2] HTTP-путь через resident `llama-server`. Тот же prompt (system +
     /// input) и та же per-request форма (json_schema/grammar), что one-shot,
     /// но без спавна процесса и перезагрузки модели.
-    async fn generate_via_server(&self, url: &str, request: LlmRequest) -> Result<Value, LlmError> {
+    async fn generate_via_server(
+        &self,
+        server: &ServerHandle,
+        request: LlmRequest,
+    ) -> Result<Value, LlmError> {
         // [Q] Та же очередь что и CLI-путь — сервер `--parallel 1`, FIFO.
         let _permit = resource_queue::acquire(Resource::Llm, self.queue_call_id.as_deref()).await;
 
@@ -236,12 +250,18 @@ impl LocalLlamaProvider {
 
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!("{url}/completion"))
+            .post(format!("{}/completion", server.url))
+            // [TD-08] Без ключа сервер отвечает 401.
+            .bearer_auth(&server.api_key)
             .json(&body)
             .timeout(self.timeout)
             .send()
             .await
             .map_err(|e| LlmError::Provider(format!("llama-server request: {e}")))?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            // Ключ не подошёл — на порту не наш сервер либо он перезапустился.
+            return Err(LlmError::Auth("llama-server отверг api-key".into()));
+        }
         if !resp.status().is_success() {
             return Err(LlmError::Provider(format!(
                 "llama-server HTTP {}",
@@ -267,8 +287,8 @@ impl LlmProvider for LocalLlamaProvider {
     async fn generate(&self, request: LlmRequest) -> Result<Value, LlmError> {
         // [B2] Resident-server путь: модель уже в RAM, шлём HTTP вместо спавна
         // one-shot процесса. Не нужен AppHandle.
-        if let Some(url) = self.server_url.clone() {
-            return self.generate_via_server(&url, request).await;
+        if let Some(server) = self.server.clone() {
+            return self.generate_via_server(&server, request).await;
         }
         let app = {
             let guard = self.app.lock().await;

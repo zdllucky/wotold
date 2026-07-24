@@ -587,15 +587,19 @@ pub(crate) async fn build_local_llm_provider(
     // [B2] Если resident llama-server поднят для ЭТОГО preset — provider пойдёт
     // HTTP-путём (модель уже в RAM), без спавна one-shot процесса. Иначе None →
     // обычный one-shot.
-    let server_url = {
+    let server = {
         let state = tauri::Manager::state::<crate::state::AppState>(app);
         let guard = state.llm_server.lock().await;
         guard
             .as_ref()
             .filter(|srv| srv.preset() == preset)
-            .map(|srv| srv.url().to_string())
+            // [TD-08] Забираем и url, и api-key: сервер теперь требует авторизацию.
+            .map(|srv| crate::local_engine::llm::ServerHandle {
+                url: srv.url().to_string(),
+                api_key: srv.api_key().to_string(),
+            })
     };
-    let provider = provider.with_server(server_url);
+    let provider = provider.with_server(server);
 
     Ok((provider, preset))
 }
