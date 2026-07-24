@@ -61,7 +61,10 @@ async function setupHarness(): Promise<Harness> {
     VALUES
       ('owner-1', 'Damir', 1, '{}', '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z'),
       ('c1', 'Ivan Petrov', 0, '{}', '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z'),
-      ('c2', 'Anna', 0, '{}', '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z');
+      ('c2', 'Anna', 0, '{}', '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z'),
+      -- [TD-09] Литеральные LIKE-wildcards в имени: без ESCAPE запрос '%'
+      -- матчил всех, а 'Ivan_Petrov' совпадал бы с 'Ivan Petrov'.
+      ('c3', '100% Sale_Q3', 0, '{}', '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z');
 
     INSERT INTO calls (id, title, started_at, ended_at, duration_sec, status, provider, path_label, lang_detected, failed_reason, created_at, updated_at)
     VALUES
@@ -217,6 +220,22 @@ describe('find_calls_by_contact', () => {
     expect(body.contacts.length).toBe(1);
     expect(body.contacts[0].id).toBe('c1');
     expect(body.by_contact[0].calls.map((c) => c.id)).toEqual(['0a000000-0000-4000-8000-00000000000a']);
+  });
+
+  test('escapes LIKE wildcards (TD-09)', async () => {
+    // '%' как запрос не должен матчить всех — только контакт с литеральным '%'.
+    const res = await getTool('find_calls_by_contact').handler({ contact_name: '%' }, h.ctx);
+    const body = unwrapJson<{ contacts: { display_name: string }[] }>(res);
+    expect(body.contacts.map((c) => c.display_name)).toEqual(['100% Sale_Q3']);
+
+    // '_' тоже литерал, а не «любой символ»: 'Ivan_Petrov' не должен матчить
+    // 'IvanXPetrov', и наоборот — литеральное подчёркивание находится.
+    const res2 = await getTool('find_calls_by_contact').handler(
+      { contact_name: 'Sale_Q3' },
+      h.ctx,
+    );
+    const body2 = unwrapJson<{ contacts: { display_name: string }[] }>(res2);
+    expect(body2.contacts.map((c) => c.display_name)).toEqual(['100% Sale_Q3']);
   });
 
   test('returns empty when no match', async () => {

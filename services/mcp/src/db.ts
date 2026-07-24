@@ -119,12 +119,16 @@ export class WotoldDb {
   }
 
   findContactsByName(query: string): Contact[] {
-    const pattern = `%${query.trim()}%`;
+    // [TD-09] Экранируем LIKE-wildcards, как это делает searchCalls: без
+    // escape запрос '%' матчил всех контактов, а 'foo_bar' — 'fooXbar'.
+    // ESCAPE-клауза обязательна в паре с escapeLikePattern: без неё
+    // backslash — обычный символ, и экранирование ничего не значит.
+    const pattern = `%${escapeLikePattern(query.trim())}%`;
     return this.db
       .prepare(
         `SELECT id, display_name, is_owner, org, role, notes
          FROM contacts
-         WHERE display_name LIKE ? OR org LIKE ?
+         WHERE display_name LIKE ? ESCAPE '\\' OR org LIKE ? ESCAPE '\\'
          ORDER BY is_owner DESC, display_name ASC
          LIMIT 50`,
       )
