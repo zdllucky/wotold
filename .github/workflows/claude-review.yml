@@ -1,5 +1,11 @@
 name: Claude PR Review
 
+# [TD-02] Все actions запинены на полный commit-SHA; трейлинг-комментарий (# vX.Y.Z)
+# — машинный контракт с Dependabot, он бампает SHA и версию вместе.
+# Причина: mutable-теги (@v4, @beta, @stable) переписываются владельцем action'а,
+# и компрометация тега = выполнение чужого кода на раннере с нашими секретами.
+# Не заменять SHA обратно на тег — Dependabot сам предложит апгрейд PR'ом.
+
 # [B8.8]: ECC-агенты на PR. Запуск:
 #   1. Авто-комментарий ревью на pull_request: opened|synchronize|reopened
 #   2. Ondemand: коммент в PR с упоминанием "@claude" (например "@claude посмотри auth")
@@ -58,14 +64,14 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: steps.guard.outputs.enabled == 'true'
         with:
           fetch-depth: 0
 
       - name: Run Claude code-review
         if: steps.guard.outputs.enabled == 'true'
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@28f83620103c48a57093dcc2837eec89e036bb9f # v0.0.63
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Авто-промпт для PR-открытия. На @claude меншене action автоматически
