@@ -1,5 +1,11 @@
 name: Release Desktop App
 
+# [TD-02] Все actions запинены на полный commit-SHA; трейлинг-комментарий (# vX.Y.Z)
+# — машинный контракт с Dependabot, он бампает SHA и версию вместе.
+# Причина: mutable-теги (@v4, @beta, @stable) переписываются владельцем action'а,
+# и компрометация тега = выполнение чужого кода на раннере с нашими секретами.
+# Не заменять SHA обратно на тег — Dependabot сам предложит апгрейд PR'ом.
+
 # Раздел 16.3 паспорта: тег vX.Y.Z → собранный подписанный релиз.
 # S1 паспорта: эта джоба видит только Tauri-ключ подписи, не партнёрские ключи.
 
@@ -17,8 +23,8 @@ jobs:
     name: Version sync (M11.5)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
       - run: node scripts/check-versions.mjs
@@ -29,13 +35,13 @@ jobs:
     outputs:
       release_body: ${{ steps.cliff-release.outputs.content }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       # Полный CHANGELOG.md для коммита в main (если меняется).
       - name: Generate full CHANGELOG.md
         id: cliff-full
-        uses: orhun/git-cliff-action@v4
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
         with:
           config: cliff.toml
           args: --verbose
@@ -44,7 +50,7 @@ jobs:
       # Только release notes для текущего тега — пойдёт в releaseBody.
       - name: Generate release notes for current tag
         id: cliff-release
-        uses: orhun/git-cliff-action@v4
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
         with:
           config: cliff.toml
           args: --verbose --latest --strip header
@@ -79,27 +85,28 @@ jobs:
     # собирает fat binary под обе архитектуры — юзеры не путают какой DMG.
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: pnpm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
+          # [TD-02] toolchain задан явно: эта action берёт тулчейн из ИМЕНИ ref'а
+          # (@stable), а после SHA-пина имени больше нет.
+          toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: 'apps/desktop/src-tauri -> target'
 
       - run: pnpm install --frozen-lockfile
 
       - name: Tauri build + GitHub Release
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           # Tauri minisign подписи (M11.1 + S1 паспорта).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -116,12 +123,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop/src-tauri
-          # [B3.7] Production .dmg всегда собирается с voice-onnx feature —
-          # биометрический матчинг включён сразу после того как юзер
-          # скачает модель в Settings (без перезапуска / переустановки).
-          # Dev build без этой фичи (default features = empty) для
-          # быстрой итерации; см. CLAUDE.md / Cargo.toml [features].
-          args: --features voice-onnx
+          # [TD-01] Один ключ args: — раньше их было два (voice-onnx и target),
+          # YAML last-wins молча съедал первый. Флаги слиты.
+          #
+          # [B3.7] voice-onnx указан явно, хотя с B25 он уже в default
+          # (Cargo.toml [features]) — страховка: если default когда-нибудь
+          # переберут, релизный .dmg не должен молча уехать без
+          # биометрического матчинга.
+          # [B16 audit P0] universal target — fat binary под intel + apple silicon.
+          args: --features voice-onnx --target universal-apple-darwin
           tagName: ${{ github.ref_name }}
           releaseName: 'Wotold ${{ github.ref_name }}'
           releaseBody: |
@@ -138,19 +148,11 @@ jobs:
           prerelease: false
           # M11.2: latest.json генерируется tauri-action для updater'а.
           includeUpdaterJson: true
-          # [B16 audit P0]: universal target — fat binary под intel + apple silicon.
-          args: --target universal-apple-darwin
 
-      # [B16 audit P0]: ad-hoc codesign (без Developer ID — R6 deferred).
-      # Без подписи macOS 14+ quarantine ставит файл в «damaged, move to trash»
-      # вместо showable «Open anyway» dialog. Ad-hoc даёт работающий UX до
-      # полноценной нотаризации.
-      - name: Ad-hoc codesign DMG/App
-        if: always()
-        run: |
-          for app in apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app; do
-            if [ -d "$app" ]; then
-              echo "Ad-hoc signing $app"
-              codesign --force --deep --sign - "$app" || echo "codesign failed for $app"
-            fi
-          done
+      # [TD-01] Ad-hoc подпись переехала в tauri.conf.json
+      # (bundle.macOS.signingIdentity = "-"). Здесь раньше стоял отдельный шаг
+      # codesign — он бежал ПОСЛЕ того как tauri-action уже собрал .dmg и
+      # выложил ассеты в Release, подписывал .app вместо публикуемого .dmg,
+      # и глушил ошибку через `|| echo`. То есть заявленная митигация R6
+      # («damaged, move to trash» → «Open anyway») фактически не работала.
+      # Bundler подписывает .app ДО сборки .dmg — подпись попадает в артефакт.
