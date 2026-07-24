@@ -340,7 +340,10 @@ pub(crate) async fn index_call_with(
     }
 
     if let Some(md) = store
-        .read_artifact(call_id, ArtifactKind::Transcript)
+        .read_artifact(
+            &crate::call_id::CallId::from_db(call_id),
+            ArtifactKind::Transcript,
+        )
         .await?
     {
         passages.extend(build_transcript_passages(
@@ -348,7 +351,13 @@ pub(crate) async fn index_call_with(
             &names,
         ));
     }
-    if let Some(md) = store.read_artifact(call_id, ArtifactKind::Recap).await? {
+    if let Some(md) = store
+        .read_artifact(
+            &crate::call_id::CallId::from_db(call_id),
+            ArtifactKind::Recap,
+        )
+        .await?
+    {
         passages.extend(build_recap_passages(&md));
     }
     let decisions = crate::db::decisions::list_decisions(pool, call_id).await?;

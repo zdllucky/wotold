@@ -101,8 +101,9 @@ impl PipelineRunner {
             let _ = old.await;
         }
 
-        let mic_path = store.mic_path(&call_id);
-        let system_path = store.system_path(&call_id);
+        let parsed = crate::call_id::CallId::from_db(&call_id);
+        let mic_path = store.mic_path(&parsed);
+        let system_path = store.system_path(&parsed);
         Self::spawn_task(
             pool,
             store,
@@ -239,7 +240,10 @@ impl PipelineRunner {
         let _ = h.await;
 
         // 2. Проверяем артефакты.
-        let transcript_path = store.artifact_path(call_id, ArtifactKind::Transcript);
+        let transcript_path = store.artifact_path(
+            &crate::call_id::CallId::from_db(call_id),
+            ArtifactKind::Transcript,
+        );
         let artifacts_intact = tokio::fs::metadata(&transcript_path).await.is_ok();
 
         // 3. Restore SQL.
@@ -356,7 +360,10 @@ mod tests {
 
         // Reading через CallStore: артефакта нет.
         let transcript = store
-            .read_artifact("ghost-id", ArtifactKind::Transcript)
+            .read_artifact(
+                &crate::call_id::CallId::from_db("ghost-id"),
+                ArtifactKind::Transcript,
+            )
             .await
             .unwrap();
         assert!(transcript.is_none());
@@ -426,7 +433,7 @@ mod tests {
             .unwrap();
 
         // 2. transcript.md на диске — будто старый run завершился раньше.
-        let call_dir = store.call_dir(&call.id);
+        let call_dir = store.call_dir(&crate::call_id::CallId::from_db(&call.id));
         tokio::fs::create_dir_all(&call_dir).await.unwrap();
         tokio::fs::write(call_dir.join("transcript.md"), "S1: hello")
             .await
@@ -444,7 +451,10 @@ mod tests {
         h.abort();
         let _ = h.await;
 
-        let transcript_path = store.artifact_path(&call.id, ArtifactKind::Transcript);
+        let transcript_path = store.artifact_path(
+            &crate::call_id::CallId::from_db(&call.id),
+            ArtifactKind::Transcript,
+        );
         let artifacts_intact = tokio::fs::metadata(&transcript_path).await.is_ok();
         assert!(artifacts_intact);
 

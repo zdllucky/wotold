@@ -3,6 +3,7 @@
 use tauri::State;
 
 use crate::{
+    call_id::CallId,
     call_store::{ArtifactKind, AudioKind},
     db::{ActionItem, Call},
     services::export::compose_call_markdown,
@@ -24,8 +25,11 @@ pub async fn get_call(state: State<'_, AppState>, id: String) -> Result<Option<C
 /// (по CASCADE), voice_samples с source_call=id, и audio-файлы на диске.
 #[tauri::command]
 pub async fn delete_call(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    // [TD-05] id из webview: до валидации он не имеет права стать путём.
+    // `remove_call_dir("..")` раньше сносил весь app_data_dir вместе с БД.
+    let call_id = CallId::parse(&id)?;
     crate::db::delete_call_and_samples(&state.db, &id).await?;
-    if let Err(e) = state.store.remove_call_dir(&id).await {
+    if let Err(e) = state.store.remove_call_dir(&call_id).await {
         // Audio удалили частично или не было — БД уже консистентна, логируем но не fail.
         log::warn!("delete_call: {e}");
     }
@@ -68,6 +72,7 @@ pub async fn read_call_artifact(
 ) -> Result<Option<String>, AppError> {
     let kind = ArtifactKind::from_str(&kind)
         .ok_or_else(|| AppError::Other(format!("unknown artifact kind: {kind}")))?;
+    let call_id = CallId::parse(&call_id)?;
     state.store.read_artifact(&call_id, kind).await
 }
 
@@ -94,6 +99,7 @@ pub async fn export_call_markdown(
     let call = crate::db::get_call(&state.db, &call_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
+    let call_id = CallId::parse(&call_id)?;
 
     let recap = state
         .store
@@ -123,6 +129,7 @@ pub async fn get_call_audio_path(
 ) -> Result<String, AppError> {
     let audio_kind = AudioKind::from_str(&kind)
         .ok_or_else(|| AppError::Other(format!("unknown audio kind: {kind}")))?;
+    let call_id = CallId::parse(&call_id)?;
     let path = state.store.audio_path(&call_id, audio_kind);
     if path.exists() {
         return Ok(path.to_string_lossy().to_string());

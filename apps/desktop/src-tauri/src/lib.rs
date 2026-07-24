@@ -16,6 +16,7 @@
 mod assistant;
 mod audio;
 mod audio_io;
+mod call_id;
 mod call_store;
 mod commands;
 mod db;
