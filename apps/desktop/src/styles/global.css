@@ -1,5 +1,7 @@
-/* Wotold v2 — global base tail. wk.css устанавливает body / box-sizing /
- * focus-visible reset. Здесь — селекция, markdown типографика, topnav
+/* Wotold v2 — global base tail. wk.css устанавливает body / box-sizing и
+ * (с TD-29) системный `:focus-visible` для примитивов — до этого комментарий
+ * утверждал наличие reset'а, которого там не было ни строки.
+ * Здесь — селекция, markdown типографика, topnav
  * drag-region (Tauri-специфичные хвосты) и macOS traffic-lights padding.
  */
 
