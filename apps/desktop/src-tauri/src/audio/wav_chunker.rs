@@ -14,12 +14,29 @@ use hound::WavReader;
 
 use crate::AppError;
 
+/// [TD-38] Делитель нормализации i16 → f32. Именно 32768, а не `i16::MAX`
+/// (32767): диапазон i16 асимметричен (−32768..=32767), и деление на 32768
+/// отображает его в `[-1.0, 0.99997]` без клиппинга. Деление на 32767 дало бы
+/// −1.00003 на минимуме.
+///
+/// Раньше здесь стояло 32768, а в `audio_io::read_wav` — `i16::MAX`: два
+/// ридера одного и того же WAV расходились в амплитуде. Теперь ридер один
+/// (`audio_io` делегирует сюда), константа одна.
+const I16_SCALE: f32 = 32768.0;
+
+/// Прочитать WAV целиком. Тот же декодер, что и у `read_wav_segment` —
+/// используется `audio_io::read_wav`, чтобы не заводить второй путь чтения.
+pub fn read_wav_full(path: &Path) -> Result<WavSegment, AppError> {
+    // Верхняя граница клампится к длине файла внутри `read_wav_segment`.
+    read_wav_segment(path, 0.0, f32::MAX)
+}
+
 /// Прочитать кусок WAV в `[start_sec, end_sec]`, вернуть mono f32 samples.
 /// Multi-channel WAV свернут в mono через avg по channels.
 ///
 /// Errors:
 ///  - WAV не открывается (path missing / corrupt)
-///  - Spec не PCM (мы пишем PCM int16, другие формы — fail-fast)
+///  - Int-формат не 16-битный (мы пишем PCM int16, прочее — fail-fast)
 ///  - end_sec < start_sec (контракт)
 pub fn read_wav_segment(path: &Path, start_sec: f32, end_sec: f32) -> Result<WavSegment, AppError> {
     if end_sec < start_sec {
@@ -30,13 +47,7 @@ pub fn read_wav_segment(path: &Path, start_sec: f32, end_sec: f32) -> Result<Wav
     let mut reader = WavReader::open(path)
         .map_err(|e| AppError::Other(format!("wav open {}: {e}", path.display())))?;
     let spec = reader.spec();
-    if spec.sample_format != hound::SampleFormat::Int {
-        return Err(AppError::Other(format!(
-            "wav_chunker: unsupported sample format {:?} (need PCM int16)",
-            spec.sample_format
-        )));
-    }
-    if spec.bits_per_sample != 16 {
+    if spec.sample_format == hound::SampleFormat::Int && spec.bits_per_sample != 16 {
         return Err(AppError::Other(format!(
             "wav_chunker: unsupported bits_per_sample {} (need 16)",
             spec.bits_per_sample
@@ -69,24 +80,33 @@ pub fn read_wav_segment(path: &Path, start_sec: f32, end_sec: f32) -> Result<Wav
 
     let frame_count = (end_frame - start_frame) as usize;
     let sample_count = frame_count * channels;
-    let mut samples_i16: Vec<i16> = Vec::with_capacity(sample_count);
-    for s in reader.samples::<i16>().take(sample_count) {
-        let v = s.map_err(|e| AppError::Other(format!("wav read sample: {e}")))?;
-        samples_i16.push(v);
+    // Декодируем в f32 сразу, ещё interleaved по каналам.
+    let mut interleaved: Vec<f32> = Vec::with_capacity(sample_count);
+    match spec.sample_format {
+        hound::SampleFormat::Int => {
+            for s in reader.samples::<i16>().take(sample_count) {
+                let v = s.map_err(|e| AppError::Other(format!("wav read sample: {e}")))?;
+                interleaved.push(v as f32 / I16_SCALE);
+            }
+        }
+        // [TD-38] Float-ветка пришла из `audio_io::read_wav` при слиянии
+        // ридеров. Сайдкар пишет int16, но внешние/legacy файлы бывают f32.
+        hound::SampleFormat::Float => {
+            for s in reader.samples::<f32>().take(sample_count) {
+                interleaved.push(s.map_err(|e| AppError::Other(format!("wav read sample: {e}")))?);
+            }
+        }
     }
 
-    // Convert i16 → f32 normalize, sum channels if multi-channel.
-    let mut samples_f32 = Vec::with_capacity(frame_count);
-    if channels == 1 {
-        for v in samples_i16 {
-            samples_f32.push((v as f32) / 32768.0);
-        }
+    // Свернуть каналы в mono усреднением.
+    let samples_f32 = if channels == 1 {
+        interleaved
     } else {
-        for chunk in samples_i16.chunks_exact(channels) {
-            let sum: f32 = chunk.iter().map(|v| (*v as f32) / 32768.0).sum();
-            samples_f32.push(sum / channels as f32);
-        }
-    }
+        interleaved
+            .chunks_exact(channels)
+            .map(|c| c.iter().sum::<f32>() / channels as f32)
+            .collect()
+    };
 
     Ok(WavSegment {
         sample_rate,
