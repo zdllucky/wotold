@@ -6,18 +6,16 @@
 падала в системные шрифты. Теперь файлы лежат здесь и отдаются Vite по
 `/fonts/`.
 
-Всего 18 файлов, 157 КБ.
+Всего 16 файлов, 148 КБ.
 
 ## Что скачано
 
 | файл | семейство | вес | subset | размер |
 |---|---|---|---|---|
-| `manrope-cyrillic-ext-400-700.woff2` | Manrope | 400 700 | cyrillic-ext | 2.5 КБ |
-| `manrope-cyrillic-400-700.woff2` | Manrope | 400 700 | cyrillic | 14.2 КБ |
-| `manrope-greek-400-700.woff2` | Manrope | 400 700 | greek | 9.1 КБ |
-| `manrope-vietnamese-400-700.woff2` | Manrope | 400 700 | vietnamese | 8.3 КБ |
-| `manrope-latin-ext-400-700.woff2` | Manrope | 400 700 | latin-ext | 14.9 КБ |
-| `manrope-latin-400-700.woff2` | Manrope | 400 700 | latin | 24.0 КБ |
+| `onest-cyrillic-ext-400-700.woff2` | Onest | 400 700 | cyrillic-ext | 2.2 КБ |
+| `onest-cyrillic-400-700.woff2` | Onest | 400 700 | cyrillic | 13.9 КБ |
+| `onest-latin-ext-400-700.woff2` | Onest | 400 700 | latin-ext | 15.6 КБ |
+| `onest-latin-400-700.woff2` | Onest | 400 700 | latin | 31.5 КБ |
 | `ibm-plex-mono-cyrillic-ext-400.woff2` | IBM Plex Mono | 400 | cyrillic-ext | 4.2 КБ |
 | `ibm-plex-mono-cyrillic-400.woff2` | IBM Plex Mono | 400 | cyrillic | 5.3 КБ |
 | `ibm-plex-mono-latin-ext-400.woff2` | IBM Plex Mono | 400 | latin-ext | 8.7 КБ |
@@ -31,7 +29,7 @@
 | `ibm-plex-mono-latin-ext-600.woff2` | IBM Plex Mono | 600 | latin-ext | 8.8 КБ |
 | `ibm-plex-mono-latin-600.woff2` | IBM Plex Mono | 600 | latin | 9.9 КБ |
 
-## Почему Manrope, а не Hanken Grotesk
+## Почему Onest, а не Hanken Grotesk
 
 [TD-47] У Hanken Grotesk, который был UI-шрифтом до 2026-07, **нет базовой
 кириллицы** — Google отдаёт для него только `cyrillic-ext` (U+0460–052F,
@@ -41,11 +39,15 @@
 оставалась настоящим Hanken: две гарнитуры в одной строке.
 
 Из шорт-листа (Inter / Onest / Manrope / Golos Text — все покрывают базовую
-кириллицу и казахские Ұ/Ү) выбран **Manrope** по ширине покрытия: cyrillic,
-cyrillic-ext, greek, latin, latin-ext, vietnamese. Побочно набор стал легче —
-73 КБ против 139 КБ, потому что вариативный файл один на subset.
+кириллицу и казахские Ұ/Ү) владелец выбрал **Onest** по внешнему виду.
+Кириллица-first геометрическая гротеска, по темпераменту ближе всего к
+прежнему Hanken.
 
-IBM Plex Mono оставлен как есть: кириллицу он покрывает полностью, включая
+Покрытие: `cyrillic`, `cyrillic-ext`, `latin`, `latin-ext`. Греческого и
+вьетнамского в Onest нет — на момент решения продукту они не нужны (локали
+ru/kk/en), расширять покрытие будем по мере появления самих языков.
+
+IBM Plex Mono оставлен как есть: кириллицу покрывает полностью, включая
 казахские Ұ/Ү (U+04B0–04B1).
 
 ## Как обновлять
@@ -55,7 +57,7 @@ IBM Plex Mono оставлен как есть: кириллицу он покр
 
 ```bash
 curl -sSL -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36" \
-  "https://fonts.googleapis.com/css2?family=Manrope:wght@400..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+  "https://fonts.googleapis.com/css2?family=Onest:wght@400..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
 ```
 
 Из ответа взять блоки нужных subset'ов, скачать `url(...)` и перегенерировать
