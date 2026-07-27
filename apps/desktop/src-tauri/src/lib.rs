@@ -156,6 +156,7 @@ pub fn run() {
             commands::list_calls,
             commands::list_calls_page,
             commands::count_calls,
+            commands::list_call_degraded_flags,
             commands::get_call,
             commands::delete_call,
             commands::wipe_all_data,

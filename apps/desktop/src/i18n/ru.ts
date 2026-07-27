@@ -287,6 +287,16 @@ const ruInternal = {
 
   // ── CallDetailPage / tabs / panels ─────────────────────────────────────
   callDetail: {
+    // [TD-37] Оговорки о качестве обработки. Пайплайн деградирует, а не
+    // падает — пользователь должен видеть, чем именно результат неполон.
+    degradedTitle: 'Обработано с оговорками',
+    degraded: {
+      partial_transcript: 'Расшифрованы не все части записи',
+      system_track_not_diarized: 'Голоса собеседников не разделены',
+      mic_track_not_diarized: 'Голоса на вашей дорожке не разделены',
+      speaker_clustering_failed: 'Спикеры не сгруппированы по голосам',
+      language_repin_failed: 'Часть текста распознана не тем языком',
+    },
     notFound: 'Звонок не найден.',
     tabRecap: 'Саммари',
     tabTranscript: 'Расшифровка',

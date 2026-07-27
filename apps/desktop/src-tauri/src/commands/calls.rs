@@ -16,6 +16,18 @@ pub async fn list_calls(state: State<'_, AppState>) -> Result<Vec<Call>, AppErro
     crate::db::list_calls(&state.db).await
 }
 
+/// [TD-37] Оговорки о качестве обработки звонка. Пустой список = обработка
+/// прошла без деградаций (или звонок записан до появления флагов).
+#[tauri::command]
+pub async fn list_call_degraded_flags(
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<Vec<String>, AppError> {
+    // [правило 7] id из webview.
+    let id = CallId::parse(&call_id)?;
+    db::list_degraded_flags(&state.db, id.as_str()).await
+}
+
 /// [TD-42] Страница «Недавних» для рельсы: она рефетчится на каждое событие
 /// пайплайна и раньше тянула всю историю, чтобы показать пятьдесят строк.
 #[tauri::command]

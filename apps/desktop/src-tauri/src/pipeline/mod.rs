@@ -466,6 +466,11 @@ pub async fn reprocess_call(
         return Err(e);
     }
 
+    // [TD-37] Оговорки прошлого прогона к новому результату отношения не
+    // имеют — чистим до старта, а не после, чтобы UI не показывал их поверх
+    // уже идущей переобработки.
+    let _ = db::clear_degraded_flags(pool, call_id).await;
+
     // Reset status: was failed → processing, clear failed_reason.
     // Если был ready — тоже перетянем в processing, чтобы UI показывал прогресс
     // и не закешировал старый recap.
