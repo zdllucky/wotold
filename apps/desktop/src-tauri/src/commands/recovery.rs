@@ -29,7 +29,7 @@ use crate::{
     AppError,
 };
 
-use super::recording::build_chunk_providers;
+use super::chunked_setup::build_chunk_providers;
 
 /// [M13 fix] Recovery сломанной chunked-записи (например записанной старым
 /// кодом с chunk-0-path-mismatch + пропущенным финальным chunk'ом).

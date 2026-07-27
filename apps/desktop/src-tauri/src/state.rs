@@ -83,7 +83,7 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
     // [B19.6] Прерванные записи (орфан-'recording'): <30с → удалить, ≥30с → failed.
     // Startup продолжается даже при ошибке reconcile (app должен подняться);
     // error-level, т.к. это сбой startup-задачи, а не штатный warn.
-    match crate::commands::recording::reconcile_orphan_recordings(&pool, &store).await {
+    match crate::commands::orphan_reconcile::reconcile_orphan_recordings(&pool, &store).await {
         Ok(n) if n > 0 => log::warn!("reconcile_orphan_recordings: {n} прерванных записей"),
         Ok(_) => {}
         Err(e) => log::error!("reconcile_orphan_recordings failed: {e}"),
