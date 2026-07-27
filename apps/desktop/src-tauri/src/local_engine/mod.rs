@@ -37,3 +37,4 @@ pub mod models;
 pub mod preset;
 pub mod sidecar;
 pub mod stt;
+pub mod whisper_json;
