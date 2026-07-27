@@ -24,7 +24,9 @@ use super::{
     run_auto_bind, run_stage, speaker_prompt_ctx, stage_merge_artifacts, stage_recognize_speakers,
     stage_upload, ChunkGate, PipelineCtx,
 };
-use crate::providers::transcription::{TranscriptionOpts, TranscriptionProvider};
+use crate::providers::transcription::{
+    DiarizedTranscript, TranscriptSegment, TranscriptionOpts, TranscriptionProvider,
+};
 
 /// [M12.6 Phase 3] Local-engine pipeline route. Полностью offline:
 /// LocalWhisperProvider (whisper.cpp sidecar) → merge → cluster (WeSpeaker
@@ -44,16 +46,36 @@ pub(super) async fn run_local_inner(
     app: Option<&AppHandle>,
     s: &PipelineSettings,
 ) -> Result<(), AppError> {
-    use crate::local_engine::{
-        llm::LocalLlamaProvider,
-        models::{self, ModelStatus},
-        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
-        stt::{LocalWhisperProvider, TrackKind},
-    };
-
     let app = app.ok_or_else(|| {
         AppError::Other("local_engine_no_app_handle: pipeline requires Tauri runtime".into())
     })?;
+
+    // [TD-35] Маршрут читается как последовательность фаз, а не как один
+    // экран текста. Через границы ходит ровно то, что перечислено в
+    // сигнатурах: подготовка отдаёт модели, расшифровка — две дорожки,
+    // диаризация — их же уточнённые, спикеры — склеенный транскрипт.
+    let models = prepare_local_run(pool, ctx, app).await?;
+    let (mic_t, sys_t) = transcribe_tracks(pool, ctx, app, s, models.whisper).await?;
+    let (mic_t, sys_t, lang_detected) = diarize_tracks(pool, ctx, mic_t, sys_t).await?;
+    // Склеенный транскрипт нужен только фазе спикеров: рекап читает
+    // transcript.md с диска — ровно тот текст, который увидит пользователь.
+    let _merged =
+        recognize_speakers(pool, ctx, app, s, &mic_t, &sys_t, lang_detected.as_deref()).await?;
+    run_recap(pool, ctx, app, s, lang_detected.as_deref(), models).await
+}
+
+/// [TD-35] Фаза 1 — подготовка: AppHandle, активный preset, наличие моделей на
+/// диске и псевдо-stage Upload. Всё, после чего можно начинать работать.
+#[cfg(target_os = "macos")]
+async fn prepare_local_run(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    app: &AppHandle,
+) -> Result<LocalModels, AppError> {
+    use crate::local_engine::{
+        models::{self, ModelStatus},
+        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
+    };
 
     // 1. Резолвим preset → model ids. Без preset (юзер прошёл onboarding но
     //    выбрал Cloud, потом откатился) — fail с явным reason.
@@ -97,6 +119,35 @@ pub(super) async fn run_local_inner(
     )
     .await?;
 
+    Ok(LocalModels {
+        preset,
+        whisper: whisper_id,
+        llm: llm_id,
+    })
+}
+
+/// [TD-35] Что резолвит подготовка. Тип явный, потому что дальше эти три
+/// значения расходятся по разным фазам: whisper — в расшифровку, preset и llm
+/// — в рекап, и передавать их кортежем значило бы путать местами.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+struct LocalModels {
+    preset: crate::local_engine::preset::LocalEnginePreset,
+    whisper: crate::local_engine::models::ModelId,
+    llm: crate::local_engine::models::ModelId,
+}
+
+/// [TD-35] Фаза 2 — расшифровка: halt-гейт по чанкам, склейка аудио и
+/// собственно транскрипты (из чанков либо full-file), включая пин языка.
+#[cfg(target_os = "macos")]
+async fn transcribe_tracks(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    app: &AppHandle,
+    s: &PipelineSettings,
+    whisper_id: crate::local_engine::models::ModelId,
+) -> Result<(DiarizedTranscript, DiarizedTranscript), AppError> {
+    use crate::local_engine::stt::{LocalWhisperProvider, TrackKind};
     // 4. Stage Transcribe — mic + system параллельно через whisper-cli sidecar.
     //
     // [P13] Halt gate — если есть failed chunks, не идём дальше step 2.
@@ -220,77 +271,100 @@ pub(super) async fn run_local_inner(
             // одноязычный — определяем язык по треку с речью (system как якорь:
             // собеседник обычно говорит чётко с начала) и перезапускаем трек,
             // чей детект отличается. explicit stt_lang сюда не попадает.
+            // [P-fix4] Auto-режим: пин языка звонка на ОБА трека. STT детектит
+            // язык на каждом треке независимо; тихий старт mic (владелец слушает)
+            // → mis-detect «en» → русская речь уходит в [FOREIGN]. Звонок
+            // одноязычный — определяем язык по треку с речью (system как якорь:
+            // собеседник обычно говорит чётко с начала) и перезапускаем трек,
+            // чей детект отличается. explicit stt_lang сюда не попадает.
             if s.stt_lang == "auto" {
                 if let Some(call_lang) = call_language(&mic, &sys) {
-                    let pinned = TranscriptionOpts {
-                        lang: call_lang.clone(),
-                        diarization: true,
-                        prompt: None,
-                    };
-                    if mic.lang_detected.as_deref() != Some(call_lang.as_str()) {
-                        // [TD-15] Err-ветка обязательна: при провале повторного
-                        // STT (timeout сайдкара, OOM) звонок молча оставался с
-                        // mis-detected языком — тем самым [FOREIGN]-спамом, ради
-                        // которого фича и писалась, — и по логам нельзя было
-                        // понять, что re-STT вообще запускался.
-                        match mic_stt.transcribe(&ctx.mic_path, pinned.clone()).await {
-                            Ok(re) => {
-                                log::info!(
-                                    "call {}: re-STT mic pinned lang={call_lang} (was {:?})",
-                                    ctx.call_id,
-                                    mic.lang_detected
-                                );
-                                mic = re;
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "call {}: re-STT mic (lang={call_lang}) failed, \
-                                     оставляем mis-detected {:?}: {e}",
-                                    ctx.call_id,
-                                    mic.lang_detected
-                                );
-                                mark_degraded(
-                                    pool,
-                                    &ctx.call_id,
-                                    DegradedFlag::LanguageRepinFailed,
-                                )
-                                .await;
-                            }
-                        }
-                    }
-                    if sys.lang_detected.as_deref() != Some(call_lang.as_str()) {
-                        // [TD-15] См. mic-ветку выше.
-                        match sys_stt.transcribe(&ctx.system_path, pinned).await {
-                            Ok(re) => {
-                                log::info!(
-                                    "call {}: re-STT system pinned lang={call_lang} (was {:?})",
-                                    ctx.call_id,
-                                    sys.lang_detected
-                                );
-                                sys = re;
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "call {}: re-STT system (lang={call_lang}) failed, \
-                                     оставляем mis-detected {:?}: {e}",
-                                    ctx.call_id,
-                                    sys.lang_detected
-                                );
-                                mark_degraded(
-                                    pool,
-                                    &ctx.call_id,
-                                    DegradedFlag::LanguageRepinFailed,
-                                )
-                                .await;
-                            }
-                        }
-                    }
+                    // [TD-35] Обе дорожки пере-расшифровываются одним хелпером:
+                    // раньше это были две почти дословные копии, и Err-ветку
+                    // TD-15 в них приходилось чинить дважды.
+                    mic = repin_track_language(
+                        pool,
+                        ctx,
+                        &mic_stt,
+                        &ctx.mic_path,
+                        mic,
+                        &call_lang,
+                        "mic",
+                    )
+                    .await;
+                    sys = repin_track_language(
+                        pool,
+                        ctx,
+                        &sys_stt,
+                        &ctx.system_path,
+                        sys,
+                        &call_lang,
+                        "system",
+                    )
+                    .await;
                 }
             }
             (mic, sys)
         }
     };
+    Ok((mic_t, sys_t))
+}
 
+/// [TD-35 / P-fix4] Пере-расшифровать дорожку под язык звонка, если её
+/// собственный детект разошёлся.
+///
+/// [TD-15] Err-ветка обязательна и она здесь одна на обе дорожки: при провале
+/// повторного STT (timeout сайдкара, OOM) звонок молча оставался с
+/// mis-detected языком — тем самым `[FOREIGN]`-спамом, ради которого фича и
+/// писалась, — и по логам нельзя было понять, что re-STT вообще запускался.
+#[cfg(target_os = "macos")]
+async fn repin_track_language(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    stt: &crate::local_engine::stt::LocalWhisperProvider,
+    path: &Path,
+    current: DiarizedTranscript,
+    call_lang: &str,
+    label: &str,
+) -> DiarizedTranscript {
+    if current.lang_detected.as_deref() == Some(call_lang) {
+        return current;
+    }
+    let pinned = TranscriptionOpts {
+        lang: call_lang.to_string(),
+        diarization: true,
+        prompt: None,
+    };
+    match stt.transcribe(path, pinned).await {
+        Ok(re) => {
+            log::info!(
+                "call {}: re-STT {label} pinned lang={call_lang} (was {:?})",
+                ctx.call_id,
+                current.lang_detected
+            );
+            re
+        }
+        Err(e) => {
+            log::warn!(
+                "call {}: re-STT {label} (lang={call_lang}) failed, \
+                 оставляем mis-detected {:?}: {e}",
+                ctx.call_id,
+                current.lang_detected
+            );
+            mark_degraded(pool, &ctx.call_id, DegradedFlag::LanguageRepinFailed).await;
+            current
+        }
+    }
+}
+
+/// [TD-35] Фаза 3 — диаризация дорожек и язык звонка.
+#[cfg(target_os = "macos")]
+async fn diarize_tracks(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    mic_t: DiarizedTranscript,
+    sys_t: DiarizedTranscript,
+) -> Result<(DiarizedTranscript, DiarizedTranscript, Option<String>), AppError> {
     let lang_detected = mic_t
         .lang_detected
         .clone()
@@ -357,7 +431,22 @@ pub(super) async fn run_local_inner(
     } else {
         mic_t
     };
+    Ok((mic_t, sys_t, lang_detected))
+}
 
+/// [TD-35] Фаза 4 — артефакты и спикеры: transcript.md, метаданные звонка,
+/// владелец, кластеризация голосов и авто-привязка.
+#[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)]
+async fn recognize_speakers(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    app: &AppHandle,
+    s: &PipelineSettings,
+    mic_t: &DiarizedTranscript,
+    sys_t: &DiarizedTranscript,
+    lang_detected: Option<&str>,
+) -> Result<Vec<TranscriptSegment>, AppError> {
     // 5. Stage MergeArtifacts — переиспользуем cloud helper (он не знает про
     //    engine, просто пишет transcript.md + raw_stt.json).
     let merged = run_stage(
@@ -366,11 +455,11 @@ pub(super) async fn run_local_inner(
         &ctx.call_id,
         Stage::MergeArtifacts,
         None,
-        async { stage_merge_artifacts(&ctx.call_dir, &mic_t, &sys_t).await },
+        async { stage_merge_artifacts(&ctx.call_dir, mic_t, sys_t).await },
     )
     .await?;
 
-    db::set_call_meta(pool, &ctx.call_id, lang_detected.as_deref(), "local").await?;
+    db::set_call_meta(pool, &ctx.call_id, lang_detected, "local").await?;
 
     let owner = db::ensure_owner_contact(pool).await?;
     if let Err(e) = db::auto_bind_owner_speaker(pool, &ctx.call_id, &owner.id, OWNER_TAG).await {
@@ -401,6 +490,28 @@ pub(super) async fn run_local_inner(
     if let Err(e) = run_auto_bind(pool, Some(app), &ctx.call_id, s).await {
         log::warn!("auto_bind {} failed (non-fatal): {e}", ctx.call_id);
     }
+    Ok(merged)
+}
+
+/// [TD-35] Фаза 5 — рекап на локальной модели. Ошибка здесь не фатальна для
+/// звонка: транскрипт уже на диске, рекап пересоздаётся кнопкой (M4 паспорта).
+#[cfg(target_os = "macos")]
+async fn run_recap(
+    pool: &SqlitePool,
+    ctx: &PipelineCtx,
+    app: &AppHandle,
+    s: &PipelineSettings,
+    lang_detected: Option<&str>,
+    models_ids: LocalModels,
+) -> Result<(), AppError> {
+    use crate::local_engine::{
+        llm::LocalLlamaProvider,
+        models::{self, ModelId},
+        preset::LocalEnginePreset,
+    };
+    let preset = models_ids.preset;
+    let llm_id = models_ids.llm;
+    let whisper_id: ModelId = models_ids.whisper;
 
     // 7. Stage Recap — local LLM. Failed_reason set + recap.md skipped при
     //    ошибке; pipeline всё равно завершает Ok(()) (M4 паспорта — recap
@@ -464,7 +575,7 @@ pub(super) async fn run_local_inner(
             let orch_ctx = local_orchestrator::LocalOrchestratorCtx {
                 // [F2] Переписанный транскрипт — LLM видит имена контактов.
                 transcript_md: &prompt_transcript,
-                lang_detected: lang_detected.as_deref(),
+                lang_detected,
                 known_speakers: known_speakers.as_deref(),
                 // [M14 T-05/T-06 Phase B] Pass active preset для chunker config —
                 // длинные transcripts автоматически идут chunked-path.
