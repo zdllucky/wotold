@@ -99,6 +99,11 @@ jobs:
         run: pnpm --filter @wotold/desktop typecheck
       - name: Typecheck @wotold/mcp
         run: pnpm --filter @wotold/mcp typecheck
+      # [TD-31] Ratchet: инлайн-стилей не должно становиться больше. Токен-
+      # дисциплина по цвету enforced хуком, по типографике и spacing — нет;
+      # это не даёт долгу расти, пока он сводится по мере касания файлов.
+      - name: Inline-style budget
+        run: node scripts/inline-style-budget.mjs --check
 
   ts-tests:
     name: TS tests + coverage
