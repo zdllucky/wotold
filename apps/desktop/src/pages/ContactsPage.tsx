@@ -17,7 +17,7 @@ import {
   type ContactInput,
 } from '../api/contacts';
 import { listCalls, type Call } from '../api/recording';
-import { listCallSpeakers } from '../api/speakers';
+import { listCallSpeakersBatch } from '../api/speakers';
 import { SP_COLORS } from './CallDetailUtils';
 import { Button, Empty, IconBtn, Skeleton, ViewHead } from '../ui';
 import { useResizablePanel } from '../hooks/useResizablePanel';
@@ -113,14 +113,16 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
     void (async () => {
       try {
         const calls = await listCalls();
-        const speakerLists = await Promise.allSettled(calls.map((c) => listCallSpeakers(c.id)));
+        // [TD-46] Один батч вместо запроса на звонок — тот же N+1, что чинили
+        // в инбоксе (правило 2: близнецы правятся вместе).
+        const byCall = await listCallSpeakersBatch(calls.map((c) => c.id));
         const stats = new Map<string, ContactStats>();
         const byContact = new Map<string, Call[]>();
-        speakerLists.forEach((r, i) => {
-          if (r.status !== 'fulfilled') return;
-          const call = calls[i]!;
+        calls.forEach((call) => {
+          const speakers = byCall[call.id];
+          if (!speakers) return;
           const seen = new Set<string>();
-          for (const s of r.value) {
+          for (const s of speakers) {
             if (s.confirmed && s.contact_id && !seen.has(s.contact_id)) {
               seen.add(s.contact_id);
               const prev = stats.get(s.contact_id) ?? { callCount: 0, totalSec: 0 };

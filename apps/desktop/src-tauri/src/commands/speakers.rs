@@ -21,6 +21,23 @@ pub async fn list_call_speakers(
     crate::db::list_call_speakers(&state.db, &call_id).await
 }
 
+/// [TD-46] Спикеры сразу для списка звонков — один запрос вместо запроса на
+/// строку инбокса. Ответ — карта `call_id → спикеры`; звонки без спикеров в
+/// ней отсутствуют.
+#[tauri::command]
+pub async fn list_call_speakers_batch(
+    state: State<'_, AppState>,
+    call_ids: Vec<String>,
+) -> Result<std::collections::HashMap<String, Vec<CallSpeakerView>>, AppError> {
+    // [TD-05, правило 7] id приходят из webview. Запрос параметризован, но
+    // валидация всё равно обязательна: невалидный id тут означает ошибку
+    // вызывающего, и молча отдавать по нему пустоту — прятать её.
+    for id in &call_ids {
+        crate::call_id::CallId::parse(id)?;
+    }
+    crate::db::list_speakers_for_calls(&state.db, &call_ids).await
+}
+
 /// R2 паспорта: финальная привязка спикер↔контакт ТОЛЬКО через явное действие
 /// пользователя. Используется UI confirmation flow.
 #[tauri::command]

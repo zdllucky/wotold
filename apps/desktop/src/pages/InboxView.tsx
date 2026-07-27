@@ -18,7 +18,7 @@ import {
   type CallProgressEvent,
 } from '../api/recording';
 import { listActiveCallIds } from '../api/calls';
-import { listCallSpeakers } from '../api/speakers';
+import { listCallSpeakersBatch, type CallSpeakerView } from '../api/speakers';
 import {
   Button,
   CallRowSkeleton,
@@ -534,24 +534,47 @@ export function InboxView({
   }, []);
 
   // Aggregate confirmed speakers per ready call (one-shot after list).
+  // [TD-46] Один батч-вызов вместо вызова на каждый готовый звонок: инбокс
+  // смонтирован через keep-alive и стрелял этой пачкой даже пока
+  // пользователь смотрит настройки.
   useEffect(() => {
     if (!calls || calls.length === 0) return;
+    let cancelled = false;
     void (async () => {
       const ready = calls.filter((c) => c.status === 'ready');
-      const results = await Promise.allSettled(ready.map((c) => listCallSpeakers(c.id)));
+      if (ready.length === 0) {
+        if (!cancelled) {
+          setSpeakerInitials(new Map());
+          setCallPersons(new Map());
+        }
+        return;
+      }
+      let byCall: Record<string, CallSpeakerView[]>;
+      try {
+        byCall = await listCallSpeakersBatch(ready.map((c) => c.id));
+      } catch {
+        // Аватары — украшение строки списка: их отсутствие не повод рушить
+        // инбокс. Прежний Promise.allSettled глотал ошибки поштучно, здесь
+        // отваливается вся пачка сразу.
+        return;
+      }
+      if (cancelled) return;
       const next = new Map<string, string[]>();
       const persons = new Map<string, string[]>();
-      results.forEach((r, i) => {
-        if (r.status !== 'fulfilled') return;
-        const callId = ready[i]!.id;
+      for (const call of ready) {
+        const speakers = byCall[call.id];
+        if (!speakers) continue;
         // [B29.1] Дедуп по контакту: несколько голосов одного человека — один аватар.
-        const { initials: out, names } = confirmedParticipants(r.value);
-        next.set(callId, out);
-        if (names.length > 0) persons.set(callId, names);
-      });
+        const { initials: out, names } = confirmedParticipants(speakers);
+        next.set(call.id, out);
+        if (names.length > 0) persons.set(call.id, names);
+      }
       setSpeakerInitials(next);
       setCallPersons(persons);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [calls]);
 
   // [B18.7b] Distinct confirmed-contact names → person facet values.

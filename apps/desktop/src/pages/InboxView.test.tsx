@@ -68,6 +68,9 @@ function routeInvoke(activeIds: string[]) {
         return Promise.resolve(activeIds);
       case 'list_call_speakers':
         return Promise.resolve([]);
+      // [TD-46] Инбокс тянет спикеров пачкой: карта call_id → спикеры.
+      case 'list_call_speakers_batch':
+        return Promise.resolve({});
       default:
         return Promise.resolve(null);
     }
@@ -208,5 +211,63 @@ describe('InboxView — TD-26', () => {
       await Promise.resolve();
     });
     expect(dateHeader).toHaveAttribute('aria-sort', 'ascending');
+  });
+});
+
+describe('InboxView — TD-46', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
+  test('спикеры тянутся одним батчем, а не запросом на строку', async () => {
+    // Регрессия TD-46: на каждый refresh инбокс делал listCallSpeakers на
+    // КАЖДЫЙ готовый звонок, и стрелял этой пачкой даже пока пользователь
+    // смотрит настройки (инбокс живёт через keep-alive).
+    const second: Call = { ...READY_CALL, id: 'call-busy-2', title: 'Второй' };
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case 'list_calls':
+          return Promise.resolve([READY_CALL, second]);
+        case 'list_active_call_ids':
+          return Promise.resolve([]);
+        case 'list_call_speakers_batch':
+          return Promise.resolve({});
+        default:
+          return Promise.resolve(null);
+      }
+    });
+
+    renderInbox(<InboxView onOpen={() => {}} />);
+    await flush();
+
+    const batchCalls = mockInvoke.mock.calls.filter(
+      (c) => c[0] === 'list_call_speakers_batch',
+    );
+    expect(batchCalls).toHaveLength(1);
+    expect(batchCalls[0]?.[1]).toEqual({
+      callIds: [READY_CALL.id, second.id],
+    });
+    expect(mockInvoke.mock.calls.some((c) => c[0] === 'list_call_speakers')).toBe(false);
+  });
+
+  test('пустой список готовых звонков не ходит в бэкенд за спикерами', async () => {
+    const processing: Call = { ...READY_CALL, status: 'processing' };
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case 'list_calls':
+          return Promise.resolve([processing]);
+        case 'list_active_call_ids':
+          return Promise.resolve([]);
+        default:
+          return Promise.resolve(null);
+      }
+    });
+
+    renderInbox(<InboxView onOpen={() => {}} />);
+    await flush();
+
+    expect(
+      mockInvoke.mock.calls.some((c) => c[0] === 'list_call_speakers_batch'),
+    ).toBe(false);
   });
 });

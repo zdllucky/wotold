@@ -73,6 +73,74 @@ pub async fn list_call_speakers(
         .collect())
 }
 
+/// [TD-46] Сколько id влезает в один `IN (…)`. SQLite ограничивает число
+/// параметров (по умолчанию 999); режем с запасом, остальное — следующим
+/// запросом. Батч из двух-трёх запросов всё равно на порядок дешевле, чем
+/// запрос на каждый звонок.
+const SPEAKERS_BATCH_MAX_IDS: usize = 300;
+
+/// [TD-46] Спикеры сразу для списка звонков, сгруппированные по `call_id`.
+///
+/// Инбокс держится в памяти через keep-alive и на каждый refresh дёргал
+/// `list_call_speakers` на КАЖДЫЙ готовый звонок — по запросу на строку
+/// списка, в том числе пока пользователь смотрит совсем другой экран.
+/// Здесь то же самое одним `IN (…)`.
+///
+/// Звонок без спикеров в ответе отсутствует — вызывающий трактует это как
+/// пустой список. Возвращать пустые векторы для несуществующих id значило бы
+/// делать вид, что такой звонок есть.
+pub async fn list_speakers_for_calls(
+    pool: &SqlitePool,
+    call_ids: &[String],
+) -> Result<std::collections::HashMap<String, Vec<CallSpeakerView>>, AppError> {
+    use sqlx::Row;
+    let mut out: std::collections::HashMap<String, Vec<CallSpeakerView>> =
+        std::collections::HashMap::new();
+    if call_ids.is_empty() {
+        return Ok(out);
+    }
+
+    for batch in call_ids.chunks(SPEAKERS_BATCH_MAX_IDS) {
+        // Плейсхолдеры, а не интерполяция значений: id приходят из webview.
+        let placeholders = vec!["?"; batch.len()].join(", ");
+        let sql = format!(
+            "SELECT
+                cs.id, cs.call_id, cs.speaker_tag, cs.contact_id,
+                c1.display_name AS contact_display_name,
+                cs.suggestion_contact_id,
+                c2.display_name AS suggestion_contact_display_name,
+                cs.suggestion_score, cs.suggestion_source, cs.confirmed,
+                cs.auto_bound_at
+             FROM call_speakers cs
+             LEFT JOIN contacts c1 ON c1.id = cs.contact_id
+             LEFT JOIN contacts c2 ON c2.id = cs.suggestion_contact_id
+             WHERE cs.call_id IN ({placeholders})
+             ORDER BY cs.call_id, cs.speaker_tag"
+        );
+        let mut q = sqlx::query(&sql);
+        for id in batch {
+            q = q.bind(id);
+        }
+        for r in q.fetch_all(pool).await? {
+            let view = CallSpeakerView {
+                id: r.get("id"),
+                call_id: r.get("call_id"),
+                speaker_tag: r.get("speaker_tag"),
+                contact_id: r.get("contact_id"),
+                contact_display_name: r.get("contact_display_name"),
+                suggestion_contact_id: r.get("suggestion_contact_id"),
+                suggestion_contact_display_name: r.get("suggestion_contact_display_name"),
+                suggestion_score: r.get("suggestion_score"),
+                suggestion_source: r.get("suggestion_source"),
+                confirmed: r.get::<i64, _>("confirmed") == 1,
+                auto_bound_at: r.get("auto_bound_at"),
+            };
+            out.entry(view.call_id.clone()).or_default().push(view);
+        }
+    }
+    Ok(out)
+}
+
 /// [B11] M7.4: добавить placeholder rows в `call_speakers` для каждого спикера
 /// из транскрипта (если их там ещё нет). Это делает всех спикеров видимыми
 /// в `SpeakersSection`, в т.ч. анонимных без suggestion от identify_speakers.
@@ -506,5 +574,88 @@ mod tests {
             .unwrap();
         let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
         assert_eq!(speakers.len(), 1, "повторный вызов не создаёт дубль");
+    }
+
+    // ============================================================
+    // [TD-46] Батч-выборка спикеров по списку звонков
+    // ============================================================
+
+    #[tokio::test]
+    async fn batch_groups_speakers_by_call_and_skips_unknown_ids() {
+        let db = fresh_db().await;
+        let a = insert_recording(&db.pool, "local").await.unwrap();
+        let b = insert_recording(&db.pool, "local").await.unwrap();
+        let alice = insert_contact_row(&db.pool, "Alice").await;
+        insert_speaker_row(&db.pool, &a.id, "owner", None).await;
+        insert_speaker_row(&db.pool, &a.id, "speaker:0", Some(&alice)).await;
+        insert_speaker_row(&db.pool, &b.id, "owner", None).await;
+
+        let ids = vec![a.id.clone(), b.id.clone(), "ghost".to_string()];
+        let map = list_speakers_for_calls(&db.pool, &ids).await.unwrap();
+
+        assert_eq!(map.len(), 2, "несуществующий id не должен давать запись");
+        assert_eq!(map[&a.id].len(), 2);
+        assert_eq!(map[&b.id].len(), 1);
+        // Порядок внутри звонка тот же, что у поштучной выборки.
+        let tags: Vec<_> = map[&a.id].iter().map(|s| s.speaker_tag.as_str()).collect();
+        assert_eq!(tags, vec!["owner", "speaker:0"]);
+        assert!(!map.contains_key("ghost"));
+    }
+
+    #[tokio::test]
+    async fn batch_matches_per_call_query_field_by_field() {
+        // Батч не должен «почти» совпадать с поштучным запросом: инбокс
+        // рисует по нему аватары подтверждённых участников.
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "local").await.unwrap();
+        let bob = insert_contact_row(&db.pool, "Bob").await;
+        insert_speaker_row(&db.pool, &call.id, "speaker:0", Some(&bob)).await;
+
+        let one = list_call_speakers(&db.pool, &call.id).await.unwrap();
+        let many = list_speakers_for_calls(&db.pool, std::slice::from_ref(&call.id))
+            .await
+            .unwrap();
+        let batched = &many[&call.id];
+
+        assert_eq!(one.len(), batched.len());
+        let a = &one[0];
+        let b = &batched[0];
+        assert_eq!(a.id, b.id);
+        assert_eq!(a.speaker_tag, b.speaker_tag);
+        assert_eq!(a.contact_id, b.contact_id);
+        assert_eq!(a.contact_display_name, b.contact_display_name);
+        assert_eq!(a.suggestion_contact_id, b.suggestion_contact_id);
+        assert_eq!(
+            a.suggestion_contact_display_name,
+            b.suggestion_contact_display_name
+        );
+        assert_eq!(a.suggestion_score, b.suggestion_score);
+        assert_eq!(a.confirmed, b.confirmed);
+        assert_eq!(a.auto_bound_at, b.auto_bound_at);
+    }
+
+    #[tokio::test]
+    async fn batch_on_empty_input_does_not_query() {
+        let db = fresh_db().await;
+        let map = list_speakers_for_calls(&db.pool, &[]).await.unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[tokio::test]
+    async fn batch_splits_beyond_sqlite_parameter_limit() {
+        // Больше одного чанка: без разбиения SQLite упёрся бы в лимит
+        // параметров, и инбокс с длинной историей просто получал бы ошибку.
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "local").await.unwrap();
+        insert_speaker_row(&db.pool, &call.id, "owner", None).await;
+
+        let mut ids: Vec<String> = (0..SPEAKERS_BATCH_MAX_IDS + 50)
+            .map(|i| format!("missing-{i}"))
+            .collect();
+        ids.push(call.id.clone());
+
+        let map = list_speakers_for_calls(&db.pool, &ids).await.unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map[&call.id].len(), 1);
     }
 }
