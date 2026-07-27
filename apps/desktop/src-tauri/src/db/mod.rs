@@ -12,11 +12,13 @@ mod action_items;
 // assistant::{indexer,retrieval} и commands::assistant (M15.3+).
 pub(crate) mod assistant;
 pub(crate) mod assistant_embeddings;
+pub(crate) mod assistant_passages;
 pub(crate) mod assistant_search;
 mod calls;
 // [M13.1.3b] Chunked pipelined transcription — call_chunks table helpers.
 // pub(crate) чтобы pipeline::chunk_runner мог вызывать insert/mark/list.
 pub(crate) mod chunks;
+mod contact_identifiers;
 mod contacts;
 // [M14 T-02] Decisions / open_questions tables (migration 0015).
 // pub(crate) чтобы pipeline::recap мог replace на persist.

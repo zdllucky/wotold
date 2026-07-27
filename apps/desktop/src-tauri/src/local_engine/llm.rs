@@ -32,7 +32,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::Value;
 use tauri::AppHandle;
-use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
@@ -40,9 +39,11 @@ use crate::call_id::ensure_path_under;
 use crate::pipeline::resource_queue::{self, Resource};
 use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 
+use super::llm_json::extract_json_object;
+use super::llm_prompt::build_prompt;
 use super::models::{model_path, ModelId};
 use super::preset::LocalEnginePreset;
-use super::sidecar::{SidecarGuard, TempFileGuard};
+use super::sidecar::{run_sidecar_with_timeout, TempFileGuard};
 
 // [Q] Сериализация LLM-вызовов (llama-cli грузит 1.5-7B GGUF, ~3-5 GB RAM;
 // параллель = OOM/contention) жила в локальном `LLM_SEMAPHORE`; мигрировала
@@ -530,224 +531,6 @@ pub(super) async fn write_user_only(path: &Path, bytes: &[u8]) -> Result<(), std
     Ok(())
 }
 
-/// Собрать финальный prompt: system + двойной перенос + transcript.
-fn build_prompt(request: &LlmRequest) -> String {
-    let mut s = String::with_capacity(request.system.len() + request.input.len() + 4);
-    s.push_str(&request.system);
-    if !s.ends_with('\n') {
-        s.push('\n');
-    }
-    s.push('\n');
-    s.push_str(&request.input);
-    s
-}
-
-/// Запустить sidecar, ждать `Terminated`, агрегировать stdout. Таймаут
-/// `tokio::time::timeout`. На таймауте — `drop(child)` шлёт kill сигнал.
-/// [TD-15] Обрезать строку по границе символа, не длиннее `max_bytes`.
-///
-/// Раньше здесь стоял `&s[..s.len().min(512)]` — байтовый срез по строке из
-/// `from_utf8_lossy`. Если байт 512 попадал внутрь многобайтового символа
-/// (кириллица в путях GGUF, либо 3-байтовый U+FFFD, который сам lossy и
-/// вставляет), это паниковало «byte index 512 is not a char boundary» — ровно
-/// в аварийных ветках (exit code != 0, timeout), то есть вместо внятной
-/// ошибки юзер получал панику async-таски пайплайна.
-///
-/// `str::floor_char_boundary` до сих пор нестабилен (проверено на rustc 1.95),
-/// поэтому откатываемся вручную.
-fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
-    if s.len() <= max_bytes {
-        return s;
-    }
-    let mut end = max_bytes;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
-}
-
-async fn run_sidecar_with_timeout(
-    sidecar: tauri_plugin_shell::process::Command,
-    timeout: Duration,
-) -> Result<String, LlmError> {
-    let (mut rx, child) = sidecar
-        .spawn()
-        .map_err(|e| LlmError::Provider(format!("sidecar spawn: {e}")))?;
-    // [M12.3.6 + M12.6.4] llama-cli не читает stdin (prompt через `-f`).
-    // `SidecarGuard` гарантирует SIGKILL процессу при cancel / panic /
-    // unhandled Err — без него process переживает abort task'а на 5+ минут.
-    let mut guard = Some(SidecarGuard::new(child));
-
-    let start = std::time::Instant::now();
-    log::info!("llama sidecar spawn: timeout={}s", timeout.as_secs());
-
-    let mut stdout = Vec::<u8>::new();
-    let mut stderr = Vec::<u8>::new();
-    let mut exit_code: Option<i32> = None;
-    let drained = tokio::time::timeout(timeout, async {
-        loop {
-            // Heartbeat: если 30s нет событий — log warning что процесс
-            // молчит (model load или stuck). Outer timeout всё равно
-            // прикончит через `timeout` seconds — heartbeat lapping в
-            // паузах между ним.
-            let event = tokio::time::timeout(Duration::from_secs(30), rx.recv()).await;
-            let event = match event {
-                Ok(Some(ev)) => ev,
-                Ok(None) => return Ok::<(), LlmError>(()), // channel closed
-                Err(_) => {
-                    log::warn!(
-                        "llama silent for 30s+ (elapsed={}s, stdout={}b, stderr={}b)",
-                        start.elapsed().as_secs(),
-                        stdout.len(),
-                        stderr.len()
-                    );
-                    continue;
-                }
-            };
-            match event {
-                CommandEvent::Stdout(b) => {
-                    stdout.extend_from_slice(&b);
-                    let chunk = String::from_utf8_lossy(&b);
-                    log::info!(
-                        "llama stdout +{}b ({}ms, total={}b): {}",
-                        b.len(),
-                        start.elapsed().as_millis(),
-                        stdout.len(),
-                        chunk.trim_end()
-                    );
-                }
-                CommandEvent::Stderr(b) => {
-                    stderr.extend_from_slice(&b);
-                    let chunk = String::from_utf8_lossy(&b);
-                    log::debug!(
-                        "llama stderr +{}b ({}ms): {}",
-                        b.len(),
-                        start.elapsed().as_millis(),
-                        chunk.trim_end()
-                    );
-                }
-                CommandEvent::Terminated(p) => {
-                    exit_code = p.code;
-                    log::info!(
-                        "llama Terminated: code={:?}, elapsed={}ms, stdout={}b, stderr={}b",
-                        p.code,
-                        start.elapsed().as_millis(),
-                        stdout.len(),
-                        stderr.len()
-                    );
-                    return Ok::<(), LlmError>(());
-                }
-                CommandEvent::Error(e) => {
-                    log::warn!(
-                        "llama Error event: {e} (elapsed={}ms)",
-                        start.elapsed().as_millis()
-                    );
-                    return Err(LlmError::Provider(format!("sidecar error: {e}")));
-                }
-                _ => {}
-            }
-        }
-    })
-    .await;
-
-    let stderr_snippet = || {
-        let s = String::from_utf8_lossy(&stderr);
-        if s.is_empty() {
-            String::new()
-        } else {
-            format!("; stderr: {}", truncate_at_char_boundary(&s, 512))
-        }
-    };
-
-    match drained {
-        Ok(Ok(())) => {
-            // Terminated event received — процесс мёртв. Release guard
-            // чтобы Drop не пытался killить уже-завершившийся pid.
-            if let Some(g) = guard.take() {
-                g.release();
-            }
-            if let Some(code) = exit_code {
-                if code != 0 {
-                    return Err(LlmError::Provider(format!(
-                        "sidecar exit code {code}; output {} bytes{}",
-                        stdout.len(),
-                        stderr_snippet()
-                    )));
-                }
-            }
-            Ok(String::from_utf8_lossy(&stdout).into_owned())
-        }
-        Ok(Err(e)) => {
-            // Sidecar Error event — child может быть ещё жив, явный kill.
-            if let Some(g) = guard.take() {
-                g.kill();
-            }
-            Err(e)
-        }
-        Err(_) => {
-            // [PRD §M12.3.6 + M12.6.4] Timeout / cancel — child работает,
-            // нужен SIGKILL. `tauri_plugin_shell::CommandChild::kill()` →
-            // `SharedChild::kill()` → POSIX kill(SIGKILL). При abort task'а
-            // `guard` всё равно drop'нется и убьёт процесс (defense-in-depth).
-            if let Some(g) = guard.take() {
-                g.kill();
-            }
-            Err(LlmError::Provider(format!(
-                "local_llm_timeout{}",
-                stderr_snippet()
-            )))
-        }
-    }
-}
-
-/// Найти первый сбалансированный JSON-объект в строке. Модель может
-/// выдать чуть-чуть мусора до/после; ищем по brace-counter.
-///
-/// # UTF-8 safety
-///
-/// Функция итерирует raw `u8`, но это безопасно для UTF-8 строк по
-/// определению кодировки: continuation bytes (0x80..=0xBF) НЕ пересекаются
-/// с ASCII-кодами которые мы трекаем (`"` 0x22, `{` 0x7B, `}` 0x7D, `\` 0x5C).
-/// Любой multi-byte Unicode codepoint имеет ведущий byte ≥ 0xC0 — тоже вне
-/// нашего набора. Поэтому мы не можем «случайно» войти в строку посреди
-/// многобайтового символа. Регрессия покрыта `extract_json_handles_escaped_quote_in_string`
-/// + `extract_json_handles_nested_braces` тестами.
-fn extract_json_object(text: &str) -> Option<String> {
-    let bytes = text.as_bytes();
-    let start = bytes.iter().position(|&b| b == b'{')?;
-    let mut depth: i32 = 0;
-    let mut in_string = false;
-    let mut escape = false;
-    for (i, &b) in bytes.iter().enumerate().skip(start) {
-        if escape {
-            escape = false;
-            continue;
-        }
-        if in_string {
-            match b {
-                b'\\' => escape = true,
-                b'"' => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match b {
-            b'"' => in_string = true,
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return std::str::from_utf8(&bytes[start..=i])
-                        .ok()
-                        .map(String::from);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
 // [P8.1] `validate_recap_shape` удалён — был хардкоднутый title+summary
 // валидатор который ломал classifier и другие non-recap callers
 // (`bad_shape: missing title` на любой `{call_type, confidence}` ответ).
@@ -793,56 +576,6 @@ pub const LOCAL_LLM_SYSTEM_PROMPT: &str = concat!(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ============================================================
-    // [TD-15] truncate_at_char_boundary — паника в error-path
-    // ============================================================
-
-    #[test]
-    fn truncate_returns_whole_string_when_under_limit() {
-        assert_eq!(truncate_at_char_boundary("short", 512), "short");
-        assert_eq!(truncate_at_char_boundary("", 512), "");
-    }
-
-    #[test]
-    fn truncate_cyrillic_over_limit_does_not_panic() {
-        // Регрессия: `&s[..s.len().min(512)]` паниковал, если байт 512 попадал
-        // внутрь многобайтового символа.
-        //
-        // ВАЖНО про конструкцию: одной кириллицы мало. Все её символы
-        // двухбайтовые, поэтому границы стоят на чётных смещениях, а 512 —
-        // чётное: срез бы прошёл и тест ничего не проверял. Ведущий ASCII-байт
-        // сдвигает границы на нечётные, и 512 гарантированно попадает ВНУТРЬ
-        // символа. (Проверено: без сдвига тест зеленел на сломанном коде.)
-        let s = format!("x{}", "стдерр".repeat(200));
-        assert!(s.len() > 512);
-        assert!(!s.is_char_boundary(512), "512 обязан быть внутри символа");
-        let out = truncate_at_char_boundary(&s, 512);
-        assert!(out.len() <= 512);
-        assert!(s.starts_with(out), "префикс исходной строки");
-        // Результат — валидный &str: перекодировка туда-обратно без потерь.
-        assert_eq!(out, String::from_utf8(out.as_bytes().to_vec()).unwrap());
-    }
-
-    #[test]
-    fn truncate_lands_exactly_on_boundary() {
-        // "аб" = 4 байта (2+2). Лимит 3 попадает в середину 'б' → откат до 2.
-        assert_eq!(truncate_at_char_boundary("аб", 3), "а");
-        assert_eq!(truncate_at_char_boundary("аб", 2), "а");
-        assert_eq!(truncate_at_char_boundary("аб", 1), "");
-        assert_eq!(truncate_at_char_boundary("аб", 0), "");
-    }
-
-    #[test]
-    fn truncate_handles_replacement_char() {
-        // from_utf8_lossy вставляет U+FFFD (3 байта) — он сам может попасть на
-        // границу лимита.
-        let lossy = String::from_utf8_lossy(&[0xFF, 0xFE, 0xFD]).into_owned();
-        for limit in 0..=lossy.len() {
-            let out = truncate_at_char_boundary(&lossy, limit);
-            assert!(out.len() <= limit);
-        }
-    }
 
     #[test]
     fn for_preset_resolves_model_path() {
@@ -928,78 +661,6 @@ mod tests {
         // в free-form prose. Тест guard'ит регрессию промпта.
         assert!(LOCAL_LLM_SYSTEM_PROMPT.contains("Пример:"));
         assert!(LOCAL_LLM_SYSTEM_PROMPT.contains("Output:"));
-    }
-
-    // ── build_prompt ────────────────────────────────────────────────────
-
-    #[test]
-    fn build_prompt_concatenates_system_and_input() {
-        let req = LlmRequest {
-            model: None,
-            system: "SYS".into(),
-            input: "BODY".into(),
-            max_tokens: None,
-            grammar: None,
-            json_schema: None,
-        };
-        let p = build_prompt(&req);
-        assert!(p.starts_with("SYS"));
-        assert!(p.ends_with("BODY"));
-        assert!(
-            p.contains("SYS\n\nBODY"),
-            "missing blank separator, got: {p:?}"
-        );
-    }
-
-    #[test]
-    fn build_prompt_normalizes_trailing_newline() {
-        // system уже с newline → не плодим лишних \n\n\n
-        let req = LlmRequest {
-            model: None,
-            system: "SYS\n".into(),
-            input: "BODY".into(),
-            max_tokens: None,
-            grammar: None,
-            json_schema: None,
-        };
-        let p = build_prompt(&req);
-        assert!(p.contains("SYS\n\nBODY"));
-        assert!(!p.contains("SYS\n\n\nBODY"));
-    }
-
-    // ── extract_json_object ─────────────────────────────────────────────
-
-    #[test]
-    fn extract_json_finds_object_among_prose() {
-        let s = "leading garbage\n{\"title\":\"X\",\"summary\":\"Y\"}\ntrailing";
-        let out = extract_json_object(s).unwrap();
-        assert_eq!(out, "{\"title\":\"X\",\"summary\":\"Y\"}");
-    }
-
-    #[test]
-    fn extract_json_handles_nested_braces() {
-        let s = r#"{"a":{"b":{"c":1}},"d":"}}"}"#;
-        let out = extract_json_object(s).unwrap();
-        // вернёт весь объект, не зацикливается на внутренних `}`
-        assert_eq!(out, s);
-    }
-
-    #[test]
-    fn extract_json_handles_escaped_quote_in_string() {
-        let s = r#"{"text":"He said \"hi\" then left"}"#;
-        let out = extract_json_object(s).unwrap();
-        assert_eq!(out, s);
-    }
-
-    #[test]
-    fn extract_json_returns_none_when_no_brace() {
-        assert!(extract_json_object("plain text no json").is_none());
-    }
-
-    #[test]
-    fn extract_json_returns_none_when_unbalanced() {
-        // Открывающая скобка без закрывающей → нет результата.
-        assert!(extract_json_object("{\"a\":1").is_none());
     }
 
     // [P8.1] validate_recap_shape удалён — shape валидация теперь
