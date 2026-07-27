@@ -49,6 +49,11 @@ struct WotoldAudioMain {
         }
         let system = ProcessTapRecorder()
 
+        // [TD-21e] Рекордер не знает про stdout — сообщает о потере и возврате
+        // дорожки сюда. Событие идёт в общий поток вне очереди команд: оно
+        // возникает само по себе, а не в ответ на команду.
+        mic.onDeviceEvent = { event in emit(event.jsonObject) }
+
         let router = CommandRouter(
             mic: mic,
             system: system,
