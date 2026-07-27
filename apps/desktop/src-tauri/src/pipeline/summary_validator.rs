@@ -15,18 +15,16 @@
 //! в production. Validator drops items с failing evidence (NOT fail entire
 //! summary), сохраняет partial output как degraded ok.
 //!
-//! **Fuzzy substring match** — своя naive sliding-window Levenshtein
-//! similarity. Достаточно для 0.85-0.95 threshold (Vectara hallucination
-//! tests показывают что 0.85-0.90 надёжно ловит fabrications). Не тянем
-//! новых crates (rapidfuzz/strsim 50KB+ blob).
-//!
-//! Performance: literal `transcript.contains(quote)` check first — 95%
-//! случаев hit, skip fuzzy. Fuzzy O(n·m) на 5K transcript × 100-char quote
-//! ≈ 500K char ops ≈ < 1ms.
+//! **Fuzzy substring match** живёт в соседнем [`text_similarity`] — вынесен
+//! туда при TD-18 вместе с Jaccard-дедупом, когда этот файл упёрся в лимит
+//! когезии 800 строк.
+
+pub mod text_similarity;
 
 use std::collections::HashSet;
 
 use crate::pipeline::summary_v2::{CallSummaryV2, ParticipantV2};
+use text_similarity::{jaccard_token_overlap, substring_fuzzy_score};
 
 /// Default cosine-like threshold для substring fuzzy match. PRD §6.2
 /// validator step 3 указывает 0.90.
@@ -123,109 +121,6 @@ pub fn validate_schema(summary: &CallSummaryV2) -> Vec<ValidationError> {
         }
     }
     errors
-}
-
-/// Substring fuzzy match — возвращает best similarity score (0..1) для
-/// `needle` против `haystack`. 1.0 = literal match found; 0.0 = ничего
-/// близкого.
-///
-/// Algorithm: sliding-window Levenshtein на normalized текстах. Lower +
-/// collapse whitespace на обоих перед сравнением — устраняет false
-/// negatives от форматирования.
-pub fn substring_fuzzy_score(needle: &str, haystack: &str) -> f32 {
-    let needle_norm = normalize(needle);
-    let haystack_norm = normalize(haystack);
-    if needle_norm.is_empty() {
-        return 0.0;
-    }
-    // Fast path: literal match → 1.0.
-    if haystack_norm.contains(&needle_norm) {
-        return 1.0;
-    }
-    let n_chars: Vec<char> = needle_norm.chars().collect();
-    let h_chars: Vec<char> = haystack_norm.chars().collect();
-    let n_len = n_chars.len();
-    let h_len = h_chars.len();
-    if h_len < n_len {
-        // Haystack короче needle — partial best vs full needle.
-        return partial_similarity(&n_chars, &h_chars);
-    }
-    let mut best = 0.0_f32;
-    // Slide window len=n_len по haystack; на каждом window считаем
-    // similarity = 1 - edit_distance / n_len.
-    let max_start = h_len.saturating_sub(n_len);
-    for start in 0..=max_start {
-        let window = &h_chars[start..start + n_len];
-        let sim = partial_similarity(&n_chars, window);
-        if sim > best {
-            best = sim;
-            if best >= 0.999 {
-                // Достаточно близко к 1.0, ранний выход.
-                return best;
-            }
-        }
-    }
-    best
-}
-
-/// Levenshtein-similarity для two slices одной длины (approximately).
-/// Returns 1 - normalized_edit_distance в [0, 1].
-fn partial_similarity(a: &[char], b: &[char]) -> f32 {
-    let dist = levenshtein(a, b);
-    let max_len = a.len().max(b.len());
-    if max_len == 0 {
-        return 1.0;
-    }
-    1.0 - (dist as f32) / (max_len as f32)
-}
-
-/// Naive O(n·m) Levenshtein distance. m, n ≤ 200 (quote length cap),
-/// тривиально для production.
-fn levenshtein(a: &[char], b: &[char]) -> usize {
-    let n = a.len();
-    let m = b.len();
-    if n == 0 {
-        return m;
-    }
-    if m == 0 {
-        return n;
-    }
-    let mut prev: Vec<usize> = (0..=m).collect();
-    let mut curr = vec![0_usize; m + 1];
-    for i in 1..=n {
-        curr[0] = i;
-        for j in 1..=m {
-            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
-            curr[j] = (prev[j] + 1) // deletion
-                .min(curr[j - 1] + 1) // insertion
-                .min(prev[j - 1] + cost); // substitution
-        }
-        std::mem::swap(&mut prev, &mut curr);
-    }
-    prev[m]
-}
-
-/// Normalize: lowercase + collapse whitespace + trim. Устраняет
-/// false-negative от \r\n / leading spaces / capitalization.
-fn normalize(s: &str) -> String {
-    let lower = s.to_lowercase();
-    let mut out = String::with_capacity(lower.len());
-    let mut last_was_space = false;
-    for c in lower.chars() {
-        if c.is_whitespace() {
-            if !last_was_space && !out.is_empty() {
-                out.push(' ');
-                last_was_space = true;
-            }
-        } else {
-            out.push(c);
-            last_was_space = false;
-        }
-    }
-    if out.ends_with(' ') {
-        out.pop();
-    }
-    out
 }
 
 /// Verify evidence quotes для всех action_items / decisions / open_questions.
@@ -355,6 +250,33 @@ pub fn strip_unverified_evidence(
     (summary, stripped)
 }
 
+/// [TD-18] Async-обёртка «сверить цитаты + схлопнуть дубли» для пайплайна.
+///
+/// Обе операции — Левенштейн и Jaccard по всему транскрипту, то есть чистый
+/// CPU на десятки-сотни миллисекунд (часовой звонок × десяток пунктов). На
+/// tokio-worker'ах крутятся Tauri-команды UI, поэтому считаем в blocking-пуле
+/// (инженерное правило 5). Обёртка живёт здесь, а не на call-site: перенос в
+/// пул — свойство самого алгоритма, и следующий вызывающий не должен об этом
+/// вспоминать.
+///
+/// Синхронные `strip_unverified_evidence` / `dedup_items` остаются публичными
+/// для golden-eval харнеса, который работает вне async-контекста.
+pub async fn strip_and_dedup(
+    summary: CallSummaryV2,
+    transcript: &str,
+    fuzzy_threshold: f32,
+) -> Result<(CallSummaryV2, usize), crate::AppError> {
+    let transcript = transcript.to_string();
+    tokio::task::spawn_blocking(move || {
+        let (mut summary, nulled) =
+            strip_unverified_evidence(summary, &transcript, fuzzy_threshold);
+        dedup_items(&mut summary);
+        (summary, nulled)
+    })
+    .await
+    .map_err(|e| crate::AppError::Other(format!("summary validator task join: {e}")))
+}
+
 fn evidence_ok(
     evidence: &Option<crate::pipeline::summary_v2::EvidenceAnchor>,
     transcript: &str,
@@ -365,31 +287,6 @@ fn evidence_ok(
         return false;
     }
     substring_fuzzy_score(&ev.quote, transcript) >= threshold
-}
-
-/// Token-overlap Jaccard для intent matching. Lowercases + whitespace-splits;
-/// returns intersection_size / union_size.
-#[allow(dead_code)] // [M14] Будет вызываться через `dedup_items` в T-08 + T-10.
-fn jaccard_token_overlap(a: &str, b: &str) -> f32 {
-    let a_tokens: std::collections::HashSet<String> = a
-        .to_lowercase()
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect();
-    let b_tokens: std::collections::HashSet<String> = b
-        .to_lowercase()
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect();
-    if a_tokens.is_empty() && b_tokens.is_empty() {
-        return 1.0;
-    }
-    let inter = a_tokens.intersection(&b_tokens).count();
-    let union = a_tokens.union(&b_tokens).count();
-    if union == 0 {
-        return 0.0;
-    }
-    inter as f32 / union as f32
 }
 
 /// Dedup items в [`CallSummaryV2`] по intent overlap. Для каждого
@@ -510,31 +407,6 @@ mod tests {
         }
     }
 
-    // ──────── substring_fuzzy_score ────────
-
-    #[test]
-    fn literal_substring_match_returns_1() {
-        let score = substring_fuzzy_score(
-            "I'll send the proposal",
-            "Customer: yes please. I'll send the proposal by tomorrow.",
-        );
-        assert!((score - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn whitespace_difference_still_near_1() {
-        // Cloud LLM может вернуть quote с одинарным пробелом, transcript — с
-        // двойным. Normalize должен collapse'нуть.
-        let score = substring_fuzzy_score("hello world", "alice: hello  world  back");
-        assert!(score >= 0.99, "got {score}");
-    }
-
-    #[test]
-    fn case_difference_normalized() {
-        let score = substring_fuzzy_score("Hello World", "alice: hello world back");
-        assert!(score >= 0.99, "got {score}");
-    }
-
     #[test]
     fn dedup_participants_collapses_repeated_name_and_tag() {
         // Реальный кейс из лога: одно имя на 5 тегах + speaker:unknown ×3.
@@ -569,25 +441,6 @@ mod tests {
         ];
         dedup_items(&mut s);
         assert_eq!(s.participants.len(), 2);
-    }
-
-    #[test]
-    fn pure_hallucination_low_score() {
-        let score = substring_fuzzy_score(
-            "we agreed to ship enterprise tier",
-            "Alice: just here to say hi and goodbye.",
-        );
-        // Common tokens: zero. Полностью разные тексты.
-        assert!(score < 0.5, "got {score}");
-    }
-
-    #[test]
-    fn fuzzy_threshold_boundary_typo_passes() {
-        // 1 typo на 24 chars = ~96% similarity → passes 0.90 threshold.
-        let needle = "I will send the report"; // 22 chars
-        let transcript = "Bob: yeah, I willl send the report tonight."; // typo: willl vs will
-        let score = substring_fuzzy_score(needle, transcript);
-        assert!(score >= 0.90, "expected ≥ 0.90, got {score}");
     }
 
     // ──────── verify_evidence_quotes ────────

@@ -5,11 +5,10 @@ use sqlx::SqlitePool;
 use tauri::AppHandle;
 
 use crate::{
-    db,
-    embeddings::{self, StubEmbedder},
+    db, embeddings,
     events::{CallAutoBoundEvent, CallProgressEvent, EventBus, PipelineFinishedEvent},
     matching,
-    pipeline::{clusters::extract_clusters, merge::OWNER_TAG},
+    pipeline::{clusters::load_and_extract_clusters, merge::OWNER_TAG},
     providers::transcription::{
         DiarizedTranscript, TranscriptSegment, TranscriptionOpts, TranscriptionProvider,
     },
@@ -1496,22 +1495,17 @@ async fn relabel_owner_on_mic_full_file(
     system_path: &Path,
     mut mic_t: DiarizedTranscript,
 ) -> DiarizedTranscript {
-    // Embedder для cluster mean (reuse existing pipeline pattern из cloud
-    // run_cluster_pipeline). Fallback на StubEmbedder когда модель отсутствует
-    // → cluster_embeddings empty → identify_owner_speaker уходит в duration
-    // fallback (acceptable).
-    let model_path = app_data_dir.join("models").join("embedder.onnx");
-    let embedder: Box<dyn embeddings::Embedder> =
-        match embeddings::try_load_onnx_embedder(&model_path) {
-            Some(e) => e,
-            None => Box::new(StubEmbedder),
-        };
-    let clusters = match crate::pipeline::clusters::extract_clusters(
-        &mic_t.segments,
-        mic_path,
-        system_path,
-        embedder.as_ref(),
-    ) {
+    // Fallback на StubEmbedder когда модель отсутствует → cluster_embeddings
+    // empty → identify_owner_speaker уходит в duration fallback (acceptable).
+    let clusters = match crate::pipeline::clusters::load_and_extract_clusters(
+        mic_t.segments.clone(),
+        mic_path.to_path_buf(),
+        system_path.to_path_buf(),
+        app_data_dir,
+        "relabel_owner_on_mic",
+    )
+    .await
+    {
         Ok(c) => c,
         Err(e) => {
             log::warn!("relabel_owner_on_mic: extract_clusters err: {e} — fallback duration");
@@ -1828,25 +1822,14 @@ async fn run_cluster_pipeline(
     system_path: &Path,
     app_data_dir: &Path,
 ) -> Result<(), AppError> {
-    let model_path = app_data_dir.join("models").join("embedder.onnx");
-    let embedder: Box<dyn embeddings::Embedder> =
-        match embeddings::try_load_onnx_embedder(&model_path) {
-            Some(e) => {
-                log::info!(
-                    "cluster pipeline {call_id}: OnnxEmbedder ({})",
-                    model_path.display()
-                );
-                e
-            }
-            None => {
-                log::debug!(
-                    "cluster pipeline {call_id}: StubEmbedder (no model at {})",
-                    model_path.display()
-                );
-                Box::new(StubEmbedder)
-            }
-        };
-    let clusters = extract_clusters(merged, mic_path, system_path, embedder.as_ref())?;
+    let clusters = load_and_extract_clusters(
+        merged.to_vec(),
+        mic_path.to_path_buf(),
+        system_path.to_path_buf(),
+        app_data_dir,
+        &format!("cluster pipeline {call_id}"),
+    )
+    .await?;
     if clusters.is_empty() {
         log::debug!("cluster pipeline {call_id}: no clusters extracted");
         return Ok(());
