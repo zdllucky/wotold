@@ -18,6 +18,7 @@ pub mod embedder;
 mod eval;
 pub mod fusion;
 pub mod indexer;
+pub mod lazy_provider;
 pub mod period;
 pub mod retrieval;
 pub mod router;
@@ -360,15 +361,10 @@ pub async fn ask(
     pool: &SqlitePool,
     args: AskArgs,
 ) -> Result<AskOutcome, AppError> {
-    use crate::pipeline::PipelineSettings;
-
-    let s = PipelineSettings::load(pool).await?;
     let app_data_dir = {
         let state = tauri::Manager::state::<crate::state::AppState>(app);
         state.app_data_dir.clone()
     };
-    let (provider, _preset) =
-        crate::pipeline::build_local_llm_provider(pool, &app_data_dir, app, &s).await?;
     // Метка очереди — из chat.call_id (истина в БД): follow-up в треде звонка
     // приходит только с chat_id, args.call_id тогда пуст.
     let queue_label = match (&args.chat_id, &args.call_id) {
@@ -379,9 +375,16 @@ pub async fn ask(
         (None, None) => None,
     }
     .unwrap_or_else(|| "assistant".to_string());
-    // cache_prompt: стабильный префикс [system][fragments] переживает
-    // follow-up-ходы на resident-сервере (PRD §6.4).
-    let provider = provider.with_call(queue_label).with_cache_prompt(true);
+    // [TD-23] Провайдер строится ЛЕНИВО, при первом обращении к модели.
+    // Раньше он поднимался здесь, до роутера, и при невыбранном пресете
+    // мета-вопросы, отказ и пустая ветка падали «модель не установлена» —
+    // то есть весь смысл роутера M16.4 («нулевая латентность без LLM»).
+    let provider = lazy_provider::LazyLocalProvider::new(
+        pool.clone(),
+        app.clone(),
+        app_data_dir.clone(),
+        queue_label,
+    );
     let bus = EventBus::new(Some(app));
     // [M15.11] Гибридный retrieval, если эмбеддер доступен (feature + модель).
     let text_embedder = embedder::shared(&app_data_dir).await;
