@@ -154,6 +154,8 @@ pub fn run() {
             commands::resume_recording,
             commands::get_recording_state,
             commands::list_calls,
+            commands::list_calls_page,
+            commands::count_calls,
             commands::get_call,
             commands::delete_call,
             commands::wipe_all_data,
