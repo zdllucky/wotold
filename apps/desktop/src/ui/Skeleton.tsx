@@ -26,7 +26,11 @@ export function Skeleton({
 }: SkeletonProps) {
   return (
     <span
-      className="ds-skeleton"
+      // [TD-30] Канонический `.skeleton` из wk.css вместо собственного
+      // `.ds-skeleton`: в проекте жили три параллельные shimmer-системы, и
+      // именно канон был фактически мёртв. Модификатор inline остаётся —
+      // на нём висит display/vertical-align.
+      className="skeleton"
       data-inline={inline ? 'true' : 'false'}
       aria-hidden="true"
       style={{
