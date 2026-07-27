@@ -9,9 +9,12 @@ pub mod assistant;
 #[cfg(target_os = "macos")]
 pub mod call_detection;
 pub mod calls;
+pub mod chunk_retry;
+pub mod chunked_setup;
 pub mod contacts;
 #[cfg(target_os = "macos")]
 pub mod local_engine;
+pub mod orphan_reconcile;
 pub mod pipeline;
 pub mod recording;
 pub mod recovery;
@@ -28,6 +31,7 @@ pub use assistant::*;
 #[cfg(target_os = "macos")]
 pub use call_detection::*;
 pub use calls::*;
+pub use chunk_retry::*;
 pub use contacts::*;
 #[cfg(target_os = "macos")]
 pub use local_engine::*;
