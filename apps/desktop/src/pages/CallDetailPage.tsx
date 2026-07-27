@@ -7,22 +7,13 @@
 // Sub-components extracted to ./components/call-detail/* (see barrel).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ask, save } from '@tauri-apps/plugin-dialog';
 
-import {
-  cancelReprocess,
-  deleteCall,
-  exportCallMarkdown,
-  regenerateRecap,
-  regenerateTitle,
-  reprocessCall,
-} from '../api/calls';
 import { retryChunk } from '../api/recording';
-import { unbindCallSpeaker } from '../api/speakers';
 import { useQueueState } from '../hooks/useQueueState';
+import { useCallDetailActions } from './useCallDetailActions';
 import { localEngineEvalRecap } from '../api/local-engine';
 import { humanError } from '../api/errors';
-import { Dropdown, Icon, IconBtn, MenuItem, MenuSep, Tabs, useToast } from '../ui';
+import { Dropdown, Icon, IconBtn, MenuItem, MenuSep, Tabs } from '../ui';
 import {
   AutoBoundBanner,
   CallDetailSkeleton,
@@ -95,18 +86,12 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
   // в тост, а не в общий error-state. Раньше упавший экспорт заменял весь
   // открытый звонок — транскрипт, плеер, рекап — одним красным абзацем без
   // retry и без «назад».
-  const toast = useToast();
-  const actionError = (e: unknown) =>
-    toast.show({ message: humanError(e, t), tone: 'danger' });
 
   // [B17 V3.9] Default tab → transcript (per artboard §5 reference).
   const [tab, setTab] = useState<Tab>('transcript');
   // [B17 V4.1] Inline-confirm popup из транскрипта — speaker_tag клика.
   const [confirmingTag, setConfirmingTag] = useState<string | null>(null);
 
-  const [deleting, setDeleting] = useState(false);
-  const [reprocessing, setReprocessing] = useState(false);
-  const [exporting, setExporting] = useState(false);
   // [Bug-fix #6] После bind speaker → contact подсказываем regenerate recap.
   // Memory-only flag — пере-показывается на следующий bind action в звонке.
   const [pendingRecapRegen, setPendingRecapRegen] = useState(false);
@@ -205,182 +190,32 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
     [confirmingTag, speakersLite],
   );
 
-  const onReprocess = async () => {
-    if (!call) return;
-    const ok = await ask(t('callDetail.reprocessConfirmBody'), {
-      title: t('callDetail.reprocessConfirmTitle'),
-      kind: 'warning',
-      okLabel: t('callDetail.reprocessConfirmOk'),
-      cancelLabel: t('common.cancel'),
-    });
-    if (!ok) return;
-    setReprocessing(true);
-    // [V8] Optimistic patch — сразу переводим call.status='processing' чтобы
-    // ReprocessBanner показался. Backend `reprocess_call` теперь spawn'ит
-    // task и возвращается мгновенно; точное состояние подтянется через
-    // `call:progress` / `pipeline:finished` события.
-    // [P16.1] Snapshot pre-patch state — на sync-error revert immediately
-    // вместо waiting на refetchAll → нет fake spinner пока refetch crawl'ит.
-    const snapshotBefore = call;
-    setCall((prev) =>
-      prev
-        ? {
-            ...prev,
-            status: 'processing',
-            pipeline_step: 1,
-            pipeline_pct: 0,
-            pipeline_eta_sec: null,
-            upload_bytes: null,
-          }
-        : prev,
-    );
-    try {
-      await reprocessCall(call.id);
-    } catch (e) {
-      toast.show({ message: t('callDetail.reprocessFailed', { error: humanError(e, t) }), tone: 'danger' });
-      // [P16.1] Immediate revert optimistic patch — UI status вернётся в
-      // failed без задержки. refetchAll ниже подтянет свежий failed_reason
-      // (backend P16.2 теперь пишет failed_reason на chunks gate reject).
-      // [P16.1 review] Functional updater — capture latest state inside
-      // updater, не stale closure. Между snapshot capture и catch
-      // `call:progress` Tauri event мог обновить state — revert не должен
-      // discard concurrent updates. Берём только поля которые мы patched:
-      // status + pipeline_* — остальное (`prev` actual) keeps.
-      setCall((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: snapshotBefore.status,
-              pipeline_step: snapshotBefore.pipeline_step,
-              pipeline_pct: snapshotBefore.pipeline_pct,
-              pipeline_eta_sec: snapshotBefore.pipeline_eta_sec,
-              upload_bytes: snapshotBefore.upload_bytes,
-              recap_failed_reason: snapshotBefore.recap_failed_reason,
-            }
-          : prev,
-      );
-      await refetchAll();
-    } finally {
-      setReprocessing(false);
-    }
-  };
+  // [TD-49] Команды над звонком со своими busy-флагами живут отдельно —
+  // страница знает о них только через обработчики.
+  const {
+    deleting,
+    reprocessing,
+    exporting,
+    actionError,
+    onReprocess,
+    onCancelReprocess,
+    onUnbindVoice,
+    onRegenerateRecap,
+    onRegenerateTitle,
+    onExportMarkdown,
+    onDelete,
+  } = useCallDetailActions({
+    callId,
+    call,
+    setCall,
+    refetchAll,
+    refetchSpeakersAndContacts,
+    setBgBusy,
+    setRecapElapsedSec,
+    setPendingRecapRegen,
+    onBack,
+  });
 
-  // [V8] Cancel running reprocess. Backend abort'ает pipeline task и
-  // восстанавливает status='ready' (если артефакты пережили) или
-  // 'failed' (первичная отмена). pipeline:cancelled listener подтянет.
-  const onCancelReprocess = async () => {
-    if (!call) return;
-    try {
-      await cancelReprocess(call.id);
-    } catch (e) {
-      console.warn('cancel reprocess failed:', e);
-    }
-  };
-
-  // [Global regen] Fire-and-forget: команда regenerate_recap регистрирует
-  // фон-задачу в pipeline_tasks и возвращается сразу. Результат подтянет
-  // pipeline:finished listener (refetchAll в useCallDetail) даже после возврата
-  // на страницу; busy-флаг (bgBusy) сбросит он же. Задача переживает навигацию
-  // и считается в бейдже у «Звонки».
-  // [B20.7] Отвязать конкретный голос от контакта. Зеркально confirm-flow:
-  // после отвязки имя спикера в рекапе устарело → предлагаем regen.
-  const onUnbindVoice = async (callSpeakerId: string) => {
-    try {
-      await unbindCallSpeaker(callSpeakerId);
-      await refetchSpeakersAndContacts();
-      setPendingRecapRegen(true);
-    } catch (e) {
-      actionError(e);
-    }
-  };
-
-  const onRegenerateRecap = async () => {
-    setBgBusy(true);
-    // [P1.3] Сброс elapsed timer'а на старте — UI начинает с «Пересоздаём…».
-    setRecapElapsedSec(null);
-    // [Bug-fix #6] Регенерация запущена — recap-regen suggestion больше не нужен.
-    setPendingRecapRegen(false);
-    // Optimistic clear stale recap_failed_reason; snapshot для revert на reject.
-    const snapshotBefore = call;
-    setCall((prev) => (prev ? { ...prev, recap_failed_reason: null } : prev));
-    try {
-      await regenerateRecap(callId);
-    } catch (e) {
-      // Reject = guard «уже обрабатывается» / spawn-ошибка → revert busy + state.
-      toast.show({ message: t('callDetail.regenerateFailed', { error: humanError(e, t) }), tone: 'danger' });
-      // [P16.1 review] Functional updater — restore только patched поле
-      // (recap_failed_reason), не stomp concurrent state из `call:progress`.
-      // bgBusy-модель (regen = фон-задача): setBgBusy(false) на reject,
-      // на успехе bgBusy сбрасывает pipeline:finished listener.
-      if (snapshotBefore) {
-        setCall((prev) =>
-          prev
-            ? { ...prev, recap_failed_reason: snapshotBefore.recap_failed_reason }
-            : prev,
-        );
-      }
-      setBgBusy(false);
-    }
-  };
-
-  // [M14 T-17 / Global regen] Title regen — тоже фон-задача. Новый title
-  // подтянется через refetchAll на pipeline:finished.
-  const onRegenerateTitle = async () => {
-    setBgBusy(true);
-    try {
-      await regenerateTitle(callId);
-    } catch (e) {
-      toast.show({ message: t('callDetail.regenerateTitleFailed', { error: humanError(e, t) }), tone: 'danger' });
-      setBgBusy(false);
-    }
-  };
-
-  const onExportMarkdown = async () => {
-    if (!call) return;
-    const defaultName = `${(call.title?.trim() || `wotold-${call.id.slice(0, 8)}`).replace(/[^\p{L}\p{N}_.-]/gu, '_')}.md`;
-    let dest: string | null = null;
-    try {
-      dest = (await save({
-        defaultPath: defaultName,
-        filters: [{ name: 'Markdown', extensions: ['md'] }],
-        title: t('callDetail.exportTitle'),
-      })) as string | null;
-    } catch (e) {
-      actionError(e);
-      return;
-    }
-    if (!dest) return; // cancel
-    setExporting(true);
-    try {
-      await exportCallMarkdown(call.id, dest);
-    } catch (e) {
-      actionError(e);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const onDelete = async () => {
-    if (!call) return;
-    const ok = await ask(
-      t('callDetail.deleteConfirmBody', { title: call.title ?? call.id.slice(0, 8) }),
-      {
-        title: 'Wotold',
-        kind: 'warning',
-        okLabel: t('callDetail.deleteConfirmOk'),
-        cancelLabel: t('common.cancel'),
-      },
-    );
-    if (!ok) return;
-    setDeleting(true);
-    try {
-      await deleteCall(call.id);
-      onBack();
-    } catch (e) {
-      actionError(e);
-      setDeleting(false);
-    }
-  };
 
   if (loading) return <CallDetailSkeleton onBack={onBack} />;
   if (error)

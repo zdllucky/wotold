@@ -7,11 +7,13 @@
 //! файле видит приватные элементы родителя ровно так же.
 
 use super::*;
+
+use super::probes::{send_rms_settled, set_paused_and_settle, CallProbe};
 use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc, Mutex,
 };
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 
 /// Helper для test config с короткими интервалами (тесты не ждут реальные
 /// 10 мин).
@@ -24,91 +26,6 @@ fn test_config() -> ChunkOrchestratorConfig {
         silence_min_duration_ms: 50,
         tick_interval_ms: 100,
         rms_retention_ms: 3000,
-    }
-}
-
-/// [TD-48] Счётчик вызовов с сигналом. Тест ждёт «оркестратор дошёл до N-го
-/// вызова», а не «прошло 50 мс»: на нагруженном раннере второе не гарантирует
-/// первого, и именно так эти тесты флачили (правило 6).
-#[derive(Clone)]
-struct CallProbe {
-    tx: Arc<watch::Sender<usize>>,
-    rx: watch::Receiver<usize>,
-}
-
-impl CallProbe {
-    fn new() -> Self {
-        let (tx, rx) = watch::channel(0usize);
-        Self {
-            tx: Arc::new(tx),
-            rx,
-        }
-    }
-
-    fn hit(&self) {
-        self.tx.send_modify(|c| *c += 1);
-    }
-
-    fn count(&self) -> usize {
-        *self.rx.borrow()
-    }
-
-    /// Дождаться `n`-го вызова. Таймаут — страховка от зависания: без него
-    /// сломанный оркестратор вешал бы прогон вместо внятного падения.
-    async fn wait_for(&self, n: usize) {
-        let mut rx = self.rx.clone();
-        let waited = tokio::time::timeout(Duration::from_secs(5), async {
-            rx.wait_for(|&c| c >= n).await.map(|_| ())
-        })
-        .await;
-        assert!(
-            waited.is_ok(),
-            "не дождались {n} вызовов за 5 с (было {})",
-            self.count()
-        );
-    }
-
-    /// Убедиться, что за `within` вызовов НЕ прибавилось. Для утверждений
-    /// «ротации не случилось» сигнала не существует по определению —
-    /// единственный честный способ это ограниченное ожидание.
-    async fn expect_none_within(&self, within: Duration) {
-        let mut rx = self.rx.clone();
-        let changed = tokio::time::timeout(within, rx.changed()).await;
-        assert!(
-            changed.is_err(),
-            "ожидали тишину, а вызовов стало {}",
-            self.count()
-        );
-    }
-}
-
-/// [TD-48] Отправить пачку RMS и дождаться, что оркестратор её **забрал**.
-///
-/// Канал ёмкости 1: возврат `send` означает, что предыдущий сэмпл уже принят,
-/// поэтому дубль последнего и есть барьер. Без него порядок «RMS доехали →
-/// пауза» держался только на `sleep(30)`, и на нагруженном раннере пауза
-/// могла обогнать сэмплы — тогда момент начала паузы фиксировался по нулевому
-/// таймкоду, накопленная пауза выходила втрое больше, и чанк не резался
-/// вообще.
-async fn send_rms_settled(tx: &mpsc::Sender<(u64, f32)>, samples: &[(u64, f32)]) {
-    for s in samples {
-        tx.send(*s).await.unwrap();
-    }
-    if let Some(last) = samples.last() {
-        tx.send(*last).await.unwrap();
-    }
-}
-
-/// [TD-48] Отправить команду паузы и дождаться, что оркестратор её **обработал**.
-///
-/// Сигнала на это нет, зато есть встречное давление канала: при ёмкости 1
-/// третий `send` проходит только после того, как приёмник забрал первый И
-/// довертел тело своей ветки `select!` (цикл однопоточный). Команда паузы
-/// идемпотентна по контракту — это отдельно проверяет
-/// `pause_resume_idempotent_no_crash`, — поэтому повтор безвреден.
-async fn set_paused_and_settle(tx: &mpsc::Sender<bool>, paused: bool) {
-    for _ in 0..3 {
-        tx.send(paused).await.unwrap();
     }
 }
 
