@@ -99,6 +99,11 @@ pub struct OrchestratorSummary {
     pub rotate_errors: u32,
     /// Аналогично — enqueue errors (chunk_runner отказал).
     pub enqueue_errors: u32,
+    /// [TD-14] Сколько `rotated`-событий подобрал drain ПОСЛЕ выхода из loop'а.
+    /// Не ошибка: `select!` опрашивает готовые ветки в случайном порядке, и
+    /// Stop мог выиграть у уже пришедшего `rotated`. Ненулевое значение
+    /// означает, что гонка случилась и была корректно разобрана.
+    pub rotated_drained_on_stop: u32,
     /// [M13 fix] Индекс chunk'а, ещё **открытого** на момент выхода из loop'а —
     /// его rotated event так и не пришёл, значит он никогда не был enqueue'нут.
     /// `stop_recording` обязан обработать его после `audio_macos::stop`
@@ -217,33 +222,17 @@ where
                     break;
                 };
                 rotate_pending = false;
-
-                // chunk_end_ms = chunk_start_ms + duration из event.
-                // duration_sec может быть Number или String depending on sidecar.
-                let duration_ms = event
-                    .get("duration_sec")
-                    .and_then(|v| v.as_f64())
-                    .map(|s| (s * 1000.0) as u64)
-                    .unwrap_or(0);
-                let chunk_end_ms = chunk_start_ms + duration_ms;
-                let closed_idx = chunk_idx;
-
-                // [M13.2.2] Spawn enqueue_fn в отдельный task — chunk N STT идёт
-                // параллельно с записью chunk N+1. prev_prompt всегда None в
-                // parallel mode (cross-chunk prompt chain trade-off, см.
-                // module doc-comment).
-                let fut = enqueue_fn(closed_idx, chunk_start_ms, chunk_end_ms, None);
-                let handle = tokio::spawn(fut);
-                pending_handles.push(handle);
-
-                chunk_idx += 1;
-                chunk_start_ms = chunk_end_ms;
-                // [M13.2.1] Новый chunk — reset pause accumulator. Если мы
-                // всё ещё paused, anchor сдвигается на текущий last_rms_ts_ms.
-                paused_total_ms_in_chunk = 0;
-                if paused {
-                    pause_started_at_ms = Some(last_rms_ts_ms);
-                }
+                apply_rotated(
+                    &event,
+                    &enqueue_fn,
+                    &mut chunk_idx,
+                    &mut chunk_start_ms,
+                    &mut paused_total_ms_in_chunk,
+                    &mut pause_started_at_ms,
+                    paused,
+                    last_rms_ts_ms,
+                    &mut pending_handles,
+                );
             }
 
             // Periodic tick — try silence cut если достаточно времени прошло.
@@ -311,9 +300,40 @@ where
         }
     }
 
-    // [M13 fix] Запомнить координаты открытого (не-rotated) финального chunk'а
-    // ДО drain. Эти локалы уже отслеживаются: `chunk_idx` = текущий открытый
-    // chunk, `chunk_start_ms` = его начало, `last_rms_ts_ms` = последний RMS.
+    // [TD-14] Разобрать `rotated`, пришедшие но не прочитанные к моменту
+    // выхода из loop'а. `select!` опрашивает готовые ветки в случайном
+    // порядке: если Stop пришёл через секунды после ротации, событие могло
+    // остаться в канале. Оно несёт ДВЕ вещи, и обе терялись:
+    //   1. enqueue закрытого chunk'а (он делается только в rotated-ветке);
+    //   2. инкремент `chunk_idx` — без него `final_chunk_idx` ниже указывал
+    //      на УЖЕ ЗАКРЫТЫЙ chunk, а открытый сайдкаром следующий не получал
+    //      ни строки в БД, ни STT. Аудио на диске цело (merger сканирует ФС),
+    //      но последние секунды разговора пропадали из транскрипта молча.
+    // Обязано идти ДО подсчёта final_chunk_* — те читают `chunk_idx`.
+    while let Ok(event) = rotate_rx.try_recv() {
+        apply_rotated(
+            &event,
+            &enqueue_fn,
+            &mut chunk_idx,
+            &mut chunk_start_ms,
+            &mut paused_total_ms_in_chunk,
+            &mut pause_started_at_ms,
+            paused,
+            last_rms_ts_ms,
+            &mut pending_handles,
+        );
+        summary.rotated_drained_on_stop += 1;
+    }
+    if summary.rotated_drained_on_stop > 0 {
+        log::info!(
+            "chunk_orchestrator: подобрано {} rotated-событий после stop (гонка select!)",
+            summary.rotated_drained_on_stop
+        );
+    }
+
+    // [M13 fix] Запомнить координаты открытого (не-rotated) финального chunk'а.
+    // Эти локалы уже отслеживаются: `chunk_idx` = текущий открытый chunk,
+    // `chunk_start_ms` = его начало, `last_rms_ts_ms` = последний RMS.
     // `stop_recording` обработает его после финализации WAV в sidecar.
     summary.final_chunk_idx = chunk_idx;
     summary.final_chunk_start_ms = chunk_start_ms;
@@ -327,6 +347,53 @@ where
     }
 
     summary
+}
+
+/// [TD-14] Обработка одного `rotated`-события: заенкьюить закрытый chunk и
+/// продвинуть координаты открытого.
+///
+/// Вынесено из ветки `select!`, потому что drain после выхода из loop'а обязан
+/// делать РОВНО ТО ЖЕ САМОЕ. Пока логика жила в одном месте, drain'а не было
+/// вовсе и хвост записи терялся; дублировать её двумя копиями — верный способ
+/// получить «одинаковый контракт, разная зрелость».
+#[allow(clippy::too_many_arguments)]
+fn apply_rotated<EnqueueF>(
+    event: &Value,
+    enqueue_fn: &EnqueueF,
+    chunk_idx: &mut u32,
+    chunk_start_ms: &mut u64,
+    paused_total_ms_in_chunk: &mut u64,
+    pause_started_at_ms: &mut Option<u64>,
+    paused: bool,
+    last_rms_ts_ms: u64,
+    pending_handles: &mut Vec<JoinHandle<Result<Option<String>, String>>>,
+) where
+    EnqueueF: Fn(u32, u64, u64, Option<String>) -> EnqueueFut,
+{
+    // chunk_end_ms = chunk_start_ms + duration из event.
+    // duration_sec может быть Number или String depending on sidecar.
+    let duration_ms = event
+        .get("duration_sec")
+        .and_then(|v| v.as_f64())
+        .map(|s| (s * 1000.0) as u64)
+        .unwrap_or(0);
+    let chunk_end_ms = *chunk_start_ms + duration_ms;
+    let closed_idx = *chunk_idx;
+
+    // [M13.2.2] Spawn enqueue_fn в отдельный task — chunk N STT идёт
+    // параллельно с записью chunk N+1. prev_prompt всегда None в parallel
+    // mode (cross-chunk prompt chain trade-off, см. module doc-comment).
+    let fut = enqueue_fn(closed_idx, *chunk_start_ms, chunk_end_ms, None);
+    pending_handles.push(tokio::spawn(fut));
+
+    *chunk_idx += 1;
+    *chunk_start_ms = chunk_end_ms;
+    // [M13.2.1] Новый chunk — reset pause accumulator. Если мы всё ещё
+    // paused, anchor сдвигается на текущий last_rms_ts_ms.
+    *paused_total_ms_in_chunk = 0;
+    if paused {
+        *pause_started_at_ms = Some(last_rms_ts_ms);
+    }
 }
 
 /// [M13.2.2] Await каждого pending JoinHandle с per-task timeout'ом.
@@ -647,6 +714,99 @@ mod tests {
         assert_eq!(
             summary.final_chunk_start_ms, 3000,
             "start_ms = сумма chunk durations (1000+2000)"
+        );
+    }
+
+    // ============================================================
+    // [TD-14] Гонка stop vs rotated
+    // ============================================================
+
+    /// Прогнать сценарий «rotated и stop готовы одновременно» один раз.
+    /// Возвращает (final_chunk_idx, заенкьюенные индексы, drained-счётчик).
+    async fn race_stop_vs_rotated() -> (u32, Vec<u32>, u32) {
+        let (_rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(10);
+        let (rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let rotate_count = Arc::new(AtomicU32::new(0));
+        let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
+        let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
+
+        // Обе ветки готовы ДО первого polling'а select! — гонка гарантирована.
+        // Никаких sleep: синхронизация порядком отправки (правило 6).
+        rotate_tx
+            .send(serde_json::json!({
+                "event": "rotated",
+                "duration_sec": 1.0,
+                "mic_bytes": 0,
+                "system_bytes": 0,
+            }))
+            .await
+            .unwrap();
+        let _ = stop_tx.send(());
+
+        let summary = run(
+            test_config(),
+            rms_rx,
+            rotate_rx,
+            stop_rx,
+            pause_rx,
+            make_rotate_fn(rotate_count, rotated_back_tx, 0),
+            make_enqueue_fn(calls.clone(), "tail".into()),
+        )
+        .await;
+
+        let enqueued: Vec<u32> = calls.lock().unwrap().iter().map(|c| c.0).collect();
+        (
+            summary.final_chunk_idx,
+            enqueued,
+            summary.rotated_drained_on_stop,
+        )
+    }
+
+    /// [TD-14] Пришедший, но не прочитанный `rotated` не должен терять хвост
+    /// записи. `select!` выбирает готовую ветку случайно, поэтому гоняем
+    /// сценарий многократно: инвариант обязан держаться при ЛЮБОМ исходе
+    /// гонки (rotated выиграл — обработан сразу; stop выиграл — подобран
+    /// drain'ом). Без drain'а stop-ветка выигрывает хотя бы раз практически
+    /// наверняка, и тест краснеет.
+    #[tokio::test]
+    async fn stop_racing_rotated_never_loses_the_tail() {
+        for attempt in 0..20 {
+            let (final_idx, enqueued, _drained) = race_stop_vs_rotated().await;
+
+            assert_eq!(
+                final_idx, 1,
+                "попытка {attempt}: индекс обязан продвинуться — иначе \
+                 final_chunk указывает на уже закрытый chunk, а открытый \
+                 сайдкаром следующий не получит ни строки в БД, ни STT"
+            );
+            assert_eq!(
+                enqueued,
+                vec![0],
+                "попытка {attempt}: закрытый chunk 0 обязан быть заенкьюен \
+                 (enqueue живёт в rotated-ветке — без drain'а он терялся)"
+            );
+        }
+    }
+
+    /// [TD-14] Счётчик подобранных событий наблюдаем в summary: ненулевой
+    /// означает, что гонка случилась и была разобрана штатно.
+    #[tokio::test]
+    async fn drained_counter_is_observable() {
+        let mut seen_drain = false;
+        for _ in 0..20 {
+            let (final_idx, _enqueued, drained) = race_stop_vs_rotated().await;
+            assert_eq!(final_idx, 1);
+            if drained > 0 {
+                seen_drain = true;
+                assert_eq!(drained, 1, "подобрано ровно одно событие");
+            }
+        }
+        assert!(
+            seen_drain,
+            "за 20 прогонов stop обязан хоть раз выиграть гонку — иначе \
+             тест не проверяет drain-путь"
         );
     }
 
