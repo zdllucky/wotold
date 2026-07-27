@@ -27,6 +27,7 @@
 // функция-комбайн `assemble_transcript` ждёт sortformer.
 #[allow(dead_code)]
 pub mod diarization;
+pub mod hallucination;
 pub mod hw_probe;
 pub mod llm;
 pub mod llm_server;
