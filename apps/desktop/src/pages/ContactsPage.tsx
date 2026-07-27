@@ -101,7 +101,7 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
           return prev;
         });
       })
-      .catch((e: unknown) => setError(humanError(e)));
+      .catch((e: unknown) => setError(humanError(e, t)));
   };
 
   useEffect(refresh, []);
@@ -153,7 +153,7 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
     } catch (e) {
       // [B23-fix] Модалка остаётся открытой; ошибка рендерится ВНУТРИ неё
       // (панель под оверлеем не видна).
-      setFormError(humanError(e));
+      setFormError(humanError(e, t));
     } finally {
       setFormBusy(false);
     }
@@ -168,7 +168,7 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
       setMode({ kind: 'view', contactId: id });
       setForm(null);
     } catch (e) {
-      setFormError(humanError(e));
+      setFormError(humanError(e, t));
     } finally {
       setFormBusy(false);
     }
@@ -189,7 +189,7 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
       setContacts(fresh);
       setMode(fresh.length > 0 ? { kind: 'view', contactId: fresh[0]!.id } : { kind: 'empty' });
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 

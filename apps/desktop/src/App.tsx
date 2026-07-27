@@ -314,7 +314,7 @@ function AppShell() {
     try {
       await rec.start();
     } catch (e) {
-      setLocalError(humanError(e));
+      setLocalError(humanError(e, t));
     }
   }, [rec]);
 
@@ -334,7 +334,7 @@ function AppShell() {
       setShowConsent(false);
       await startFlow();
     } catch (e) {
-      setLocalError(humanError(e));
+      setLocalError(humanError(e, t));
     }
   }, [startFlow]);
 
@@ -353,7 +353,7 @@ function AppShell() {
       setDetailCallId(result.callId);
       setView('call');
     } catch (e) {
-      setLocalError(humanError(e));
+      setLocalError(humanError(e, t));
     }
   }, [rec, toast, t]);
 

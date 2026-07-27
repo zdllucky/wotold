@@ -33,7 +33,7 @@ export function useInboxRowActions({ t, toast, refresh, markActive }: RowActionD
         markActive(call.id);
         toast.show({ tone: 'success', message: t('inbox.reprocessStarted') });
       } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
+        toast.show({ tone: 'danger', message: humanError(e, t) });
       }
     })();
   };
@@ -50,7 +50,7 @@ export function useInboxRowActions({ t, toast, refresh, markActive }: RowActionD
           title: t('callDetail.exportTitle'),
         })) as string | null;
       } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
+        toast.show({ tone: 'danger', message: humanError(e, t) });
         return;
       }
       if (!dest) return; // cancelled
@@ -58,7 +58,7 @@ export function useInboxRowActions({ t, toast, refresh, markActive }: RowActionD
         await exportCallMarkdown(call.id, dest);
         toast.show({ tone: 'success', message: t('inbox.exported') });
       } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
+        toast.show({ tone: 'danger', message: humanError(e, t) });
       }
     })();
   };
@@ -80,7 +80,7 @@ export function useInboxRowActions({ t, toast, refresh, markActive }: RowActionD
         refresh();
         toast.show({ tone: 'success', message: t('inbox.deleted') });
       } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
+        toast.show({ tone: 'danger', message: humanError(e, t) });
       }
     })();
   };

@@ -170,7 +170,7 @@ export function LocalEngineSection() {
       await refreshStatuses(c.map((m) => m.id));
       setError(null);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     } finally {
       setHwLoading(false);
     }
@@ -185,7 +185,7 @@ export function LocalEngineSection() {
       const rows = await localEngineStorageList();
       setStorageRows(rows);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   }, []);
 
@@ -261,11 +261,11 @@ export function LocalEngineSection() {
         for (const id of [needed.whisper, needed.llm, ...shared]) {
           const status = statuses[id];
           if (!status || status.state === 'absent' || status.state === 'corrupted') {
-            void localEngineModelDownload(id).catch((err) => setError(humanError(err)));
+            void localEngineModelDownload(id).catch((err) => setError(humanError(err, t)));
           }
         }
       } catch (e) {
-        setError(humanError(e));
+        setError(humanError(e, t));
       }
     },
     [hw, statuses, t],
@@ -277,7 +277,7 @@ export function LocalEngineSection() {
         await localEngineModelDownload(id);
         // refresh после done event.
       } catch (e) {
-        setError(humanError(e));
+        setError(humanError(e, t));
       }
     },
     [],
@@ -316,7 +316,7 @@ export function LocalEngineSection() {
         await localEngineModelDelete(id);
         after();
       } catch (e) {
-        setError(humanError(e));
+        setError(humanError(e, t));
       }
     },
     [t, preset],
@@ -347,7 +347,7 @@ export function LocalEngineSection() {
               setDeleteConfirmModel(null);
               await refreshStorage();
             } catch (e) {
-              setError(humanError(e));
+              setError(humanError(e, t));
               setDeleteConfirmModel(null);
             }
           }}
@@ -460,7 +460,7 @@ export function LocalEngineSection() {
                   const next = await localEngineHwProbe(true);
                   setHw(next);
                 } catch (e) {
-                  setError(humanError(e));
+                  setError(humanError(e, t));
                 }
               })();
             }}
@@ -485,7 +485,7 @@ export function LocalEngineSection() {
                   await localEngineSetKeepResident(next);
                 } catch (err) {
                   setKeepResident(!next); // revert on failure
-                  setError(humanError(err));
+                  setError(humanError(err, t));
                 }
               }}
             />
@@ -524,7 +524,7 @@ export function LocalEngineSection() {
                     await setAssistantSemanticSearch(next);
                   } catch (err) {
                     setSemanticSearch(!next); // revert on failure
-                    setError(humanError(err));
+                    setError(humanError(err, t));
                   }
                 }}
               />

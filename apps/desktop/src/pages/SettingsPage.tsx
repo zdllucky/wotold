@@ -124,7 +124,7 @@ export function SettingsPage() {
           setCallDetectCooldown(cdCooldown as CallDetectCooldown);
         }
       } catch (e) {
-        setError(humanError(e));
+        setError(humanError(e, t));
       } finally {
         setLoading(false);
       }
@@ -138,7 +138,7 @@ export function SettingsPage() {
       setError(null);
       setSavedTick((n) => n + 1);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
   useEffect(() => {
@@ -537,7 +537,7 @@ function DeleteAllDataSection() {
             await invoke('wipe_all_data');
             setDone(true);
           } catch (e) {
-            setError(humanError(e));
+            setError(humanError(e, t));
           } finally {
             setBusy(false);
           }

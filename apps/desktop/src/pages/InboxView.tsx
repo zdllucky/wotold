@@ -449,7 +449,7 @@ export function InboxView({
   const refresh = () => {
     listCalls()
       .then(setCalls)
-      .catch((e: unknown) => setError(humanError(e)));
+      .catch((e: unknown) => setError(humanError(e, t)));
   };
 
   // [B19.7, B20.5] Row-menu actions (reprocess/export/delete) — общий hook,

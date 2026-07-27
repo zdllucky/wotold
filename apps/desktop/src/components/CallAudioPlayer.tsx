@@ -37,7 +37,7 @@ export function CallAudioPlayer({ callId }: Props) {
         if (cancelled) return;
         if (active === 'mic') setMissingMic(true);
         if (active === 'system') setMissingSystem(true);
-        setError(humanError(e));
+        setError(humanError(e, t));
         setSrc(null);
       });
     return () => {

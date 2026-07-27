@@ -2,191 +2,199 @@
 // human-readable строки. Заменяет setError(String(e)) разбросанные по
 // pages, которые показывали raw 'InvocationError: ...' юзеру.
 //
+// [TD-25] Строки живут в i18n, а не здесь. Раньше это были ~47 русских
+// литералов в обход типизированного словаря: пользователь с en/kk видел
+// happy-path переведённым, а весь unhappy-path — по-русски. Образец
+// интеграции — utils/modelLabel.ts, он тоже принимает `t`.
+//
 // Использование:
-//   try { await invoke('foo') } catch (e) { setError(humanError(e)) }
+//   const { t } = useI18n();
+//   try { await invoke('foo') } catch (e) { setError(humanError(e, t)) }
+
+import type { TranslationKey, useI18n } from '../i18n';
+
+type TFn = ReturnType<typeof useI18n>['t'];
 
 interface ErrorPattern {
   /** Регулярка по lower-cased error message либо exact match. */
   match: RegExp | string;
-  /** Человекочитаемое сообщение на ru. */
-  human: string;
-  /** Опциональный hint что сделать. */
-  hint?: string;
+  /** Ключ человекочитаемого сообщения. */
+  human: TranslationKey;
+  /** Опциональный ключ подсказки что сделать. */
+  hint?: TranslationKey;
 }
 
 const PATTERNS: ErrorPattern[] = [
   // Network
   {
     match: /(econnrefused|networkerror|failed to fetch|networkerror when attempting|err_internet)/i,
-    human: 'Нет соединения с сервером Wotold.',
-    hint: 'Проверь интернет и попробуй ещё раз.',
+    human: 'errors.network.human',
+    hint: 'errors.network.hint',
   },
   // [Bug-fix] Local LLM specifics — должны идти ДО generic /timeout/ паттерна
   // (иначе "local_llm_timeout" попадёт в "Запрос занял слишком долго").
   {
     match: /local_llm_timeout/i,
-    human: 'Локальная модель не успела ответить за 10 минут.',
-    hint: 'Попробуй preset «Light» — он быстрее. Настройки → Локальный движок.',
+    human: 'errors.llmTimeout.human',
+    hint: 'errors.llmTimeout.hint',
   },
   {
     match: /local_engine_model_missing/i,
-    human: 'Локальная модель не установлена.',
-    hint: 'Скачай её в Настройках → Локальный движок.',
+    human: 'errors.modelMissing.human',
+    hint: 'errors.modelMissing.hint',
   },
   {
     match: /local_engine_preset_not_set/i,
-    human: 'Не выбран preset локального движка.',
-    hint: 'Выбери Light / Balanced / Quality в Настройках → Локальный движок.',
+    human: 'errors.presetNotSet.human',
+    hint: 'errors.presetNotSet.hint',
   },
   {
     match: /local_engine_transcript_empty/i,
-    human: 'Транскрипт пустой — нечего саммаризировать.',
+    human: 'errors.transcriptEmpty.human',
   },
   // [P2.2] Internal — должен быть rare, но если попал в UI значит pipeline
   // запустился без AppHandle (headless / race). Перезапуск приложения чинит.
   {
     match: /local_engine_no_app_handle/i,
-    human: 'Внутренняя ошибка приложения.',
-    hint: 'Перезапусти Wotold и попробуй снова.',
+    human: 'errors.noAppHandle.human',
+    hint: 'errors.noAppHandle.hint',
   },
-  // [P2.2] Чтение merged transcript.md с диска упало — disk / permissions /
-  // race с уборкой файлов. Reprocess пересоздаёт.
   {
     match: /local_engine_transcript_read/i,
-    human: 'Не удалось прочитать транскрипт с диска.',
-    hint: 'Попробуй переобработать звонок целиком (Действия → Переобработать).',
+    human: 'errors.transcriptRead.human',
+    hint: 'errors.transcriptRead.hint',
   },
   // [P2.2] Local STT crash — sherpa-onnx Whisper sidecar упал на одной из
   // дорожек (mic | system). Обычно отсутствуют модели либо повреждены.
   {
     match: /local_engine_stt_failed/i,
-    human: 'Локальная транскрипция не справилась с дорожкой.',
-    hint: 'Проверь что модели установлены в Настройках → Локальный движок.',
+    human: 'errors.sttFailed.human',
+    hint: 'errors.sttFailed.hint',
   },
   // [P2.2] Recap JSON persisted в DB упало — disk full либо integrity
   // violation. Содержимое recap сгенерировано, но не сохранено.
   {
     match: /local_engine_recap_persist/i,
-    human: 'Саммари сгенерировано, но не сохранилось.',
-    hint: 'Попробуй пересоздать саммари ещё раз.',
+    human: 'errors.recapPersist.human',
+    hint: 'errors.recapPersist.hint',
   },
   {
     match: /local_engine_llm_failed/i,
-    human: 'Локальная модель не справилась с задачей.',
-    hint: 'Попробуй preset «Light» в Настройках → Локальный движок.',
+    human: 'errors.llmFailed.human',
+    hint: 'errors.llmFailed.hint',
   },
   // Модель вернула саммари со всеми пустыми полями → header-only recap.
   // Бэкенд теперь не сохраняет такое молча, а возвращает ошибку.
   {
     match: /recap_blank_llm_output/i,
-    human: 'Модель вернула пустое саммари — не удалось извлечь содержание из транскрипта.',
-    hint: 'Попробуй пересоздать саммари ещё раз.',
+    human: 'errors.recapBlank.human',
+    hint: 'errors.recapBlank.hint',
   },
   // Паника в фоновой задаче regen (sidecar/LLM). Не должна происходить, но
   // если попала в UI — задача корректно завершилась, spinner снят.
   {
     match: /regen_panic/i,
-    human: 'Не удалось пересоздать саммари — внутренняя ошибка.',
-    hint: 'Попробуй ещё раз. Если повторится — перезапусти Wotold.',
+    human: 'errors.regenPanic.human',
+    hint: 'errors.regenPanic.hint',
   },
   // [P13] Halt gate сработал — есть failed chunks, pipeline не идёт
   // дальше step 2 (Расшифровка). User должен retry failed segments
   // через accordion → P11.1 auto-resume подхватит pipeline.
   {
     match: /chunks_need_retry/i,
-    human: 'Часть сегментов не распозналась.',
-    hint: 'Повтори их перед продолжением — нажми ↻ Повторить на каждом неудачном фрагменте ниже.',
+    human: 'errors.chunksRetry.human',
+    hint: 'errors.chunksRetry.hint',
   },
   {
     match: /(timeout|timed out)/i,
-    human: 'Запрос занял слишком долго.',
-    hint: 'Попробуй ещё раз. Если повторится — проверь интернет.',
+    human: 'errors.timeout.human',
+    hint: 'errors.timeout.hint',
   },
 
   // Permissions
   {
     match: /(permission denied|not authorized|tccd|tcc)/i,
-    human: 'Нет разрешения системы.',
-    hint: 'Открой «Настройки macOS → Конфиденциальность и Безопасность» и дай Wotold доступ.',
+    human: 'errors.permission.human',
+    hint: 'errors.permission.hint',
   },
   {
     match: /(microphone|nsmicrophone)/i,
-    human: 'Нет доступа к микрофону.',
-    hint: 'Открой Настройки → Микрофон и включи Wotold, потом перезапусти приложение.',
+    human: 'errors.micPermission.human',
+    hint: 'errors.micPermission.hint',
   },
   {
     match: /(screen[\s-]?cap|screencapture|screenrecording|nsscreen)/i,
-    human: 'Нет доступа к записи системного звука.',
-    hint: 'Открой Настройки → Захват системного звука и включи Wotold, потом перезапусти приложение.',
+    human: 'errors.screenPermission.human',
+    hint: 'errors.screenPermission.hint',
   },
 
   // Recording
   {
     match: /recording already in progress/i,
-    human: 'Запись уже идёт.',
+    human: 'errors.alreadyRecording.human',
   },
   {
     match: /not recording/i,
-    human: 'Сейчас запись не идёт.',
+    human: 'errors.notRecording.human',
   },
   {
     match: /sidecar.*not.*found|wotold-audio.*not/i,
-    human: 'Не найден компонент записи звука.',
-    hint: 'Переустанови Wotold или сообщи нам — повреждена сборка.',
+    human: 'errors.sidecarMissing.human',
+    hint: 'errors.sidecarMissing.hint',
   },
 
   // Storage / disk
   {
     match: /(disk full|no space|enospc)/i,
-    human: 'Не хватает места на диске.',
-    hint: 'Очисти диск или удали старые записи.',
+    human: 'errors.diskFull.human',
+    hint: 'errors.diskFull.hint',
   },
   {
     match: /(database is locked|sqlite_busy)/i,
-    human: 'База данных занята — другая операция в процессе.',
-    hint: 'Попробуй через секунду.',
+    human: 'errors.dbLocked.human',
+    hint: 'errors.dbLocked.hint',
   },
   {
     match: /integrity_check|database corrupt/i,
-    human: 'База данных повреждена.',
-    hint: 'Wotold создал резервную копию (app.db.corrupt-*) и запустился с чистой. Звонки могут пропасть.',
+    human: 'errors.dbCorrupt.human',
+    hint: 'errors.dbCorrupt.hint',
   },
 
   // STT/LLM specifics
   {
     match: /transcript.*shape|missing field/i,
-    human: 'Сервис распознавания вернул неожиданный формат.',
-    hint: 'Перезапусти обработку звонка — иногда помогает.',
+    human: 'errors.badShape.human',
+    hint: 'errors.badShape.hint',
   },
 
   // Validation
   {
     match: /required|invalid input|bad request|400/i,
-    human: 'Некорректный запрос.',
+    human: 'errors.badRequest.human',
   },
   {
     match: /not found|404/i,
-    human: 'Не найдено.',
+    human: 'errors.notFound.human',
   },
 
   // Cancellation
   {
     match: /(aborted|cancel)/i,
-    human: 'Операция отменена.',
+    human: 'errors.cancelled.human',
   },
 ];
 
 /** Возвращает человекочитаемую строку ошибки. Если совпадения нет —
  *  возвращает строку оригинальной ошибки усечённую до 160 символов. */
-export function humanError(err: unknown): string {
-  const raw = errorToString(err);
+export function humanError(err: unknown, t: TFn): string {
+  const raw = errorToString(err, t);
   const haystack = raw.toLowerCase();
 
   for (const p of PATTERNS) {
     const matched =
       p.match instanceof RegExp ? p.match.test(haystack) : haystack.includes(p.match.toLowerCase());
     if (matched) {
-      return p.hint ? `${p.human} ${p.hint}` : p.human;
+      return p.hint ? `${t(p.human)} ${t(p.hint)}` : t(p.human);
     }
   }
 
@@ -195,8 +203,8 @@ export function humanError(err: unknown): string {
 }
 
 /** Извлекает строку из unknown. Поддерживает Error, string, обычный объект. */
-function errorToString(err: unknown): string {
-  if (err == null) return 'Неизвестная ошибка';
+function errorToString(err: unknown, t: TFn): string {
+  if (err == null) return t('errors.unknown');
   if (typeof err === 'string') return err;
   if (err instanceof Error) return err.message || err.toString();
   if (typeof err === 'object') {
