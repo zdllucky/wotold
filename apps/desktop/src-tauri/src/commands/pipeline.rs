@@ -240,19 +240,17 @@ pub async fn regenerate_empty_recaps(
 ) -> Result<usize, AppError> {
     use crate::call_store::ArtifactKind;
 
-    let calls = db::list_calls(&state.db).await?;
+    // [TD-42] Фильтр по статусу — в WHERE, а не в Rust'е поверх всех строк со
+    // всеми колонками: реген трогает только готовые звонки, и кроме id ему
+    // отсюда ничего не нужно.
+    let ready_ids = db::list_ready_call_ids(&state.db).await?;
     let mut targets: Vec<String> = Vec::new();
-    for c in &calls {
-        if c.status != "ready" {
-            continue;
-        }
+    for id in &ready_ids {
+        let call_id = crate::call_id::CallId::from_db(id);
         // Реген требует transcript.md — без него regenerate_recap упадёт.
         let has_transcript = state
             .store
-            .read_artifact(
-                &crate::call_id::CallId::from_db(&c.id),
-                ArtifactKind::Transcript,
-            )
+            .read_artifact(&call_id, ArtifactKind::Transcript)
             .await?
             .is_some();
         if !has_transcript {
@@ -260,14 +258,14 @@ pub async fn regenerate_empty_recaps(
         }
         let recap = state
             .store
-            .read_artifact(&crate::call_id::CallId::from_db(&c.id), ArtifactKind::Recap)
+            .read_artifact(&call_id, ArtifactKind::Recap)
             .await?;
         let blank = match recap {
             None => true,
             Some(md) => crate::pipeline::recap_render::recap_md_is_blank(&md),
         };
         if blank {
-            targets.push(c.id.clone());
+            targets.push(id.clone());
         }
     }
 

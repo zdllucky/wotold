@@ -15,7 +15,7 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, setSetting, SETTINGS_KEYS } from './api/settings';
 import { getActivePipelineCount } from './api/calls';
-import { listCalls, type Call } from './api/recording';
+import { countCalls, listCallsPage, type Call } from './api/recording';
 import { listContacts } from './api/contacts';
 import { humanError } from './api/errors';
 import { Sidebar, MiniRail, type RailView } from './components/AppSidebar';
@@ -144,12 +144,14 @@ function AppShell() {
   // finishes (titles land) so counts/recents stay current.
   useEffect(() => {
     const load = () => {
-      void listCalls()
-        .then((calls) => {
-          setRecent(calls.slice(0, 50));
-          setCallsCount(calls.length);
-        })
-        .catch((e: unknown) => console.warn('listCalls (rail) failed', e));
+      // [TD-42] Рельсе нужны пятьдесят свежих и счётчик — не вся история на
+      // каждое событие пайплайна.
+      void listCallsPage(RAIL_RECENT_LIMIT)
+        .then(setRecent)
+        .catch((e: unknown) => console.warn('listCallsPage (rail) failed', e));
+      void countCalls()
+        .then(setCallsCount)
+        .catch((e: unknown) => console.warn('countCalls (rail) failed', e));
       void listContacts()
         .then((cs) => setContactsCount(cs.length))
         .catch((e: unknown) => console.warn('listContacts (rail) failed', e));
@@ -659,6 +661,9 @@ function AppShell() {
     </div>
   );
 }
+
+/** [TD-42] Сколько строк показывает рельса «Недавние». */
+const RAIL_RECENT_LIMIT = 50;
 
 export function App() {
   return (

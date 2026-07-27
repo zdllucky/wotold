@@ -5,7 +5,7 @@ use tauri::State;
 use crate::{
     call_id::CallId,
     call_store::{ArtifactKind, AudioKind},
-    db::{ActionItem, Call},
+    db::{self, ActionItem, Call},
     services::export::compose_call_markdown,
     state::AppState,
     AppError,
@@ -14,6 +14,23 @@ use crate::{
 #[tauri::command]
 pub async fn list_calls(state: State<'_, AppState>) -> Result<Vec<Call>, AppError> {
     crate::db::list_calls(&state.db).await
+}
+
+/// [TD-42] Страница «Недавних» для рельсы: она рефетчится на каждое событие
+/// пайплайна и раньше тянула всю историю, чтобы показать пятьдесят строк.
+#[tauri::command]
+pub async fn list_calls_page(
+    state: State<'_, AppState>,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Call>, AppError> {
+    db::list_calls_page(&state.db, limit, offset).await
+}
+
+/// [TD-42] Общее число звонков — счётчик рельсы, который страница уже не даёт.
+#[tauri::command]
+pub async fn count_calls(state: State<'_, AppState>) -> Result<i64, AppError> {
+    db::count_calls(&state.db).await
 }
 
 #[tauri::command]

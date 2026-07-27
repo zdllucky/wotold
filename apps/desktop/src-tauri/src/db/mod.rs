@@ -34,15 +34,16 @@ pub(crate) mod voice_samples;
 
 pub use action_items::{list_action_items, replace_action_items, ActionItem, ActionItemInput};
 pub use calls::{
-    auto_bind_high_confidence_speakers, auto_bind_owner_speaker, confirm_call_speaker,
+    auto_bind_high_confidence_speakers, auto_bind_owner_speaker, confirm_call_speaker, count_calls,
     delete_call_and_samples, ensure_call_speakers_present, fail_recording,
     fail_recording_with_reason, finish_recording, get_call, insert_recording,
-    insert_speaker_suggestions, list_call_speakers, list_calls, list_interrupted_failed_calls,
-    list_orphan_recording_ids, list_speakers_for_calls, mark_call_ready, pause_call,
-    prune_call_speakers_not_in, resume_call, set_call_meta, set_call_progress,
-    set_call_speaker_cluster, set_call_speaker_suggestion, set_call_title, set_recap_failed_reason,
-    set_recap_failure, set_summary_metadata, sweep_stale_calls, unbind_call_speaker,
-    update_call_duration, Call, CallSpeakerView, SummaryMetadata,
+    insert_speaker_suggestions, list_call_speakers, list_calls, list_calls_page,
+    list_interrupted_failed_calls, list_orphan_recording_ids, list_ready_call_ids,
+    list_speakers_for_calls, mark_call_ready, pause_call, prune_call_speakers_not_in, resume_call,
+    set_call_meta, set_call_progress, set_call_speaker_cluster, set_call_speaker_suggestion,
+    set_call_title, set_recap_failed_reason, set_recap_failure, set_summary_metadata,
+    sweep_stale_calls, unbind_call_speaker, update_call_duration, Call, CallSpeakerView,
+    SummaryMetadata,
 };
 pub use contacts::{
     create_contact, delete_contact, ensure_owner_contact, list_contacts, rename_owner_contact,
