@@ -36,6 +36,7 @@ pub mod llm_server;
 #[allow(dead_code)]
 pub mod merge;
 pub mod model_catalog;
+pub mod model_integrity;
 pub mod models;
 pub mod preset;
 pub mod sidecar;

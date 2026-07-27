@@ -97,6 +97,17 @@ async fn prepare_local_run(
     //    хеширование whisper+LLM (~1.5-6GB) держало UI на «Сохраняем аудио»
     //    десятки секунд при каждом звонке/reprocess.
     for id in [whisper_id, llm_id] {
+        // [security-scan W5] Быстрый путь сверяет только размер. Если фоновая
+        // проверка на старте уже поймала несовпадение SHA — не отдаём такой
+        // файл нативному парсеру GGUF/ONNX: подменённая модель это исполнение
+        // чужих данных в C++, а не просто «плохое качество саммари».
+        if crate::local_engine::model_integrity::is_known_tampered(pool, id.as_str()).await? {
+            return Err(AppError::Other(format!(
+                "local_engine_model_tampered: файл модели {} не прошёл проверку SHA256 — \
+                 перекачайте её в Настройках → Движок",
+                id.as_str()
+            )));
+        }
         let status = models::check_status_fast(&ctx.app_data_dir, id.as_str()).await?;
         if !matches!(status, ModelStatus::Present { .. }) {
             return Err(AppError::Other(format!(

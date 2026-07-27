@@ -176,13 +176,17 @@ pub(crate) async fn run_sidecar_with_timeout(
             match event {
                 CommandEvent::Stdout(b) => {
                     stdout.extend_from_slice(&b);
-                    let chunk = String::from_utf8_lossy(&b);
-                    log::info!(
-                        "llama stdout +{}b ({}ms, total={}b): {}",
+                    // [security-scan W5] Содержимое НЕ логируем. Вывод модели
+                    // на этом пути — это саммари звонка: имена, договорённости,
+                    // всё сказанное. Логи ротируются на диске и переживают
+                    // удаление звонка, то есть «удалил звонок» переставало
+                    // означать «следов не осталось». В логе остаётся только
+                    // прогресс: сколько байт и за сколько миллисекунд.
+                    log::debug!(
+                        "llama stdout +{}b ({}ms, total={}b)",
                         b.len(),
                         start.elapsed().as_millis(),
-                        stdout.len(),
-                        chunk.trim_end()
+                        stdout.len()
                     );
                 }
                 CommandEvent::Stderr(b) => {
