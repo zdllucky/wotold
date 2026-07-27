@@ -7,7 +7,7 @@
 //       * сырые hex-цвета (#RRGGBB, #RGB) — должны быть var(--*) из tokens.css
 //       * сырые oklch() значения — то же
 //       * legacy --color-* токены — должны быть мигрированы на новый набор
-//         (var(--bg), var(--ink), var(--accent), ...)
+//         (var(--bg), var(--text), var(--accent), ...)
 //
 //   - Whitelist: token/component source files (tokens.css, wk.css,
 //     components.css, fonts.css, docs/design/wotold-v2/**) — там сырые
@@ -15,7 +15,7 @@
 //
 // Не блокируем — предупреждение в stderr. Гейт «жёсткий» уровень — на code-review.
 //
-// Источник: docs/design/atelier-v2/README.md, .claude/skills/design-gate/SKILL.md.
+// Источник: docs/design/wotold-v2/README.md, .claude/skills/design-gate/SKILL.md.
 
 let data = '';
 process.stdin.setEncoding('utf8');
@@ -40,16 +40,23 @@ process.stdin.on('end', () => {
   // Только UI surface.
   if (!/\.(tsx?|css)$/.test(path)) process.exit(0);
 
-  // Whitelist — handoff source + token files.
+  // [TD-03] Whitelist проверяется по пути ОТНОСИТЕЛЬНО корня репо, а не по
+  // абсолютному. Иначе правило `.claude/` матчило сам путь git-worktree
+  // (<repo>/.claude/worktrees/<name>/…), и внутри worktree гейт молча
+  // пропускал АБСОЛЮТНО ВСЁ — а фича-работа тут и ведётся.
+  const root = process.env.CLAUDE_PROJECT_DIR ?? '';
+  const rel = root && path.startsWith(root) ? path.slice(root.length) : path;
+
+  // Whitelist — token/component sources + вендоренный прототип + харнесс.
   const WHITELIST = [
     /\/styles\/tokens\.css$/,
     /\/styles\/wk\.css$/,
     /\/styles\/components\.css$/,
     /\/styles\/fonts\.css$/,
-    /\/docs\/design\/wotold-v2\//,
-    /\.claude\//,
+    /^\/?docs\/design\//,
+    /^\/?\.claude\//,
   ];
-  if (WHITELIST.some((re) => re.test(path))) process.exit(0);
+  if (WHITELIST.some((re) => re.test(rel))) process.exit(0);
 
   const findings = [];
 
@@ -85,7 +92,7 @@ process.stdin.on('end', () => {
   }
 
   if (findings.length > 0) {
-    console.error('[design-gate] ⚠ Atelier v2 design gate warnings for:', path);
+    console.error('[design-gate] ⚠ Wotold v2 (uikit) design gate warnings for:', path);
     for (const f of findings) console.error(f);
     console.error('[design-gate] Подробнее: .claude/skills/design-gate/SKILL.md');
   }

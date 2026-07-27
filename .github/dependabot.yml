@@ -1,0 +1,23 @@
+version: 2
+
+# [TD-02] Actions запинены на commit-SHA (см. шапку любого workflow).
+# Пин без автообновления = застывшие уязвимости, поэтому Dependabot обязателен:
+# он читает трейлинг-комментарий `# vX.Y.Z` рядом с SHA и бампает оба вместе.
+# Обновления приходят PR'ом — прогоняются через тот же CI, что и обычный код.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      # commitlint в этом репо требует conventional commits (см. commitlint.yml).
+      prefix: ci
+    groups:
+      # Патчи и миноры одной пачкой — иначе 13 actions дают шум из 13 PR'ов.
+      # Мажоры приходят отдельно: их надо читать глазами (ломающие изменения
+      # входов, как с toolchain:/tool: при SHA-пине).
+      actions-minor:
+        update-types:
+          - minor
+          - patch

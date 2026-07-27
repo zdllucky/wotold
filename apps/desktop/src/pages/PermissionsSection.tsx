@@ -54,17 +54,19 @@ export function PermissionsSection() {
   useEffect(() => {
     getAudioPermissions()
       .then(setStatus)
-      .catch((e: unknown) => setError(humanError(e)));
+      .catch((e: unknown) => setError(humanError(e, t)));
   }, []);
 
-  const refreshAfter = async (fn: () => Promise<PermissionsStatus>, t: Target) => {
-    setBusy(t);
+  // [TD-25] Параметр назывался `t` и затенял i18n-`t` — переименован, иначе
+  // humanError получал Target вместо функции перевода.
+  const refreshAfter = async (fn: () => Promise<PermissionsStatus>, target: Target) => {
+    setBusy(target);
     setError(null);
     try {
       const next = await fn();
       setStatus(next);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     } finally {
       setBusy(null);
     }
@@ -76,7 +78,7 @@ export function PermissionsSection() {
     try {
       await openSystemPrivacyPane(pane);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 

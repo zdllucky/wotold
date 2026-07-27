@@ -17,12 +17,6 @@ export function initials(name: string): string {
   );
 }
 
-export function pluralParticipants(n: number): string {
-  if (n === 1) return 'участник';
-  if (n >= 2 && n <= 4) return 'участника';
-  return 'участников';
-}
-
 export function formatDur(sec: number): string {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);

@@ -1,4 +1,5 @@
 import Foundation
+import WotoldAudioCore
 
 // JSON line protocol:
 //   stdin  →  { "cmd": "start", "mic_path": "/abs/mic.wav", "system_path": "/abs/system.wav" }
@@ -10,58 +11,34 @@ import Foundation
 //   stdout ←  { "event": "started" }
 //             { "event": "level", "mic": 0.12, "system": 0.34 }  [B14] каждые 100ms
 //             { "event": "rotated", "duration_sec": N, "mic_bytes": N, "system_bytes": N }
+//                                   [+ "warning" если системная нога не ротировалась]
+//             { "event": "rotate_error", "leg": "mic"|"system", "mic_rotated": bool,
+//               "message": "..." }   [TD-06] НЕфатальное: запись продолжается
 //             { "event": "stopped", "duration_sec": N, "mic_bytes": N, "system_bytes": N }
-//             { "event": "error",   "message": "..." }
+//             { "event": "error",   "message": "..." }   фатальное
 //             { "event": "pong" }
 //             { "event": "call_detect_started" }
 //             { "event": "call_suggested", "bundle_id": "...", "app_name": "...", "reason": "..." }
 //             { "event": "call_detect_stopped" }
+//
+// [TD-06] Разбор команд, решения и кодирование событий живут в WotoldAudioCore
+// (тестируются моками). Здесь остаётся только проводка конкретных рекордеров.
 
 @main
 struct WotoldAudioMain {
     static let stdout = FileHandle.standardOutput
 
     static func emit(_ dict: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: []) else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: []) else {
+            return
+        }
         var line = data
         line.append(0x0a)
         stdout.write(line)
     }
 
     static func emitError(_ message: String) {
-        emit(["event": "error", "message": message])
-    }
-
-    static let levelQueue = DispatchQueue(label: "app.wotold.macos-audio.level")
-    static var levelTimer: DispatchSourceTimer?
-
-    // [S2] Долгоживущий probe — гоняется параллельно с (или вместо) recording.
-    // Управляется командами call_detect_start / call_detect_stop. Никаких
-    // shared resources с AudioRecorder/SystemAudioRecorder: только Core Audio
-    // флаг + NSWorkspace.frontmostApplication, обе read-only sources.
-    static let callProbe = CallActivityProbe()
-
-    // [B14] Start a 100ms repeating timer that emits {"event":"level"} с
-    // current RMS из mic + system recorders. Idempotent — повторный вызов
-    // переустанавливает таймер.
-    @available(macOS 14.4, *)
-    static func startLevelTimer(mic: AudioRecorder, system: ProcessTapRecorder) {
-        stopLevelTimer()
-        let t = DispatchSource.makeTimerSource(queue: levelQueue)
-        t.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
-        t.setEventHandler {
-            // round to 4 знач знака чтобы JSON был компактнее.
-            let m = (mic.currentRms * 10_000).rounded() / 10_000
-            let s = (system.currentRms * 10_000).rounded() / 10_000
-            emit(["event": "level", "mic": m, "system": s])
-        }
-        t.resume()
-        levelTimer = t
-    }
-
-    static func stopLevelTimer() {
-        levelTimer?.cancel()
-        levelTimer = nil
+        emit(SidecarEvent.error(message).jsonObject)
     }
 
     static func main() async {
@@ -72,141 +49,97 @@ struct WotoldAudioMain {
         }
         let system = ProcessTapRecorder()
 
+        // [TD-21e] Рекордер не знает про stdout — сообщает о потере и возврате
+        // дорожки сюда. Событие идёт в общий поток вне очереди команд: оно
+        // возникает само по себе, а не в ответ на команду.
+        mic.onDeviceEvent = { event in emit(event.jsonObject) }
+
+        let router = CommandRouter(
+            mic: mic,
+            system: system,
+            levelTimer: LevelTimer(mic: mic, system: system, emit: emit),
+            probe: CallActivityProbe(),
+            permissions: SystemPermissions(),
+            emitProbeEvent: emit
+        )
+
         while let line = readLine(strippingNewline: true) {
             if line.isEmpty { continue }
-
-            guard
-                let data = line.data(using: .utf8),
-                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let cmd = obj["cmd"] as? String
-            else {
-                emitError("invalid command line")
-                continue
-            }
-
-            switch cmd {
-            case "ping":
-                emit(["event": "pong"])
-
-            case "check_permissions":
-                emit(permissionsEvent())
-
-            case "request_permissions":
-                let target = (obj["target"] as? String) ?? "all"
-                if target == "microphone" || target == "all" {
-                    _ = await requestMicrophoneAccess()
-                }
-                if target == "screen_recording" || target == "all" {
-                    _ = requestScreenRecordingAccess()
-                }
-                if target == "accessibility" || target == "all" {
-                    _ = requestAccessibilityAccess()
-                }
-                emit(permissionsEvent())
-
-            case "start":
-                guard let micPath = obj["mic_path"] as? String,
-                      let systemPath = obj["system_path"] as? String,
-                      !micPath.isEmpty, !systemPath.isEmpty
-                else {
-                    emitError("mic_path and system_path required for start")
-                    continue
-                }
-
-                do {
-                    try mic.start(micURL: URL(fileURLWithPath: micPath))
-                } catch {
-                    emitError("mic start failed: \(error.localizedDescription)")
-                    continue
-                }
-                do {
-                    try await system.start(systemURL: URL(fileURLWithPath: systemPath))
-                } catch {
-                    _ = try? mic.stop()
-                    emitError("system start failed: \(error.localizedDescription)")
-                    continue
-                }
-                emit(["event": "started"])
-                startLevelTimer(mic: mic, system: system)
-
-            case "rotate":
-                // [M13] Атомарный chunk-rotation: flush+close current WAV,
-                // open new one. Tap/IOProc остаются активными, latestRms +
-                // level-timer тоже продолжают работать без перерыва.
-                guard let nextMic = obj["next_mic_path"] as? String,
-                      let nextSystem = obj["next_system_path"] as? String,
-                      !nextMic.isEmpty, !nextSystem.isEmpty
-                else {
-                    emitError("next_mic_path and next_system_path required for rotate")
-                    continue
-                }
-                let micResult: (durationSec: Double, micBytes: UInt64)
-                do {
-                    micResult = try mic.rotate(to: URL(fileURLWithPath: nextMic))
-                } catch {
-                    emitError("mic rotate failed: \(error.localizedDescription)")
-                    continue
-                }
-                let sysBytes: UInt64
-                do {
-                    sysBytes = try system.rotate(to: URL(fileURLWithPath: nextSystem))
-                } catch {
-                    emitError("system rotate failed: \(error.localizedDescription)")
-                    continue
-                }
-                emit([
-                    "event": "rotated",
-                    "duration_sec": micResult.durationSec,
-                    "mic_bytes": Int(micResult.micBytes),
-                    "system_bytes": Int(sysBytes),
-                ])
-
-            case "stop":
-                stopLevelTimer()
-                let micResult: (durationSec: Double, micBytes: UInt64)
-                do {
-                    micResult = try mic.stop()
-                } catch {
-                    emitError("mic stop failed: \(error.localizedDescription)")
-                    continue
-                }
-
-                let sysBytes: UInt64
-                do {
-                    sysBytes = try await system.stop().bytesWritten
-                } catch {
-                    // Mic уже остановлен и закрыт корректно. Сообщаем что system
-                    // частично провалился; вызывающая сторона должна это видеть.
-                    emit([
-                        "event": "stopped",
-                        "duration_sec": micResult.durationSec,
-                        "mic_bytes": Int(micResult.micBytes),
-                        "system_bytes": 0,
-                        "warning": "system stop failed: \(error.localizedDescription)",
-                    ])
-                    continue
-                }
-
-                emit([
-                    "event": "stopped",
-                    "duration_sec": micResult.durationSec,
-                    "mic_bytes": Int(micResult.micBytes),
-                    "system_bytes": Int(sysBytes),
-                ])
-
-            case "call_detect_start":
-                callProbe.start { event in
-                    emit(event)
-                }
-                emit(["event": "call_detect_started"])
-
-            case "call_detect_stop":
-                callProbe.stop()
-                emit(["event": "call_detect_stopped"])
-
-            default:
-                emitError("unknown cmd: \(cmd)")
+            for event in await router.handle(line: line) {
+                emit(event.jsonObject)
             }
         }
+    }
+}
+
+// MARK: - Конформансы конкретных типов к протоколам ядра
+
+extension AudioRecorder: MicRecording {}
+
+@available(macOS 14.4, *)
+extension ProcessTapRecorder: SystemRecording {
+    /// Имя отличается от `stop()`, потому что конкретный метод возвращает
+    /// `StopResult`, а протоколу нужен голый счётчик байт.
+    func stopRecording() async throws -> UInt64 {
+        try await stop().bytesWritten
+    }
+}
+
+extension CallActivityProbe: CallProbing {
+    func startProbe(emit: @escaping ([String: Any]) -> Void) { start(emit: emit) }
+    func stopProbe() { stop() }
+}
+
+/// Разрешения macOS за протоколом — свободные функции из Permissions.swift.
+final class SystemPermissions: PermissionsProviding {
+    func currentPermissions() -> [String: Any] { permissionsEvent() }
+
+    func requestPermissions(target: String) async {
+        if target == "microphone" || target == "all" {
+            _ = await requestMicrophoneAccess()
+        }
+        if target == "screen_recording" || target == "all" {
+            _ = requestScreenRecordingAccess()
+        }
+        if target == "accessibility" || target == "all" {
+            _ = requestAccessibilityAccess()
+        }
+    }
+}
+
+/// [B14] Таймер уровней: каждые 100 мс шлёт RMS обеих дорожек.
+/// Держит конкретные рекордеры — поэтому живёт в executable, а не в ядре.
+@available(macOS 14.4, *)
+final class LevelTimer: LevelTimerControlling {
+    private let queue = DispatchQueue(label: "app.wotold.macos-audio.level")
+    private var timer: DispatchSourceTimer?
+    private let mic: AudioRecorder
+    private let system: ProcessTapRecorder
+    private let emit: ([String: Any]) -> Void
+
+    init(mic: AudioRecorder, system: ProcessTapRecorder, emit: @escaping ([String: Any]) -> Void) {
+        self.mic = mic
+        self.system = system
+        self.emit = emit
+    }
+
+    /// Idempotent — повторный вызов переустанавливает таймер.
+    func startLevelTimer() {
+        stopLevelTimer()
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
+        t.setEventHandler { [mic, system, emit] in
+            // round до 4 знаков чтобы JSON был компактнее.
+            let m = Double((mic.currentRms * 10_000).rounded() / 10_000)
+            let s = Double((system.currentRms * 10_000).rounded() / 10_000)
+            emit(SidecarEvent.level(mic: m, system: s).jsonObject)
+        }
+        t.resume()
+        timer = t
+    }
+
+    func stopLevelTimer() {
+        timer?.cancel()
+        timer = nil
     }
 }

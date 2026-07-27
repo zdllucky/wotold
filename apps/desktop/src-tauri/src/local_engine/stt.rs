@@ -27,7 +27,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use serde::Deserialize;
 use tauri::AppHandle;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
@@ -35,12 +34,12 @@ use tokio::sync::Mutex;
 
 use crate::pipeline::resource_queue::{self, Resource};
 use crate::providers::transcription::{
-    DiarizedTranscript, TranscriptSegment, TranscriptionError, TranscriptionOpts,
-    TranscriptionProvider,
+    DiarizedTranscript, TranscriptionError, TranscriptionOpts, TranscriptionProvider,
 };
 
 use super::models::{model_path, ModelId};
-use super::sidecar::SidecarGuard;
+use super::sidecar::{SidecarGuard, TempFileGuard};
+use super::whisper_json::parse_whisper_json;
 
 /// Имя whisper.cpp sidecar бинаря.
 const SIDECAR_NAME: &str = "wotold-whisper";
@@ -154,10 +153,28 @@ impl TranscriptionProvider for LocalWhisperProvider {
             return Err(TranscriptionError::NotImplemented);
         };
 
-        // Уникальный stem для output JSON. Whisper-cli добавляет `.json`.
-        let stem = self
+        // [TD-11] Whisper-cli пишет output JSON (расшифровка звонка) с дефолтным
+        // umask (0644). Раньше stem лежал прямо в общем tmp_dir, и chmod 0600
+        // накладывался только ПОСЛЕ окончания транскрипции — весь этот период
+        // файл читаем чужим UID. Теперь output идёт в приватную поддиректорию
+        // 0o700, созданную ДО спавна: содержимое неважно, войти внутрь чужой
+        // UID не может. Guard рекурсивно чистит директорию при любом выходе,
+        // включая abort (ручной remove_file на await этого не давал).
+        let mut temp_guard = TempFileGuard::new();
+        let work_dir = self
             .tmp_dir
-            .join(format!("wotold-whisper-{}", uuid::Uuid::new_v4()));
+            .join(format!("wotold-stt-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&work_dir)
+            .await
+            .map_err(|e| TranscriptionError::Provider(format!("mkdir stt work-dir: {e}")))?;
+        temp_guard.push_dir(&work_dir);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ =
+                tokio::fs::set_permissions(&work_dir, std::fs::Permissions::from_mode(0o700)).await;
+        }
+        let stem = work_dir.join("out");
         let json_path = stem.with_extension("json");
 
         // [Security M-3] Defense-in-depth: блокируем `..` в любом из путей.
@@ -173,7 +190,7 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 )));
             }
         }
-        super::llm::ensure_path_under(&stem, &self.tmp_dir)
+        crate::call_id::ensure_path_under(&stem, &self.tmp_dir)
             .map_err(TranscriptionError::Provider)?;
 
         let model_str = self
@@ -324,9 +341,9 @@ impl TranscriptionProvider for LocalWhisperProvider {
             );
         }
 
-        // Cleanup temp JSON (best-effort).
-        let _ = tokio::fs::remove_file(&json_path).await;
-
+        // [TD-11] cleanup — на temp_guard (Drop, рекурсивно по work_dir).
+        // Ручной remove_file убран: не срабатывал при отмене задачи.
+        drop(temp_guard);
         parse_result
     }
 }
@@ -342,105 +359,6 @@ pub(crate) fn sanitize_prompt(raw: &str) -> String {
         out = truncated;
     }
     out
-}
-
-/// [P12.1] Whisper hallucination exact-match patterns (lowercase).
-/// Расширенный список — English boundary fillers + blank/music tags +
-/// `[FOREIGN]` language-confusion tag + multilingual silence markers.
-const HALLUCINATIONS_EXACT: &[&str] = &[
-    // Existing English/blank/music (M13 baseline).
-    "you",
-    "thank you",
-    "thanks",
-    "bye",
-    "goodbye",
-    "thanks for watching",
-    "[blank_audio]",
-    "(silence)",
-    "[music]",
-    "(music)",
-    "[applause]",
-    // [P12.1] Language-confusion tag — whisper выдаёт когда detect failed
-    // на сегменте. Чаще всего после тишины либо короткого шума.
-    "[foreign]",
-    // Multilingual silence/audio markers — YouTube training contamination.
-    "[音楽]",
-    "[bgm]",
-    "[♪音楽♪]",
-    // [P-fix2] Cyrillic noise tags — whisper выдаёт на музыке/тишине/аплодисментах
-    // (русская озвучка YouTube training). Latin-аналоги уже выше.
-    "[музыка]",
-    "[аплодисменты]",
-    "[смех]",
-    "[шум]",
-    "[тишина]",
-];
-
-/// [P12.1] Substring patterns — lowercase substring match (case-insensitive
-/// через `.to_lowercase()` на input). Покрывает Russian subtitle-credit
-/// hallucinations из YouTube training data Whisper'а.
-///
-/// Пример из реальных данных user'а: «[Редактор субтитров Н.Александрова]
-/// [Апалькова]» × N раз. Это classic YouTube-subtitler attribution.
-const HALLUCINATION_SUBSTRINGS: &[&str] = &[
-    // Russian YouTube subtitle credits.
-    "редактор субтитров",
-    "корректор субтитров",
-    "субтитры подготовил",
-    "субтитры:",
-    "[апалькова",
-    "[александрова",
-    "н.александрова",
-    "а.семкин",
-    // Generic YouTube attribution patterns (multilingual).
-    "subtitles by",
-    "transcribed by",
-    "продолжение следует",
-];
-
-/// [P12.1] Проверить, является ли сегмент hallucination'ом по совокупности
-/// признаков. Используется в `build_transcript` filter.
-///
-/// Order:
-/// 1. Exact-match (lowercase) против HALLUCINATIONS_EXACT.
-/// 2. Substring (lowercase) против HALLUCINATION_SUBSTRINGS.
-/// 3. Bracket-only shape: текст полностью в `[...]` длиной >20 — почти
-///    наверняка YouTube subtitle credit или similar artifact. Безопасный
-///    floor: legit `[music]` (5 chars) и `[applause]` (10) уже в exact list.
-pub(crate) fn is_hallucination(text: &str) -> bool {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return true;
-    }
-    // [P-fix] Strip ведущие dialogue-маркеры ("- ", "– ", "— ", "•", "*")
-    // которые whisper иногда добавляет к сегменту — без этого exact-match по
-    // "[foreign]" промахивается на "- [FOREIGN]".
-    let stripped = trimmed.trim_start_matches(['-', '–', '—', '•', '*']).trim();
-    if stripped.is_empty() {
-        return true;
-    }
-    let lower = stripped.to_lowercase();
-    if HALLUCINATIONS_EXACT.contains(&lower.as_str()) {
-        return true;
-    }
-    if HALLUCINATION_SUBSTRINGS.iter().any(|p| lower.contains(p)) {
-        return true;
-    }
-    // [P-fix] Сегмент, чей alnum-контент == "foreign" И содержит скобку
-    // (например "[FOREIGN]", "- [FOREIGN]", "[Foreign].") — language-confusion
-    // tag. Скобка обязательна чтобы не дропнуть легитимное слово "foreign".
-    let alnum: String = lower.chars().filter(|c| c.is_alphanumeric()).collect();
-    if alnum == "foreign" && stripped.contains('[') {
-        return true;
-    }
-    // Bracket-only shape: текст начинается с '[' и заканчивается ']',
-    // длина >20 chars (catch'ит длинные attribution патены). Короткие
-    // bracket tags типа `[music]` пропускаются (уже в exact list если
-    // hallucination).
-    if stripped.starts_with('[') && stripped.ends_with(']') && stripped.chars().count() > 20 {
-        return true;
-    }
-    false
 }
 
 // [P-fix5] `default_prompt_for_lang` УДАЛЁН: статический language-anchor
@@ -525,132 +443,6 @@ async fn run_sidecar_with_timeout(
             }
             Err(TranscriptionError::Provider("local_whisper_timeout".into()))
         }
-    }
-}
-
-/// JSON-схема whisper.cpp `--output-json-full`. Подмножество — только нужные
-/// нам поля.
-#[derive(Debug, Deserialize)]
-struct WhisperJsonFile {
-    #[serde(default)]
-    result: Option<WhisperResultMeta>,
-    transcription: Vec<WhisperSegment>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WhisperResultMeta {
-    #[serde(default)]
-    language: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WhisperSegment {
-    text: String,
-    /// `offsets` есть всегда — таймкоды в миллисекундах (whisper.cpp нативный
-    /// формат); `timestamps` (HH:MM:SS) только при `--print-timestamps`.
-    offsets: WhisperOffsets,
-}
-
-#[derive(Debug, Deserialize)]
-struct WhisperOffsets {
-    from: i64,
-    to: i64,
-}
-
-async fn parse_whisper_json(
-    path: &Path,
-    track: TrackKind,
-) -> Result<DiarizedTranscript, TranscriptionError> {
-    // [Security M-2] whisper-cli создаёт output JSON с default umask (обычно
-    // 0o644). Содержимое — расшифровка звонка, sensitive. Tighten до 0o600
-    // ДО чтения чтобы между write и cleanup чужой process не успел прочитать.
-    // На non-unix — no-op (Linux/Windows под R9 пока не поддерживаются).
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = tokio::fs::metadata(path).await {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o600);
-            let _ = tokio::fs::set_permissions(path, perms).await;
-        }
-    }
-    // [M13 fix] whisper.cpp иногда эмитит невалидный UTF-8 когда multibyte-токен
-    // (кириллица / CJK) режется на границе сегмента. Строгий `read_to_string`
-    // тогда падал с `stream did not contain valid UTF-8` → весь chunk (или весь
-    // звонок на full-file пути) терял расшифровку. Читаем байты + lossy-decode:
-    // повреждается максимум один символ (U+FFFD), а не вся дорожка.
-    let bytes = tokio::fs::read(path)
-        .await
-        .map_err(|e| TranscriptionError::Provider(format!("read whisper json: {e}")))?;
-    let raw = String::from_utf8_lossy(&bytes);
-    let parsed: WhisperJsonFile = serde_json::from_str(&raw)
-        .map_err(|e| TranscriptionError::Provider(format!("parse whisper json: {e}")))?;
-    Ok(build_transcript(parsed, track))
-}
-
-fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTranscript {
-    let lang_detected = parsed
-        .result
-        .as_ref()
-        .and_then(|r| r.language.clone())
-        .filter(|s| !s.is_empty());
-    // [P14.4] Telemetry — сколько segments дропнуто hallucination filter.
-    // Без этого regressions невозможно отловить ни в dev'е, ни в prod'е.
-    let mut dropped_count: usize = 0;
-    let mut empty_count: usize = 0;
-    let total_before = parsed.transcription.len();
-    let mut segments: Vec<TranscriptSegment> = parsed
-        .transcription
-        .into_iter()
-        .filter_map(|seg| {
-            let start = seg.offsets.from as f64 / 1000.0;
-            let end = seg.offsets.to as f64 / 1000.0;
-            if !start.is_finite() || !end.is_finite() || end < start {
-                return None;
-            }
-            let text = seg.text.trim().to_string();
-            if text.is_empty() {
-                empty_count += 1;
-                return None;
-            }
-            // [P12.1] Whisper hallucinates на silence / low-confidence
-            // фреймах. Comprehensive filter — exact + substring + shape.
-            if is_hallucination(&text) {
-                log::debug!("stt[{track:?}]: hallucination drop: {text:?}");
-                dropped_count += 1;
-                return None;
-            }
-            let speaker_tag = match track {
-                TrackKind::MicOwner => "speaker:owner".to_string(),
-                TrackKind::System => "speaker:0".to_string(),
-            };
-            Some(TranscriptSegment {
-                start,
-                end,
-                text,
-                speaker_tag,
-                confidence: None,
-            })
-        })
-        .collect();
-    if dropped_count > 0 || empty_count > 0 {
-        log::info!(
-            "stt[{track:?}]: filter stats — {dropped_count} hallucinations + {empty_count} empty / {total_before} total → {} kept",
-            segments.len()
-        );
-    }
-    let duration_sec = segments.last().map(|s| s.end).unwrap_or(0.0);
-    segments.sort_by(|a, b| {
-        a.start
-            .partial_cmp(&b.start)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    DiarizedTranscript {
-        version: 1,
-        lang_detected,
-        duration_sec,
-        provider: "local-whisper".to_string(),
-        segments,
     }
 }
 
@@ -759,272 +551,5 @@ mod tests {
             "last words from chunk"
         );
         assert_eq!(sanitize_prompt(""), "");
-    }
-
-    // ── build_transcript ────────────────────────────────────────────────
-
-    fn json_with_two_segments() -> WhisperJsonFile {
-        WhisperJsonFile {
-            result: Some(WhisperResultMeta {
-                language: Some("ru".to_string()),
-            }),
-            transcription: vec![
-                WhisperSegment {
-                    text: "  Привет.  ".into(),
-                    offsets: WhisperOffsets { from: 0, to: 1500 },
-                },
-                WhisperSegment {
-                    text: "Как дела?".into(),
-                    offsets: WhisperOffsets {
-                        from: 1500,
-                        to: 3200,
-                    },
-                },
-            ],
-        }
-    }
-
-    #[test]
-    fn build_transcript_mic_track_uses_owner_speaker() {
-        let t = build_transcript(json_with_two_segments(), TrackKind::MicOwner);
-        assert_eq!(t.provider, "local-whisper");
-        assert_eq!(t.lang_detected.as_deref(), Some("ru"));
-        assert_eq!(t.segments.len(), 2);
-        assert!(t.segments.iter().all(|s| s.speaker_tag == "speaker:owner"));
-        // Текст триммится.
-        assert_eq!(t.segments[0].text, "Привет.");
-        // Таймкоды в секундах.
-        assert!((t.segments[0].start - 0.0).abs() < 1e-9);
-        assert!((t.segments[0].end - 1.5).abs() < 1e-9);
-        assert!((t.duration_sec - 3.2).abs() < 1e-9);
-    }
-
-    #[test]
-    fn build_transcript_system_track_tags_speaker_zero() {
-        let t = build_transcript(json_with_two_segments(), TrackKind::System);
-        assert!(t.segments.iter().all(|s| s.speaker_tag == "speaker:0"));
-    }
-
-    #[test]
-    fn build_transcript_filters_whisper_hallucinations() {
-        let parsed = WhisperJsonFile {
-            result: None,
-            transcription: vec![
-                WhisperSegment {
-                    text: " you".into(), // leading space — common whisper artifact
-                    offsets: WhisperOffsets { from: 0, to: 300 },
-                },
-                WhisperSegment {
-                    text: "Thank you.".into(), // not in list → keeps
-                    offsets: WhisperOffsets { from: 300, to: 900 },
-                },
-                WhisperSegment {
-                    text: "real text".into(),
-                    offsets: WhisperOffsets {
-                        from: 900,
-                        to: 2000,
-                    },
-                },
-                WhisperSegment {
-                    text: "(silence)".into(),
-                    offsets: WhisperOffsets {
-                        from: 2000,
-                        to: 2500,
-                    },
-                },
-            ],
-        };
-        let t = build_transcript(parsed, TrackKind::System);
-        // "you" and "(silence)" filtered; "Thank you." (mixed case + period) kept
-        assert_eq!(t.segments.len(), 2);
-        assert_eq!(t.segments[0].text, "Thank you.");
-        assert_eq!(t.segments[1].text, "real text");
-    }
-
-    // [P12.1] Расширенный hallucination filter — Russian subtitle credits,
-    // [FOREIGN] tag, generic bracket-only shape.
-    #[test]
-    fn is_hallucination_filters_foreign_tag() {
-        assert!(is_hallucination("[FOREIGN]"));
-        assert!(is_hallucination("[foreign]"));
-        assert!(is_hallucination("  [FOREIGN]  "));
-    }
-
-    #[test]
-    fn is_hallucination_filters_foreign_tag_with_dash_or_punct() {
-        // [P-fix] whisper иногда префиксует dialogue-dash или trailing-точку.
-        assert!(is_hallucination("- [FOREIGN]"));
-        assert!(is_hallucination("— [FOREIGN]"));
-        assert!(is_hallucination("[FOREIGN]."));
-        assert!(is_hallucination("- [foreign] "));
-        // Legit слово "foreign" без скобок — НЕ дропаем.
-        assert!(!is_hallucination("foreign policy was discussed"));
-        // Dialogue-dash перед реальной речью — НЕ дропаем.
-        assert!(!is_hallucination("- Добрый день, ещё раз."));
-    }
-
-    #[test]
-    fn is_hallucination_filters_russian_subtitle_credits() {
-        assert!(is_hallucination("[Редактор субтитров Н.Александрова]"));
-        assert!(is_hallucination("[Апалькова]"));
-        assert!(is_hallucination("[Александрова]"));
-        assert!(is_hallucination(
-            "[Редактор субтитров Н.Александрова] [Апалькова]"
-        ));
-        assert!(is_hallucination("[Субтитры подготовил пользователь]"));
-        assert!(is_hallucination("Subtitles by Anonymous"));
-        assert!(is_hallucination("Transcribed by AI"));
-    }
-
-    #[test]
-    fn is_hallucination_filters_existing_exact_matches() {
-        // Backward-compat — existing list still active.
-        assert!(is_hallucination("you"));
-        assert!(is_hallucination("Thank you"));
-        assert!(is_hallucination("[blank_audio]"));
-        assert!(is_hallucination("(silence)"));
-        assert!(is_hallucination("[music]"));
-        // [P-fix2] Cyrillic noise tags.
-        assert!(is_hallucination("[Музыка]"));
-        assert!(is_hallucination("[музыка]"));
-        assert!(is_hallucination("[Аплодисменты]"));
-        assert!(is_hallucination("[Смех]"));
-    }
-
-    #[test]
-    fn is_hallucination_filters_long_bracket_only_shape() {
-        // Generic: bracket-only длина >20 chars → hallucination shape.
-        assert!(is_hallucination("[Some Long Mystery Attribution Label]"));
-        // Короткий bracket tag — не дропаем (если не в exact list).
-        // Эти НЕ должны фильтроваться:
-        assert!(!is_hallucination("[unknown]")); // 9 chars
-        assert!(!is_hallucination("[?]"));
-    }
-
-    #[test]
-    fn is_hallucination_keeps_legit_russian_speech() {
-        assert!(!is_hallucination("Привет, как дела?"));
-        assert!(!is_hallucination(
-            "Мы обсуждали проект, нужно подготовить документы."
-        ));
-        assert!(!is_hallucination("Да, согласен."));
-        // Edge: реальное слово которое случайно matches никаким substring.
-        assert!(!is_hallucination("Александр сказал что согласен"));
-    }
-
-    #[test]
-    fn build_transcript_filters_empty_and_invalid_segments() {
-        let parsed = WhisperJsonFile {
-            result: None,
-            transcription: vec![
-                WhisperSegment {
-                    text: "   ".into(),
-                    offsets: WhisperOffsets { from: 0, to: 1000 },
-                },
-                WhisperSegment {
-                    text: "bad-range".into(),
-                    offsets: WhisperOffsets {
-                        from: 5000,
-                        to: 1000,
-                    },
-                },
-                WhisperSegment {
-                    text: "good".into(),
-                    offsets: WhisperOffsets {
-                        from: 2000,
-                        to: 3000,
-                    },
-                },
-            ],
-        };
-        let t = build_transcript(parsed, TrackKind::System);
-        assert_eq!(t.segments.len(), 1);
-        assert_eq!(t.segments[0].text, "good");
-        assert!(t.lang_detected.is_none(), "empty language → None");
-    }
-
-    #[test]
-    fn build_transcript_sorts_by_start() {
-        let parsed = WhisperJsonFile {
-            result: None,
-            transcription: vec![
-                WhisperSegment {
-                    text: "late".into(),
-                    offsets: WhisperOffsets {
-                        from: 5000,
-                        to: 6000,
-                    },
-                },
-                WhisperSegment {
-                    text: "early".into(),
-                    offsets: WhisperOffsets { from: 0, to: 1000 },
-                },
-            ],
-        };
-        let t = build_transcript(parsed, TrackKind::System);
-        assert_eq!(t.segments[0].text, "early");
-        assert_eq!(t.segments[1].text, "late");
-    }
-
-    #[tokio::test]
-    async fn parse_whisper_json_reads_disk_and_decodes() {
-        use tempfile::tempdir;
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("out.json");
-        let body = r#"{
-            "result": {"language": "en"},
-            "transcription": [
-                {"text": "Hello", "offsets": {"from": 0, "to": 500}}
-            ]
-        }"#;
-        tokio::fs::write(&path, body).await.unwrap();
-        let t = parse_whisper_json(&path, TrackKind::System).await.unwrap();
-        assert_eq!(t.lang_detected.as_deref(), Some("en"));
-        assert_eq!(t.segments.len(), 1);
-        assert_eq!(t.segments[0].text, "Hello");
-    }
-
-    #[tokio::test]
-    async fn parse_whisper_json_errors_on_malformed() {
-        use tempfile::tempdir;
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("out.json");
-        tokio::fs::write(&path, "{ not json }").await.unwrap();
-        let err = parse_whisper_json(&path, TrackKind::System)
-            .await
-            .expect_err("malformed → Err");
-        assert!(matches!(err, TranscriptionError::Provider(_)));
-    }
-
-    /// [M13 fix] whisper.cpp может вставить невалидный UTF-8 байт когда режет
-    /// кириллический токен на границе сегмента. Раньше `read_to_string` падал
-    /// на весь chunk. Теперь lossy-decode сохраняет валидные сегменты, портит
-    /// максимум один символ.
-    #[tokio::test]
-    async fn parse_whisper_json_survives_invalid_utf8() {
-        use tempfile::tempdir;
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("out.json");
-        // Валидный JSON, но с сырым байтом 0xFF внутри строки (invalid UTF-8).
-        // ASCII-каркас — byte-string; кириллица — через .as_bytes() (byte-string
-        // литералы не принимают non-ASCII).
-        let mut body: Vec<u8> = Vec::new();
-        body.extend_from_slice(br#"{"result":{"language":"ru"},"transcription":[{"text":""#);
-        body.extend_from_slice("Привет ".as_bytes());
-        body.push(0xFF); // lone invalid byte (whisper.cpp split-token artifact)
-        body.extend_from_slice("мир".as_bytes());
-        body.extend_from_slice(br#"","offsets":{"from":0,"to":500}}]}"#);
-        tokio::fs::write(&path, &body).await.unwrap();
-
-        let t = parse_whisper_json(&path, TrackKind::System)
-            .await
-            .expect("lossy decode должен спасти chunk, не падать");
-        assert_eq!(t.lang_detected.as_deref(), Some("ru"));
-        assert_eq!(t.segments.len(), 1, "сегмент сохранён несмотря на bad byte");
-        assert!(
-            t.segments[0].text.starts_with("Привет"),
-            "текст до bad byte цел: {}",
-            t.segments[0].text
-        );
     }
 }

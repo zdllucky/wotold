@@ -26,6 +26,7 @@ use std::path::Path;
 use hound::WavReader;
 use sqlx::SqlitePool;
 
+use crate::call_id::CallId;
 use crate::call_store::CallStore;
 use crate::pipeline::audio_merger::{self, TrackKind};
 use crate::{db, AppError};
@@ -58,7 +59,7 @@ pub(crate) struct RecoveryChunk {
 pub(crate) async fn reconstruct_chunk_rows(
     pool: &SqlitePool,
     store: &CallStore,
-    call_id: &str,
+    call_id: &CallId,
 ) -> Result<Vec<RecoveryChunk>, AppError> {
     let chunks_dir = store.chunks_dir(call_id);
     let call_dir = store.call_dir(call_id);
@@ -80,7 +81,7 @@ pub(crate) async fn reconstruct_chunk_rows(
         )));
     }
 
-    let existing = db::chunks::list_chunks_by_call(pool, call_id).await?;
+    let existing = db::chunks::list_chunks_by_call(pool, call_id.as_str()).await?;
     let mut to_run: Vec<RecoveryChunk> = Vec::new();
     let mut cum_ms: u64 = 0;
 
@@ -107,10 +108,11 @@ pub(crate) async fn reconstruct_chunk_rows(
 
         // Reset stale (failed/pending/processing) row → delete + fresh pending.
         if row.is_some() {
-            db::chunks::delete_chunk(pool, call_id, idx).await?;
+            db::chunks::delete_chunk(pool, call_id.as_str(), idx).await?;
         }
         let sys_path = store.chunk_system_path(call_id, idx);
-        db::chunks::insert_chunk(pool, call_id, idx, start_ms, mic_path, &sys_path).await?;
+        db::chunks::insert_chunk(pool, call_id.as_str(), idx, start_ms, mic_path, &sys_path)
+            .await?;
         to_run.push(RecoveryChunk {
             idx,
             start_ms,
@@ -123,6 +125,18 @@ pub(crate) async fn reconstruct_chunk_rows(
 
 #[cfg(test)]
 mod tests {
+    /// [TD-05] Тестовые id — каноничные v4: `CallStore` принимает только
+    /// валидированный `CallId`, прежние литералы вроде "c1" им быть не могут.
+    const TEST_CALL_A: &str = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+    #[allow(dead_code)]
+    const TEST_CALL_B: &str = "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb";
+    #[allow(dead_code)]
+    const TEST_CALL_GHOST: &str = "99999999-9999-4999-8999-999999999999";
+    #[allow(dead_code)]
+    fn cid(s: &str) -> CallId {
+        CallId::parse(s).expect("тестовый id должен быть каноничным uuid")
+    }
+
     use super::*;
     use crate::db::test_support::fresh_db;
     use hound::{SampleFormat, WavSpec, WavWriter};
@@ -180,19 +194,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = CallStore::new(dir.path().to_path_buf());
         let db_t = fresh_db().await;
-        insert_call(&db_t.pool, "c1").await;
+        insert_call(&db_t.pool, TEST_CALL_A).await;
 
-        let call_dir = store.call_dir("c1");
+        let call_dir = store.call_dir(&cid(TEST_CALL_A));
         write_wav_ms(&call_dir.join("mic.wav"), 600_000);
         write_wav_ms(&call_dir.join("system.wav"), 600_000);
-        write_wav_ms(&store.chunk_mic_path("c1", 1), 600_000);
-        write_wav_ms(&store.chunk_system_path("c1", 1), 600_000);
+        write_wav_ms(&store.chunk_mic_path(&cid(TEST_CALL_A), 1), 600_000);
+        write_wav_ms(&store.chunk_system_path(&cid(TEST_CALL_A), 1), 600_000);
 
-        let to_run = reconstruct_chunk_rows(&db_t.pool, &store, "c1")
+        let to_run = reconstruct_chunk_rows(&db_t.pool, &store, &cid(TEST_CALL_A))
             .await
             .unwrap();
         // chunk 0 promoted from root + chunk 1 present → оба needing STT.
-        assert!(store.chunk_mic_path("c1", 0).exists());
+        assert!(store.chunk_mic_path(&cid(TEST_CALL_A), 0).exists());
         assert_eq!(to_run.iter().map(|r| r.idx).collect::<Vec<_>>(), vec![0, 1]);
     }
 
@@ -203,16 +217,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = CallStore::new(dir.path().to_path_buf());
         let db_t = fresh_db().await;
-        insert_call(&db_t.pool, "c1").await;
+        insert_call(&db_t.pool, TEST_CALL_A).await;
 
-        write_wav_ms(&store.chunk_mic_path("c1", 0), 600_000);
-        write_wav_ms(&store.chunk_system_path("c1", 0), 600_000);
-        write_wav_ms(&store.chunk_mic_path("c1", 1), 600_000);
-        write_wav_ms(&store.chunk_system_path("c1", 1), 600_000);
-        write_wav_ms(&store.chunk_mic_path("c1", 2), 298_000);
-        write_wav_ms(&store.chunk_system_path("c1", 2), 298_000);
+        write_wav_ms(&store.chunk_mic_path(&cid(TEST_CALL_A), 0), 600_000);
+        write_wav_ms(&store.chunk_system_path(&cid(TEST_CALL_A), 0), 600_000);
+        write_wav_ms(&store.chunk_mic_path(&cid(TEST_CALL_A), 1), 600_000);
+        write_wav_ms(&store.chunk_system_path(&cid(TEST_CALL_A), 1), 600_000);
+        write_wav_ms(&store.chunk_mic_path(&cid(TEST_CALL_A), 2), 298_000);
+        write_wav_ms(&store.chunk_system_path(&cid(TEST_CALL_A), 2), 298_000);
 
-        let to_run = reconstruct_chunk_rows(&db_t.pool, &store, "c1")
+        let to_run = reconstruct_chunk_rows(&db_t.pool, &store, &cid(TEST_CALL_A))
             .await
             .unwrap();
         assert_eq!(to_run.len(), 3);
@@ -241,7 +255,7 @@ mod tests {
             }
         );
         // Все строки в DB как pending.
-        let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
+        let rows = db::chunks::list_chunks_by_call(&db_t.pool, TEST_CALL_A)
             .await
             .unwrap();
         assert_eq!(rows.len(), 3);
@@ -254,47 +268,47 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = CallStore::new(dir.path().to_path_buf());
         let db_t = fresh_db().await;
-        insert_call(&db_t.pool, "c1").await;
+        insert_call(&db_t.pool, TEST_CALL_A).await;
 
         // Диск: chunk 0 (root legacy), chunk 1, chunk 2.
-        let call_dir = store.call_dir("c1");
+        let call_dir = store.call_dir(&cid(TEST_CALL_A));
         write_wav_ms(&call_dir.join("mic.wav"), 600_000);
         write_wav_ms(&call_dir.join("system.wav"), 600_000);
-        write_wav_ms(&store.chunk_mic_path("c1", 1), 600_000);
-        write_wav_ms(&store.chunk_system_path("c1", 1), 600_000);
-        write_wav_ms(&store.chunk_mic_path("c1", 2), 298_000);
-        write_wav_ms(&store.chunk_system_path("c1", 2), 298_000);
+        write_wav_ms(&store.chunk_mic_path(&cid(TEST_CALL_A), 1), 600_000);
+        write_wav_ms(&store.chunk_system_path(&cid(TEST_CALL_A), 1), 600_000);
+        write_wav_ms(&store.chunk_mic_path(&cid(TEST_CALL_A), 2), 298_000);
+        write_wav_ms(&store.chunk_system_path(&cid(TEST_CALL_A), 2), 298_000);
 
         // DB: chunk 0 failed, chunk 1 done (start 600130, end 1200092).
         db::chunks::insert_chunk(
             &db_t.pool,
-            "c1",
+            TEST_CALL_A,
             0,
             0,
-            &store.chunk_mic_path("c1", 0),
-            &store.chunk_system_path("c1", 0),
+            &store.chunk_mic_path(&cid(TEST_CALL_A), 0),
+            &store.chunk_system_path(&cid(TEST_CALL_A), 0),
         )
         .await
         .unwrap();
-        db::chunks::mark_chunk_failed(&db_t.pool, "c1", 0, "legacy path miss")
+        db::chunks::mark_chunk_failed(&db_t.pool, TEST_CALL_A, 0, "legacy path miss")
             .await
             .unwrap();
         db::chunks::insert_chunk(
             &db_t.pool,
-            "c1",
+            TEST_CALL_A,
             1,
             600_130,
-            &store.chunk_mic_path("c1", 1),
-            &store.chunk_system_path("c1", 1),
+            &store.chunk_mic_path(&cid(TEST_CALL_A), 1),
+            &store.chunk_system_path(&cid(TEST_CALL_A), 1),
         )
         .await
         .unwrap();
-        db::chunks::mark_chunk_processing(&db_t.pool, "c1", 1)
+        db::chunks::mark_chunk_processing(&db_t.pool, TEST_CALL_A, 1)
             .await
             .unwrap();
         db::chunks::mark_chunk_done(
             &db_t.pool,
-            "c1",
+            TEST_CALL_A,
             1,
             1_200_092,
             r#"{"segments":[]}"#,
@@ -304,7 +318,7 @@ mod tests {
         .await
         .unwrap();
 
-        let to_run = reconstruct_chunk_rows(&db_t.pool, &store, "c1")
+        let to_run = reconstruct_chunk_rows(&db_t.pool, &store, &cid(TEST_CALL_A))
             .await
             .unwrap();
         // chunk 0 (reset failed) + chunk 2 (new) нуждаются в STT; chunk 1 done — нет.
@@ -314,7 +328,7 @@ mod tests {
         assert_eq!(c2.start_ms, 1_200_092);
         assert_eq!(c2.end_ms, 1_200_092 + 298_000);
         // chunk 1 остался done.
-        let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
+        let rows = db::chunks::list_chunks_by_call(&db_t.pool, TEST_CALL_A)
             .await
             .unwrap();
         let r1 = rows.iter().find(|r| r.chunk_idx == 1).unwrap();

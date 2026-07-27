@@ -8,6 +8,7 @@ import type { AssistantMessage } from '@wotold/contracts';
 
 import { askAssistant, getAssistantCallThread, getAssistantChat } from '../api/assistant';
 import { humanError } from '../api/errors';
+import { useI18n } from '../i18n';
 
 let optimisticSeq = 0;
 
@@ -19,6 +20,8 @@ export interface UseCallAssistant {
 }
 
 export function useCallAssistant(callId: string): UseCallAssistant {
+  // [TD-25] Тексты ошибок берутся из словаря — humanError требует `t`.
+  const { t } = useI18n();
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +77,7 @@ export function useCallAssistant(callId: string): UseCallAssistant {
         setMessages(msgs);
       } catch (e) {
         if (currentCallRef.current !== askCallId) return;
-        setError(humanError(e));
+        setError(humanError(e, t));
         if (chatIdRef.current) {
           try {
             setMessages(await getAssistantChat(chatIdRef.current));

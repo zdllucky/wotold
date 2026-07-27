@@ -60,7 +60,7 @@ pub async fn local_engine_model_status(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<ModelStatus, AppError> {
-    // Fast path: file-existence only. SHA256 is verified lazily before model use.
+    // Fast path: file-existence only. SHA256 verified only at download time; runtime checks are size-only [TD-10].
     models::check_status_fast(&state.app_data_dir, &id).await
 }
 
@@ -98,7 +98,7 @@ pub async fn local_engine_storage_list(
 
     let mut rows = Vec::with_capacity(MODEL_CATALOG.len());
     for entry in MODEL_CATALOG.iter() {
-        // Fast path: file-existence only, no SHA256. Corruption is detected
+        // Fast path: file-existence only, no SHA256. A same-size swap after install is NOT detected at runtime [TD-10]; corruption
         // lazily before the model is actually used (check_status in STT/LLM init).
         let status = models::check_status_fast(&state.app_data_dir, entry.id.as_str()).await?;
         rows.push(StorageRow {
@@ -232,13 +232,20 @@ pub async fn local_engine_eval_recap(
     state: State<'_, AppState>,
     call_id: String,
 ) -> Result<RecapEvalDto, AppError> {
-    let call_dir = state.app_data_dir.join("calls").join(&call_id);
-    let recap = tokio::fs::read_to_string(call_dir.join("recap.md"))
-        .await
-        .map_err(|e| AppError::Other(format!("recap.md read: {e}")))?;
-    let transcript = tokio::fs::read_to_string(call_dir.join("transcript.md"))
-        .await
-        .map_err(|e| AppError::Other(format!("transcript.md read: {e}")))?;
+    // [TD-05] Раньше здесь был ручной `app_data_dir.join("calls").join(&call_id)`
+    // мимо CallStore — то есть чтение произвольного recap.md/transcript.md в ФС
+    // по `call_id = "../../.."`. Теперь id валидируется, а путь строит store.
+    let parsed_id = crate::call_id::CallId::parse(&call_id)?;
+    let recap = state
+        .store
+        .read_artifact(&parsed_id, crate::call_store::ArtifactKind::Recap)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("recap.md для звонка {call_id}")))?;
+    let transcript = state
+        .store
+        .read_artifact(&parsed_id, crate::call_store::ArtifactKind::Transcript)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("transcript.md для звонка {call_id}")))?;
     let call = crate::db::get_call(&state.db, &call_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;

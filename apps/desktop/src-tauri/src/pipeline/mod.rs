@@ -5,11 +5,10 @@ use sqlx::SqlitePool;
 use tauri::AppHandle;
 
 use crate::{
-    db,
-    embeddings::{self, StubEmbedder},
+    db, embeddings,
     events::{CallAutoBoundEvent, CallProgressEvent, EventBus, PipelineFinishedEvent},
     matching,
-    pipeline::{clusters::extract_clusters, merge::OWNER_TAG},
+    pipeline::{clusters::load_and_extract_clusters, merge::OWNER_TAG},
     providers::transcription::{
         DiarizedTranscript, TranscriptSegment, TranscriptionOpts, TranscriptionProvider,
     },
@@ -21,6 +20,7 @@ pub mod merge;
 /// [recap-rich] Нарратив-минутки — отдельный write-проход после structured reduce.
 pub mod narrative;
 pub mod recap;
+pub mod recovery_flow;
 pub mod settings;
 pub mod stage;
 pub mod voice_backfill;
@@ -307,40 +307,97 @@ pub async fn run(
     bus.pipeline_started(&ctx.call_id);
 
     let result = run_inner(pool, &ctx, app).await;
-    let event = match &result {
-        Ok(()) => {
-            db::mark_call_ready(pool, &ctx.call_id).await?;
+
+    // [TD-12] Причина провала пайплайна (если был).
+    let pipeline_err = result.as_ref().err().map(|e| {
+        log::error!("pipeline {} failed: {e}", ctx.call_id);
+        // M2.7 (#23): UX-readable reason для UI. Сама технодеталь в логах.
+        match e {
+            AppError::Other(s) => s.clone(),
+            other => other.to_string(),
+        }
+    });
+
+    // [TD-12] mark_call_ready может упасть ПОСЛЕ успешного пайплайна (busy
+    // pool, disk full). Раньше здесь стоял `?`, и он выходил из run() ДО
+    // bus.pipeline_finished и минуя fail_recording — звонок навсегда висел в
+    // `processing`, а фронт не получал ни finished, ни failed. Теперь ошибка
+    // не короткозамыкает, а становится failed-исходом; событие эмитится всегда.
+    let mark_ready_err = if pipeline_err.is_none() {
+        match db::mark_call_ready(pool, &ctx.call_id).await {
+            Ok(()) => None,
+            Err(e) => {
+                log::error!(
+                    "mark_call_ready({}) failed после успешного пайплайна: {e}",
+                    ctx.call_id
+                );
+                Some(format!("не удалось записать статус ready: {e}"))
+            }
+        }
+    } else {
+        None
+    };
+
+    let event = finish_event(&ctx.call_id, pipeline_err, mark_ready_err);
+
+    match event.status {
+        "ready" => {
             // [M15.3] Индексация ассистента — fire-and-forget; headless
-            // (app=None) добирается startup-backfill'ом.
+            // (app=None) добирается startup-backfill'ом. Только на настоящем ready.
             if let Some(app) = app {
                 crate::assistant::indexer::spawn_index(app, &ctx.call_id);
             }
-            PipelineFinishedEvent {
-                call_id: ctx.call_id.clone(),
-                status: "ready",
-                failed_reason: None,
-            }
         }
-        Err(e) => {
-            log::error!("pipeline {} failed: {e}", ctx.call_id);
-            // M2.7 (#23): UX-readable reason для UI. Сама технодеталь в логах.
-            let reason = match e {
-                AppError::Other(s) => s.clone(),
-                other => other.to_string(),
-            };
-            let _ = db::fail_recording_with_reason(pool, &ctx.call_id, Some(&reason)).await;
-            PipelineFinishedEvent {
-                call_id: ctx.call_id.clone(),
-                status: "failed",
-                failed_reason: Some(reason),
-            }
+        _ => {
+            // failed (пайплайн ИЛИ mark_ready) — persist reason, чтобы звонок не
+            // залип в `processing`. Один вызов покрывает оба случая.
+            let _ =
+                db::fail_recording_with_reason(pool, &ctx.call_id, event.failed_reason.as_deref())
+                    .await;
         }
-    };
+    }
 
     // [B5]: фронт слушает 'pipeline:finished' для realtime-обновления Calls list.
+    // [TD-12] Эмитится безусловно — это и был сломанный инвариант.
     bus.pipeline_finished(&event);
 
-    result
+    match event.status {
+        "ready" => Ok(()),
+        // mark-ready-fail и раньше давал Err (через `?`) — контракт потребителей
+        // сохранён, но теперь с эмитом события и persist'ом статуса.
+        _ => Err(AppError::Other(
+            event
+                .failed_reason
+                .unwrap_or_else(|| "pipeline failed".to_string()),
+        )),
+    }
+}
+
+/// [TD-12] Решение о финальном событии пайплайна. Вынесено чистой функцией,
+/// потому что сам `run()` требует pool + полный пайплайн и юнитом не тестируем
+/// (тот же приём, что `classify_event` и `plan_final_chunk`).
+///
+/// Инвариант: если пайплайн успешен, но `mark_call_ready` не записался, звонок
+/// ОБЯЗАН стать `failed` (артефакты на диске, юзер сможет reprocess), а не
+/// остаться `ready`/висящим.
+fn finish_event(
+    call_id: &str,
+    pipeline_err: Option<String>,
+    mark_ready_err: Option<String>,
+) -> PipelineFinishedEvent {
+    let failed_reason = pipeline_err.or(mark_ready_err);
+    match failed_reason {
+        Some(reason) => PipelineFinishedEvent {
+            call_id: call_id.to_string(),
+            status: "failed",
+            failed_reason: Some(reason),
+        },
+        None => PipelineFinishedEvent {
+            call_id: call_id.to_string(),
+            status: "ready",
+            failed_reason: None,
+        },
+    }
 }
 
 /// Перезапустить полный pipeline (STT + recap) для существующего звонка.
@@ -587,15 +644,19 @@ pub(crate) async fn build_local_llm_provider(
     // [B2] Если resident llama-server поднят для ЭТОГО preset — provider пойдёт
     // HTTP-путём (модель уже в RAM), без спавна one-shot процесса. Иначе None →
     // обычный one-shot.
-    let server_url = {
+    let server = {
         let state = tauri::Manager::state::<crate::state::AppState>(app);
         let guard = state.llm_server.lock().await;
         guard
             .as_ref()
             .filter(|srv| srv.preset() == preset)
-            .map(|srv| srv.url().to_string())
+            // [TD-08] Забираем и url, и api-key: сервер теперь требует авторизацию.
+            .map(|srv| crate::local_engine::llm::ServerHandle {
+                url: srv.url().to_string(),
+                api_key: srv.api_key().to_string(),
+            })
     };
-    let provider = provider.with_server(server_url);
+    let provider = provider.with_server(server);
 
     Ok((provider, preset))
 }
@@ -1066,23 +1127,45 @@ async fn run_local_inner(
                         prompt: None,
                     };
                     if mic.lang_detected.as_deref() != Some(call_lang.as_str()) {
-                        if let Ok(re) = mic_stt.transcribe(&ctx.mic_path, pinned.clone()).await {
-                            log::info!(
-                                "call {}: re-STT mic pinned lang={call_lang} (was {:?})",
+                        // [TD-15] Err-ветка обязательна: при провале повторного
+                        // STT (timeout сайдкара, OOM) звонок молча оставался с
+                        // mis-detected языком — тем самым [FOREIGN]-спамом, ради
+                        // которого фича и писалась, — и по логам нельзя было
+                        // понять, что re-STT вообще запускался.
+                        match mic_stt.transcribe(&ctx.mic_path, pinned.clone()).await {
+                            Ok(re) => {
+                                log::info!(
+                                    "call {}: re-STT mic pinned lang={call_lang} (was {:?})",
+                                    ctx.call_id,
+                                    mic.lang_detected
+                                );
+                                mic = re;
+                            }
+                            Err(e) => log::warn!(
+                                "call {}: re-STT mic (lang={call_lang}) failed, \
+                                 оставляем mis-detected {:?}: {e}",
                                 ctx.call_id,
                                 mic.lang_detected
-                            );
-                            mic = re;
+                            ),
                         }
                     }
                     if sys.lang_detected.as_deref() != Some(call_lang.as_str()) {
-                        if let Ok(re) = sys_stt.transcribe(&ctx.system_path, pinned).await {
-                            log::info!(
-                                "call {}: re-STT system pinned lang={call_lang} (was {:?})",
+                        // [TD-15] См. mic-ветку выше.
+                        match sys_stt.transcribe(&ctx.system_path, pinned).await {
+                            Ok(re) => {
+                                log::info!(
+                                    "call {}: re-STT system pinned lang={call_lang} (was {:?})",
+                                    ctx.call_id,
+                                    sys.lang_detected
+                                );
+                                sys = re;
+                            }
+                            Err(e) => log::warn!(
+                                "call {}: re-STT system (lang={call_lang}) failed, \
+                                 оставляем mis-detected {:?}: {e}",
                                 ctx.call_id,
                                 sys.lang_detected
-                            );
-                            sys = re;
+                            ),
                         }
                     }
                 }
@@ -1413,22 +1496,17 @@ async fn relabel_owner_on_mic_full_file(
     system_path: &Path,
     mut mic_t: DiarizedTranscript,
 ) -> DiarizedTranscript {
-    // Embedder для cluster mean (reuse existing pipeline pattern из cloud
-    // run_cluster_pipeline). Fallback на StubEmbedder когда модель отсутствует
-    // → cluster_embeddings empty → identify_owner_speaker уходит в duration
-    // fallback (acceptable).
-    let model_path = app_data_dir.join("models").join("embedder.onnx");
-    let embedder: Box<dyn embeddings::Embedder> =
-        match embeddings::try_load_onnx_embedder(&model_path) {
-            Some(e) => e,
-            None => Box::new(StubEmbedder),
-        };
-    let clusters = match crate::pipeline::clusters::extract_clusters(
-        &mic_t.segments,
-        mic_path,
-        system_path,
-        embedder.as_ref(),
-    ) {
+    // Fallback на StubEmbedder когда модель отсутствует → cluster_embeddings
+    // empty → identify_owner_speaker уходит в duration fallback (acceptable).
+    let clusters = match crate::pipeline::clusters::load_and_extract_clusters(
+        mic_t.segments.clone(),
+        mic_path.to_path_buf(),
+        system_path.to_path_buf(),
+        app_data_dir,
+        "relabel_owner_on_mic",
+    )
+    .await
+    {
         Ok(c) => c,
         Err(e) => {
             log::warn!("relabel_owner_on_mic: extract_clusters err: {e} — fallback duration");
@@ -1745,25 +1823,14 @@ async fn run_cluster_pipeline(
     system_path: &Path,
     app_data_dir: &Path,
 ) -> Result<(), AppError> {
-    let model_path = app_data_dir.join("models").join("embedder.onnx");
-    let embedder: Box<dyn embeddings::Embedder> =
-        match embeddings::try_load_onnx_embedder(&model_path) {
-            Some(e) => {
-                log::info!(
-                    "cluster pipeline {call_id}: OnnxEmbedder ({})",
-                    model_path.display()
-                );
-                e
-            }
-            None => {
-                log::debug!(
-                    "cluster pipeline {call_id}: StubEmbedder (no model at {})",
-                    model_path.display()
-                );
-                Box::new(StubEmbedder)
-            }
-        };
-    let clusters = extract_clusters(merged, mic_path, system_path, embedder.as_ref())?;
+    let clusters = load_and_extract_clusters(
+        merged.to_vec(),
+        mic_path.to_path_buf(),
+        system_path.to_path_buf(),
+        app_data_dir,
+        &format!("cluster pipeline {call_id}"),
+    )
+    .await?;
     if clusters.is_empty() {
         log::debug!("cluster pipeline {call_id}: no clusters extracted");
         return Ok(());
@@ -1845,6 +1912,49 @@ async fn run_cluster_pipeline(
 mod tests {
     use super::*;
     use crate::db::test_support::fresh_db;
+
+    // ============================================================
+    // [TD-12] finish_event — событие пайплайна эмитится всегда
+    // ============================================================
+
+    #[test]
+    fn finish_event_ready_when_no_errors() {
+        let e = finish_event("call-1", None, None);
+        assert_eq!(e.status, "ready");
+        assert!(e.failed_reason.is_none());
+        assert_eq!(e.call_id, "call-1");
+    }
+
+    #[test]
+    fn finish_event_failed_on_pipeline_error() {
+        let e = finish_event("call-1", Some("stt timeout".into()), None);
+        assert_eq!(e.status, "failed");
+        assert_eq!(e.failed_reason.as_deref(), Some("stt timeout"));
+    }
+
+    #[test]
+    fn finish_event_failed_when_mark_ready_fails_after_success() {
+        // Регрессия TD-12: пайплайн успешен, но статус ready не записался
+        // (busy pool / disk full). Раньше `?` выходил из run() до эмита
+        // события — звонок навсегда висел в `processing`. Теперь исход failed,
+        // и событие всё равно эмитится.
+        let e = finish_event("call-1", None, Some("database is locked".into()));
+        assert_eq!(e.status, "failed");
+        assert_eq!(e.failed_reason.as_deref(), Some("database is locked"));
+    }
+
+    #[test]
+    fn finish_event_pipeline_error_wins_over_mark_ready() {
+        // Defensive: mark_ready пробуется только на success, но если оба Some —
+        // причина пайплайна информативнее.
+        let e = finish_event(
+            "call-1",
+            Some("pipeline boom".into()),
+            Some("mark boom".into()),
+        );
+        assert_eq!(e.status, "failed");
+        assert_eq!(e.failed_reason.as_deref(), Some("pipeline boom"));
+    }
 
     // ============================================================
     // [P13] ensure_all_chunks_done — halt gate перед stage 2→3

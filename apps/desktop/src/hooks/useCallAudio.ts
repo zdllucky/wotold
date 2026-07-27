@@ -11,6 +11,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { getCallAudioPath } from '../api/calls';
 import { humanError } from '../api/errors';
 import { decodeWavPeaks } from '../lib/audioPeaks';
+import { useI18n } from '../i18n';
 
 const PEAK_COUNT = 200;
 
@@ -34,6 +35,8 @@ export interface CallAudioActions {
 export type CallAudioHandle = CallAudioState & CallAudioActions;
 
 export function useCallAudio(callId: string, fallbackDuration = 0): CallAudioHandle {
+  // [TD-25] Тексты ошибок берутся из словаря — humanError требует `t`.
+  const { t } = useI18n();
   const micRef = useRef<HTMLAudioElement | null>(null);
   const systemRef = useRef<HTMLAudioElement | null>(null);
   if (!micRef.current && typeof window !== 'undefined') {
@@ -81,7 +84,7 @@ export function useCallAudio(callId: string, fallbackDuration = 0): CallAudioHan
             : s.reason instanceof Error
               ? s.reason.message
               : String(m.reason ?? s.reason);
-        setError(humanError(reason));
+        setError(humanError(reason, t));
       } else {
         setReady(true);
       }

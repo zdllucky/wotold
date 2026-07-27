@@ -63,7 +63,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
         setSamples(v);
         setError(null);
       })
-      .catch((e: unknown) => setError(humanError(e)));
+      .catch((e: unknown) => setError(humanError(e, t)));
   }, [contactId]);
 
   useEffect(() => {
@@ -134,7 +134,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
         setPlayingId(s.id);
       } catch (e) {
         setLoadingId(null);
-        setError(humanError(e));
+        setError(humanError(e, t));
       }
     },
     [playingId, stopPlayback],
@@ -155,7 +155,7 @@ export function VoiceSamplesSection({ contactId, alwaysShow }: VoiceSamplesSecti
       await deleteVoiceSample(s.id);
       refresh();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 

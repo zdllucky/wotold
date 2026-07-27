@@ -78,6 +78,36 @@ function TabsTrigger({ value, disabled, counter, children }: TabsTriggerProps) {
       className={`tab${active ? ' tab--active' : ''}`}
       disabled={disabled}
       onClick={() => ctx.onChange(value)}
+      // [TD-29d] Roving tabindex был сделан (неактивные триггеры вне Tab-обхода),
+      // а стрелок к нему не было — вкладки оказывались недостижимы с
+      // клавиатуры вовсе. ARIA APG для tablist: ←/→ переключают, Home/End —
+      // на края, обход по кругу.
+      onKeyDown={(e) => {
+        const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+        if (!keys.includes(e.key)) return;
+        e.preventDefault();
+        const items = Array.from(
+          e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+            '[role="tab"]:not([disabled])',
+          ) ?? [],
+        );
+        if (items.length === 0) return;
+        const idx = items.indexOf(e.currentTarget);
+        const next =
+          e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? items.length - 1
+              : e.key === 'ArrowLeft'
+                ? (idx - 1 + items.length) % items.length
+                : (idx + 1) % items.length;
+        const target = items[next];
+        if (!target) return;
+        // Фокус переносим сразу: активация следует за фокусом (automatic
+        // activation), как в APG для табов без тяжёлых панелей.
+        target.focus();
+        target.click();
+      }}
     >
       {children}
       {counter !== undefined && counter !== null && (

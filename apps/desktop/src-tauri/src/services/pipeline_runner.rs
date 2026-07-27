@@ -101,8 +101,9 @@ impl PipelineRunner {
             let _ = old.await;
         }
 
-        let mic_path = store.mic_path(&call_id);
-        let system_path = store.system_path(&call_id);
+        let parsed = crate::call_id::CallId::from_db(&call_id);
+        let mic_path = store.mic_path(&parsed);
+        let system_path = store.system_path(&parsed);
         Self::spawn_task(
             pool,
             store,
@@ -147,8 +148,7 @@ impl PipelineRunner {
 
         let app_data_dir = store.app_data_dir().to_path_buf();
         let call_id_for_task = call_id.clone();
-        let tasks_for_task = tasks.clone();
-        let handle = tauri::async_runtime::spawn(async move {
+        let work = async move {
             let bus = EventBus::new(Some(&app_handle));
             bus.pipeline_started(&call_id_for_task);
 
@@ -209,10 +209,11 @@ impl PipelineRunner {
                 }
             };
             bus.pipeline_finished(&event);
-
-            tasks_for_task.lock().await.remove(&call_id_for_task);
-        });
-        tasks.lock().await.insert(call_id, handle);
+        };
+        // [TD-13] Регистрация + cleanup — в spawn_registered. Барьер там же
+        // закрывает гонку, из-за которой guard выше навсегда отвечал
+        // `call_already_processing` после быстро упавшего regen'а.
+        Self::spawn_registered(tasks, call_id, work).await;
         Ok(())
     }
 
@@ -239,27 +240,20 @@ impl PipelineRunner {
         let _ = h.await;
 
         // 2. Проверяем артефакты.
-        let transcript_path = store.artifact_path(call_id, ArtifactKind::Transcript);
+        let transcript_path = store.artifact_path(
+            &crate::call_id::CallId::from_db(call_id),
+            ArtifactKind::Transcript,
+        );
         let artifacts_intact = tokio::fs::metadata(&transcript_path).await.is_ok();
 
         // 3. Restore SQL.
         if artifacts_intact {
-            let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query(
-                "UPDATE calls
-                 SET status = 'ready',
-                     failed_reason = NULL,
-                     pipeline_step = NULL,
-                     pipeline_pct = NULL,
-                     pipeline_eta_sec = NULL,
-                     upload_bytes = NULL,
-                     updated_at = ?1
-                 WHERE id = ?2",
-            )
-            .bind(&now)
-            .bind(call_id)
-            .execute(pool)
-            .await?;
+            // [TD-17] Через db-слой, а не сырым SQL: SET-клауза идентична
+            // mark_call_ready (status + failed_reason + pipeline_* + updated_at),
+            // но раньше писалась здесь копией — то есть мимо любых гейтов,
+            // которые db-слой захочет ввести. Переход processing → ready
+            // легален (артефакты на диске целы, отменённый run восстановлен).
+            crate::db::mark_call_ready(pool, call_id).await?;
             // [M15.3] Артефакты целы, звонок снова ready — вернуть в индекс
             // ассистента (reprocess его деиндексировал на старте).
             if let Err(e) = crate::assistant::indexer::index_call(pool, store, call_id).await {
@@ -280,9 +274,45 @@ impl PipelineRunner {
         Ok(CancelOutcome { artifacts_intact })
     }
 
+    /// [TD-13] Spawn задачи с **барьером регистрации**.
+    ///
+    /// Гонка, которую это чинит: раньше обе точки спавна делали
+    /// `spawn(... в конце tasks.remove(id))`, а `insert` шёл ПОСЛЕ `spawn`.
+    /// Быстро упавшая задача (напр. `local_engine_preset_not_set`) успевала
+    /// выполнить свой `remove` до вставки — тот был no-op, — и следом `insert`
+    /// клал handle УЖЕ ЗАВЕРШЁННОЙ задачи, которую никто не уберёт.
+    /// Для `spawn_regen` это фатально: guard `contains_key` навсегда отвечал
+    /// `call_already_processing`, и пересоздать саммари было нельзя до
+    /// перезапуска приложения.
+    ///
+    /// `insert` до `spawn` невозможен (handle появляется только из `spawn`),
+    /// поэтому убираем гонку с другой стороны: тело задачи ждёт сигнал
+    /// «ты зарегистрирован» и лишь затем работает. К моменту, когда задача
+    /// может себя удалить, запись гарантированно в реестре.
+    ///
+    /// Если сигнал не пришёл (задачу заабортили между `spawn` и `send`),
+    /// `rx.await` вернёт `Err` — работа не начинается, мусора не остаётся.
+    async fn spawn_registered<F>(tasks: PipelineTasks, call_id: String, fut: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        let call_id_for_task = call_id.clone();
+        let tasks_for_task = tasks.clone();
+        let handle = tauri::async_runtime::spawn(async move {
+            // Барьер: не начинаем работу, пока не зарегистрированы.
+            if rx.await.is_err() {
+                return;
+            }
+            fut.await;
+            tasks_for_task.lock().await.remove(&call_id_for_task);
+        });
+        tasks.lock().await.insert(call_id, handle);
+        let _ = tx.send(());
+    }
+
     /// Внутренний helper: spawn'ит async task, регистрирует в `tasks`,
     /// при завершении удаляет себя из map'а.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     async fn spawn_task(
         pool: SqlitePool,
@@ -296,8 +326,7 @@ impl PipelineRunner {
     ) {
         let app_data_dir = store.app_data_dir().to_path_buf();
         let call_id_for_task = call_id.clone();
-        let tasks_for_task = tasks.clone();
-        let handle = tauri::async_runtime::spawn(async move {
+        let work = async move {
             if is_reprocess {
                 // Reset status row (см. pipeline::reprocess_call).
                 if let Err(e) = pipeline::reprocess_call(
@@ -322,10 +351,9 @@ impl PipelineRunner {
                     log::error!("pipeline {call_id_for_task} error: {e}");
                 }
             }
-            // Cleanup из реестра по завершении.
-            tasks_for_task.lock().await.remove(&call_id_for_task);
-        });
-        tasks.lock().await.insert(call_id, handle);
+        };
+        // [TD-13] Регистрация + cleanup — в spawn_registered.
+        Self::spawn_registered(tasks, call_id, work).await;
     }
 }
 
@@ -335,6 +363,87 @@ mod tests {
     use crate::db::test_support::fresh_db;
     use std::sync::Arc;
     use tempfile::tempdir;
+
+    // ============================================================
+    // [TD-13] Барьер регистрации: гонка insert-after-spawn
+    // ============================================================
+
+    fn empty_tasks() -> PipelineTasks {
+        Arc::new(Mutex::new(HashMap::new()))
+    }
+
+    /// Дождаться, пока реестр опустеет (или сдаться). Без sleep-синхронизации
+    /// с «на глазок» задержкой — правило 6 инженерных правил.
+    async fn wait_until_empty(tasks: &PipelineTasks, tries: u32) -> bool {
+        for _ in 0..tries {
+            if tasks.lock().await.is_empty() {
+                return true;
+            }
+            tokio::task::yield_now().await;
+        }
+        tasks.lock().await.is_empty()
+    }
+
+    #[tokio::test]
+    async fn instantly_finishing_task_leaves_no_stale_entry() {
+        // Регрессия TD-13: задача, падающая мгновенно (напр.
+        // local_engine_preset_not_set), успевала сделать свой remove ДО
+        // вставки — тот был no-op, — и следом insert клал handle уже
+        // завершённой задачи. Для spawn_regen это навсегда блокировало
+        // повторную генерацию с `call_already_processing`.
+        let tasks = empty_tasks();
+        PipelineRunner::spawn_registered(tasks.clone(), "c1".into(), async {}).await;
+
+        assert!(
+            wait_until_empty(&tasks, 1000).await,
+            "мгновенно завершившаяся задача не должна оставлять stale-запись"
+        );
+    }
+
+    #[tokio::test]
+    async fn running_task_is_visible_in_registry() {
+        // Guard `call_already_processing` обязан продолжать работать:
+        // пока задача жива, её запись в реестре есть.
+        let tasks = empty_tasks();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        PipelineRunner::spawn_registered(tasks.clone(), "c1".into(), async move {
+            let _ = release_rx.await;
+        })
+        .await;
+
+        assert!(
+            tasks.lock().await.contains_key("c1"),
+            "работающая задача обязана быть видна guard'у"
+        );
+
+        let _ = release_tx.send(());
+        assert!(
+            wait_until_empty(&tasks, 1000).await,
+            "после завершения запись снимается"
+        );
+    }
+
+    #[tokio::test]
+    async fn aborted_task_does_not_block_respawn() {
+        // cancel-путь: снимаем handle и abort'аем. Повторный spawn для того же
+        // call_id обязан пройти (реестр не «залип»).
+        let tasks = empty_tasks();
+        let (_hold_tx, hold_rx) = tokio::sync::oneshot::channel::<()>();
+        PipelineRunner::spawn_registered(tasks.clone(), "c1".into(), async move {
+            let _ = hold_rx.await;
+        })
+        .await;
+
+        let handle = tasks.lock().await.remove("c1").expect("handle есть");
+        handle.abort();
+        assert!(tasks.lock().await.is_empty());
+
+        PipelineRunner::spawn_registered(tasks.clone(), "c1".into(), async {}).await;
+        assert!(
+            wait_until_empty(&tasks, 1000).await,
+            "повторный spawn после abort проходит и чистится"
+        );
+    }
 
     fn arc_device(id: &str) -> Arc<str> {
         Arc::from(id.to_string().into_boxed_str())
@@ -356,7 +465,10 @@ mod tests {
 
         // Reading через CallStore: артефакта нет.
         let transcript = store
-            .read_artifact("ghost-id", ArtifactKind::Transcript)
+            .read_artifact(
+                &crate::call_id::CallId::from_db("ghost-id"),
+                ArtifactKind::Transcript,
+            )
             .await
             .unwrap();
         assert!(transcript.is_none());
@@ -426,7 +538,7 @@ mod tests {
             .unwrap();
 
         // 2. transcript.md на диске — будто старый run завершился раньше.
-        let call_dir = store.call_dir(&call.id);
+        let call_dir = store.call_dir(&crate::call_id::CallId::from_db(&call.id));
         tokio::fs::create_dir_all(&call_dir).await.unwrap();
         tokio::fs::write(call_dir.join("transcript.md"), "S1: hello")
             .await
@@ -444,7 +556,10 @@ mod tests {
         h.abort();
         let _ = h.await;
 
-        let transcript_path = store.artifact_path(&call.id, ArtifactKind::Transcript);
+        let transcript_path = store.artifact_path(
+            &crate::call_id::CallId::from_db(&call.id),
+            ArtifactKind::Transcript,
+        );
         let artifacts_intact = tokio::fs::metadata(&transcript_path).await.is_ok();
         assert!(artifacts_intact);
 

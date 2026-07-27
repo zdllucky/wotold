@@ -12,6 +12,7 @@ mod action_items;
 // assistant::{indexer,retrieval} и commands::assistant (M15.3+).
 pub(crate) mod assistant;
 pub(crate) mod assistant_embeddings;
+pub(crate) mod assistant_search;
 mod calls;
 // [M13.1.3b] Chunked pipelined transcription — call_chunks table helpers.
 // pub(crate) чтобы pipeline::chunk_runner мог вызывать insert/mark/list.
@@ -69,7 +70,19 @@ pub async fn init(app_data_dir: &Path) -> Result<SqlitePool, AppError> {
                 path.display(),
                 corrupt_path.display()
             );
-            std::fs::rename(&path, &corrupt_path).ok();
+            if let Err(rename_err) = quarantine_corrupt_db(&path, &corrupt_path) {
+                // [TD-15] Раньше ошибка глоталась через `.ok()` — код молча шёл
+                // открывать заведомо битый файл, и миграции падали с невнятной
+                // ошибкой. Удалять при неудаче НЕ будем: карантин существует
+                // ради сохранности данных для восстановления.
+                log::error!(
+                    "не удалось изолировать повреждённую БД {} → {}: {rename_err}. \
+                     Приложение продолжит на повреждённом файле; перенесите его \
+                     вручную, чтобы стартовать с чистой базой.",
+                    path.display(),
+                    corrupt_path.display()
+                );
+            }
         }
     }
 
@@ -95,6 +108,43 @@ pub async fn init(app_data_dir: &Path) -> Result<SqlitePool, AppError> {
 /// Открывает БД на одиночный pragma integrity_check; если не вернёт 'ok' —
 /// файл повреждён. Используем минимальный pool (1 connection) + закрываем
 /// сразу после check чтобы не держать handle.
+/// [TD-15] Изолировать повреждённую БД вместе с её WAL-сайдкарами.
+///
+/// Раньше переименовывался только `app.db`, а `app.db-wal` / `app.db-shm`
+/// оставались на месте. SQLite при создании новой пустой базы попытался бы
+/// восстановить **старый WAL против нового файла** — фреймы чужих страниц
+/// влились бы в свежую БД. Поэтому переносим все три; отсутствующий сайдкар
+/// не ошибка (WAL мог быть уже вычекпойнчен).
+fn quarantine_corrupt_db(db_path: &Path, corrupt_path: &Path) -> std::io::Result<()> {
+    std::fs::rename(db_path, corrupt_path)?;
+
+    for suffix in ["-wal", "-shm"] {
+        let from = sidecar_path(db_path, suffix);
+        let to = sidecar_path(corrupt_path, suffix);
+        match std::fs::rename(&from, &to) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                // Основной файл уже изолирован; осиротевший сайдкар опаснее
+                // молчания — он и есть источник «влившегося чужого WAL».
+                log::error!(
+                    "повреждённая БД: не удалось перенести {}: {e}",
+                    from.display()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `app.db` + `-wal` → `app.db-wal`. Суффикс клеится к имени файла целиком,
+/// а не через `with_extension` (тот срезал бы `.db`).
+fn sidecar_path(base: &Path, suffix: &str) -> std::path::PathBuf {
+    let mut os = base.as_os_str().to_os_string();
+    os.push(suffix);
+    std::path::PathBuf::from(os)
+}
+
 async fn quick_integrity_check(path: &Path) -> Result<(), AppError> {
     let options = SqliteConnectOptions::new()
         .filename(path)
@@ -133,11 +183,107 @@ pub mod test_support {
         let pool = init(dir.path()).await.expect("init db");
         TestDb { pool, _dir: dir }
     }
+
+    /// [TD-43] Контакт без consent/samples — минимальная строка для тестов
+    /// привязки спикеров. Жил в `calls/speakers.rs::tests`; поднят сюда,
+    /// когда suggestion-функции переехали в `calls/suggestions.rs` и оба
+    /// тест-модуля стали нуждаться в одном хелпере.
+    pub async fn insert_contact_row(pool: &SqlitePool, name: &str) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO contacts (id, display_name, is_owner, attributes, created_at, updated_at)
+             VALUES (?1, ?2, 0, '{}', ?3, ?3)",
+        )
+        .bind(&id)
+        .bind(name)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    /// [TD-43] Строка `call_speakers` без привязки (`confirmed = 0`).
+    pub async fn insert_speaker_row(
+        pool: &SqlitePool,
+        call_id: &str,
+        speaker_tag: &str,
+        suggestion_contact_id: Option<&str>,
+    ) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO call_speakers (id, call_id, speaker_tag, suggestion_contact_id, suggestion_score, suggestion_source, confirmed)
+             VALUES (?1, ?2, ?3, ?4, 0.85, 'embedding', 0)",
+        )
+        .bind(&id)
+        .bind(call_id)
+        .bind(speaker_tag)
+        .bind(suggestion_contact_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::test_support::fresh_db;
+    use super::{quarantine_corrupt_db, sidecar_path};
+
+    // ============================================================
+    // [TD-15] quarantine_corrupt_db — WAL-сайдкары
+    // ============================================================
+
+    #[test]
+    fn quarantine_moves_db_and_both_sidecars() {
+        // Регрессия: переносился только app.db, а -wal/-shm оставались.
+        // SQLite восстановил бы СТАРЫЙ WAL против новой пустой базы —
+        // фреймы чужих страниц влились бы в свежую БД.
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("app.db");
+        let wal = dir.path().join("app.db-wal");
+        let shm = dir.path().join("app.db-shm");
+        std::fs::write(&db, b"corrupt").unwrap();
+        std::fs::write(&wal, b"stale-wal").unwrap();
+        std::fs::write(&shm, b"stale-shm").unwrap();
+
+        let corrupt = dir.path().join("app.db.corrupt-20260724");
+        quarantine_corrupt_db(&db, &corrupt).unwrap();
+
+        assert!(!db.exists(), "app.db обязан уехать");
+        assert!(
+            !wal.exists(),
+            "-wal не должен остаться: вольётся в новую базу"
+        );
+        assert!(!shm.exists(), "-shm не должен остаться");
+
+        assert!(corrupt.exists());
+        assert!(dir.path().join("app.db.corrupt-20260724-wal").exists());
+        assert!(dir.path().join("app.db.corrupt-20260724-shm").exists());
+    }
+
+    #[test]
+    fn quarantine_ok_when_sidecars_absent() {
+        // WAL мог быть вычекпойнчен — отсутствие сайдкаров не ошибка.
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("app.db");
+        std::fs::write(&db, b"corrupt").unwrap();
+
+        let corrupt = dir.path().join("app.db.corrupt-x");
+        quarantine_corrupt_db(&db, &corrupt).expect("отсутствие сайдкаров — не ошибка");
+        assert!(corrupt.exists());
+        assert!(!db.exists());
+    }
+
+    #[test]
+    fn sidecar_path_appends_not_replaces_extension() {
+        // with_extension срезал бы `.db` — путь стал бы `app-wal`.
+        let p = sidecar_path(std::path::Path::new("/x/app.db"), "-wal");
+        assert_eq!(p, std::path::PathBuf::from("/x/app.db-wal"));
+    }
+
     use sqlx::Row;
 
     #[tokio::test]

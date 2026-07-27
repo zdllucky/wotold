@@ -132,7 +132,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
         await persistOwner();
         setStep(3);
       } catch (err) {
-        setError(humanError(err));
+        setError(humanError(err, t));
       } finally {
         setSaving(false);
       }
@@ -151,7 +151,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
       await setSetting(SETTINGS_KEYS.ONBOARDING_DONE, '1');
       onComplete();
     } catch (err) {
-      setError(humanError(err));
+      setError(humanError(err, t));
       setSaving(false);
     }
   };

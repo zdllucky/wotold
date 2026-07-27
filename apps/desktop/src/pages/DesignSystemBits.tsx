@@ -1,6 +1,6 @@
 // [B18.6c] Wotold v2 "uikit" showroom helpers for DesignSystemPage.
 // Each is dumb-display: no own state, no business logic. Mirrors the prototype
-// (~/Downloads/Wotold v2/wk-designsystem.jsx) DsSection / DsRow / Swatch.
+// (docs/design/wotold-v2/_reference/wk-designsystem.jsx) DsSection / DsRow / Swatch.
 
 import type { ReactNode } from 'react';
 

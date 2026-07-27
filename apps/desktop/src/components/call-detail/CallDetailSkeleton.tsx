@@ -48,13 +48,33 @@ export function CallDetailSkeleton({ onBack }: CallDetailSkeletonProps) {
         <Skeleton width="5rem" height="1rem" />
         <Skeleton width="6rem" height="1rem" />
       </div>
-      {/* Transcript ghost rows */}
-      <div className="transcript">
+      {/* [TD-30] Ghost-строки на РАЗМЕТКЕ ЖИВОГО транскрипта (.turn), а не на
+          легаси-классе .transcript-row: у того сетка 130px 1fr 60px и кегль
+          17px, у живого — 140px minmax(0,1fr) и --t-15. При переходе
+          загрузка→контент менялись и сетка, и кегль, то есть скелетон
+          устраивал ровно тот layout-jump, от которого должен защищать.
+          Форма повторяет generating-состояние InteractiveTranscript. */}
+      <div>
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="transcript-row transcript-row--ghost">
-            <div className="transcript-speaker" aria-hidden="true">···</div>
-            <div className="transcript-text" aria-hidden="true">···</div>
-            <div className="transcript-time" aria-hidden="true">···</div>
+          <div key={i} className="turn" aria-hidden="true">
+            <div>
+              <div className="turn-sp">
+                <span
+                  className="skeleton"
+                  style={{ width: 20, height: 20, borderRadius: '50%' }}
+                />
+                <span
+                  className="skeleton"
+                  style={{ width: 56, height: 9, borderRadius: 'var(--r-xs)' }}
+                />
+              </div>
+            </div>
+            <div className="turn-text">
+              <span
+                className="skeleton"
+                style={{ display: 'block', width: '85%', height: 12, borderRadius: 'var(--r-xs)' }}
+              />
+            </div>
           </div>
         ))}
       </div>

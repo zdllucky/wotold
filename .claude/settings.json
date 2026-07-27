@@ -19,7 +19,6 @@
       "Bash(git rm:*)",
       "Bash(git commit:*)",
       "Bash(git branch:*)",
-      "Bash(git checkout:*)",
       "Bash(git restore --staged:*)",
       "Bash(git stash:*)",
       "Bash(ls:*)",
@@ -32,15 +31,13 @@
       "Bash(mkdir:*)",
       "Bash(touch:*)",
       "Bash(cp:*)",
-      "Bash(rm:*)",
-      "Bash(. \"$HOME/.cargo/env\":*)",
-      "Bash(timeout:*)"
+      "Bash(. \"$HOME/.cargo/env\":*)"
     ]
   },
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
@@ -51,11 +48,11 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/post-write.sh\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hooks/post-write.mjs\""
           },
           {
             "type": "command",

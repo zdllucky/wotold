@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::local_engine::stt::is_hallucination;
+use crate::local_engine::hallucination::is_hallucination;
 use crate::providers::transcription::{DiarizedTranscript, TranscriptSegment};
 
 pub const OWNER_TAG: &str = "owner";
@@ -157,7 +157,7 @@ pub fn sanitize_merged(segments: Vec<TranscriptSegment>) -> Vec<TranscriptSegmen
         seg.text = cleaned;
 
         // 2. drop галлюцинаций (включая опустевшие после strip) + global loop.
-        if is_hallucination(&seg.text)
+        if is_hallucination(&seg.text, seg.confidence)
             || (!loop_texts.is_empty() && loop_texts.contains(&normalize_text(&seg.text)))
         {
             dropped += 1;

@@ -36,12 +36,13 @@ use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
 
+use crate::call_id::ensure_path_under;
 use crate::pipeline::resource_queue::{self, Resource};
 use crate::providers::llm::{LlmError, LlmProvider, LlmRequest};
 
 use super::models::{model_path, ModelId};
 use super::preset::LocalEnginePreset;
-use super::sidecar::SidecarGuard;
+use super::sidecar::{SidecarGuard, TempFileGuard};
 
 // [Q] Сериализация LLM-вызовов (llama-cli грузит 1.5-7B GGUF, ~3-5 GB RAM;
 // параллель = OOM/contention) жила в локальном `LLM_SEMAPHORE`; мигрировала
@@ -92,6 +93,14 @@ pub const fn timeout_for_preset(preset: LocalEnginePreset) -> Duration {
 }
 
 /// Локальный LLM на llama.cpp. Owns путь к GGUF модели + sidecar config.
+/// [TD-08] Координаты живого resident-сервера. Ключ обязателен: без заголовка
+/// `Authorization` сервер отвечает 401 на всё, кроме публичного `/health`.
+#[derive(Debug, Clone)]
+pub struct ServerHandle {
+    pub url: String,
+    pub api_key: String,
+}
+
 pub struct LocalLlamaProvider {
     /// `$APP_DATA/local_engine/models/{qwen25-1_5b|qwen25-3b|qwen25-7b}.bin`.
     model_path: PathBuf,
@@ -107,10 +116,12 @@ pub struct LocalLlamaProvider {
     /// arg. Когда file отсутствует — graceful skip (log warn) и fall back
     /// на non-speculative path.
     draft_model_path: Option<PathBuf>,
-    /// [B2] Если `Some(url)` — resident `llama-server` поднят; `generate()`
-    /// идёт HTTP `POST {url}/completion` вместо one-shot `llama-cli` спавна
-    /// (модель уже в RAM). `None` — обычный one-shot путь.
-    server_url: Option<String>,
+    /// [B2] Если `Some` — resident `llama-server` поднят; `generate()` идёт
+    /// HTTP `POST {url}/completion` вместо one-shot `llama-cli` спавна (модель
+    /// уже в RAM). `None` — обычный one-shot путь.
+    ///
+    /// [TD-08] Кроме URL несёт api-key: сервер теперь требует авторизацию.
+    server: Option<ServerHandle>,
     /// [Q] call_id для QueueMonitor: чей звонок держит/ждёт LLM-ресурс.
     /// `None` — служебная задача (warm-up).
     queue_call_id: Option<String>,
@@ -129,17 +140,17 @@ impl LocalLlamaProvider {
             app: Mutex::new(None),
             tmp_dir: std::env::temp_dir(),
             draft_model_path: None,
-            server_url: None,
+            server: None,
             queue_call_id: None,
             cache_prompt: false,
         }
     }
 
-    /// [B2] Прикрепить URL живого resident-сервера. `Some` → HTTP-путь,
+    /// [B2] Прикрепить координаты живого resident-сервера. `Some` → HTTP-путь,
     /// `None` → one-shot. Caller (build_local_llm_provider) читает handle из
     /// AppState.
-    pub fn with_server(mut self, url: Option<String>) -> Self {
-        self.server_url = url;
+    pub fn with_server(mut self, server: Option<ServerHandle>) -> Self {
+        self.server = server;
         self
     }
 
@@ -207,7 +218,11 @@ impl LocalLlamaProvider {
     /// [B2] HTTP-путь через resident `llama-server`. Тот же prompt (system +
     /// input) и та же per-request форма (json_schema/grammar), что one-shot,
     /// но без спавна процесса и перезагрузки модели.
-    async fn generate_via_server(&self, url: &str, request: LlmRequest) -> Result<Value, LlmError> {
+    async fn generate_via_server(
+        &self,
+        server: &ServerHandle,
+        request: LlmRequest,
+    ) -> Result<Value, LlmError> {
         // [Q] Та же очередь что и CLI-путь — сервер `--parallel 1`, FIFO.
         let _permit = resource_queue::acquire(Resource::Llm, self.queue_call_id.as_deref()).await;
 
@@ -235,12 +250,18 @@ impl LocalLlamaProvider {
 
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!("{url}/completion"))
+            .post(format!("{}/completion", server.url))
+            // [TD-08] Без ключа сервер отвечает 401.
+            .bearer_auth(&server.api_key)
             .json(&body)
             .timeout(self.timeout)
             .send()
             .await
             .map_err(|e| LlmError::Provider(format!("llama-server request: {e}")))?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            // Ключ не подошёл — на порту не наш сервер либо он перезапустился.
+            return Err(LlmError::Auth("llama-server отверг api-key".into()));
+        }
         if !resp.status().is_success() {
             return Err(LlmError::Provider(format!(
                 "llama-server HTTP {}",
@@ -266,8 +287,8 @@ impl LlmProvider for LocalLlamaProvider {
     async fn generate(&self, request: LlmRequest) -> Result<Value, LlmError> {
         // [B2] Resident-server путь: модель уже в RAM, шлём HTTP вместо спавна
         // one-shot процесса. Не нужен AppHandle.
-        if let Some(url) = self.server_url.clone() {
-            return self.generate_via_server(&url, request).await;
+        if let Some(server) = self.server.clone() {
+            return self.generate_via_server(&server, request).await;
         }
         let app = {
             let guard = self.app.lock().await;
@@ -291,6 +312,12 @@ impl LlmProvider for LocalLlamaProvider {
         //    транскрипт не должен быть readable other users в shared /tmp.
         //    `std::env::temp_dir()` на macOS обычно даёт user-scoped
         //    /var/folders, но defense-in-depth: explicit perms.
+        // [TD-11] Все temp-файлы несут транскрипт. Guard чистит их при ЛЮБОМ
+        // выходе — happy-path, ранний `?` (ниже их несколько), panic, abort.
+        // Раньше был ручной cleanup после await: при отмене задачи или раннем
+        // `?` он не выполнялся, и файл оставался в /tmp.
+        let mut temp_guard = TempFileGuard::new();
+
         let prompt = build_prompt(&request);
         let prompt_path = self
             .tmp_dir
@@ -298,6 +325,7 @@ impl LlmProvider for LocalLlamaProvider {
         write_user_only(&prompt_path, prompt.as_bytes())
             .await
             .map_err(|e| LlmError::Provider(format!("prompt write: {e}")))?;
+        temp_guard.push_file(&prompt_path);
 
         // 2. Спавним sidecar. Args строго соответствуют capability validator'ам.
         // [Security M-3] Defense-in-depth path checks ДО передачи в sidecar:
@@ -325,6 +353,7 @@ impl LlmProvider for LocalLlamaProvider {
             write_user_only(&path, grammar_text.as_bytes())
                 .await
                 .map_err(|e| LlmError::Provider(format!("grammar write: {e}")))?;
+            temp_guard.push_file(&path);
             ensure_path_under(&path, &self.tmp_dir).map_err(LlmError::Provider)?;
             Some(path)
         } else {
@@ -341,6 +370,7 @@ impl LlmProvider for LocalLlamaProvider {
             write_user_only(&path, schema_text.as_bytes())
                 .await
                 .map_err(|e| LlmError::Provider(format!("json-schema write: {e}")))?;
+            temp_guard.push_file(&path);
             ensure_path_under(&path, &self.tmp_dir).map_err(LlmError::Provider)?;
             Some(path)
         } else {
@@ -460,15 +490,8 @@ impl LlmProvider for LocalLlamaProvider {
 
         let result = run_sidecar_with_timeout(sidecar, self.timeout).await;
 
-        // 3. Чистим prompt + grammar + schema файлы (если были) вне зависимости от исхода.
-        let _ = tokio::fs::remove_file(&prompt_path).await;
-        if let Some(g) = grammar_path.as_ref() {
-            let _ = tokio::fs::remove_file(g).await;
-        }
-        if let Some(s) = schema_path.as_ref() {
-            let _ = tokio::fs::remove_file(s).await;
-        }
-
+        // [TD-11] cleanup — на `temp_guard` (Drop). Ручные remove_file убраны:
+        // они не срабатывали при отмене задачи и на ранних `?`.
         let stdout = result?;
         // 4. Извлекаем JSON из stdout (модель может выдать echo / whitespace
         //    даже с no-display-prompt).
@@ -486,30 +509,6 @@ impl LlmProvider for LocalLlamaProvider {
                     .map_err(|e| LlmError::Provider(format!("malformed JSON: {e}")))
             })
     }
-}
-
-/// [Security M-3] Defense-in-depth: проверить что path не содержит `..`
-/// сегментов И начинается с разрешённого prefix. Capability validator
-/// `^[A-Za-z0-9._/\-]+$` пропускает `../../etc/passwd` — это последняя
-/// граница. Канонических `.canonicalize()` НЕ делаем (path может не
-/// существовать на момент проверки — например, output stem whisper-cli).
-///
-/// Returns Err если найден `..` сегмент или prefix не совпадает.
-pub(super) fn ensure_path_under(path: &Path, allowed_prefix: &Path) -> Result<(), String> {
-    if path
-        .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return Err(format!("path {} contains '..' segment", path.display()));
-    }
-    if !path.starts_with(allowed_prefix) {
-        return Err(format!(
-            "path {} not under prefix {}",
-            path.display(),
-            allowed_prefix.display()
-        ));
-    }
-    Ok(())
 }
 
 /// [Security M-2] Запись в файл с mode 0o600 (owner read/write only).
@@ -545,6 +544,28 @@ fn build_prompt(request: &LlmRequest) -> String {
 
 /// Запустить sidecar, ждать `Terminated`, агрегировать stdout. Таймаут
 /// `tokio::time::timeout`. На таймауте — `drop(child)` шлёт kill сигнал.
+/// [TD-15] Обрезать строку по границе символа, не длиннее `max_bytes`.
+///
+/// Раньше здесь стоял `&s[..s.len().min(512)]` — байтовый срез по строке из
+/// `from_utf8_lossy`. Если байт 512 попадал внутрь многобайтового символа
+/// (кириллица в путях GGUF, либо 3-байтовый U+FFFD, который сам lossy и
+/// вставляет), это паниковало «byte index 512 is not a char boundary» — ровно
+/// в аварийных ветках (exit code != 0, timeout), то есть вместо внятной
+/// ошибки юзер получал панику async-таски пайплайна.
+///
+/// `str::floor_char_boundary` до сих пор нестабилен (проверено на rustc 1.95),
+/// поэтому откатываемся вручную.
+fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 async fn run_sidecar_with_timeout(
     sidecar: tauri_plugin_shell::process::Command,
     timeout: Duration,
@@ -634,7 +655,7 @@ async fn run_sidecar_with_timeout(
         if s.is_empty() {
             String::new()
         } else {
-            format!("; stderr: {}", &s[..s.len().min(512)])
+            format!("; stderr: {}", truncate_at_char_boundary(&s, 512))
         }
     };
 
@@ -772,6 +793,56 @@ pub const LOCAL_LLM_SYSTEM_PROMPT: &str = concat!(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ============================================================
+    // [TD-15] truncate_at_char_boundary — паника в error-path
+    // ============================================================
+
+    #[test]
+    fn truncate_returns_whole_string_when_under_limit() {
+        assert_eq!(truncate_at_char_boundary("short", 512), "short");
+        assert_eq!(truncate_at_char_boundary("", 512), "");
+    }
+
+    #[test]
+    fn truncate_cyrillic_over_limit_does_not_panic() {
+        // Регрессия: `&s[..s.len().min(512)]` паниковал, если байт 512 попадал
+        // внутрь многобайтового символа.
+        //
+        // ВАЖНО про конструкцию: одной кириллицы мало. Все её символы
+        // двухбайтовые, поэтому границы стоят на чётных смещениях, а 512 —
+        // чётное: срез бы прошёл и тест ничего не проверял. Ведущий ASCII-байт
+        // сдвигает границы на нечётные, и 512 гарантированно попадает ВНУТРЬ
+        // символа. (Проверено: без сдвига тест зеленел на сломанном коде.)
+        let s = format!("x{}", "стдерр".repeat(200));
+        assert!(s.len() > 512);
+        assert!(!s.is_char_boundary(512), "512 обязан быть внутри символа");
+        let out = truncate_at_char_boundary(&s, 512);
+        assert!(out.len() <= 512);
+        assert!(s.starts_with(out), "префикс исходной строки");
+        // Результат — валидный &str: перекодировка туда-обратно без потерь.
+        assert_eq!(out, String::from_utf8(out.as_bytes().to_vec()).unwrap());
+    }
+
+    #[test]
+    fn truncate_lands_exactly_on_boundary() {
+        // "аб" = 4 байта (2+2). Лимит 3 попадает в середину 'б' → откат до 2.
+        assert_eq!(truncate_at_char_boundary("аб", 3), "а");
+        assert_eq!(truncate_at_char_boundary("аб", 2), "а");
+        assert_eq!(truncate_at_char_boundary("аб", 1), "");
+        assert_eq!(truncate_at_char_boundary("аб", 0), "");
+    }
+
+    #[test]
+    fn truncate_handles_replacement_char() {
+        // from_utf8_lossy вставляет U+FFFD (3 байта) — он сам может попасть на
+        // границу лимита.
+        let lossy = String::from_utf8_lossy(&[0xFF, 0xFE, 0xFD]).into_owned();
+        for limit in 0..=lossy.len() {
+            let out = truncate_at_char_boundary(&lossy, limit);
+            assert!(out.len() <= limit);
+        }
+    }
 
     #[test]
     fn for_preset_resolves_model_path() {
@@ -964,47 +1035,6 @@ mod tests {
         let err = write_user_only(&path, b"new").await.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
     }
-
-    // ── ensure_path_under ───────────────────────────────────────────────
-
-    #[test]
-    fn ensure_path_under_accepts_path_inside_prefix() {
-        assert!(ensure_path_under(
-            Path::new("/data/local_engine/models/whisper-small.bin"),
-            Path::new("/data/local_engine"),
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn ensure_path_under_rejects_dotdot_segment() {
-        let err = ensure_path_under(
-            Path::new("/data/local_engine/../etc/passwd"),
-            Path::new("/data/local_engine"),
-        )
-        .expect_err("`..` сегмент → Err");
-        assert!(err.contains("'..' segment"));
-    }
-
-    #[test]
-    fn ensure_path_under_rejects_path_outside_prefix() {
-        let err = ensure_path_under(Path::new("/etc/passwd"), Path::new("/data/local_engine"))
-            .expect_err("вне prefix → Err");
-        assert!(err.contains("not under prefix"));
-    }
-
-    #[test]
-    fn ensure_path_under_handles_relative_paths_safely() {
-        // Relative paths не starts_with absolute prefix — должны быть отклонены.
-        let err = ensure_path_under(
-            Path::new("models/whisper.bin"),
-            Path::new("/data/local_engine"),
-        )
-        .expect_err("relative → Err");
-        assert!(err.contains("not under prefix"));
-    }
-
-    // ── [M14 T-16 P2] Speculative decoding draft model plumbing ─────────
 
     #[test]
     fn provider_default_has_no_draft_model() {

@@ -266,6 +266,65 @@ pub async fn stop(mut session: RecordingSession) -> Result<StopResult, AppError>
 /// [M13.1.5b] Если orchestrator каналы переданы — фан-аутит `"level"` →
 /// `rms_tx` (с timestamp_ms от `started_at`) + `"rotated"` → `rotate_tx`.
 /// Webview emit'ы всегда happen независимо от orchestrator state.
+/// [TD-07] Остановить захват на обеих дорожках. Не завершает сессию: тап и
+/// IOProc остаются живыми, просто кадры дропаются до записи в WAV.
+///
+/// Ack (`paused`) приходит в диспатчер и логируется как passthrough — команда
+/// не ждёт его, чтобы не блокировать UI на времени round-trip'а.
+pub async fn pause(session: &mut RecordingSession) -> Result<(), AppError> {
+    write_cmd(session, "pause")
+}
+
+/// [TD-07] Возобновить захват.
+pub async fn resume(session: &mut RecordingSession) -> Result<(), AppError> {
+    write_cmd(session, "resume")
+}
+
+fn write_cmd(session: &mut RecordingSession, cmd: &str) -> Result<(), AppError> {
+    let line = serde_json::json!({ "cmd": cmd }).to_string() + "\n";
+    session
+        .child
+        .write(line.as_bytes())
+        .map_err(|e| AppError::Other(format!("sidecar {cmd} write failed: {e}")))
+}
+
+/// [TD-06] Класс события сайдкара. Вынесен из `run_dispatcher` отдельной
+/// чистой функцией, потому что сам диспатчер принимает `Receiver<CommandEvent>`
+/// и `AppHandle` — в юнит-тесте их не сконструировать. Тестируем решение,
+/// а не петлю (тот же приём, что и `plan_final_chunk`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EventClass {
+    /// RMS-сэмпл для UI и оркестратора.
+    Level,
+    /// Chunk закрыт, открыт следующий.
+    Rotated,
+    /// Сессия окончена (штатно или фатально) — диспатчер завершается.
+    Terminal,
+    /// Операционный сбой: запись ЖИВА, диспатчер обязан продолжать.
+    NonFatal,
+    /// Всё прочее — только в лог.
+    Passthrough,
+}
+
+/// Классификация по имени события.
+///
+/// До TD-06 `error` был единственной ошибкой в протоколе, и диспатчер считал
+/// его терминальным. Но Swift слал его же на нефатальный сбой ротации, после
+/// которого тап и IOProc продолжают писать: один transient убивал часовую
+/// запись при целых WAV на диске. Теперь нефатальное приходит отдельным
+/// `rotate_error`.
+fn classify_event(ev: &str) -> EventClass {
+    match ev {
+        "level" => EventClass::Level,
+        "rotated" => EventClass::Rotated,
+        "stopped" | "error" => EventClass::Terminal,
+        // [TD-21e] Дорожка замолчала / вернулась. Как и rotate_error —
+        // операционное: вторая дорожка жива, запись продолжается.
+        "rotate_error" | "device_lost" | "device_recovered" => EventClass::NonFatal,
+        _ => EventClass::Passthrough,
+    }
+}
+
 async fn run_dispatcher(
     mut rx: Receiver<CommandEvent>,
     app: AppHandle,
@@ -283,8 +342,8 @@ async fn run_dispatcher(
                     continue;
                 };
                 let ev = json.get("event").and_then(Value::as_str).unwrap_or("");
-                match ev {
-                    "level" => {
+                match classify_event(ev) {
+                    EventClass::Level => {
                         let payload = LevelPayload {
                             mic: json.get("mic").and_then(Value::as_f64).unwrap_or(0.0) as f32,
                             system: json.get("system").and_then(Value::as_f64).unwrap_or(0.0)
@@ -301,7 +360,7 @@ async fn run_dispatcher(
                             let _ = channels.rms_tx.try_send((elapsed, combined));
                         }
                     }
-                    "rotated" => {
+                    EventClass::Rotated => {
                         // [M13.1.2] Sidecar закрыл предыдущий chunk WAV и открыл
                         // новый. Эмитим Tauri webview event чтобы orchestrator
                         // (frontend или Rust-side listener) enqueue'ил pipeline
@@ -324,13 +383,45 @@ async fn run_dispatcher(
                             update_duration_from_rotate(&app_clone).await;
                         });
                     }
-                    "stopped" | "error" => {
+                    EventClass::Terminal => {
                         if let Some(tx) = terminal_tx.take() {
                             let _ = tx.send(json);
                         }
                         return;
                     }
-                    _ => {
+                    // [TD-06] Нефатальное: НЕ трогаем terminal_tx и НЕ выходим.
+                    // Прежний `return` ронял orchestrator-сендеры вместе с
+                    // задачей, из-за чего ротации прекращались навсегда, а
+                    // stop() потом доставал эту ошибку из terminal_rx и метил
+                    // звонок failed. Персистентный degraded-флаг для UI — TD-37.
+                    EventClass::NonFatal => {
+                        let leg = json.get("leg").and_then(Value::as_str).unwrap_or("?");
+                        // [TD-21e] У device_* своя нагрузка: длительность
+                        // провала вместо флага ротации. Логируем то, что есть,
+                        // не выдумывая недостающее.
+                        let detail = match ev {
+                            "device_lost" => json
+                                .get("message")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string(),
+                            "device_recovered" => {
+                                let gap =
+                                    json.get("gap_sec").and_then(Value::as_f64).unwrap_or(0.0);
+                                format!("дорожка вернулась, потеряно {gap:.1} с")
+                            }
+                            _ => {
+                                let mic_rotated = json
+                                    .get("mic_rotated")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false);
+                                let msg = json.get("message").and_then(Value::as_str).unwrap_or("");
+                                format!("mic_rotated={mic_rotated}: {msg}")
+                            }
+                        };
+                        log::warn!("audio degraded (запись продолжается): {ev} leg={leg} {detail}");
+                    }
+                    EventClass::Passthrough => {
                         log::debug!("audio passthrough event: {json}");
                     }
                 }
@@ -451,4 +542,62 @@ async fn update_duration_from_rotate(app: &AppHandle) {
         call_id,
         duration_sec: duration_sec.round() as i64,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // [TD-06] Первые тесты в этом файле. `run_dispatcher` не тестируем — он
+    // принимает Receiver<CommandEvent> и AppHandle, которые в юните не
+    // сконструировать; тестируем вынесенное из него решение.
+
+    #[test]
+    fn rotate_error_is_not_terminal() {
+        // Суть TD-06: до фикса `rotate_error` не существовал, а нефатальный
+        // сбой ротации приезжал как `error` и убивал сессию.
+        assert_eq!(classify_event("rotate_error"), EventClass::NonFatal);
+        assert_ne!(classify_event("rotate_error"), EventClass::Terminal);
+    }
+
+    #[test]
+    fn stopped_and_error_stay_terminal() {
+        assert_eq!(classify_event("stopped"), EventClass::Terminal);
+        assert_eq!(classify_event("error"), EventClass::Terminal);
+    }
+
+    #[test]
+    fn device_events_are_non_fatal() {
+        // [TD-21e] Отвалившийся микрофон не должен убивать сессию: системная
+        // дорожка жива, а микрофонная может вернуться сама. Без явной
+        // классификации оба события ушли бы в Passthrough и растворились в
+        // debug-логе — то есть фикс существовал бы только на стороне Swift.
+        assert_eq!(classify_event("device_lost"), EventClass::NonFatal);
+        assert_eq!(classify_event("device_recovered"), EventClass::NonFatal);
+        assert_ne!(classify_event("device_lost"), EventClass::Terminal);
+        assert_ne!(classify_event("device_lost"), EventClass::Passthrough);
+    }
+
+    #[test]
+    fn level_and_rotated_are_routed() {
+        assert_eq!(classify_event("level"), EventClass::Level);
+        assert_eq!(classify_event("rotated"), EventClass::Rotated);
+    }
+
+    #[test]
+    fn unknown_events_pass_through_without_killing_session() {
+        for ev in [
+            "pong",
+            "started",
+            "call_suggested",
+            "call_detect_started",
+            "",
+        ] {
+            assert_eq!(
+                classify_event(ev),
+                EventClass::Passthrough,
+                "{ev} не должен быть терминальным"
+            );
+        }
+    }
 }

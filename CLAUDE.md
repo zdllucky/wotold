@@ -48,6 +48,8 @@ docs/                 Паспорт и сопутствующие докуме�
 
 **Декомпозиция фич и текущий статус** → [`docs/ROADMAP.md`](docs/ROADMAP.md). Это источник истины по тому что сделано/в работе/осталось. Параллельно ведётся TaskList в харнессе Claude Code — обновляется руками одновременно с ROADMAP при смене статуса.
 
+**Технический долг** → [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md) — groomed-беклог по итогам аудита 2026-07 (TD-01…TD-40, волны W1–W9). Тянуть по одной TD-задаче за сессию. Провенанс находок — [`docs/audits/`](docs/audits/).
+
 ## Контракты (S2)
 
 Любое изменение формата `DiarizedTranscript`, рекап-JSON или `latest.json` правится в `packages/contracts` и потребляется приложением и MCP-сервером. Дублирование типов запрещено.
@@ -65,18 +67,31 @@ docs/                 Паспорт и сопутствующие докуме�
 - **Идентификация только подсказка**: никакой автопривязки контакта без подтверждения пользователя (M3, R2)
 - **MCP read-only**: контент звонков — недоверенные данные, защита от инъекций инструкций (M8.3, M8.4)
 
+## Инженерные правила (аудит 2026-07)
+
+Выведены из **системных** находок аудита — тех, что повторились в разных слоях. Нарушение блокирует `/code-review`. Точечные находки живут задачами в [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md), правила — здесь.
+
+1. **Клей тестируется первым.** Любая оркестрация (`pipeline::run`, recovery-флоу, композиция хуков) получает happy-path + минимум один fail-path тест до mark-done. Покрытие листьев за покрытие клея не считается: все три прод-бага M13 были именно в клее, при параноидально покрытых листьях.
+2. **Twin parity.** Фикс бага в одном из парных модулей обязан включать проверку близнеца на ту же дыру: `AudioRecorder` ↔ `ProcessTapRecorder`, chunk-FSM ↔ call-lifecycle, `searchCalls` ↔ `findContactsByName`. «Одинаковый контракт, разная зрелость» — главный источник будущих багов в этом репо.
+3. **Деградация видима.** Путь «warn-and-continue», влияющий на результат звонка, обязан выставлять персистентный degraded-флаг, доступный UI (инфраструктура — TD-37). «Только в лог» запрещено: юзер не должен гадать, один там голос или система-трек ушла в speaker:0.
+4. **i18n тотален.** Все user-visible строки — через `t()` и три локали, включая нижние слои (`api/errors.ts`, `utils/callMeta.ts`). Образец — `utils/modelLabel.ts` (принимает `TFn`). Русский литерал в UI-пути = замечание ревью.
+5. **CPU >10мс не на async-executor.** Левенштейн, кластеризация, ONNX-инференс, WAV-чтение — только внутри `spawn_blocking`. На tokio-worker крутятся Tauri-команды UI; образцы правильного кода — `SortformerDiarizer.diarize_real`, `audio_merger`.
+6. **Тесты без реального времени.** `sleep()` для синхронизации с фоновой задачей запрещён — инжектируемое время, `Notify`/oneshot или `tokio::time::pause()`. Паттерн уже есть в `providers/transcription/retry.rs`, обобщается в TD-32.
+7. **Границы доверия валидируются.** Любой id из webview или MCP валидируется (UUID) до участия в файловых путях; путь дополнительно проходит `ensure_path_under` (defense-in-depth). Новая Tauri/MCP-команда с параметром, попадающим в путь или SQL-паттерн, без этого не проходит ревью.
+8. **800 строк меряются по итоговому файлу.** Не по диффу и не по фрагменту Edit'а (гейт чинится в TD-03). Новый модуль планируется под лимит заранее — «порежем потом» не работает, см. `pipeline/mod.rs`.
+
 ## Design Gate (Wotold v2, [B18] — ОБЯЗАТЕЛЬНО до любой UI работы)
 
-> **Wotold v2 (uikit) — действующий дизайн** (миграция Atelier→v2 завершена в B18.6; shim `wotold.css`/`legacy-tokens.css` удалён). Канон — [`docs/design/wotold-v2/`](docs/design/wotold-v2/README.md) + код: `wk.css` (примитивы) / `components.css` (app-классы) / `tokens.css`. Источник истины = прототип `~/Downloads/Wotold v2/` (`uikit.css` + `wk-*.jsx`). Для поверхностей **Ассистента** (M15/B24) — addendum [`docs/design/wotold-v2/assistant.md`](docs/design/wotold-v2/assistant.md) + хендофф `~/Downloads/design_handoff_wotold_assistant/`.
+> **Wotold v2 (uikit) — действующий дизайн** (миграция Atelier→v2 завершена в B18.6; shim `wotold.css`/`legacy-tokens.css` удалён). Канон — [`docs/design/wotold-v2/`](docs/design/wotold-v2/README.md) + код: `wk.css` (примитивы) / `components.css` (app-классы) / `tokens.css`. Источник истины = прототип [`docs/design/wotold-v2/_reference/`](docs/design/wotold-v2/_reference/) (`uikit.css` + `wk-*.jsx`, открывается `index.html`). Для поверхностей **Ассистента** (M15/B24) — addendum [`docs/design/wotold-v2/assistant.md`](docs/design/wotold-v2/assistant.md) + хендофф [`docs/design/wotold-v2/_reference-assistant/`](docs/design/wotold-v2/_reference-assistant/).
 
 Перед **любой** правкой `.tsx`/`.css`/`*.module.css`, или инлайн-стилей, **до** Plan/Implement:
 
-1. Прочесть [`docs/design/wotold-v2/README.md`](docs/design/wotold-v2/README.md) (канон) и сверить экран с прототипом `~/Downloads/Wotold v2/wk-*.jsx` / `uikit.css`.
+1. Прочесть [`docs/design/wotold-v2/README.md`](docs/design/wotold-v2/README.md) (канон) и сверить экран с прототипом [`docs/design/wotold-v2/_reference/`](docs/design/wotold-v2/_reference/) (`wk-*.jsx` / `uikit.css`).
 2. Запустить `/design-gate <surface>` или прочесть [`.claude/skills/design-gate/SKILL.md`](.claude/skills/design-gate/SKILL.md).
 3. В чате выдать alignment-блок:
    ```text
    [design-gate] Surface: <page/component>
-   Reference: docs/design/wotold-v2/ + ~/Downloads/Wotold v2/<wk-file>|uikit.css
+   Reference: docs/design/wotold-v2/_reference/<wk-file>|uikit.css
    Tokens used: <list>
    Classes used: <list>
    New tokens needed: <none | list>
@@ -158,9 +173,10 @@ ECC-агенты для теста:
 ## ECC харнесс (W1, W6, W7)
 
 - Используются глобальные правила из `~/.claude/rules/ecc/{common,rust,typescript,web,zh}` (источник: [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code), копия из приватной инсталляции). При апгрейде ECC сверять что актуальные ограничения паспорта (R2/R3/R4/R6, R9–R13; R1/R5/R7/R8 — superseded облаком) не «улучшены» обратно.
-- Активные хуки и project-allowedTools — в `.claude/settings.json`:
-  - **PreToolUse Write/Edit**: `scripts/hooks/pre-write.mjs` — блокирует запись в Tauri-ключи, `.env*`, `.dev.vars`, `*.key`, `*.pem`, SSH-ключи и файлы >800 строк
-  - **PostToolUse Write/Edit**: `scripts/hooks/post-write.sh` — на `.rs` правках бежит `cargo fmt` + `cargo check --message-format short` (timeout 60s); на `.ts/.tsx` — `tsc --noEmit` соответствующего workspace-пакета
-  - **PostToolUse Write/Edit**: `scripts/hooks/design-gate.mjs` ([B17]) — warns на сырых hex/oklch/legacy `--color-*` вне whitelisted handoff sources
+- Активные хуки и project-allowedTools — в `.claude/settings.json`. Все матчатся на `Write|Edit|MultiEdit` и получают payload JSON'ом на stdin:
+  - **PreToolUse**: `scripts/hooks/pre-write.mjs` — блокирует (exit 2) запись в Tauri-ключи, `.env*`, `.dev.vars`, `*.key`, `*.pem`, SSH-ключи; и файлы >800 строк, считая **итоговый** размер файла (для Edit/MultiEdit — текущий файл ± дельта, а не размер фрагмента)
+  - **PostToolUse**: `scripts/hooks/post-write.mjs` — на `.rs` бежит `cargo fmt` + `cargo check --message-format short`; на `.ts/.tsx` — `typecheck` соответствующего пакета (`packages/contracts` проверяется через потребителя `@wotold/desktop`, своего tsc у него нет). Таймаут 60s через Node — не через `timeout`, которого на macOS нет
+  - **PostToolUse**: `scripts/hooks/tdd-warn.mjs` — warns если правишь source без соседнего теста (не блокирует)
+  - **PostToolUse**: `scripts/hooks/design-gate.mjs` ([B18.6]) — warns на сырых hex/oklch/legacy `--color-*` вне whitelisted sources. Whitelist считается по пути **относительно корня репо**: абсолютный матч ломался в git-worktree (`<repo>/.claude/worktrees/…` попадал под правило `.claude/` и гейт пропускал всё)
 - Личные настройки разработчика — в `.claude/settings.local.json` (в `.gitignore`).
 - При конфликте рекомендаций ECC и паспорта побеждает паспорт. `.claude/` не часть сборки продукта (W6, W7).

@@ -85,7 +85,7 @@ const WHEN_STRIP: &[&str] = &[
     "тема",
 ];
 
-fn words(question: &str) -> Vec<String> {
+pub(crate) fn words(question: &str) -> Vec<String> {
     question
         .to_lowercase()
         .split(|c: char| !c.is_alphabetic())
@@ -94,12 +94,148 @@ fn words(question: &str) -> Vec<String> {
         .collect()
 }
 
-fn has(ws: &[String], w: &str) -> bool {
+pub(crate) fn has(ws: &[String], w: &str) -> bool {
     ws.contains(&w.to_string())
 }
 
-fn has_any(ws: &[String], set: &[&str]) -> bool {
+pub(crate) fn has_any(ws: &[String], set: &[&str]) -> bool {
     ws.iter().any(|x| set.contains(&x.as_str()))
+}
+
+/// [TD-22] Служебные слова, не несущие темы. Класс замкнутый — предлоги,
+/// местоимения, связки, вопросительные частицы. Именно поэтому список
+/// допустим: в отличие от содержательных слов, новых предлогов в языке не
+/// появляется.
+const FUNCTION_WORDS: &[&str] = &[
+    // предлоги
+    "в",
+    "во",
+    "на",
+    "за",
+    "по",
+    "с",
+    "со",
+    "к",
+    "ко",
+    "у",
+    "о",
+    "об",
+    "обо",
+    "из",
+    "от",
+    "до",
+    "при",
+    "про", // местоимения и указатели
+    "я",
+    "мы",
+    "ты",
+    "вы",
+    "он",
+    "она",
+    "они",
+    "мне",
+    "нам",
+    "мой",
+    "моя",
+    "мои",
+    "моих",
+    "наш",
+    "наши",
+    "это",
+    "этот",
+    "эта",
+    "эти",
+    "том",
+    "тот",
+    "та",
+    "те",
+    "там",
+    "тут",
+    "всех",
+    "все",
+    "всего", // связки и частицы
+    "и",
+    "а",
+    "но",
+    "же",
+    "ли",
+    "бы",
+    "не",
+    "ещё",
+    "еще",
+    "уже",
+    "быть",
+    "был",
+    "была",
+    "было",
+    "были",
+    "есть",
+];
+
+/// [TD-22] Слова, которыми описывают сам факт записи. Для вопроса «сколько
+/// звонков записано» это не тема, а хвост триггера.
+const RECORDING_WORDS: &[&str] = &[
+    "записано",
+    "записан",
+    "записана",
+    "записаны",
+    "записал",
+    "записали",
+    "прошло",
+    "прошли",
+    "состоялось",
+    "состоялись",
+];
+
+/// [TD-22] Слова относительного периода. Дублируют вокабуляр
+/// [`super::period::period_range`]; расхождение ловится тестом
+/// `period_words_are_recognized_by_parser`.
+const PERIOD_WORDS: &[&str] = &[
+    "сегодня",
+    "вчера",
+    "позавчера",
+    "неделю",
+    "неделе",
+    "недели",
+    "неделя",
+    "месяц",
+    "месяца",
+    "месяце",
+    "год",
+    "года",
+    "году",
+    // квалификаторы периода — без них period_range не понимает год и
+    // переключение на календарный интервал
+    "прошлой",
+    "прошлую",
+    "прошлом",
+    "прошлый",
+    "прошлого",
+    "этом",
+    "этот",
+    "текущем",
+    "назад",
+];
+
+/// [TD-22] Есть ли в вопросе тема помимо самого триггера.
+///
+/// Прямой ответ роутера безальтернативен: fallthrough при низкой уверенности
+/// не предусмотрен, поэтому ложный перехват = гарантированно неверный ответ.
+/// «Какие решения приняли на встрече?» отдавал **список звонков**, не вызывая
+/// ни retrieval, ни LLM.
+///
+/// Правило: если после вычёркивания триггеров, слов о звонке, периода и
+/// служебных слов что-то осталось — вопрос про содержание, а не про список.
+/// Приём тот же, что в `when_topic`, который так работал с самого начала.
+fn has_topic_beyond(ws: &[String], triggers: &[&str]) -> bool {
+    ws.iter().any(|w| {
+        let w = w.as_str();
+        !triggers.contains(&w)
+            && !CALL_WORDS.contains(&w)
+            && !FUNCTION_WORDS.contains(&w)
+            && !RECORDING_WORDS.contains(&w)
+            && !PERIOD_WORDS.contains(&w)
+    })
 }
 
 /// Попытка роутинга. `None` — обычный конвейер (retrieval → LLM).
@@ -122,15 +258,33 @@ pub async fn try_route(
     }
 
     // Stats: «сколько звонков [записано/было]».
-    if has(&ws, "сколько") && has_any(&ws, CALL_WORDS) {
-        return Ok(Some(stats_answer(pool).await?));
+    // [TD-22] «Сколько задач раздали на встрече?» — вопрос про содержание,
+    // а не про счётчик записей; тема есть → обычный конвейер.
+    if has(&ws, "сколько") && has_any(&ws, CALL_WORDS) && !has_topic_beyond(&ws, &["сколько"])
+    {
+        return Ok(Some(super::direct::stats_answer(pool).await?));
     }
 
     // LastCall: «когда был последний звонок» / «о чём был последний звонок».
-    if has_any(&ws, &["последний", "последнего", "последнем", "крайний"])
-        && has_any(&ws, CALL_WORDS)
+    // [TD-22] Женские формы добавлены: «встреча» женского рода, и «когда была
+    // последняя встреча» уходило мимо роутера целиком.
+    if has_any(
+        &ws,
+        &[
+            "последний",
+            "последнего",
+            "последнем",
+            "последняя",
+            "последнюю",
+            "последней",
+            "крайний",
+            "крайняя",
+            "крайнюю",
+            "крайней",
+        ],
+    ) && has_any(&ws, CALL_WORDS)
     {
-        let Some((id, title, date)) = last_ready_call(pool).await? else {
+        let Some((id, title, date)) = super::direct::last_ready_call(pool).await? else {
             return Ok(Some(RoutedAnswer::Direct {
                 text: "Записанных звонков пока нет.".to_string(),
                 sources: vec![],
@@ -155,105 +309,25 @@ pub async fn try_route(
     }
 
     // ListCalls: «какие звонки были [за неделю]» / «покажи звонки».
-    if has_any(&ws, &["какие", "покажи", "список", "перечисли"]) && has_any(&ws, CALL_WORDS)
+    // [TD-22] «Какие решения приняли на встрече?» отдавал список звонков,
+    // не вызывая ни retrieval, ни LLM — тема в вопросе снимает перехват.
+    const LIST_TRIGGERS: &[&str] = &["какие", "покажи", "список", "перечисли"];
+    if has_any(&ws, LIST_TRIGGERS)
+        && has_any(&ws, CALL_WORDS)
+        && !has_topic_beyond(&ws, LIST_TRIGGERS)
     {
-        return Ok(Some(list_calls(pool, &ws).await?));
+        return Ok(Some(super::direct::list_calls(pool, &ws).await?));
     }
 
     // [B26.5a] «Кто такой/такая X» → карточка контакта. Контакт не найден →
     // None: обычный конвейер (упоминания в звонках).
     if has(&ws, "кто") && has_any(&ws, &["такой", "такая", "такое", "это"]) {
-        if let Some(routed) = who_is(pool, &ws).await? {
+        if let Some(routed) = super::direct::who_is(pool, &ws).await? {
             return Ok(Some(routed));
         }
     }
 
     Ok(None)
-}
-
-/// [B26.5a] Карточка(и) контакта по имени из вопроса (до 3 совпадений).
-async fn who_is(pool: &SqlitePool, ws: &[String]) -> Result<Option<RoutedAnswer>, AppError> {
-    use crate::assistant::contacts_ctx;
-
-    const WHO_STRIP: &[&str] = &["кто", "такой", "такая", "такое", "это", "вообще"];
-    let name_part = ws
-        .iter()
-        .filter(|w| !WHO_STRIP.contains(&w.as_str()))
-        .cloned()
-        .collect::<Vec<_>>()
-        .join(" ");
-    if name_part.is_empty() {
-        return Ok(None);
-    }
-    let contacts = contacts_ctx::list_contact_briefs(pool).await?;
-    let matched = contacts_ctx::match_contacts(&contacts, &name_part);
-    if matched.is_empty() {
-        return Ok(None);
-    }
-    let mut lines = Vec::new();
-    let mut sources = Vec::new();
-    for c in matched.iter().take(3) {
-        let stats = contacts_ctx::contact_call_stats(pool, &c.id).await?;
-        lines.push(contacts_ctx::contact_card_text(c, &stats));
-        if let Some((id, title, _)) = &stats.last_call {
-            sources.push(AssistantSource {
-                call_id: id.clone(),
-                call_title: title.clone(),
-                start_ms: None,
-            });
-        }
-    }
-    Ok(Some(RoutedAnswer::Direct {
-        text: lines.join("\n"),
-        sources,
-    }))
-}
-
-/// «Записано N звонков (M в поиске), суммарно X ч Y мин» — из index_stats.
-async fn stats_answer(pool: &SqlitePool) -> Result<RoutedAnswer, AppError> {
-    let stats = crate::db::assistant::index_stats(pool).await?;
-    let total_min = stats.total_duration_sec / 60;
-    let dur = if total_min >= 60 {
-        format!("{} ч {} мин", total_min / 60, total_min % 60)
-    } else {
-        format!("{total_min} мин")
-    };
-    let text = format!(
-        "Записано {} звонков, {} из них в поиске ассистента. Суммарная длительность — {dur}.",
-        stats.total_calls, stats.indexed_calls
-    );
-    Ok(RoutedAnswer::Direct {
-        text,
-        sources: vec![],
-    })
-}
-
-/// Последний ready-звонок: (id, титул, «ДД.ММ.ГГГГ»).
-async fn last_ready_call(pool: &SqlitePool) -> Result<Option<(String, String, String)>, AppError> {
-    let row: Option<(String, Option<String>, String)> = sqlx::query_as(
-        "SELECT id, title, started_at FROM calls WHERE status = 'ready'
-         ORDER BY started_at DESC LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.map(|(id, title, started_at)| {
-        let date = fmt_date(&started_at).unwrap_or_else(|| started_at.clone());
-        let title = title
-            .filter(|t| !t.trim().is_empty())
-            .unwrap_or_else(|| "Без названия".to_string());
-        (id, title, date)
-    }))
-}
-
-/// «2026-07-21T…» → «21.07.2026».
-fn fmt_date(started_at: &str) -> Option<String> {
-    let d = started_at.get(..10)?;
-    let mut it = d.split('-');
-    let (y, m, day) = (it.next()?, it.next()?, it.next()?);
-    if y.len() != 4 || m.len() != 2 || day.len() != 2 {
-        return None;
-    }
-    Some(format!("{day}.{m}.{y}"))
 }
 
 /// Тема после среза служебных слов WhenDiscussed. None — темы не осталось.
@@ -318,7 +392,7 @@ async fn when_discussed(
             Some((t, s)) => (
                 t.filter(|t| !t.trim().is_empty())
                     .unwrap_or_else(|| "Без названия".into()),
-                fmt_date(&s).unwrap_or(s),
+                super::direct::fmt_date(&s).unwrap_or(s),
             ),
             None => continue,
         };
@@ -342,207 +416,6 @@ async fn when_discussed(
         text: format!("Тема поднималась:\n{}", lines.join("\n")),
         sources,
     }))
-}
-
-/// [B26.1] Относительный период из слов вопроса → полуинтервал
-/// `[since, until)` в UTC RFC3339. Границы дней считаются в ЛОКАЛЬНОМ поясе
-/// пользователя (`now: DateTime<Local>` инъектится ради тестов), потом
-/// конвертируются в UTC — `calls.started_at` хранится в UTC. None-граница =
-/// открытый край. None целиком — период в вопросе не распознан.
-pub(crate) fn period_range(
-    ws: &[String],
-    now: chrono::DateTime<chrono::Local>,
-) -> Option<(Option<String>, Option<String>)> {
-    use chrono::{Datelike, Duration, Local, TimeZone, Utc};
-
-    let local_ymd = |y: i32, m: u32, d: u32| -> Option<chrono::DateTime<Local>> {
-        Local.with_ymd_and_hms(y, m, d, 0, 0, 0).earliest()
-    };
-    let to_utc = |d: chrono::DateTime<Local>| {
-        d.with_timezone(&Utc)
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-    };
-    let today0 = local_ymd(now.year(), now.month(), now.day())?;
-    // Первое число месяца со сдвигом на delta месяцев (любой знак).
-    let month_first = |y: i32, m: u32, delta: i32| -> Option<chrono::DateTime<Local>> {
-        let total = (y * 12 + (m as i32 - 1)) + delta;
-        local_ymd(total.div_euclid(12), (total.rem_euclid(12) + 1) as u32, 1)
-    };
-
-    // Маркер «прошлый/прошлой/прошлом…» — переключает на календарный период.
-    let last = has_any(
-        ws,
-        &["прошлой", "прошлую", "прошлом", "прошлый", "прошлого"],
-    );
-    let ago = has(ws, "назад");
-
-    if has(ws, "сегодня") {
-        return Some((Some(to_utc(today0)), None));
-    }
-    if has(ws, "вчера") {
-        return Some((
-            Some(to_utc(today0 - Duration::days(1))),
-            Some(to_utc(today0)),
-        ));
-    }
-    if has(ws, "позавчера") {
-        return Some((
-            Some(to_utc(today0 - Duration::days(2))),
-            Some(to_utc(today0 - Duration::days(1))),
-        ));
-    }
-    if has_any(ws, &["неделю", "неделе", "недели", "неделя"]) {
-        let monday = today0 - Duration::days(i64::from(now.weekday().num_days_from_monday()));
-        if last || ago {
-            return Some((
-                Some(to_utc(monday - Duration::days(7))),
-                Some(to_utc(monday)),
-            ));
-        }
-        // «за неделю» — последние 7 дней (нижняя граница, как раньше).
-        return Some((Some(to_utc(today0 - Duration::days(7))), None));
-    }
-    if has_any(ws, &["месяц", "месяца", "месяце"]) {
-        let first_this = month_first(now.year(), now.month(), 0)?;
-        if last || ago {
-            // «в прошлом месяце» / «месяц назад» — календарный прошлый месяц.
-            let first_prev = month_first(now.year(), now.month(), -1)?;
-            return Some((Some(to_utc(first_prev)), Some(to_utc(first_this))));
-        }
-        return Some((Some(to_utc(today0 - Duration::days(31))), None));
-    }
-    if has_any(ws, &["году", "года", "год"]) {
-        let jan1_this = local_ymd(now.year(), 1, 1)?;
-        if last {
-            let jan1_prev = local_ymd(now.year() - 1, 1, 1)?;
-            return Some((Some(to_utc(jan1_prev)), Some(to_utc(jan1_this))));
-        }
-        if has_any(ws, &["этом", "этот", "текущем"]) {
-            return Some((Some(to_utc(jan1_this)), None));
-        }
-        if ago {
-            // «год назад» — неоднозначно, берём последние 365 дней.
-            return Some((Some(to_utc(today0 - Duration::days(365))), None));
-        }
-        return None;
-    }
-    // Месяцы по имени: «в июне / июня». Будущий месяц → прошлый год.
-    const MONTHS: &[(&[&str], u32)] = &[
-        (&["январе", "января"], 1),
-        (&["феврале", "февраля"], 2),
-        (&["марте", "марта"], 3),
-        (&["апреле", "апреля"], 4),
-        (&["мае", "мая"], 5),
-        (&["июне", "июня"], 6),
-        (&["июле", "июля"], 7),
-        (&["августе", "августа"], 8),
-        (&["сентябре", "сентября"], 9),
-        (&["октябре", "октября"], 10),
-        (&["ноябре", "ноября"], 11),
-        (&["декабре", "декабря"], 12),
-    ];
-    for (forms, m) in MONTHS {
-        if has_any(ws, forms) {
-            let year = if *m > now.month() {
-                now.year() - 1
-            } else {
-                now.year()
-            };
-            let first = month_first(year, *m, 0)?;
-            let next = month_first(year, *m, 1)?;
-            return Some((Some(to_utc(first)), Some(to_utc(next))));
-        }
-    }
-    if has_any(ws, &["квартал", "квартала", "квартале"]) {
-        if last {
-            // Календарный прошлый квартал.
-            let q_first_month = ((now.month() - 1) / 3) * 3 + 1;
-            let this_q = month_first(now.year(), q_first_month, 0)?;
-            let prev_q = month_first(now.year(), q_first_month, -3)?;
-            return Some((Some(to_utc(prev_q)), Some(to_utc(this_q))));
-        }
-        return Some((Some(to_utc(today0 - Duration::days(92))), None));
-    }
-    None
-}
-
-/// [B26.2] Темпоральный префильтр для ОБЫЧНЫХ вопросов: явный период в
-/// вопросе → набор `call_id` за период. `Ok(None)` — периода нет.
-/// `Ok(Some(пустой))` — период есть, но звонков нет: вызывающий отвечает
-/// честным «за этот период не найдено», не гоняя поиск.
-pub(crate) async fn period_call_filter(
-    pool: &SqlitePool,
-    question: &str,
-) -> Result<Option<std::collections::HashSet<String>>, AppError> {
-    let ws = words(question);
-    let Some((since, until)) = period_range(&ws, chrono::Local::now()) else {
-        return Ok(None);
-    };
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT id FROM calls
-         WHERE status = 'ready' AND started_at >= ?1 AND started_at < ?2",
-    )
-    .bind(since.as_deref().unwrap_or("0000-01-01T00:00:00Z"))
-    .bind(until.as_deref().unwrap_or("9999-12-31T00:00:00Z"))
-    .fetch_all(pool)
-    .await?;
-    Ok(Some(rows.into_iter().map(|(id,)| id).collect()))
-}
-
-/// Список звонков (опц. за период), свежие сверху, максимум 10.
-/// [B26.1] Период — полуинтервал `period_range` (обе границы опциональны,
-/// открытый край — сентинел, лексикографика RFC3339 это позволяет).
-async fn list_calls(pool: &SqlitePool, ws: &[String]) -> Result<RoutedAnswer, AppError> {
-    let range = period_range(ws, chrono::Local::now());
-    let rows: Vec<(String, Option<String>, String)> = match &range {
-        Some((since, until)) => {
-            sqlx::query_as(
-                "SELECT id, title, started_at FROM calls
-                 WHERE status = 'ready' AND started_at >= ?1 AND started_at < ?2
-                 ORDER BY started_at DESC LIMIT 10",
-            )
-            .bind(since.as_deref().unwrap_or("0000-01-01T00:00:00Z"))
-            .bind(until.as_deref().unwrap_or("9999-12-31T00:00:00Z"))
-            .fetch_all(pool)
-            .await?
-        }
-        None => {
-            sqlx::query_as(
-                "SELECT id, title, started_at FROM calls
-                 WHERE status = 'ready' ORDER BY started_at DESC LIMIT 10",
-            )
-            .fetch_all(pool)
-            .await?
-        }
-    };
-    if rows.is_empty() {
-        return Ok(RoutedAnswer::Direct {
-            text: if range.is_some() {
-                "За этот период записанных звонков нет.".to_string()
-            } else {
-                "Записанных звонков пока нет.".to_string()
-            },
-            sources: vec![],
-        });
-    }
-    let mut lines = Vec::new();
-    let mut sources = Vec::new();
-    for (id, title, started_at) in rows {
-        let title = title
-            .filter(|t| !t.trim().is_empty())
-            .unwrap_or_else(|| "Без названия".into());
-        let date = fmt_date(&started_at).unwrap_or(started_at);
-        lines.push(format!("— «{title}» · {date}"));
-        sources.push(AssistantSource {
-            call_id: id,
-            call_title: title,
-            start_ms: None,
-        });
-    }
-    Ok(RoutedAnswer::Direct {
-        text: lines.join("\n"),
-        sources,
-    })
 }
 
 #[cfg(test)]
@@ -691,138 +564,6 @@ mod tests {
         assert!(sources.is_empty());
     }
 
-    // ── [B26.1] period_range: полуинтервалы в локальном поясе ──
-
-    fn fixed_now(y: i32, m: u32, d: u32) -> chrono::DateTime<chrono::Local> {
-        use chrono::TimeZone;
-        chrono::Local
-            .with_ymd_and_hms(y, m, d, 15, 30, 0)
-            .single()
-            .unwrap()
-    }
-
-    fn local_utc(y: i32, m: u32, d: u32) -> String {
-        use chrono::TimeZone;
-        chrono::Local
-            .with_ymd_and_hms(y, m, d, 0, 0, 0)
-            .single()
-            .unwrap()
-            .with_timezone(&chrono::Utc)
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-    }
-
-    fn range_of(
-        q: &str,
-        now: chrono::DateTime<chrono::Local>,
-    ) -> Option<(Option<String>, Option<String>)> {
-        period_range(&words(q), now)
-    }
-
-    #[test]
-    fn period_range_days_and_weeks() {
-        // 2026-07-23 — четверг.
-        let now = fixed_now(2026, 7, 23);
-        assert_eq!(
-            range_of("что обсуждали сегодня", now),
-            Some((Some(local_utc(2026, 7, 23)), None))
-        );
-        assert_eq!(
-            range_of("что обсуждали вчера", now),
-            Some((Some(local_utc(2026, 7, 22)), Some(local_utc(2026, 7, 23))))
-        );
-        // «на прошлой неделе»: пн этой = 20.07 → [13.07, 20.07).
-        assert_eq!(
-            range_of("звонки на прошлой неделе", now),
-            Some((Some(local_utc(2026, 7, 13)), Some(local_utc(2026, 7, 20))))
-        );
-        // «за неделю» — просто последние 7 дней.
-        assert_eq!(
-            range_of("звонки за неделю", now),
-            Some((Some(local_utc(2026, 7, 16)), None))
-        );
-    }
-
-    #[test]
-    fn period_range_months_and_years() {
-        let now = fixed_now(2026, 7, 23);
-        // «в прошлом месяце» — календарный июнь.
-        assert_eq!(
-            range_of("что было в прошлом месяце", now),
-            Some((Some(local_utc(2026, 6, 1)), Some(local_utc(2026, 7, 1))))
-        );
-        // «месяц назад» — тот же календарный прошлый.
-        assert_eq!(
-            range_of("звонки месяц назад", now),
-            Some((Some(local_utc(2026, 6, 1)), Some(local_utc(2026, 7, 1))))
-        );
-        // «в прошлом году» — календарный 2025.
-        assert_eq!(
-            range_of("что обсуждали в прошлом году", now),
-            Some((Some(local_utc(2025, 1, 1)), Some(local_utc(2026, 1, 1))))
-        );
-        // Именованный месяц: прошедший в этом году.
-        assert_eq!(
-            range_of("что было в июне", now),
-            Some((Some(local_utc(2026, 6, 1)), Some(local_utc(2026, 7, 1))))
-        );
-        // Текущий месяц.
-        assert_eq!(
-            range_of("что было в июле", now),
-            Some((Some(local_utc(2026, 7, 1)), Some(local_utc(2026, 8, 1))))
-        );
-        // Будущий месяц → прошлый год.
-        assert_eq!(
-            range_of("что было в августе", now),
-            Some((Some(local_utc(2025, 8, 1)), Some(local_utc(2025, 9, 1))))
-        );
-    }
-
-    // [B26.2] Префильтр: набор call_id за период из вопроса.
-    #[tokio::test]
-    async fn period_call_filter_selects_calls_in_range() {
-        let db = fresh_db().await;
-        let yesterday = (chrono::Local::now() - chrono::Duration::days(1))
-            .with_timezone(&chrono::Utc)
-            .to_rfc3339();
-        seed_call(&db.pool, "c-old", "Старый", "2020-01-01T09:00:00+00:00").await;
-        seed_call(&db.pool, "c-yest", "Вчерашний", &yesterday).await;
-
-        let set = period_call_filter(&db.pool, "что обсуждали вчера про бюджет")
-            .await
-            .unwrap()
-            .expect("период распознан");
-        assert!(set.contains("c-yest"));
-        assert!(!set.contains("c-old"));
-
-        // Без периода — None (фильтр не применяется).
-        assert!(period_call_filter(&db.pool, "что решили по командам")
-            .await
-            .unwrap()
-            .is_none());
-
-        // Период есть, звонков нет → Some(пустой) — честный empty у вызывающего.
-        let empty = period_call_filter(&db.pool, "что было в прошлом месяце")
-            .await
-            .unwrap()
-            .expect("период распознан");
-        assert!(empty.is_empty());
-    }
-
-    #[test]
-    fn period_range_january_rollover_and_negatives() {
-        // 1 января: «в прошлом месяце» = декабрь прошлого года.
-        let now = fixed_now(2026, 1, 1);
-        assert_eq!(
-            range_of("что было в прошлом месяце", now),
-            Some((Some(local_utc(2025, 12, 1)), Some(local_utc(2026, 1, 1))))
-        );
-        // Негативы: словоформы не из списка периодов.
-        let now = fixed_now(2026, 7, 23);
-        assert_eq!(range_of("месячный отчёт по проекту", now), None);
-        assert_eq!(range_of("что решили по командам", now), None);
-        assert_eq!(range_of("сколько звонков записано", now), None);
-    }
-
     // [B26.5a] «Кто такой X» → карточка контакта; нет контакта → None.
     #[tokio::test]
     async fn who_is_returns_contact_card_or_falls_through() {
@@ -871,6 +612,107 @@ mod tests {
             let list = has_any(&ws, &["какие", "покажи", "список", "перечисли"])
                 && has_any(&ws, CALL_WORDS);
             assert!(!stats && !last && !when && !list, "перехвачен: {q}");
+        }
+    }
+
+    // ── [TD-22] ложные перехваты ────────────────────────────────────────
+
+    const LIST_TRIGGERS_FOR_TEST: &[&str] = &["какие", "покажи", "список", "перечисли"];
+
+    #[tokio::test]
+    async fn content_questions_with_call_words_are_not_intercepted() {
+        // Регрессия TD-22. Старый список негативов содержал только
+        // «что…»-формулировки и эту дыру не ловил: вопрос со словом о звонке
+        // И триггером перехватывался целиком. Прямой ответ безальтернативен
+        // (fallthrough нет), поэтому ложный перехват = гарантированно
+        // неверный ответ, причём без вызова retrieval и LLM.
+        let db = fresh_db().await;
+        seed_call(&db.pool, "c1", "Планёрка", "2026-07-01T09:00:00+00:00").await;
+
+        for q in [
+            "Какие решения приняли на встрече",
+            "Сколько задач раздали на встрече",
+            "Какие риски обсуждали на созвоне",
+            "Перечисли договорённости со звонка",
+            "Покажи задачи из встречи",
+        ] {
+            let routed = try_route(&db.pool, q, None, None).await.unwrap();
+            assert!(
+                routed.is_none(),
+                "{q:?} — вопрос про содержание, обязан идти в обычный конвейер"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn listing_questions_are_still_intercepted() {
+        // Вторая половина: guard не должен убить сам интент. Без этого теста
+        // «починка» могла бы просто отключить роутер и выглядеть зелёной.
+        let db = fresh_db().await;
+        seed_call(&db.pool, "c1", "Планёрка", &chrono::Utc::now().to_rfc3339()).await;
+
+        for q in [
+            "какие звонки были",
+            "покажи звонки",
+            "какие созвоны были за неделю",
+            "перечисли встречи",
+            "сколько звонков записано",
+            "сколько было звонков",
+        ] {
+            let routed = try_route(&db.pool, q, None, None).await.unwrap();
+            assert!(routed.is_some(), "{q:?} — это запрос списка или счётчика");
+        }
+    }
+
+    #[tokio::test]
+    async fn last_call_matches_feminine_forms() {
+        // «встреча» женского рода, и «когда была последняя встреча» уходило
+        // мимо роутера: список форм покрывал только мужской.
+        let db = fresh_db().await;
+        seed_call(&db.pool, "c1", "Синхрон", "2026-07-01T09:00:00+00:00").await;
+
+        for q in [
+            "когда была последняя встреча",
+            "когда была крайняя встреча",
+            "о чём была последняя запись",
+        ] {
+            let routed = try_route(&db.pool, q, None, None).await.unwrap();
+            assert!(routed.is_some(), "{q:?} — вопрос про последний звонок");
+        }
+    }
+
+    #[tokio::test]
+    async fn period_phrases_do_not_look_like_a_topic() {
+        // PERIOD_WORDS дублирует вокабуляр period_range, и разойтись им
+        // нельзя: слово, которое парсер считает периодом, а guard — темой,
+        // сломает «какие звонки были за <период>».
+        //
+        // Проверяем именно это свойство, а не «каждое слово парсится в
+        // одиночку»: год парсер намеренно требует с квалификатором
+        // («в прошлом году»), голое «год» периодом не считается.
+        let db = fresh_db().await;
+        seed_call(&db.pool, "c1", "Планёрка", &chrono::Utc::now().to_rfc3339()).await;
+
+        for q in [
+            "какие звонки были сегодня",
+            "какие звонки были вчера",
+            "какие звонки были позавчера",
+            "какие звонки были за неделю",
+            "какие звонки были на прошлой неделе",
+            "какие звонки были за месяц",
+            "какие звонки были в прошлом месяце",
+            "какие звонки были в этом году",
+            "какие звонки были в прошлом году",
+        ] {
+            let ws = words(q);
+            assert!(
+                !has_topic_beyond(&ws, LIST_TRIGGERS_FOR_TEST),
+                "{q:?} — период, а не тема"
+            );
+            assert!(
+                try_route(&db.pool, q, None, None).await.unwrap().is_some(),
+                "{q:?} обязан перехватываться как список"
+            );
         }
     }
 }

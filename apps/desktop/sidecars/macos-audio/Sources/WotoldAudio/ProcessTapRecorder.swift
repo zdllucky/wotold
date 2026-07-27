@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import WotoldAudioCore
 
 // macOS 14.4+ Core Audio Process Tap для захвата ВСЕГО системного аудио,
 // включая приложения которые маршрутизируют звук в обход системного микса
@@ -43,10 +44,32 @@ final class ProcessTapRecorder: NSObject {
 
     // [B14] Running RMS для live level meter — тот же контракт что был у
     // SystemAudioRecorder.currentRms, чтобы App.swift не различал.
-    private var latestRms: Float = 0
-    var currentRms: Float { latestRms }
+    // [TD-21] Синхронизация — как у близнеца AudioRecorder (правило 2).
+    private let level = AtomicLevel()
+    private var isPaused = false
+
+    var currentRms: Float { level.value }
+
+    /// [TD-07] Пауза на уровне ЗАХВАТА: кадры дропаются до записи в WAV.
+    /// До этого пауза жила только в БД, и сказанное «на паузе» попадало в
+    /// файл, транскрипт и саммари.
+    ///
+    /// Флаг читается и пишется на той же serial queue, что и обработчик
+    /// кадров, поэтому отдельная синхронизация не нужна.
+    func setPaused(_ paused: Bool) {
+        queue.sync { self.isPaused = paused }
+    }
 
     func start(systemURL: URL) async throws {
+        // [TD-21b] Повторный start() без остановки предыдущего перезаписывал
+        // tapID/aggregateID/ioProcID — прежние Core Audio объекты оставались
+        // жить до выхода процесса, а IOProc продолжал стучаться в already-
+        // replaced writer. Близнец `AudioRecorder.start` такую защиту имел
+        // с самого начала (правило 2).
+        if aggregateID != kAudioObjectUnknown || tapID != kAudioObjectUnknown {
+            _ = try? await stop()
+        }
+
         guard let outFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: 16_000,
@@ -186,6 +209,10 @@ final class ProcessTapRecorder: NSObject {
             }
             try wavWriter?.close()
             let oldBytes = bytesWritten
+            // [TD-06] См. AudioRecorder.rotate: обнуляем до открытия, чтобы при
+            // провале не писать в закрытый handle и дать следующей ротации
+            // поднять системную дорожку заново.
+            wavWriter = nil
 
             let newWriter = try WAVWriter(url: url, sampleRate: 16_000, channels: 1)
             wavWriter = newWriter
@@ -199,28 +226,49 @@ final class ProcessTapRecorder: NSObject {
         flushTimer?.cancel()
         flushTimer = nil
 
+        // [TD-21a] Сначала глушим источник кадров, потом закрываем файл — и
+        // закрываем его НА `queue`, а не на вызывающем потоке.
+        //
+        // IOProc создан через `AudioDeviceCreateIOProcIDWithBlock(..., queue)`,
+        // то есть `handleAudio` исполняется на `queue`. `AudioDeviceStop`
+        // прекращает подачу новых кадров, но уже поставленный в очередь блок
+        // ещё может выполниться. Раньше `close()` и обнуление полей шли на
+        // вызывающем потоке — то есть параллельно с этим блоком: запись в
+        // закрытый FileHandle и потеря хвоста последнего system-чанка.
+        //
+        // Это ровно та гонка, которую в близнеце `AudioRecorder.stop`
+        // починили ещё в M13 (`queue.sync` вокруг close+nil). Здесь она
+        // оставалась открытой — «одинаковый контракт, разная зрелость»
+        // (правило 2).
         if aggregateID != kAudioObjectUnknown, let procID = ioProcID {
             _ = AudioDeviceStop(aggregateID, procID)
             _ = AudioDeviceDestroyIOProcID(aggregateID, procID)
         }
+
+        let bytes: UInt64 = try queue.sync {
+            try wavWriter?.close()
+            let b = bytesWritten
+            wavWriter = nil
+            converter = nil
+            outputFormat = nil
+            inputFormat = nil
+            bytesWritten = 0
+            level.reset()
+            return b
+        }
+
+        // Разрушение Core Audio объектов — уже после того, как обработчик
+        // гарантированно не выполняется: `queue.sync` выше дождался всех
+        // ранее поставленных блоков.
         if aggregateID != kAudioObjectUnknown {
             _ = AudioHardwareDestroyAggregateDevice(aggregateID)
         }
         if tapID != kAudioObjectUnknown {
             _ = AudioHardwareDestroyProcessTap(tapID)
         }
-        try wavWriter?.close()
-
-        let bytes = bytesWritten
         aggregateID = kAudioObjectUnknown
         tapID = kAudioObjectUnknown
         ioProcID = nil
-        wavWriter = nil
-        converter = nil
-        outputFormat = nil
-        inputFormat = nil
-        bytesWritten = 0
-        latestRms = 0
 
         return StopResult(bytesWritten: bytes)
     }
@@ -228,6 +276,12 @@ final class ProcessTapRecorder: NSObject {
     // MARK: - IOProc
 
     private func handleAudio(inputData: UnsafePointer<AudioBufferList>) {
+        // [TD-07] См. AudioRecorder.processBuffer — системная дорожка на паузе
+        // тоже не пишется, иначе собеседника было бы слышно в «приватной» части.
+        if isPaused {
+            level.reset()
+            return
+        }
         guard let inFormat = inputFormat,
               let outFormat = outputFormat,
               let writer = wavWriter
@@ -287,7 +341,7 @@ final class ProcessTapRecorder: NSObject {
             )
         }
 
-        latestRms = computeInt16Rms(outBuffer)
+        level.set(computeInt16Rms(outBuffer))
     }
 
     // MARK: - Core Audio helpers

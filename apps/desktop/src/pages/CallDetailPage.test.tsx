@@ -34,6 +34,12 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 
 import { invoke } from '@tauri-apps/api/core';
 import { CallDetailPage } from './CallDetailPage';
+import { ToastProvider } from '../ui';
+
+// [TD-24] Ошибки несмертельных действий уходят в тост — страница требует
+// провайдера, как InboxView.test.tsx.
+const renderPage = (ui: React.ReactElement) =>
+  render(<ToastProvider>{ui}</ToastProvider>);
 
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
@@ -70,7 +76,7 @@ describe('CallDetailPage — smoke', () => {
   test('renders skeleton while initial load pending', () => {
     // All invocations stall (never resolve) — page stays in loading state.
     mockInvoke.mockImplementation(() => new Promise(() => {}));
-    const { container } = render(
+    const { container } = renderPage(
       <CallDetailPage callId="c-1" onBack={() => {}} />,
     );
     // Skeleton uses aria-busy="true" on the root section.
@@ -86,7 +92,7 @@ describe('CallDetailPage — smoke', () => {
       if (cmd === 'list_call_action_items') return Promise.resolve([]);
       return Promise.resolve(null);
     });
-    render(<CallDetailPage callId="c-1" onBack={() => {}} />);
+    renderPage(<CallDetailPage callId="c-1" onBack={() => {}} />);
     await flush();
     // humanError(Error('boom')) → 'boom'. role=alert is asserted.
     expect(screen.getByRole('alert')).toBeInTheDocument();
@@ -100,7 +106,7 @@ describe('CallDetailPage — smoke', () => {
       if (cmd === 'list_call_action_items') return Promise.resolve([]);
       return Promise.resolve(null);
     });
-    render(<CallDetailPage callId="c-1" onBack={() => {}} />);
+    renderPage(<CallDetailPage callId="c-1" onBack={() => {}} />);
     await flush();
     // notFound copy ('Звонок не найден' / 'Call not found' depending on locale)
     // — locate by .muted class which is unique to this state branch.
@@ -132,15 +138,68 @@ describe('CallDetailPage — smoke', () => {
 
   test('assistant tab present for ready call, absent for processing', async () => {
     mockCall('ready');
-    render(<CallDetailPage callId="c1" onBack={() => {}} />);
+    renderPage(<CallDetailPage callId="c1" onBack={() => {}} />);
     await flush();
     expect(screen.getByRole('tab', { name: 'Ассистент' })).toBeInTheDocument();
 
     cleanup();
     vi.clearAllMocks();
     mockCall('processing');
-    render(<CallDetailPage callId="c1" onBack={() => {}} />);
+    renderPage(<CallDetailPage callId="c1" onBack={() => {}} />);
     await flush();
     expect(screen.queryByRole('tab', { name: 'Ассистент' })).not.toBeInTheDocument();
+  });
+
+  // ── [TD-24] смена звонка на лету и сбой действия ──────────────────────
+
+  const callRow = (id: string, title: string, started: string) => ({
+    id,
+    title,
+    status: 'ready',
+    started_at: started,
+    duration_sec: 60,
+    path_label: 'managed',
+    created_at: started,
+    updated_at: started,
+  });
+
+  test('resolve по старому звонку не перезаписывает данные нового', async () => {
+    // Регрессия TD-24: 12 ресурсов резолвятся вразнобой, а cancelled-флага в
+    // хуке не было. Смена callId на ЖИВОМ компоненте (именно так и было до
+    // key= в App) перезапускала эффект, и поздний ответ по старому звонку
+    // затирал данные уже открытого нового.
+    let resolveOld: ((v: unknown) => void) | null = null;
+    mockInvoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+      const id = args?.id as string | undefined;
+      if (cmd === 'get_call' && id === 'old') {
+        return new Promise((res) => {
+          resolveOld = res;
+        });
+      }
+      if (cmd === 'get_call') return callRow('new', 'Новый звонок', '2026-07-22T10:00:00Z');
+      if (cmd === 'list_call_speakers' || cmd === 'list_call_action_items') return [];
+      if (cmd === 'list_call_decisions' || cmd === 'list_call_open_questions') return [];
+      if (cmd === 'list_call_chunks' || cmd === 'list_contacts') return [];
+      return null;
+    });
+
+    const { rerender } = renderPage(<CallDetailPage callId="old" onBack={() => {}} />);
+    // Тот же инстанс, другой звонок — состояние до key= переиспользовалось.
+    rerender(
+      <ToastProvider>
+        <CallDetailPage callId="new" onBack={() => {}} />
+      </ToastProvider>,
+    );
+    await flush();
+
+    // Опоздавший ответ по старому звонку приходит уже после переключения.
+    await act(async () => {
+      resolveOld?.(callRow('old', 'Старый звонок', '2020-01-01T10:00:00Z'));
+      await Promise.resolve();
+    });
+    await flush();
+
+    expect(screen.queryByText('Старый звонок')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Новый звонок').length).toBeGreaterThan(0);
   });
 });

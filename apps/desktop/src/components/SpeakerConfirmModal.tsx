@@ -65,7 +65,7 @@ export function SpeakerConfirmModal({
       onConfirmed();
       onClose();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -87,7 +87,7 @@ export function SpeakerConfirmModal({
       onConfirmed();
       onClose();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     } finally {
       setBusyAdd(false);
     }

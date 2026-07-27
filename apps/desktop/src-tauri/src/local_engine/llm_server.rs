@@ -21,10 +21,31 @@ use super::preset::LocalEnginePreset;
 use crate::AppError;
 
 const SERVER_SIDECAR: &str = "wotold-llama-server";
-/// Локальный порт (bind только 127.0.0.1). Фиксированный high-range: при
-/// коллизии `/health` не поднимется → `start` вернёт Err → caller фолбэкнет
-/// на one-shot `llama-cli` (graceful degradation, не фатально).
-pub const SERVER_PORT: u16 = 47331;
+/// [TD-08] Порт больше не фиксирован. Раньше это был константный 47331, и
+/// чужой процесс, занявший его раньше нас и отвечающий на `/health`,
+/// становился «нашим сервером» — то есть получал все промпты с транскриптами.
+/// Теперь порт берётся эфемерным на старте, а принадлежность сервера
+/// подтверждается аутентифицированным запросом (см. `verify_is_ours`).
+fn pick_ephemeral_port() -> Result<u16, AppError> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| AppError::Other(format!("llama-server: не нашли свободный порт: {e}")))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| AppError::Other(format!("llama-server: local_addr: {e}")))?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
+/// [TD-08] Случайный ключ доступа к серверу — 32 hex-символа.
+///
+/// Передаётся **через env `LLAMA_API_KEY`, а не через `--api-key`**: аргументы
+/// командной строки видны в `ps aux` любому пользователю машины, то есть
+/// секрет, которым мы закрываем «любой локальный процесс», сам был бы этому
+/// процессу доступен. Env читается только тем же UID.
+fn generate_api_key() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
+}
 /// Ctx сервера. Совпадает с `llm::DEFAULT_CTX_SIZE` (8192) — parity с one-shot.
 const CTX_SIZE: u32 = 8192;
 /// Timeout ожидания `/health`. Включает Metal shader compile (~30с) + загрузку
@@ -33,9 +54,12 @@ const HEALTH_TIMEOUT_SECS: u64 = 180;
 
 /// Живой resident-сервер: дочерний процесс + его URL + preset (модель).
 pub struct LlamaServer {
-    child: CommandChild,
+    /// `Option` ради `Drop`: `shutdown()` забирает child, чтобы Drop не убивал
+    /// уже убитый процесс.
+    child: Option<CommandChild>,
     preset: LocalEnginePreset,
     url: String,
+    api_key: String,
 }
 
 /// [B28.3] PID-файл сервера. При force-quit/kill приложения дочерний
@@ -82,6 +106,9 @@ impl LlamaServer {
     pub fn preset(&self) -> LocalEnginePreset {
         self.preset
     }
+    pub fn api_key(&self) -> &str {
+        &self.api_key
+    }
 
     /// Запустить сервер с моделью `preset`'а и дождаться готовности `/health`.
     /// На любой ошибке (нет модели / spawn fail / health timeout) — Err; caller
@@ -106,7 +133,9 @@ impl LlamaServer {
         // [B28.3] Сирота с прошлой сессии держит порт → добиваем до spawn.
         kill_stale_server(app_data_dir);
 
-        let port_str = SERVER_PORT.to_string();
+        let port = pick_ephemeral_port()?;
+        let port_str = port.to_string();
+        let api_key = generate_api_key();
         let ctx_str = CTX_SIZE.to_string();
 
         let sidecar = app
@@ -114,6 +143,8 @@ impl LlamaServer {
             .sidecar(SERVER_SIDECAR)
             .map_err(|e| AppError::Other(format!("llama-server sidecar lookup: {e}")))?
             .env("DYLD_FALLBACK_LIBRARY_PATH", "/opt/homebrew/lib")
+            // [TD-08] Ключ через env, не через args — см. `generate_api_key`.
+            .env("LLAMA_API_KEY", &api_key)
             .args([
                 "-m",
                 &model_str,
@@ -165,7 +196,7 @@ impl LlamaServer {
             }
         });
 
-        let url = format!("http://127.0.0.1:{SERVER_PORT}");
+        let url = format!("http://127.0.0.1:{port}");
         let client = reqwest::Client::new();
         let health = format!("{url}/health");
         let started = std::time::Instant::now();
@@ -183,11 +214,27 @@ impl LlamaServer {
                 if resp.status().is_success() {
                     if let Ok(j) = resp.json::<serde_json::Value>().await {
                         if j.get("status").and_then(|v| v.as_str()) == Some("ok") {
+                            // [TD-08] `/health` у llama.cpp публичен, поэтому
+                            // «поднялся» ещё не значит «это наш процесс».
+                            // Подтверждаем принадлежность аутентифицированным
+                            // запросом: чужой сервер нашего ключа не знает.
+                            if !verify_is_ours(&client, &url, &api_key).await {
+                                let _ = child.kill();
+                                return Err(AppError::Other(
+                                    "llama-server: порт занят чужим процессом (auth-проверка не прошла)"
+                                        .into(),
+                                ));
+                            }
                             log::info!(
                                 "llama-server ready (preset={preset:?}) за {}s на {url}",
                                 started.elapsed().as_secs()
                             );
-                            return Ok(Self { child, preset, url });
+                            return Ok(Self {
+                                child: Some(child),
+                                preset,
+                                url,
+                                api_key,
+                            });
                         }
                     }
                 }
@@ -197,9 +244,89 @@ impl LlamaServer {
     }
 
     /// Остановить сервер (kill процесса). Consuming — handle больше не валиден.
-    pub fn shutdown(self) {
-        let LlamaServer { child, .. } = self;
-        let _ = child.kill();
-        log::info!("llama-server stopped");
+    pub fn shutdown(mut self) {
+        if let Some(child) = self.child.take() {
+            let _ = child.kill();
+            log::info!("llama-server stopped");
+        }
+    }
+}
+
+/// [TD-08] Аутентифицированная проверка «это наш сервер». `/props` требует
+/// ключ (в отличие от публичного `/health`), поэтому 200 здесь означает, что
+/// на порту действительно процесс, которому мы этот ключ передали.
+async fn verify_is_ours(client: &reqwest::Client, url: &str, api_key: &str) -> bool {
+    match client
+        .get(format!("{url}/props"))
+        .bearer_auth(api_key)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(resp) => resp.status().is_success(),
+        Err(e) => {
+            log::warn!("llama-server: auth-проверка не удалась: {e}");
+            false
+        }
+    }
+}
+
+/// [TD-08] Раньше дропнутый handle оставлял процесс жить — убивал только явный
+/// `shutdown()`. Паттерн взят из `local_engine::sidecar::SidecarGuard`.
+impl Drop for LlamaServer {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.take() {
+            let _ = child.kill();
+            log::info!("llama-server stopped (drop)");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // [TD-08] Спавн сайдкара юнитом не покрыть (нужен AppHandle), поэтому
+    // тестируем вынесенные чистые части — как в TD-06 с classify_event.
+
+    #[test]
+    fn api_key_is_32_hex_chars() {
+        let key = generate_api_key();
+        assert_eq!(key.len(), 32, "uuid simple = 32 символа");
+        assert!(
+            key.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+            "ожидали lowercase hex, получили {key}"
+        );
+    }
+
+    #[test]
+    fn api_keys_differ_between_servers() {
+        // Ключ на сессию: два старта не должны делить секрет.
+        let a = generate_api_key();
+        let b = generate_api_key();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn ephemeral_port_is_usable_after_release() {
+        // Порт отдаётся уже освобождённым — сайдкар должен суметь его занять.
+        let port = pick_ephemeral_port().expect("свободный порт");
+        assert_ne!(port, 0);
+        let listener = std::net::TcpListener::bind(("127.0.0.1", port))
+            .expect("порт обязан быть свободен после drop листенера");
+        drop(listener);
+    }
+
+    #[test]
+    fn ephemeral_ports_are_not_the_old_fixed_one() {
+        // Регрессия: раньше порт был константой 47331, и чужой процесс мог
+        // занять его заранее, чтобы получать наши промпты с транскриптами.
+        let ports: Vec<u16> = (0..5).filter_map(|_| pick_ephemeral_port().ok()).collect();
+        assert_eq!(ports.len(), 5);
+        assert!(
+            ports.iter().all(|&p| p != 47331),
+            "порт не должен быть прежней константой"
+        );
     }
 }

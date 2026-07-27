@@ -26,6 +26,7 @@ import {
   type AssistantStatusEvent,
 } from '../api/assistant';
 import { humanError } from '../api/errors';
+import { useI18n } from '../i18n';
 
 /** Локальный id optimistic-сообщений (не из БД). */
 let optimisticSeq = 0;
@@ -78,6 +79,8 @@ export interface UseAssistantChats {
 }
 
 export function useAssistantChats(): UseAssistantChats {
+  // [TD-25] Тексты ошибок берутся из словаря — humanError требует `t`.
+  const { t } = useI18n();
   const [chats, setChats] = useState<AssistantChatMeta[]>(cache.chats);
   const [activeChatId, setActiveChatId] = useState<string | null>(cache.activeChatId);
   const [messages, setMessages] = useState<AssistantMessage[]>(cache.messages);
@@ -158,7 +161,7 @@ export function useAssistantChats(): UseAssistantChats {
         setMessages(msgs);
         syncCache({ activeChatId: chatId, messages: msgs });
       } catch (e) {
-        setError(humanError(e));
+        setError(humanError(e, t));
       }
     },
     [syncCache],
@@ -177,7 +180,7 @@ export function useAssistantChats(): UseAssistantChats {
         }
         await refreshChats();
       } catch (e) {
-        setError(humanError(e));
+        setError(humanError(e, t));
       }
     },
     [refreshChats, setActive],
@@ -216,7 +219,7 @@ export function useAssistantChats(): UseAssistantChats {
         }
         await refreshChats();
       } catch (e) {
-        setError(humanError(e));
+        setError(humanError(e, t));
         // Вопрос уже мог попасть в БД (persist до LLM) — перечитываем тред.
         if (activeRef.current === chatId && chatId) {
           try {
