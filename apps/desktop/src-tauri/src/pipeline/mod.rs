@@ -20,6 +20,7 @@ pub mod merge;
 /// [recap-rich] Нарратив-минутки — отдельный write-проход после structured reduce.
 pub mod narrative;
 pub mod recap;
+pub mod recovery_flow;
 pub mod settings;
 pub mod stage;
 pub mod voice_backfill;
