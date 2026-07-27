@@ -180,7 +180,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [ ] **M12.1 whisper acceptance integration test** — bundled WAV (RU + 2 спикера) → snapshot `DiarizedTranscript`. Требует реального `whisper-cli` в `binaries/`.
 - [ ] **B3.7d embedding reference test** — integration против reference-эмбеддинга для зашитого WAV (sherpa-onnx fixture, `--features voice-onnx`).
 - [ ] **M13.1.6 + M13.2.4 chunked smoke** — dual-run на 30-мин фикстуре (diff ≥99%) + verification на multi-speaker WAV. Deferred to end — требует real WAV.
-- [ ] **`pipeline::run` / `reprocess_call` / `regenerate_recap` unit-тесты** — happy + missing audio + recap fail. Сейчас не покрыты.
+- [x] **`pipeline::run` / `reprocess_call` / `regenerate_recap` unit-тесты** — закрыто вместе с TD-33 (`pipeline/tests.rs`): halt-gate reprocess'а на провальном чанке (причина в `failed_reason` И `recap_failed_reason`, звонок не уезжает в `processing`) + зеркало на целых чанках; `regenerate_recap` — NotFound и отсутствующий transcript.md с сохранением прошлой причины; `run` — причина провала обязана лечь в строку. Happy-path целиком остаётся за фикстурами (см. M13.1.6 выше): без реального WAV и модели он не проверяется юнитом.
 - [ ] **M12 «можно стартовать» чек-лист** — sherpa-onnx version с Whisper+sortformer проверен (changelog crate); CI build matrix под feature `local-engine` (macOS arm64+x86_64 only); PRD review заказчиком (O1–O5 closed/accepted).
 
 ### C. Code / feature debt
