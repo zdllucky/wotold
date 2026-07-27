@@ -268,7 +268,10 @@ export function LocalEngineSection() {
         setError(humanError(e, t));
       }
     },
-    [hw, statuses, t],
+    // [TD-26] semanticSearch читается в теле — без него в deps коллбэк
+    // застывал со старым значением, и e5-модели не вставали в очередь
+    // сразу после включения тумблера.
+    [hw, statuses, t, semanticSearch],
   );
 
   const onDownload = useCallback(

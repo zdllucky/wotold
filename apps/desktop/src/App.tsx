@@ -123,14 +123,21 @@ function AppShell() {
     void getSetting(SETTINGS_KEYS.RECORDING_CONSENT_AT)
       .then(setConsentAt)
       .catch((e: unknown) => console.warn('getSetting consent failed', e));
-    void getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE).then((raw) => {
-      const hk = parseHotkey(raw);
-      if (hk) setToggleHotkey(hk);
-    });
-    void getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE).then((raw) => {
-      const hk = parseHotkey(raw);
-      if (hk) setPauseHotkey(hk);
-    });
+    // [TD-26] .catch как у соседнего consent-вызова: на занятой БД
+    // (`database is locked`) это был unhandled rejection. Хоткей не
+    // критичен — дефолт остаётся, ошибка идёт в лог.
+    void getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE)
+      .then((raw) => {
+        const hk = parseHotkey(raw);
+        if (hk) setToggleHotkey(hk);
+      })
+      .catch((e: unknown) => console.warn('getSetting toggle hotkey failed', e));
+    void getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE)
+      .then((raw) => {
+        const hk = parseHotkey(raw);
+        if (hk) setPauseHotkey(hk);
+      })
+      .catch((e: unknown) => console.warn('getSetting pause hotkey failed', e));
   }, []);
 
   // Recent calls + nav count badges for the rail. Refetch when a pipeline

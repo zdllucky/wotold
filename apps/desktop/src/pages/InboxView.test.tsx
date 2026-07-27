@@ -172,3 +172,41 @@ describe('InboxView — processing status', () => {
     expect(container.querySelector<HTMLElement>('.main')?.style.display).not.toBe('none');
   });
 });
+
+// ── [TD-26] залипающий error и сортировка ─────────────────────────────
+
+describe('InboxView — TD-26', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
+  // Тест на снятие залипшей ошибки НЕ написан осознанно: refresh вызывается
+  // из слушателей pipeline-событий, а `listen` в этом файле замокан в noop —
+  // дёрнуть повторный успешный refresh на ЖИВОМ инстансе неоткуда. Через
+  // rerender с новым key тест получается фиктивным: перемонтирование само
+  // сбрасывает состояние, и он зеленеет на сломанном коде. Фикс — одна
+  // строка `setError(null)` в ветке успеха.
+
+  test('заголовки колонок сортируют и сообщают состояние', async () => {
+    // Регрессия TD-26: колонки «Длительность» и «Дата» имели иконку sort и
+    // cursor:pointer, но ни onClick, ни sort-state не существовало —
+    // аффорданса врала.
+    routeInvoke([]);
+    renderInbox(<InboxView onOpen={() => {}} />);
+    await flush();
+
+    const headers = screen.getAllByRole('columnheader');
+    const dateHeader = headers.find((h) => h.textContent?.includes('Дата'));
+    expect(dateHeader).toBeDefined();
+    // По умолчанию — дата по убыванию, как и было до фикса.
+    expect(dateHeader).toHaveAttribute('aria-sort', 'descending');
+
+    const btn = dateHeader?.querySelector('button');
+    expect(btn).not.toBeNull();
+    await act(async () => {
+      btn?.click();
+      await Promise.resolve();
+    });
+    expect(dateHeader).toHaveAttribute('aria-sort', 'ascending');
+  });
+});

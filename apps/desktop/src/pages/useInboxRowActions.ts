@@ -28,6 +28,16 @@ export interface InboxRowActions {
 export function useInboxRowActions({ t, toast, refresh, markActive }: RowActionDeps): InboxRowActions {
   const onRowReprocess = (call: Call) => {
     void (async () => {
+      // [TD-26] Подтверждение — как на CallDetailPage. Та же операция из
+      // row-меню шла без вопроса, хотя перезапускает весь пайплайн; соседний
+      // onRowDelete confirm имел.
+      const ok = await ask(t('callDetail.reprocessConfirmBody'), {
+        title: t('callDetail.reprocessConfirmTitle'),
+        kind: 'warning',
+        okLabel: t('callDetail.reprocessConfirmOk'),
+        cancelLabel: t('common.cancel'),
+      });
+      if (!ok) return;
       try {
         await reprocessCall(call.id);
         markActive(call.id);

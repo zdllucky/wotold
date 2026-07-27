@@ -1518,6 +1518,18 @@ html.recording-widget .rec-float {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 /* H2: хитбокс интерактивных чипов ≥24px (SC 2.5.8) без роста визуала. */
+/* [TD-26] `.th-sort` в каноне uikit описан на span'е; чтобы заголовок стал
+   доступен с клавиатуры, он стал кнопкой — нужен сброс браузерного хрома.
+   Тот же приём, что у `button.chip` ниже. Значения безтокенные намеренно:
+   это сброс, а не оформление. */
+button.th-sort {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
 button.chip { position: relative; }
 button.chip::after {
   content: '';
