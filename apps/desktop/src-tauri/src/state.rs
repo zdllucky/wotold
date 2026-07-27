@@ -89,6 +89,16 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         Err(e) => log::error!("reconcile_orphan_recordings failed: {e}"),
     }
 
+    // [TD-50] Каталоги удалённых звонков: аудио оставалось на диске после
+    // удаления строки — место и приватность (C5). Самолечение на старте,
+    // после reconcile: тот сам решает судьбу орфан-'recording' и может
+    // удалить строку, каталог которой подметём здесь же.
+    match crate::commands::orphan_reconcile::remove_orphan_call_dirs(&pool, &store).await {
+        Ok(n) if n > 0 => log::warn!("remove_orphan_call_dirs: удалено {n} каталогов без строки"),
+        Ok(_) => {}
+        Err(e) => log::error!("remove_orphan_call_dirs failed: {e}"),
+    }
+
     Ok(AppState {
         db: pool,
         app_data_dir,
