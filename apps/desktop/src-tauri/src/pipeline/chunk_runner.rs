@@ -24,7 +24,7 @@ use sqlx::SqlitePool;
 use tauri::AppHandle;
 
 use crate::events::{ChunkDoneEvent, EventBus};
-use crate::local_engine::stt::is_hallucination;
+use crate::local_engine::hallucination::is_hallucination;
 use crate::pipeline::clusters::load_and_extract_clusters;
 use crate::providers::transcription::{
     DiarizedTranscript, TranscriptSegment, TranscriptionError, TranscriptionOpts,

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::local_engine::stt::is_hallucination;
+use crate::local_engine::hallucination::is_hallucination;
 use crate::providers::transcription::{DiarizedTranscript, TranscriptSegment};
 
 pub const OWNER_TAG: &str = "owner";
