@@ -1244,16 +1244,17 @@ pub(crate) async fn spawn_recover_chunked(
 
         // b. STT каждого недостающего chunk'а. Partial ok — продолжаем на ошибке
         //    (relaxed gate в run_local_inner соберёт что успело).
-        for rc in &to_run {
-            let mic_path = store.chunk_mic_path(&call_id, rc.idx);
-            let system_path = store.chunk_system_path(&call_id, rc.idx);
+        // [TD-33] Сам цикл живёт в pipeline::recovery_flow с инжектируемым
+        // раннером — только так его happy-path и fail-path вообще можно
+        // покрыть тестом: здесь вокруг AppHandle, пул и файловая система.
+        let outcome = crate::pipeline::recovery_flow::run_recovery_chunks(&to_run, |rc| {
             let input = ChunkRunInput {
                 call_id: call_id.as_str().to_string(),
                 chunk_idx: rc.idx,
                 start_ms: rc.start_ms,
                 end_ms: rc.end_ms,
-                mic_path,
-                system_path,
+                mic_path: store.chunk_mic_path(&call_id, rc.idx),
+                system_path: store.chunk_system_path(&call_id, rc.idx),
                 prev_prompt: None,
                 lang: providers.lang.clone(),
                 app_data_dir: Some(app_data_dir.clone()),
@@ -1261,19 +1262,24 @@ pub(crate) async fn spawn_recover_chunked(
                 mic_diarization: providers.mic_diarization,
                 mic_diarization_num_speakers: providers.mic_diarization_num_speakers,
             };
-            if let Err(e) = chunk_runner::run_chunk(
+            chunk_runner::run_chunk(
                 &db_bg,
                 providers.mic.as_ref(),
                 providers.system.as_ref(),
                 input,
             )
-            .await
-            {
-                log::warn!(
-                    "recover_chunked_call[{call_id}/{}]: run_chunk failed: {e}",
-                    rc.idx
-                );
-            }
+        })
+        .await;
+
+        // [TD-33] Ноль успешных при непустом списке — не идём в finalize:
+        // merge собрал бы пустой транскрипт и перетёр тем, что на диске.
+        if !outcome.should_finalize() {
+            log::warn!(
+                "recover_chunked_call[{call_id}]: ни один из {} chunk'ов не расшифрован — \
+                 finalize пропущен, файлы на диске не тронуты",
+                outcome.attempted
+            );
+            return;
         }
 
         // c. Finalize через spawn_initial (НЕ spawn_reprocess): reconstruct
