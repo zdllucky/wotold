@@ -355,6 +355,8 @@ pub async fn clear_index_state(pool: &SqlitePool, call_id: &str) -> Result<(), A
     Ok(())
 }
 
+pub use crate::db::assistant_search::search_fts;
+
 /// Хит полнотекстового поиска. rank = bm25 (меньше = релевантнее).
 #[derive(Debug, Clone)]
 pub struct PassageHit {
@@ -367,62 +369,6 @@ pub struct PassageHit {
     pub text: String,
     pub token_est: i64,
     pub rank: f64,
-}
-
-/// FTS5 MATCH по индексу.
-///
-/// `match_expr` ДОЛЖЕН быть заранее экранирован вызывающей стороной
-/// (retrieval M15.5: каждый токен в кавычках) — сырой пользовательский ввод
-/// сюда не передавать (MATCH-синтаксис-инъекция).
-pub async fn search_fts(
-    pool: &SqlitePool,
-    match_expr: &str,
-    limit: i64,
-    only_call: Option<&str>,
-    exclude_call: Option<&str>,
-) -> Result<Vec<PassageHit>, AppError> {
-    type Row = (
-        i64,
-        String,
-        String,
-        Option<String>,
-        Option<i64>,
-        Option<i64>,
-        String,
-        i64,
-        f64,
-    );
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT p.id, p.call_id, p.kind, p.speaker, p.start_ms, p.end_ms,
-                p.text, p.token_est, bm25(assistant_fts) AS rank
-         FROM assistant_fts
-         JOIN assistant_passages p ON p.id = assistant_fts.rowid
-         WHERE assistant_fts MATCH ?1
-           AND (?2 IS NULL OR p.call_id = ?2)
-           AND (?3 IS NULL OR p.call_id <> ?3)
-         ORDER BY rank ASC
-         LIMIT ?4",
-    )
-    .bind(match_expr)
-    .bind(only_call)
-    .bind(exclude_call)
-    .bind(limit)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| PassageHit {
-            id: r.0,
-            call_id: r.1,
-            kind: r.2,
-            speaker: r.3,
-            start_ms: r.4,
-            end_ms: r.5,
-            text: r.6,
-            token_est: r.7,
-            rank: r.8,
-        })
-        .collect())
 }
 
 /// Статистика для чипа «в поиске X из Y звонков · ЧЧ ч ММ мин».
