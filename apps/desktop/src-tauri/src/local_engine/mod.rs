@@ -30,6 +30,8 @@ pub mod diarization;
 pub mod hallucination;
 pub mod hw_probe;
 pub mod llm;
+pub mod llm_json;
+pub mod llm_prompt;
 pub mod llm_server;
 #[allow(dead_code)]
 pub mod merge;
