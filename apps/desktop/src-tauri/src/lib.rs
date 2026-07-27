@@ -85,6 +85,15 @@ pub fn run() {
                 // накопит 50MB+ за месяц. 5MB cap + KeepOne — последние 5MB.
                 .max_file_size(5 * 1024 * 1024)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                // [security-scan W5] По умолчанию плагин пишет Trace, то есть
+                // на диск попадало вообще всё, включая чужие крейты и SQL с
+                // параметрами. В релизной сборке держим Info; в dev остаётся
+                // Debug, потому что там лог и нужен.
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                })
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())

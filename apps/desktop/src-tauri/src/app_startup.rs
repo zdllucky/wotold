@@ -52,6 +52,8 @@ pub(crate) fn spawn_startup_tasks(handle: &AppHandle) {
     spawn_assistant_backfill(handle);
     #[cfg(target_os = "macos")]
     spawn_llm_warmup(handle);
+    #[cfg(target_os = "macos")]
+    spawn_model_integrity_check(handle);
 }
 
 /// [M13 fix / ops] Headless recovery: если env WOTOLD_RECOVER_CALL_ID
@@ -142,5 +144,26 @@ fn spawn_llm_warmup(handle: &AppHandle) {
             (state.db.clone(), state.app_data_dir.clone())
         };
         crate::pipeline::warm_up_local_llm(&pool, &app_data_dir, &app_for_warmup).await;
+    });
+}
+
+/// [security-scan W5] Целостность моделей: полный SHA256 считается один раз на
+/// версию файла и кэшируется по «размер+mtime». Быстрый путь на каждом прогоне
+/// сравнивает только размер, то есть подмену файла того же размера он не
+/// увидит; эта проверка её вскрывает — с задержкой до следующего старта, но
+/// без 6 ГБ чтения перед каждым звонком.
+#[cfg(target_os = "macos")]
+fn spawn_model_integrity_check(handle: &AppHandle) {
+    let app = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let (pool, app_data_dir) = {
+            let state = tauri::Manager::state::<state::AppState>(&app);
+            (state.db.clone(), state.app_data_dir.clone())
+        };
+        let failed =
+            crate::local_engine::model_integrity::verify_present_models(&pool, &app_data_dir).await;
+        if failed > 0 {
+            log::error!("model_integrity: {failed} модел(ей) не прошли проверку SHA256");
+        }
     });
 }
