@@ -11,12 +11,14 @@ pub mod answer;
 pub mod budget;
 pub mod classifier;
 pub mod contacts_ctx;
+pub mod direct;
 pub mod embed_cache;
 pub mod embedder;
 #[cfg(test)]
 mod eval;
 pub mod fusion;
 pub mod indexer;
+pub mod period;
 pub mod retrieval;
 pub mod router;
 pub mod types;
@@ -168,7 +170,7 @@ pub async fn ask_core_with(
     // 1c. [B26.2] Темпоральный префильтр: явный период («вчера», «в прошлом
     // месяце», «в июне») сужает архив до звонков за период. Пустой период →
     // честное «не нашлось» без похода в поиск и LLM.
-    let period_filter = router::period_call_filter(pool, &question).await?;
+    let period_filter = period::period_call_filter(pool, &question).await?;
     if let Some(set) = &period_filter {
         if set.is_empty() {
             let ans = AssistantAnswer {
