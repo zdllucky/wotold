@@ -123,9 +123,9 @@ pub async fn regenerate_title(
         AppError::Other("regenerate_title требует AppHandle (внутренняя ошибка)".into())
     })?;
     let (provider, _preset) =
-        crate::pipeline::build_local_llm_provider(pool, app_data_dir, app, &s).await?;
-    // [Q] call_id → LLM-очередь.
-    let provider = provider.with_call(call_id);
+        // [Q/TD-36] call_id → LLM-очередь; метка ставится внутри общего билдера.
+        crate::pipeline::build_local_llm_provider(pool, app_data_dir, app, &s, Some(call_id))
+            .await?;
     let request = LlmRequest {
         model: None,
         system: build_title_prompt(effective_lang.as_deref()),

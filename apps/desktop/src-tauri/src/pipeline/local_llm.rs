@@ -135,6 +135,10 @@ pub async fn build_local_llm_provider(
     app_data_dir: &std::path::Path,
     app: &AppHandle,
     s: &PipelineSettings,
+    // [TD-36] Метка звонка для очереди ресурсов: QueueMonitor показывает, чей
+    // звонок сейчас у LLM. Раньше её ставил только маршрут записи — потому
+    // что он собирал провайдера сам, мимо этой функции.
+    call_id: Option<&str>,
 ) -> Result<
     (
         crate::local_engine::llm::LocalLlamaProvider,
@@ -183,8 +187,12 @@ pub async fn build_local_llm_provider(
         };
 
     // [P1.3] Per-preset timeout: Light 5min / Balanced 10min / Quality 15min.
-    let provider = LocalLlamaProvider::for_preset(app_data_dir, llm_id)
-        .with_timeout(crate::local_engine::llm::timeout_for_preset(preset))
+    let mut provider = LocalLlamaProvider::for_preset(app_data_dir, llm_id)
+        .with_timeout(crate::local_engine::llm::timeout_for_preset(preset));
+    if let Some(id) = call_id {
+        provider = provider.with_call(id.to_string());
+    }
+    let provider = provider
         .with_app(app.clone())
         .await
         .with_draft_model(draft_path);
@@ -232,7 +240,8 @@ pub async fn warm_up_local_llm(pool: &SqlitePool, app_data_dir: &Path, app: &App
         start_resident_server(app, pool, app_data_dir).await;
         return;
     }
-    let (provider, preset) = match build_local_llm_provider(pool, app_data_dir, app, &s).await {
+    let (provider, preset) = match build_local_llm_provider(pool, app_data_dir, app, &s, None).await
+    {
         Ok(p) => p,
         Err(e) => {
             log::info!("warm-up: local LLM недоступен (skip): {e}");
@@ -353,7 +362,8 @@ pub(crate) async fn regenerate_recap_local(
         return Err(AppError::Other("local_engine_transcript_empty".into()));
     }
 
-    let (provider, preset) = build_local_llm_provider(pool, app_data_dir, app, s).await?;
+    let (provider, preset) =
+        build_local_llm_provider(pool, app_data_dir, app, s, Some(call_id)).await?;
     // [Q] call_id → LLM-очередь (QueueMonitor видит чей звонок у llama).
     let provider = provider.with_call(call_id);
     let llm_id = preset.llm_model_id();
