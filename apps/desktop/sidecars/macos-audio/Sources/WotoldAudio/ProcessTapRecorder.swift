@@ -48,6 +48,27 @@ final class ProcessTapRecorder: NSObject {
     private let level = AtomicLevel()
     private var isPaused = false
 
+    // [TD-44] Обнаружение потери системной дорожки. Механизм близнеца
+    // (TD-21e) сюда не переносится дословно: `AVAudioEngine` здесь нет, а
+    // значит нет и `AVAudioEngineConfigurationChange`. Аналог — слушатель
+    // свойства Core Audio на смену устройства вывода как быстрый триггер
+    // плюс тот же самый детектор тишины, который про микрофон ничего не
+    // знает. Решение «сообщать пользователю» принимает детектор, а не
+    // слушатель: свойство меняется и без потери кадров.
+    private var stallDetector = AudioStallDetector()
+    private var stallTimer: DispatchSourceTimer?
+    private let stallTickInterval: TimeInterval = 1.0
+    private var defaultOutputListener: AudioObjectPropertyListenerBlock?
+    /// Удался ли последний пересбор цепочки tap → aggregate → IOProc. Идёт в
+    /// `device_recovered.restarted`: дорожка могла вернуться и сама.
+    private var lastRebuildSucceeded = false
+    /// Идёт остановка — пересобирать захват нельзя (см. близнеца).
+    private var isStopping = false
+
+    /// Куда сообщать о потере и возврате дорожки. Ставится извне (App.swift),
+    /// чтобы рекордер не знал про stdout и протокол.
+    var onDeviceEvent: ((SidecarEvent) -> Void)?
+
     var currentRms: Float { level.value }
 
     /// [TD-07] Пауза на уровне ЗАХВАТА: кадры дропаются до записи в WAV.
@@ -57,8 +78,16 @@ final class ProcessTapRecorder: NSObject {
     /// Флаг читается и пишется на той же serial queue, что и обработчик
     /// кадров, поэтому отдельная синхронизация не нужна.
     func setPaused(_ paused: Bool) {
-        queue.sync { self.isPaused = paused }
+        queue.sync {
+            self.isPaused = paused
+            // [TD-44] Детектор обязан знать про паузу: на паузе кадров нет по
+            // замыслу, и без этого TD-07 выглядела бы как отвалившееся
+            // устройство (близнец делает то же самое).
+            self.stallDetector.setPaused(paused, at: self.now())
+        }
     }
+
+    private func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     func start(systemURL: URL) async throws {
         // [TD-21b] Повторный start() без остановки предыдущего перезаписывал
@@ -79,6 +108,65 @@ final class ProcessTapRecorder: NSObject {
             throw Self.error("failed to create output format (16kHz mono i16)")
         }
 
+        // 1-5. Tap + aggregate device.
+        let chain = try Self.makeTapChain()
+
+        // 6. Открыть WAV writer.
+        let writer: WAVWriter
+        do {
+            writer = try WAVWriter(url: systemURL, sampleRate: 16_000, channels: 1)
+        } catch {
+            Self.destroyChain(aggregateID: chain.aggregateID, tapID: chain.tapID)
+            throw error
+        }
+
+        // 7-8. IOProc поверх aggregate + старт IO.
+        let validProcID: AudioDeviceIOProcID
+        do {
+            validProcID = try attachIOProc(aggregateID: chain.aggregateID)
+        } catch {
+            try? writer.close()
+            Self.destroyChain(aggregateID: chain.aggregateID, tapID: chain.tapID)
+            throw error
+        }
+
+        // Стор всех ресурсов в инстансе.
+        self.tapID = chain.tapID
+        self.aggregateID = chain.aggregateID
+        self.ioProcID = validProcID
+        self.wavWriter = writer
+        self.outputFormat = outFormat
+        self.inputFormat = chain.inFormat
+        self.bytesWritten = 0
+
+        // M1.5: периодический flush header на диск для crash-safety.
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + flushInterval, repeating: flushInterval)
+        timer.setEventHandler { [weak self] in
+            guard let w = self?.wavWriter else { return }
+            try? w.flushHeader()
+        }
+        timer.resume()
+        flushTimer = timer
+
+        // [TD-44] Наблюдение за живостью дорожки — после того как всё
+        // поднялось, иначе первый же тик увидел бы тишину.
+        startStallWatchdog()
+        observeDefaultOutputDevice()
+    }
+
+    // MARK: - Сборка цепочки tap → aggregate → IOProc
+
+    /// Всё, что нужно, чтобы кадры пошли: tap, aggregate-устройство поверх
+    /// него и формат входа. Выделено из `start`, потому что при потере
+    /// устройства ту же цепочку надо собрать заново, не трогая WAV-writer.
+    private struct TapChain {
+        let tapID: AudioObjectID
+        let aggregateID: AudioObjectID
+        let inFormat: AVAudioFormat
+    }
+
+    private static func makeTapChain() throws -> TapChain {
         // 1. Описать глобальный mono tap. Пустой массив excludes = ловить
         // ВСЁ system audio. muteBehavior=.unmuted чтобы юзер продолжал
         // слышать собеседника.
@@ -143,57 +231,36 @@ final class ProcessTapRecorder: NSObject {
             throw Self.error("AudioHardwareCreateAggregateDevice failed (\(status))")
         }
 
-        // 6. Открыть WAV writer.
-        let writer: WAVWriter
-        do {
-            writer = try WAVWriter(url: systemURL, sampleRate: 16_000, channels: 1)
-        } catch {
-            AudioHardwareDestroyAggregateDevice(newAggregateID)
-            AudioHardwareDestroyProcessTap(newTapID)
-            throw error
-        }
+        return TapChain(tapID: newTapID, aggregateID: newAggregateID, inFormat: inFormat)
+    }
 
-        // 7. Подписаться на аудио-буферы через IOProc.
+    private static func destroyChain(aggregateID: AudioObjectID, tapID: AudioObjectID) {
+        if aggregateID != kAudioObjectUnknown {
+            AudioHardwareDestroyAggregateDevice(aggregateID)
+        }
+        if tapID != kAudioObjectUnknown {
+            AudioHardwareDestroyProcessTap(tapID)
+        }
+    }
+
+    /// Повесить IOProc на aggregate и запустить IO. WAV-writer сюда не
+    /// передаётся намеренно: за его закрытие отвечает вызывающий, который
+    /// знает, создавал он writer или переиспользует существующий.
+    private func attachIOProc(aggregateID: AudioObjectID) throws -> AudioDeviceIOProcID {
         var procID: AudioDeviceIOProcID?
-        status = AudioDeviceCreateIOProcIDWithBlock(&procID, newAggregateID, queue) {
+        var status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) {
             [weak self] _, inInputData, _, _, _ in
             self?.handleAudio(inputData: inInputData)
         }
         guard status == noErr, let validProcID = procID else {
-            try? writer.close()
-            AudioHardwareDestroyAggregateDevice(newAggregateID)
-            AudioHardwareDestroyProcessTap(newTapID)
             throw Self.error("AudioDeviceCreateIOProcIDWithBlock failed (\(status))")
         }
-
-        // 8. Стартуем IO.
-        status = AudioDeviceStart(newAggregateID, validProcID)
+        status = AudioDeviceStart(aggregateID, validProcID)
         guard status == noErr else {
-            AudioDeviceDestroyIOProcID(newAggregateID, validProcID)
-            try? writer.close()
-            AudioHardwareDestroyAggregateDevice(newAggregateID)
-            AudioHardwareDestroyProcessTap(newTapID)
+            AudioDeviceDestroyIOProcID(aggregateID, validProcID)
             throw Self.error("AudioDeviceStart failed (\(status))")
         }
-
-        // Стор всех ресурсов в инстансе.
-        self.tapID = newTapID
-        self.aggregateID = newAggregateID
-        self.ioProcID = validProcID
-        self.wavWriter = writer
-        self.outputFormat = outFormat
-        self.inputFormat = inFormat
-        self.bytesWritten = 0
-
-        // M1.5: периодический flush header на диск для crash-safety.
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + flushInterval, repeating: flushInterval)
-        timer.setEventHandler { [weak self] in
-            guard let w = self?.wavWriter else { return }
-            try? w.flushHeader()
-        }
-        timer.resume()
-        flushTimer = timer
+        return validProcID
     }
 
     /// [M13] Атомарно завершает текущий chunk WAV и открывает новый. IOProc
@@ -225,6 +292,13 @@ final class ProcessTapRecorder: NSObject {
     func stop() async throws -> StopResult {
         flushTimer?.cancel()
         flushTimer = nil
+        // [TD-44] Гасим наблюдение ДО остановки IO: иначе тишина после
+        // `AudioDeviceStop` выглядела бы как потеря устройства, и юзер
+        // получал бы `device_lost` на каждой нормальной остановке.
+        stallTimer?.cancel()
+        stallTimer = nil
+        removeDefaultOutputObserver()
+        queue.sync { self.isStopping = true }
 
         // [TD-21a] Сначала глушим источник кадров, потом закрываем файл — и
         // закрываем его НА `queue`, а не на вызывающем потоке.
@@ -273,9 +347,140 @@ final class ProcessTapRecorder: NSObject {
         return StopResult(bytesWritten: bytes)
     }
 
+    // MARK: - [TD-44] Потеря устройства
+
+    /// Watchdog поверх детектора тишины. Тот же приём, что у близнеца:
+    /// решение принимает детектор, таймер лишь тикает.
+    private func startStallWatchdog() {
+        stallTimer?.cancel()
+        // Детектор читается и пишется обработчиком таймера и IOProc'ом — оба
+        // на `queue`. Инициализация обязана идти там же: `start()` исполняется
+        // на потоке вызывающего, и без sync это гонка со стартом записи.
+        queue.sync {
+            self.stallDetector = AudioStallDetector()
+            self.stallDetector.started(at: self.now())
+            self.isStopping = false
+        }
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + stallTickInterval, repeating: stallTickInterval)
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard let event = self.stallDetector.tick(at: self.now()) else { return }
+            self.report(event)
+            // Слушатель свойства мог не сработать вовсе (tap отвалился без
+            // смены устройства вывода) — пробуем поднять дорожку сами.
+            self.rebuildTapChain()
+        }
+        t.resume()
+        stallTimer = t
+    }
+
+    /// Смена устройства вывода — быстрый триггер пересбора. Сообщение
+    /// пользователю решает не она: устройство может смениться без единого
+    /// потерянного кадра, и говорить о потере было бы враньём.
+    private func observeDefaultOutputDevice() {
+        removeDefaultOutputObserver()
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.queue.async { self?.rebuildTapChain() }
+        }
+        let status = AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &address, queue, block
+        )
+        if status == noErr {
+            defaultOutputListener = block
+        } else {
+            FileHandle.standardError.write(
+                Data("system default-output listener failed (\(status))\n".utf8)
+            )
+        }
+    }
+
+    private func removeDefaultOutputObserver() {
+        guard let block = defaultOutputListener else { return }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        _ = AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &address, queue, block
+        )
+        defaultOutputListener = nil
+    }
+
+    /// Пересобрать tap → aggregate → IOProc, не трогая WAV-writer: файл и
+    /// накопленные байты те же, меняется только источник кадров.
+    ///
+    /// Вызывается с двух сторон (слушатель свойства и watchdog) и обязан быть
+    /// идемпотентным: пока кадры идут, трогать ничего нельзя — пересбор сам
+    /// по себе роняет несколько десятков миллисекунд звука.
+    private func rebuildTapChain() {
+        guard !isStopping, wavWriter != nil else { return }
+        // Кадры идут — значит дорожка жива, и повод не наш.
+        if !stallDetector.stalled { return }
+
+        if aggregateID != kAudioObjectUnknown, let procID = ioProcID {
+            _ = AudioDeviceStop(aggregateID, procID)
+            _ = AudioDeviceDestroyIOProcID(aggregateID, procID)
+        }
+        Self.destroyChain(aggregateID: aggregateID, tapID: tapID)
+        aggregateID = kAudioObjectUnknown
+        tapID = kAudioObjectUnknown
+        ioProcID = nil
+
+        do {
+            let chain = try Self.makeTapChain()
+            let procID = try attachIOProc(aggregateID: chain.aggregateID)
+            tapID = chain.tapID
+            aggregateID = chain.aggregateID
+            ioProcID = procID
+            inputFormat = chain.inFormat
+            // Новый tap — потенциально новый входной формат. Конвертер
+            // построен под старый; переиспользовать его значило бы писать
+            // мусор в WAV.
+            converter = nil
+            lastRebuildSucceeded = true
+        } catch {
+            lastRebuildSucceeded = false
+            FileHandle.standardError.write(
+                Data("system tap rebuild failed: \(error.localizedDescription)\n".utf8)
+            )
+        }
+    }
+
+    private func report(_ event: AudioStallDetector.Event) {
+        switch event {
+        case let .lost(since):
+            lastRebuildSucceeded = false
+            // Индикатор обязан упасть в ноль: иначе он замирает на последнем
+            // значении и показывает живой сигнал у мёртвой дорожки.
+            level.reset()
+            onDeviceEvent?(
+                .deviceLost(
+                    leg: .system,
+                    message: DeviceEventText.lost(leg: .system, silentSec: now() - since)
+                ))
+        case let .recovered(gapSec):
+            onDeviceEvent?(
+                .deviceRecovered(leg: .system, gapSec: gapSec, restarted: lastRebuildSucceeded))
+            lastRebuildSucceeded = false
+        }
+    }
+
     // MARK: - IOProc
 
     private func handleAudio(inputData: UnsafePointer<AudioBufferList>) {
+        // [TD-44] Кадр пришёл — до всех проверок. Дорожка жива даже когда мы
+        // этот кадр дропаем (пауза, битый формат): «замолчала» означает, что
+        // Core Audio перестал звать обработчик, а не что мы ничего не пишем.
+        if let event = stallDetector.frameArrived(at: now()) {
+            report(event)
+        }
         // [TD-07] См. AudioRecorder.processBuffer — системная дорожка на паузе
         // тоже не пишется, иначе собеседника было бы слышно в «приватной» части.
         if isPaused {
