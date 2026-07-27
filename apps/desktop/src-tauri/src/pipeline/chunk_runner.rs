@@ -23,10 +23,9 @@ use std::path::PathBuf;
 use sqlx::SqlitePool;
 use tauri::AppHandle;
 
-use crate::embeddings::{self, StubEmbedder};
 use crate::events::{ChunkDoneEvent, EventBus};
 use crate::local_engine::stt::is_hallucination;
-use crate::pipeline::clusters::extract_clusters;
+use crate::pipeline::clusters::load_and_extract_clusters;
 use crate::providers::transcription::{
     DiarizedTranscript, TranscriptSegment, TranscriptionError, TranscriptionOpts,
     TranscriptionProvider,
@@ -251,7 +250,9 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
             &mic_path,
             &system_path,
             dir,
-        ) {
+        )
+        .await
+        {
             Ok(j) => Some(j),
             Err(e) => {
                 log::warn!("chunk {call_id}/{chunk_idx} embeddings extract failed (degraded): {e}");
@@ -304,24 +305,17 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
     })
 }
 
-/// [M13.2.1] Собрать `HashMap<speaker_tag, Vec<f32>>` (JSON-сериализованный)
-/// из mic+system transcript'ов одного chunk'а. Embedder резолвится через
-/// `try_load_onnx_embedder` (= StubEmbedder если voice-onnx feature off /
-/// модель не скачана → empty embeddings, identity remap в assembly).
-fn build_chunk_embeddings_json(
+/// [M13.2.1] Собрать `HashMap<speaker_tag, Vec<f32>>` (JSON) из mic+system
+/// transcript'ов одного chunk'а. Embedder резолвится внутри
+/// `load_and_extract_clusters` (StubEmbedder если модель не скачана → empty
+/// embeddings, identity remap). [TD-18] async: WAV+ONNX в blocking-пуле.
+async fn build_chunk_embeddings_json(
     mic_transcript: &DiarizedTranscript,
     sys_transcript: Option<&DiarizedTranscript>,
     mic_path: &std::path::Path,
     system_path: &std::path::Path,
     app_data_dir: &std::path::Path,
 ) -> Result<String, AppError> {
-    let model_path = app_data_dir.join("models").join("embedder.onnx");
-    let embedder: Box<dyn embeddings::Embedder> =
-        match embeddings::try_load_onnx_embedder(&model_path) {
-            Some(e) => e,
-            None => Box::new(StubEmbedder),
-        };
-
     // Merged = все сегменты обоих дорожек. extract_clusters сам routes
     // owner-tagged → mic.wav, прочие → system.wav.
     let mut merged: Vec<TranscriptSegment> = Vec::with_capacity(
@@ -331,7 +325,14 @@ fn build_chunk_embeddings_json(
     if let Some(sys) = sys_transcript {
         merged.extend(sys.segments.iter().cloned());
     }
-    let clusters = extract_clusters(&merged, mic_path, system_path, embedder.as_ref())?;
+    let clusters = load_and_extract_clusters(
+        merged,
+        mic_path.to_path_buf(),
+        system_path.to_path_buf(),
+        app_data_dir,
+        "chunk embeddings",
+    )
+    .await?;
     serde_json::to_string(&clusters)
         .map_err(|e| AppError::Other(format!("serialize chunk embeddings: {e}")))
 }

@@ -13,9 +13,7 @@ use crate::{
     pipeline::{
         recap_md,
         summary_v2::{ActionItemCategory, CallSummaryV2, CallType},
-        summary_validator::{
-            self, strip_unverified_evidence, validate_schema, DEFAULT_FUZZY_THRESHOLD,
-        },
+        summary_validator::{self, validate_schema, DEFAULT_FUZZY_THRESHOLD},
     },
     AppError,
 };
@@ -221,14 +219,13 @@ async fn persist_summary_v2(
     generation_ms: Option<i64>,
     pipeline_mode: &str,
 ) -> Result<(), AppError> {
-    // 1. Strip unverified evidence — drops items с фабрикованными quotes.
-    let (mut summary, nulled) =
-        strip_unverified_evidence(summary, transcript_md, DEFAULT_FUZZY_THRESHOLD);
+    // 1. Обнулить фабрикованные цитаты + схлопнуть дубли (same intent в разных
+    //    chunk'ах). [TD-18] Считается в blocking-пуле — см. `strip_and_dedup`.
+    let (summary, nulled) =
+        summary_validator::strip_and_dedup(summary, transcript_md, DEFAULT_FUZZY_THRESHOLD).await?;
     if nulled > 0 {
         log::info!("recap {call_id}: обнулено {nulled} недостоверных цитат (пункты сохранены)");
     }
-    // Dedup duplicates (same intent в разных chunk'ах).
-    summary_validator::dedup_items(&mut summary);
     // Schema warnings — non-fatal, log only.
     let schema_errors = validate_schema(&summary);
     if !schema_errors.is_empty() {
