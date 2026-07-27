@@ -146,7 +146,7 @@ export function DesignSystemPage() {
           </DsSection>
 
           {/* 2 · Typography */}
-          <DsSection title="Типографика" note="Hanken Grotesk · IBM Plex Mono">
+          <DsSection title="Типографика" note="Manrope · IBM Plex Mono">
             <div
               style={{
                 fontSize: 'var(--t-28)',
