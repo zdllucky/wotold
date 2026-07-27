@@ -20,6 +20,7 @@ use crate::{
         preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
         stt::{LocalWhisperProvider, TrackKind},
     },
+    pipeline::settings::{mic_diarization_enabled, read_num_speakers_override},
     pipeline::{
         chunk_orchestrator::{self, ChunkOrchestratorConfig},
         chunk_runner::{self, ChunkRunInput},
@@ -31,25 +32,6 @@ use crate::{
 
 /// [M13.1.5c] Settings key для feature flag. См. PRD §M13.1.5.
 const SETTING_CHUNKED_PIPELINE: &str = "recording.chunked_pipeline";
-/// [M13 follow-up, P-fix7] Mic diarization toggle. Default OFF (включается
-/// только явным '1'/'true'). См. api/settings.ts `MIC_DIARIZATION_ENABLED`.
-const SETTING_MIC_DIARIZATION: &str = "mic_diarization_enabled";
-/// [P1.2] Labs: «Force N speakers» override для sortformer's `num_clusters`.
-/// `None` (или невалидное значение) = auto-detect. Допустимые: "2" | "3" | "4"
-/// (clamp к 1..=MAX_LOCAL_SPEAKERS в `SortformerDiarizer::with_num_speakers`).
-const SETTING_MIC_DIARIZATION_NUM_SPEAKERS: &str = "mic_diarization_num_speakers";
-
-/// [P1.2] Helper: прочитать `SETTING_MIC_DIARIZATION_NUM_SPEAKERS` из DB и
-/// вернуть `Option<i32>` с clamping. Out-of-range / non-numeric → `None`.
-/// [P14.3] Range 1..=MAX_LOCAL_SPEAKERS (=3). Старые legacy values "4" →
-/// None (auto fallback) — `with_num_speakers` log warn'нёт.
-async fn read_num_speakers_override(pool: &sqlx::SqlitePool) -> Result<Option<i32>, AppError> {
-    Ok(db::get_setting(pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS)
-        .await?
-        .as_deref()
-        .and_then(|s| s.parse::<i32>().ok())
-        .filter(|n| (1..=crate::local_engine::diarization::MAX_LOCAL_SPEAKERS as i32).contains(n)))
-}
 
 /// [M13 fix] Выбор путей, в которые sidecar физически пишет первый chunk.
 /// chunked → `chunks/0/{mic,system}.wav`; non-chunked → root `{mic,system}.wav`.
@@ -119,12 +101,9 @@ pub(crate) async fn build_chunk_providers(
         .await?
         .unwrap_or_else(|| "auto".to_string());
     // [P-fix7] Mic diarization — Default OFF (mic = микрофон владельца, M2.4).
-    let mic_diarization = matches!(
-        db::get_setting(db, SETTING_MIC_DIARIZATION)
-            .await?
-            .as_deref(),
-        Some("1") | Some("true")
-    );
+    // [TD-36] Обе настройки читаются общим типизированным путём — клэмп и
+    // разбор живут в одном месте с локальным маршрутом.
+    let mic_diarization = mic_diarization_enabled(db).await?;
     let mic_diarization_num_speakers = read_num_speakers_override(db).await?;
 
     Ok(ChunkProviders {

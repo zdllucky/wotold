@@ -15,6 +15,22 @@ use crate::{db, AppError};
 use super::settings::PipelineSettings;
 use super::{local_orchestrator, recap, recap_progress, recap_steps, speaker_prompt_ctx};
 
+/// [P5.1 / TD-36] Ярлык движка по id модели — тот, что уходит в
+/// `calls.summary_engine` и в баннер рекапа.
+///
+/// Был скопирован дословно в двух местах (маршрут записи и регенерация), и
+/// это ровно тот случай, когда копия молча устаревает: добавили бы четвёртый
+/// размер модели — один путь показывал бы «local-qwen», другой честный
+/// ярлык, и различить их можно было бы только по звонку.
+pub(crate) fn local_engine_label(llm_id: &str) -> &'static str {
+    match llm_id {
+        id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
+        id if id.contains("3b") => "local-qwen-3b",
+        id if id.contains("7b") => "local-qwen-7b",
+        _ => "local-qwen",
+    }
+}
+
 /// [P5.1] Resolve current local preset → engine label string для persist
 /// в `calls.summary_engine`. Best-effort: на ошибке чтения preset либо
 /// None preset возвращает None — caller передаёт это в `set_recap_failure`
@@ -384,12 +400,7 @@ pub(crate) async fn regenerate_recap_local(
     .await
     .map_err(|e| AppError::Other(format!("local_engine_llm_failed: {e}")))?;
 
-    let local_engine_label = match llm_id.as_str() {
-        id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
-        id if id.contains("3b") => "local-qwen-3b",
-        id if id.contains("7b") => "local-qwen-7b",
-        _ => "local-qwen",
-    };
+    let local_engine_label = local_engine_label(llm_id.as_str());
     recap::persist_recap_from_json(
         pool,
         call_id,
@@ -409,4 +420,39 @@ pub(crate) async fn regenerate_recap_local(
         crate::local_engine::models::touch_usage(pool, preset.whisper_model_id().as_str()).await;
     let _ = crate::local_engine::models::touch_usage(pool, llm_id.as_str()).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_label_maps_every_catalog_size() {
+        // Ярлык уходит в calls.summary_engine и в баннер рекапа: перепутанный
+        // размер модели — это не косметика, а неверная строка в истории звонка.
+        assert_eq!(
+            local_engine_label("qwen2.5-1.5b-instruct"),
+            "local-qwen-1.5b"
+        );
+        assert_eq!(
+            local_engine_label("qwen2.5-1_5b-instruct"),
+            "local-qwen-1.5b"
+        );
+        assert_eq!(local_engine_label("qwen2.5-3b-instruct"), "local-qwen-3b");
+        assert_eq!(local_engine_label("qwen2.5-7b-instruct"), "local-qwen-7b");
+    }
+
+    #[test]
+    fn engine_label_falls_back_without_lying_about_size() {
+        // Незнакомый id — общий ярлык, а не «самый популярный размер».
+        assert_eq!(local_engine_label("gemma-2-2b-it"), "local-qwen");
+        assert_eq!(local_engine_label(""), "local-qwen");
+    }
+
+    #[test]
+    fn engine_label_prefers_exact_size_over_substring_order() {
+        // «1.5b» содержит «5b», но не «3b»/«7b» — порядок веток в match
+        // единственное, что удерживает 1.5B от ярлыка обычного размера.
+        assert_eq!(local_engine_label("model-1.5b-q4"), "local-qwen-1.5b");
+    }
 }

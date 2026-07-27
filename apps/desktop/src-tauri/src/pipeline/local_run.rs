@@ -283,13 +283,11 @@ pub(super) async fn run_local_inner(
     //    `speaker:0..4` (cap=4). Diarization non-fatal: при отсутствии моделей
     //    или voice-onnx feature off → fall back на оригинальный sys_t,
     //    система-трек остаётся single-bucket (degraded но рабочий).
-    // [P1.2] Force-N-speakers Labs override (read once, applied к mic + system).
-    // None = auto. clamp 1..=MAX_LOCAL_SPEAKERS внутри `with_num_speakers`.
-    let num_speakers_override: Option<i32> = db::get_setting(pool, "mic_diarization_num_speakers")
-        .await?
-        .as_deref()
-        .and_then(|s| s.parse::<i32>().ok())
-        .filter(|n| (1..=4).contains(n));
+    // [P1.2 / TD-36] Force-N-speakers Labs override (read once, applied к mic +
+    // system). Разбор общий с обвязкой чанков: до этого здесь стоял свой
+    // `1..=4`, и «4 голоса» работали в одном пути записи и молча
+    // игнорировались в другом.
+    let num_speakers_override = super::settings::read_num_speakers_override(pool).await?;
     let sys_t = diarize_system_track(
         &ctx.app_data_dir,
         &ctx.system_path,
@@ -471,14 +469,9 @@ pub(super) async fn run_local_inner(
         ))),
     };
 
-    // [P5.1] Hoist label derivation outside match — нужен в обеих ветках
-    // (success persist + failure atomic UPDATE).
-    let local_engine_label = match llm_id.as_str() {
-        id if id.contains("1.5b") || id.contains("1_5b") => "local-qwen-1.5b",
-        id if id.contains("3b") => "local-qwen-3b",
-        id if id.contains("7b") => "local-qwen-7b",
-        _ => "local-qwen",
-    };
+    // [P5.1] Label нужен в обеих ветках (success persist + failure atomic
+    // UPDATE). [TD-36] Вывод ярлыка — общий с путём регенерации.
+    let local_engine_label = super::local_llm::local_engine_label(llm_id.as_str());
 
     match llm_result {
         Ok(outcome) => {
