@@ -8,13 +8,99 @@
 // Fallback: если raw_stt.json отсутствует (старые звонки до B10) —
 // рендер ReactMarkdown оригинального transcript.md.
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { CallSpeakerView } from '../api/speakers';
 import { Avatar, Empty, Icon } from '../ui';
 import { useI18n } from '../i18n';
 import { humanSpeakerLabel } from '../utils/callMeta';
 import { findActiveGroupIdx, type GroupRange } from '../lib/transcriptActive';
+
+/** [TD-27] Одна реплика. Вынесена и мемоизирована: `currentTime` тикает ~4
+ *  раза в секунду, и до этого КАЖДЫЙ тик перерисовывал все строки транскрипта
+ *  (часовой звонок — сотни `.turn`), потому что разметка жила прямо в теле
+ *  родителя. Теперь на тик перерисовываются ровно две строки: та, что
+ *  перестала быть активной, и та, что стала.
+ *
+ *  Props намеренно примитивные — объект пересоздавался бы на каждый рендер и
+ *  сравнение по ссылке всё бы обнулило. `onSeek` стабилизируется в родителе
+ *  через ref по той же причине. */
+/** [TD-27] Общая проверка reduced-motion для автоскролла. */
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+interface TurnRowProps {
+  tag: string;
+  color: string;
+  firstName: string;
+  text: string;
+  start: number;
+  isActive: boolean;
+  timecode: string;
+  emptyLabel: string;
+  onSeek?: (start: number) => void;
+  rowRef?: React.Ref<HTMLDivElement>;
+}
+
+const TurnRow = memo(function TurnRow({
+  color,
+  firstName,
+  text,
+  start,
+  isActive,
+  timecode,
+  emptyLabel,
+  onSeek,
+  rowRef,
+}: TurnRowProps) {
+  const isClickable = !!onSeek;
+  return (
+    <div
+      ref={rowRef}
+      className={'turn' + (isClickable ? ' turn--seek' : '') + (isActive ? ' turn--active' : '')}
+      onClick={isClickable ? () => onSeek!(start) : undefined}
+      role={isClickable ? 'button' : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onKeyDown={
+        isClickable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSeek!(start);
+              }
+            }
+          : undefined
+      }
+    >
+      <div>
+        <div className="turn-sp" style={{ color }}>
+          <Avatar name={firstName} color={color} size={20} />
+          {firstName}
+        </div>
+        <div className="turn-time">
+          {timecode}
+          {isClickable && (
+            <Icon name="play" size={9} style={{ marginLeft: 4, opacity: isActive ? 1 : 0 }} />
+          )}
+        </div>
+      </div>
+      <div className="turn-text">{text || <span className="subtle">{emptyLabel}</span>}</div>
+    </div>
+  );
+});
 
 interface Segment {
   start: number;
@@ -173,12 +259,23 @@ export const InteractiveTranscript = forwardRef<InteractiveTranscriptHandle, Pro
   // [B20.8] Auto-scroll active row: только в follow-режиме. Ручной скролл юзера
   // выключает follow (см. CallDetailPage listeners), кнопка в плеере включает
   // обратно и дёргает scrollToActive() через ref.
+  // [TD-27] `onSeek` приходит из CallDetailPage инлайновой стрелкой, то есть
+  // с новой ссылкой на каждый рендер. Без стабилизации memo на TurnRow не
+  // сработал бы вовсе: пропс менялся бы каждый тик.
+  const onSeekRef = useRef(onSeek);
+  onSeekRef.current = onSeek;
+  const handleSeek = useCallback((start: number) => onSeekRef.current?.(start), []);
+  const seekProp = onSeek ? handleSeek : undefined;
+
   const activeRowRef = useRef<HTMLDivElement | null>(null);
   useImperativeHandle(
     ref,
     () => ({
       scrollToActive: () => {
-        activeRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        activeRowRef.current?.scrollIntoView({
+          behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+          block: 'center',
+        });
       },
     }),
     [],
@@ -187,7 +284,14 @@ export const InteractiveTranscript = forwardRef<InteractiveTranscriptHandle, Pro
     if (!follow || activeIdx < 0) return;
     const el = activeRowRef.current;
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // [TD-27] Плавный скролл запускается на КАЖДОЙ смене активной реплики,
+    // то есть во время воспроизведения почти непрерывно. При
+    // prefers-reduced-motion это ровно тот случай, ради которого настройка и
+    // существует — прыгаем мгновенно. Приём тот же, что в useTypewriter.
+    el.scrollIntoView({
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+      block: 'center',
+    });
   }, [activeIdx, follow]);
 
   if (!segments || segments.length === 0) {
@@ -248,50 +352,20 @@ export const InteractiveTranscript = forwardRef<InteractiveTranscriptHandle, Pro
           .filter(Boolean)
           .join(' ');
         const isActive = idx === activeIdx;
-        const isClickable = !!onSeek;
         return (
-          <div
+          <TurnRow
             key={`${g.tag}-${idx}`}
-            ref={isActive ? activeRowRef : undefined}
-            className={
-              'turn' +
-              (isClickable ? ' turn--seek' : '') +
-              (isActive ? ' turn--active' : '')
-            }
-            onClick={isClickable ? () => onSeek!(start) : undefined}
-            role={isClickable ? 'button' : undefined}
-            tabIndex={isClickable ? 0 : undefined}
-            onKeyDown={
-              isClickable
-                ? (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onSeek!(start);
-                    }
-                  }
-                : undefined
-            }
-          >
-            <div>
-              <div className="turn-sp" style={{ color }}>
-                <Avatar name={firstName} color={color} size={20} />
-                {firstName}
-              </div>
-              <div className="turn-time">
-                {formatTimecode(start)}
-                {isClickable && (
-                  <Icon
-                    name="play"
-                    size={9}
-                    style={{ marginLeft: 4, opacity: isActive ? 1 : 0 }}
-                  />
-                )}
-              </div>
-            </div>
-            <div className="turn-text">
-              {text || <span className="subtle">…</span>}
-            </div>
-          </div>
+            tag={g.tag}
+            color={color}
+            firstName={firstName}
+            text={text}
+            start={start}
+            isActive={isActive}
+            timecode={formatTimecode(start)}
+            emptyLabel="…"
+            onSeek={seekProp}
+            rowRef={isActive ? activeRowRef : undefined}
+          />
         );
       })}
     </div>
