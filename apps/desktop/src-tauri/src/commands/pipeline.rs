@@ -264,7 +264,7 @@ pub async fn regenerate_empty_recaps(
             .await?;
         let blank = match recap {
             None => true,
-            Some(md) => crate::pipeline::recap::recap_md_is_blank(&md),
+            Some(md) => crate::pipeline::recap_render::recap_md_is_blank(&md),
         };
         if blank {
             targets.push(c.id.clone());
