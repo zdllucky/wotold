@@ -1127,23 +1127,45 @@ async fn run_local_inner(
                         prompt: None,
                     };
                     if mic.lang_detected.as_deref() != Some(call_lang.as_str()) {
-                        if let Ok(re) = mic_stt.transcribe(&ctx.mic_path, pinned.clone()).await {
-                            log::info!(
-                                "call {}: re-STT mic pinned lang={call_lang} (was {:?})",
+                        // [TD-15] Err-ветка обязательна: при провале повторного
+                        // STT (timeout сайдкара, OOM) звонок молча оставался с
+                        // mis-detected языком — тем самым [FOREIGN]-спамом, ради
+                        // которого фича и писалась, — и по логам нельзя было
+                        // понять, что re-STT вообще запускался.
+                        match mic_stt.transcribe(&ctx.mic_path, pinned.clone()).await {
+                            Ok(re) => {
+                                log::info!(
+                                    "call {}: re-STT mic pinned lang={call_lang} (was {:?})",
+                                    ctx.call_id,
+                                    mic.lang_detected
+                                );
+                                mic = re;
+                            }
+                            Err(e) => log::warn!(
+                                "call {}: re-STT mic (lang={call_lang}) failed, \
+                                 оставляем mis-detected {:?}: {e}",
                                 ctx.call_id,
                                 mic.lang_detected
-                            );
-                            mic = re;
+                            ),
                         }
                     }
                     if sys.lang_detected.as_deref() != Some(call_lang.as_str()) {
-                        if let Ok(re) = sys_stt.transcribe(&ctx.system_path, pinned).await {
-                            log::info!(
-                                "call {}: re-STT system pinned lang={call_lang} (was {:?})",
+                        // [TD-15] См. mic-ветку выше.
+                        match sys_stt.transcribe(&ctx.system_path, pinned).await {
+                            Ok(re) => {
+                                log::info!(
+                                    "call {}: re-STT system pinned lang={call_lang} (was {:?})",
+                                    ctx.call_id,
+                                    sys.lang_detected
+                                );
+                                sys = re;
+                            }
+                            Err(e) => log::warn!(
+                                "call {}: re-STT system (lang={call_lang}) failed, \
+                                 оставляем mis-detected {:?}: {e}",
                                 ctx.call_id,
                                 sys.lang_detected
-                            );
-                            sys = re;
+                            ),
                         }
                     }
                 }
