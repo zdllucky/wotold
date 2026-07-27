@@ -9,7 +9,9 @@
 
 :root {
   /* type */
-  --font: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* [TD-47] Manrope вместо Hanken Grotesk: у того нет базовой кириллицы,
+     и весь русский интерфейс уходил в системный фолбэк. */
+  --font: 'Manrope', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   --t-11: 11px; --t-12: 12px; --t-13: 13px; --t-14: 14px;
