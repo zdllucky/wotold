@@ -15,10 +15,21 @@ pub async fn insert_speaker_suggestions(
     // M3.7: НЕ удаляем owner row (он создан через auto_bind_owner_speaker и
     // тривиально привязан к пользователю — identify_speakers не работает с
     // owner_tag, см. identify.rs).
-    sqlx::query("DELETE FROM call_speakers WHERE call_id = ?1 AND speaker_tag != 'owner'")
-        .bind(call_id)
-        .execute(&mut *tx)
-        .await?;
+    //
+    // [TD-16] `AND confirmed = 0` — та же клауза, что в
+    // `prune_call_speakers_not_in`. Без неё повторный прогон сносил строки с
+    // `confirmed = 1` вместе с contact_id, cluster_embedding и auto_bound_at,
+    // то есть уничтожал подтверждённую пользователем привязку (священное
+    // действие по R2). Сейчас функция не подключена к пайплайну
+    // (`identify_speakers` никем не зовётся), так что это предохранитель на
+    // момент wire-up #26, а не активный баг.
+    sqlx::query(
+        "DELETE FROM call_speakers
+         WHERE call_id = ?1 AND speaker_tag != 'owner' AND confirmed = 0",
+    )
+    .bind(call_id)
+    .execute(&mut *tx)
+    .await?;
     for s in suggestions {
         let source = match s.source {
             crate::merge_signals::SuggestionSource::Embedding => "embedding",
@@ -221,12 +232,18 @@ pub async fn confirm_call_speaker(
     call_speaker_id: &str,
     contact_id: &str,
 ) -> Result<(), AppError> {
+    // [TD-16] Оба SELECT'а — ВНУТРИ транзакции. Раньше они читались с `pool`
+    // до `begin()`: конкурентный `set_call_speaker_cluster` мог перезаписать
+    // cluster между чтением и INSERT'ом в voice_samples, и в биометрию
+    // контакта уходил устаревший embedding.
+    let mut tx = pool.begin().await?;
+
     // Контакт должен существовать. FK contacts(id) уже это гарантирует, но
     // вернём явный AppError а не SQL-ошибку для UX.
     let contact_row: Option<(String, String, String)> =
         sqlx::query_as("SELECT id, attributes, COALESCE(NULL, '') FROM contacts WHERE id = ?1")
             .bind(contact_id)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *tx)
             .await?;
     let Some((_, attributes_json, _)) = contact_row else {
         return Err(AppError::NotFound(format!("contact {contact_id}")));
@@ -239,16 +256,21 @@ pub async fn confirm_call_speaker(
          FROM call_speakers WHERE id = ?1",
     )
     .bind(call_speaker_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
-    let mut tx = pool.begin().await?;
-    let updated =
-        sqlx::query("UPDATE call_speakers SET contact_id = ?1, confirmed = 1 WHERE id = ?2")
-            .bind(contact_id)
-            .bind(call_speaker_id)
-            .execute(&mut *tx)
-            .await?;
+    // [TD-16] `auto_bound_at = NULL`: подтверждение руками перестаёт быть
+    // авто-привязкой. Без сброса UI продолжал показывать баннер «↩ отменить»
+    // для того, что пользователь выбрал сам.
+    let updated = sqlx::query(
+        "UPDATE call_speakers
+         SET contact_id = ?1, confirmed = 1, auto_bound_at = NULL
+         WHERE id = ?2",
+    )
+    .bind(contact_id)
+    .bind(call_speaker_id)
+    .execute(&mut *tx)
+    .await?;
     if updated.rows_affected() == 0 {
         return Err(AppError::Other(format!(
             "call_speaker {call_speaker_id} not found"
@@ -600,6 +622,88 @@ mod tests {
         assert_eq!(speakers[0].speaker_tag, "owner");
         assert!(speakers[0].confirmed);
         assert_eq!(speakers[0].contact_id.as_deref(), Some(owner.id.as_str()));
+    }
+
+    // ============================================================
+    // [TD-16] Подтверждённое пользователем неприкосновенно
+    // ============================================================
+
+    #[tokio::test]
+    async fn insert_speaker_suggestions_preserves_confirmed_non_owner() {
+        // Регрессия TD-16: DELETE сносил строки с confirmed=1 вместе с
+        // contact_id/cluster_embedding/auto_bound_at. Owner-строка была
+        // защищена отдельно (тест ниже), а подтверждённая пользователем
+        // привязка обычного спикера — нет. Это мина под R2 на момент, когда
+        // identify_speakers подключат к пайплайну (#26).
+        use crate::merge_signals::{MergedSuggestion, SuggestionSource};
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = insert_contact_row(&db.pool, "Alice").await;
+        let bob = insert_contact_row(&db.pool, "Bob").await;
+
+        // Пользователь вручную подтвердил S1 → Alice.
+        let s1 = insert_speaker_row(&db.pool, &call.id, "S1", None).await;
+        confirm_call_speaker(&db.pool, &s1, &alice).await.unwrap();
+
+        // Повторный прогон identify_speakers предлагает S2 → Bob.
+        let suggestions = vec![MergedSuggestion {
+            speaker_tag: "S2".into(),
+            contact_id: bob.clone(),
+            display_name: "Bob".into(),
+            score: 0.9,
+            source: SuggestionSource::Embedding,
+        }];
+        insert_speaker_suggestions(&db.pool, &call.id, &suggestions)
+            .await
+            .unwrap();
+
+        let speakers = list_call_speakers(&db.pool, &call.id).await.unwrap();
+        let s1_row = speakers
+            .iter()
+            .find(|s| s.speaker_tag == "S1")
+            .expect("подтверждённая привязка S1 обязана пережить повторный прогон");
+        assert!(s1_row.confirmed, "confirmed-флаг не должен сбрасываться");
+        assert_eq!(
+            s1_row.contact_id.as_deref(),
+            Some(alice.as_str()),
+            "выбор пользователя не должен теряться"
+        );
+        assert!(
+            speakers.iter().any(|s| s.speaker_tag == "S2"),
+            "новое предложение при этом добавляется"
+        );
+    }
+
+    #[tokio::test]
+    async fn confirm_call_speaker_clears_auto_bound_at() {
+        // [TD-16] Ручное подтверждение перестаёт быть авто-привязкой, иначе UI
+        // показывает баннер «↩ отменить» для того, что выбрал сам юзер.
+        // Комплементарен `unbind_clears_auto_bound_at`.
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        let alice = insert_contact_row(&db.pool, "Alice").await;
+        let sid = insert_speaker_row(&db.pool, &call.id, "S1", None).await;
+
+        // Имитируем авто-привязку: проставляем auto_bound_at.
+        sqlx::query("UPDATE call_speakers SET auto_bound_at = ?1 WHERE id = ?2")
+            .bind("2026-07-24T00:00:00Z")
+            .bind(&sid)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        confirm_call_speaker(&db.pool, &sid, &alice).await.unwrap();
+
+        let auto_bound: Option<String> =
+            sqlx::query_scalar("SELECT auto_bound_at FROM call_speakers WHERE id = ?1")
+                .bind(&sid)
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert!(
+            auto_bound.is_none(),
+            "после ручного confirm auto_bound_at обязан быть NULL, получили {auto_bound:?}"
+        );
     }
 
     #[tokio::test]
