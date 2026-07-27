@@ -128,7 +128,7 @@ docs/                 Паспорт и сопутствующие докуме�
 4. **Verify.** Локально перед коммитом:
    - Rust: `cargo fmt --check`, `cargo check`, `cargo clippy -- -D warnings`, `cargo test`
    - TS: `pnpm -r typecheck`, `pnpm --filter <pkg> test`
-   - UI: live запуск (`pnpm tauri dev`) + проверка всех 6 theme×accent комбинаций для затронутых экранов.
+   - UI: live запуск (`pnpm tauri dev`) + проверка **light и dark** для затронутых экранов ([TD-39] раньше здесь стояло «6 theme×accent» — пикер акцентов убран в B18.5, акцент один (графит `ink`), реальных комбинаций две).
    - Хуки (PostToolUse) делают первые шаги автоматически — но финальная сверка ручная.
 5. **Code review.** Запустить `/code-review` (общий) или язык-специфичный (`/rust-review` для Rust, `code-reviewer` агент для TS) **до** коммита фичи в main. Замечания CRITICAL/HIGH — фиксить. UI-PR должен содержать design-gate alignment block.
 6. **Mark done.** Снять чек-бокс в `docs/ROADMAP.md` и TaskList харнесса одновременно.
