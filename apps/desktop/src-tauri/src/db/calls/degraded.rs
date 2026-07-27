@@ -32,6 +32,11 @@ pub enum DegradedFlag {
     /// Язык звонка определён, но пере-расшифровка под него не удалась:
     /// часть текста осталась распознанной не тем языком.
     LanguageRepinFailed,
+    /// [TD-45] В микрофонной дорожке был провал устройства; дыра заполнена
+    /// тишиной, чтобы дорожка не уехала относительно системной.
+    MicTrackGapPadded,
+    /// [TD-45] То же на системной дорожке.
+    SystemTrackGapPadded,
 }
 
 impl DegradedFlag {
@@ -43,6 +48,8 @@ impl DegradedFlag {
             Self::MicTrackNotDiarized => "mic_track_not_diarized",
             Self::SpeakerClusteringFailed => "speaker_clustering_failed",
             Self::LanguageRepinFailed => "language_repin_failed",
+            Self::MicTrackGapPadded => "mic_track_gap_padded",
+            Self::SystemTrackGapPadded => "system_track_gap_padded",
         }
     }
 }

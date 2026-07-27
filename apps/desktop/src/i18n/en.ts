@@ -288,6 +288,8 @@ export const en: TranslationStrings = {
       mic_track_not_diarized: 'Voices on your track were not separated',
       speaker_clustering_failed: 'Speakers were not grouped by voice',
       language_repin_failed: 'Some text was recognised in the wrong language',
+      mic_track_gap_padded: 'The microphone dropped out — the gap was padded with silence',
+      system_track_gap_padded: 'System audio dropped out — the gap was padded with silence',
     },
     notFound: 'Call not found.',
     tabRecap: 'Recap',

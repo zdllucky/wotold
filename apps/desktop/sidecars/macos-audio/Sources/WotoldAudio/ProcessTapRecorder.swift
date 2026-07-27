@@ -453,6 +453,26 @@ final class ProcessTapRecorder: NSObject {
         }
     }
 
+    /// [TD-45] Записать тишину длиной провала в текущий WAV. Ошибка записи не
+    /// фатальна: дорожка уже пострадала, ронять из-за выравнивания весь
+    /// захват — хуже.
+    private func padGapWithSilence(_ gapSec: TimeInterval) {
+        guard gapSec > 0, let writer = wavWriter else { return }
+        do {
+            let written = try writer.writeSilence(seconds: gapSec)
+            if written > 0 {
+                bytesWritten &+= UInt64(written)
+                FileHandle.standardError.write(
+                    Data("system track: дописано \(String(format: "%.1f", gapSec)) с тишины в провал\n".utf8)
+                )
+            }
+        } catch {
+            FileHandle.standardError.write(
+                Data("system track: не удалось выровнять провал: \(error.localizedDescription)\n".utf8)
+            )
+        }
+    }
+
     private func report(_ event: AudioStallDetector.Event) {
         switch event {
         case let .lost(since):
@@ -466,6 +486,13 @@ final class ProcessTapRecorder: NSObject {
                     message: DeviceEventText.lost(leg: .system, silentSec: now() - since)
                 ))
         case let .recovered(gapSec):
+            // [TD-45] Дыру заполняем тишиной ДО того, как в файл пойдут новые
+            // кадры. Дорожки сливаются по таймкодам внутри каждого WAV, и без
+            // этого весь остаток дорожки уезжает относительно второй ровно на
+            // длительность провала. Решение владельца: дописывать тишину.
+            // Фабрикация содержимого — поэтому событие ниже обязано дойти до
+            // UI (degraded-флаг, TD-37), а не остаться в логе.
+            padGapWithSilence(gapSec)
             onDeviceEvent?(
                 .deviceRecovered(leg: .system, gapSec: gapSec, restarted: lastRebuildSucceeded))
             lastRebuildSucceeded = false

@@ -296,6 +296,8 @@ const ruInternal = {
       mic_track_not_diarized: 'Голоса на вашей дорожке не разделены',
       speaker_clustering_failed: 'Спикеры не сгруппированы по голосам',
       language_repin_failed: 'Часть текста распознана не тем языком',
+      mic_track_gap_padded: 'Микрофон пропадал — пробел заполнен тишиной',
+      system_track_gap_padded: 'Системный звук пропадал — пробел заполнен тишиной',
     },
     notFound: 'Звонок не найден.',
     tabRecap: 'Саммари',

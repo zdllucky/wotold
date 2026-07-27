@@ -101,6 +101,50 @@ public final class WAVWriter {
         return byteCount
     }
 
+    /// [TD-45] Дописать тишину длиной `seconds`.
+    ///
+    /// Дорожки сливаются в общий таймлайн по таймкодам ВНУТРИ каждого WAV,
+    /// поэтому провал устройства на одной из них сдвигает все её последующие
+    /// реплики относительно второй ровно на длительность провала (замерено:
+    /// 4.8 с провала = 4.8 с рассинхрона до конца чанка). Тишина в дыре
+    /// выравнивает таймлайн.
+    ///
+    /// Решение владельца (TD-45): дописывать тишину — с оговоркой «если
+    /// потерю никак не восполнить». Мы действительно фабрикуем содержимое в
+    /// файле, который пользователь считает записью разговора, поэтому вызов
+    /// обязан сопровождаться видимым degraded-флагом на звонке (TD-37), а не
+    /// происходить молча.
+    ///
+    /// Возвращает число записанных байт (0, если аргумент нулевой либо упёрлись
+    /// в потолок RIFF). Пишет чанками, чтобы длинный провал не собирал
+    /// многомегабайтный `Data` в памяти целиком.
+    @discardableResult
+    public func writeSilence(seconds: Double) throws -> Int {
+        guard seconds.isFinite, seconds > 0 else { return 0 }
+        let bytesPerFrame = Int(channels) * MemoryLayout<Int16>.size
+        let frames = Int((seconds * Double(sampleRate)).rounded())
+        var remaining = frames * bytesPerFrame
+        guard remaining > 0 else { return 0 }
+
+        // 16 KiB на итерацию: провал в минуту на 16 кГц mono — это ~1.9 МБ,
+        // и собирать их одним буфером незачем.
+        let chunkBytes = 16 * 1024
+        var written = 0
+        while remaining > 0 {
+            let take = min(chunkBytes, remaining)
+            do {
+                try appendBytes(Data(count: take))
+            } catch WAVWriterError.sizeLimitReached {
+                // Потолок RIFF: молчим так же, как на обычной записи —
+                // про лимит уже сказано один раз в `appendBytes`.
+                return written
+            }
+            written += take
+            remaining -= take
+        }
+        return written
+    }
+
     /// [TD-21] Тестовый шов: подвести счётчик к границе, не записывая на диск
     /// реальные 4 GiB. `internal`, поэтому виден только тестам через
     /// `@testable import` — исполняемый таргет это другой модуль и вызвать
