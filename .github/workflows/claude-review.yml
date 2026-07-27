@@ -71,7 +71,7 @@ jobs:
 
       - name: Run Claude code-review
         if: steps.guard.outputs.enabled == 'true'
-        uses: anthropics/claude-code-action@28f83620103c48a57093dcc2837eec89e036bb9f # v0.0.63
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.183
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Авто-промпт для PR-открытия. На @claude меншене action автоматически
