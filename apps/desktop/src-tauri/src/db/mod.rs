@@ -182,6 +182,48 @@ pub mod test_support {
         let pool = init(dir.path()).await.expect("init db");
         TestDb { pool, _dir: dir }
     }
+
+    /// [TD-43] Контакт без consent/samples — минимальная строка для тестов
+    /// привязки спикеров. Жил в `calls/speakers.rs::tests`; поднят сюда,
+    /// когда suggestion-функции переехали в `calls/suggestions.rs` и оба
+    /// тест-модуля стали нуждаться в одном хелпере.
+    pub async fn insert_contact_row(pool: &SqlitePool, name: &str) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO contacts (id, display_name, is_owner, attributes, created_at, updated_at)
+             VALUES (?1, ?2, 0, '{}', ?3, ?3)",
+        )
+        .bind(&id)
+        .bind(name)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    /// [TD-43] Строка `call_speakers` без привязки (`confirmed = 0`).
+    pub async fn insert_speaker_row(
+        pool: &SqlitePool,
+        call_id: &str,
+        speaker_tag: &str,
+        suggestion_contact_id: Option<&str>,
+    ) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO call_speakers (id, call_id, speaker_tag, suggestion_contact_id, suggestion_score, suggestion_source, confirmed)
+             VALUES (?1, ?2, ?3, ?4, 0.85, 'embedding', 0)",
+        )
+        .bind(&id)
+        .bind(call_id)
+        .bind(speaker_tag)
+        .bind(suggestion_contact_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
 }
 
 #[cfg(test)]
