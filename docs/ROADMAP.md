@@ -173,7 +173,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [ ] **Consent-notice** — two-party consent (Калифорния + ~10 штатов, ЕС): продукт пишет системный звук без уведомления второй стороны, у бот-конкурентов consent встроен появлением бота в звонке. Нужен минимум FAQ/уведомление в онбординге — сейчас нет ничего. Формулировка — решение владельца.
 - [x] ~~**#44 X3 CF production provisioning**~~ **[REMOVED — local-only 0.3]** Прокси/Cloudflare/auth удалены из проекта; CF production provisioning больше не блокер релиза (`docs/DEPLOYMENT.md` удалён).
 - [ ] **`/security-scan` (W5)** на `local_engine/{models,llm,stt}.rs` + `capabilities/default.json` + `scripts/refresh-model-catalog.sh` — обязателен перед production release.
-- [ ] **Manual visual QA** — 6 theme×accent (light/dark × bordeaux/persian/ink) на всех экранах, включая Engine picker (M12.5) и ChunkProgressStrip (M13.3). Сюда же — live-реверификация двух бывших багов (playback модала + failed_reason badge).
+- [ ] **Manual visual QA** — light и dark ([TD-39]: пикер акцентов убран в B18.5, акцент один — графит `ink`; прежняя формулировка «6 theme×accent» отправляла проверять несуществующие режимы) на всех экранах, включая Engine picker (M12.5) и ChunkProgressStrip (M13.3). Сюда же — live-реверификация двух бывших багов (playback модала + failed_reason badge).
 
 ### B. Verification gaps (нужны реальные фикстуры / бинари)
 
