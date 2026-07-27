@@ -151,10 +151,11 @@ pub async fn reprocess_call(
     // delete_chunks ниже уводит нас на full-file путь по root. Поэтому СНАЧАЛА
     // склеиваем chunks→root (полная длина), иначе reprocess упрётся в missing-root
     // guard и «Переобработать целиком» кирпичит chunked-звонок.
-    if !state.store.mic_path(&call_id).exists() {
-        let chunks_dir = state.store.chunks_dir(&call_id);
+    let parsed_id = crate::call_id::CallId::parse(&call_id)?;
+    if !state.store.mic_path(&parsed_id).exists() {
+        let chunks_dir = state.store.chunks_dir(&parsed_id);
         if chunks_dir.exists() {
-            let call_dir = state.store.call_dir(&call_id);
+            let call_dir = state.store.call_dir(&parsed_id);
             tokio::task::spawn_blocking(move || {
                 crate::pipeline::audio_merger::merge_both_tracks(&chunks_dir, &call_dir);
             })
@@ -248,7 +249,10 @@ pub async fn regenerate_empty_recaps(
         // Реген требует transcript.md — без него regenerate_recap упадёт.
         let has_transcript = state
             .store
-            .read_artifact(&c.id, ArtifactKind::Transcript)
+            .read_artifact(
+                &crate::call_id::CallId::from_db(&c.id),
+                ArtifactKind::Transcript,
+            )
             .await?
             .is_some();
         if !has_transcript {
@@ -256,7 +260,7 @@ pub async fn regenerate_empty_recaps(
         }
         let recap = state
             .store
-            .read_artifact(&c.id, ArtifactKind::Recap)
+            .read_artifact(&crate::call_id::CallId::from_db(&c.id), ArtifactKind::Recap)
             .await?;
         let blank = match recap {
             None => true,

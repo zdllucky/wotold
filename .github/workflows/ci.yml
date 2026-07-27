@@ -1,5 +1,11 @@
 name: CI
 
+# [TD-02] Все actions запинены на полный commit-SHA; трейлинг-комментарий (# vX.Y.Z)
+# — машинный контракт с Dependabot, он бампает SHA и версию вместе.
+# Причина: mutable-теги (@v4, @beta, @stable) переписываются владельцем action'а,
+# и компрометация тега = выполнение чужого кода на раннере с нашими секретами.
+# Не заменять SHA обратно на тег — Dependabot сам предложит апгрейд PR'ом.
+
 on:
   pull_request:
   push:
@@ -27,8 +33,8 @@ jobs:
       migrations: ${{ steps.filter.outputs.migrations }}
       versions: ${{ steps.filter.outputs.versions }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: filter
         with:
           filters: |
@@ -67,9 +73,9 @@ jobs:
     if: needs.changes.outputs.versions == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
       - run: node scripts/check-versions.mjs
@@ -80,9 +86,9 @@ jobs:
     if: needs.changes.outputs.ts == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: pnpm
@@ -93,6 +99,11 @@ jobs:
         run: pnpm --filter @wotold/desktop typecheck
       - name: Typecheck @wotold/mcp
         run: pnpm --filter @wotold/mcp typecheck
+      # [TD-31] Ratchet: инлайн-стилей не должно становиться больше. Токен-
+      # дисциплина по цвету enforced хуком, по типографике и spacing — нет;
+      # это не даёт долгу расти, пока он сводится по мере касания файлов.
+      - name: Inline-style budget
+        run: node scripts/inline-style-budget.mjs --check
 
   ts-tests:
     name: TS tests + coverage
@@ -100,9 +111,9 @@ jobs:
     if: needs.changes.outputs.ts == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: pnpm
@@ -113,7 +124,7 @@ jobs:
         run: pnpm --filter @wotold/mcp test:coverage
       - name: Upload coverage artefacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ts-coverage
           path: |
@@ -128,8 +139,8 @@ jobs:
     if: needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
       - name: Verify migration filename ordering
@@ -149,11 +160,14 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
+          # [TD-02] toolchain задан явно: эта action берёт тулчейн из ИМЕНИ ref'а
+          # (@stable), а после SHA-пина имени больше нет.
+          toolchain: stable
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: 'apps/desktop/src-tauri -> target'
           shared-key: rust-lint
@@ -181,16 +195,22 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
+          # [TD-02] см. выше — тулчейн из имени ref'а, после пина задаём явно.
+          toolchain: stable
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: 'apps/desktop/src-tauri -> target'
           shared-key: rust-tests
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@75a348306ce8f67c0b06fc62c32a8546140ba955 # cargo-llvm-cov
+        with:
+          # [TD-02] tool задан явно: эта action выбирает инструмент по ИМЕНИ ref'а
+          # (@cargo-llvm-cov), а после SHA-пина имени больше нет.
+          tool: cargo-llvm-cov
       - name: Build Swift audio sidecar
         run: ./scripts/build-audio-sidecar.sh
       - name: cargo test + coverage (lcov)
@@ -206,7 +226,7 @@ jobs:
         run: cargo llvm-cov report --fail-under-lines 50
       - name: Upload coverage artefact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rust-coverage
           path: apps/desktop/src-tauri/lcov.info

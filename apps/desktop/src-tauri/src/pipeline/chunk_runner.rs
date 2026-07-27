@@ -23,10 +23,9 @@ use std::path::PathBuf;
 use sqlx::SqlitePool;
 use tauri::AppHandle;
 
-use crate::embeddings::{self, StubEmbedder};
 use crate::events::{ChunkDoneEvent, EventBus};
-use crate::local_engine::stt::is_hallucination;
-use crate::pipeline::clusters::extract_clusters;
+use crate::local_engine::hallucination::is_hallucination;
+use crate::pipeline::clusters::load_and_extract_clusters;
 use crate::providers::transcription::{
     DiarizedTranscript, TranscriptSegment, TranscriptionError, TranscriptionOpts,
     TranscriptionProvider,
@@ -251,7 +250,9 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
             &mic_path,
             &system_path,
             dir,
-        ) {
+        )
+        .await
+        {
             Ok(j) => Some(j),
             Err(e) => {
                 log::warn!("chunk {call_id}/{chunk_idx} embeddings extract failed (degraded): {e}");
@@ -304,24 +305,17 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
     })
 }
 
-/// [M13.2.1] Собрать `HashMap<speaker_tag, Vec<f32>>` (JSON-сериализованный)
-/// из mic+system transcript'ов одного chunk'а. Embedder резолвится через
-/// `try_load_onnx_embedder` (= StubEmbedder если voice-onnx feature off /
-/// модель не скачана → empty embeddings, identity remap в assembly).
-fn build_chunk_embeddings_json(
+/// [M13.2.1] Собрать `HashMap<speaker_tag, Vec<f32>>` (JSON) из mic+system
+/// transcript'ов одного chunk'а. Embedder резолвится внутри
+/// `load_and_extract_clusters` (StubEmbedder если модель не скачана → empty
+/// embeddings, identity remap). [TD-18] async: WAV+ONNX в blocking-пуле.
+async fn build_chunk_embeddings_json(
     mic_transcript: &DiarizedTranscript,
     sys_transcript: Option<&DiarizedTranscript>,
     mic_path: &std::path::Path,
     system_path: &std::path::Path,
     app_data_dir: &std::path::Path,
 ) -> Result<String, AppError> {
-    let model_path = app_data_dir.join("models").join("embedder.onnx");
-    let embedder: Box<dyn embeddings::Embedder> =
-        match embeddings::try_load_onnx_embedder(&model_path) {
-            Some(e) => e,
-            None => Box::new(StubEmbedder),
-        };
-
     // Merged = все сегменты обоих дорожек. extract_clusters сам routes
     // owner-tagged → mic.wav, прочие → system.wav.
     let mut merged: Vec<TranscriptSegment> = Vec::with_capacity(
@@ -331,7 +325,14 @@ fn build_chunk_embeddings_json(
     if let Some(sys) = sys_transcript {
         merged.extend(sys.segments.iter().cloned());
     }
-    let clusters = extract_clusters(&merged, mic_path, system_path, embedder.as_ref())?;
+    let clusters = load_and_extract_clusters(
+        merged,
+        mic_path.to_path_buf(),
+        system_path.to_path_buf(),
+        app_data_dir,
+        "chunk embeddings",
+    )
+    .await?;
     serde_json::to_string(&clusters)
         .map_err(|e| AppError::Other(format!("serialize chunk embeddings: {e}")))
 }
@@ -369,7 +370,7 @@ pub(crate) const MIN_WORDS_FOR_LANG_PIN: usize = 8;
 pub(crate) fn real_word_count(t: &DiarizedTranscript) -> usize {
     t.segments
         .iter()
-        .filter(|s| !is_hallucination(&s.text))
+        .filter(|s| !is_hallucination(&s.text, s.confidence))
         .map(|s| s.text.split_whitespace().count())
         .sum()
 }
@@ -395,6 +396,19 @@ pub(crate) fn pick_pinned_lang(
 
 #[cfg(test)]
 mod tests {
+    use crate::call_id::CallId;
+    /// [TD-05] Тестовые id — каноничные v4: `CallStore` принимает только
+    /// валидированный `CallId`, прежние литералы вроде "c1" им быть не могут.
+    const TEST_CALL_A: &str = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+    #[allow(dead_code)]
+    const TEST_CALL_B: &str = "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb";
+    #[allow(dead_code)]
+    const TEST_CALL_GHOST: &str = "99999999-9999-4999-8999-999999999999";
+    #[allow(dead_code)]
+    fn cid(s: &str) -> CallId {
+        CallId::parse(s).expect("тестовый id должен быть каноничным uuid")
+    }
+
     use super::*;
     use crate::db::test_support::fresh_db;
     use crate::providers::transcription::{
@@ -522,16 +536,16 @@ mod tests {
     #[tokio::test]
     async fn success_path_marks_done_and_returns_tail() {
         let db_t = fresh_db().await;
-        setup_chunk(&db_t.pool, "c1", 0).await;
+        setup_chunk(&db_t.pool, TEST_CALL_A, 0).await;
         let mic = MockProvider::ok(fake_transcript(vec!["Привет.", "Как дела?"]));
         let sys = MockProvider::ok(fake_transcript(vec!["Здравствуйте."]));
-        let out = run_chunk(&db_t.pool, &mic, &sys, input("c1", 0, None))
+        let out = run_chunk(&db_t.pool, &mic, &sys, input(TEST_CALL_A, 0, None))
             .await
             .unwrap();
         assert!(out.transcript_tail.contains("Как дела"));
         // mic = 2 segments + sys = 1 segment.
         assert_eq!(out.segment_count, 3);
-        let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
+        let rows = db::chunks::list_chunks_by_call(&db_t.pool, TEST_CALL_A)
             .await
             .unwrap();
         assert_eq!(rows[0].status, "done");
@@ -543,14 +557,14 @@ mod tests {
     #[tokio::test]
     async fn prev_prompt_propagated_to_mic_only() {
         let db_t = fresh_db().await;
-        setup_chunk(&db_t.pool, "c1", 1).await;
+        setup_chunk(&db_t.pool, TEST_CALL_A, 1).await;
         let mic = MockProvider::ok(fake_transcript(vec!["Дальше."]));
         let sys = MockProvider::ok(fake_transcript(vec!["Ответ."]));
         let _ = run_chunk(
             &db_t.pool,
             &mic,
             &sys,
-            input("c1", 1, Some("последние слова чанка 0")),
+            input(TEST_CALL_A, 1, Some("последние слова чанка 0")),
         )
         .await
         .unwrap();
@@ -564,14 +578,14 @@ mod tests {
     #[tokio::test]
     async fn mic_error_marks_failed_and_propagates_err() {
         let db_t = fresh_db().await;
-        setup_chunk(&db_t.pool, "c1", 0).await;
+        setup_chunk(&db_t.pool, TEST_CALL_A, 0).await;
         let mic = MockProvider::err(TranscriptionError::Provider("simulated mic fail".into()));
         let sys = MockProvider::ok(fake_transcript(vec!["something"]));
-        let err = run_chunk(&db_t.pool, &mic, &sys, input("c1", 0, None))
+        let err = run_chunk(&db_t.pool, &mic, &sys, input(TEST_CALL_A, 0, None))
             .await
             .unwrap_err();
         assert!(format!("{err}").contains("simulated mic fail"));
-        let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
+        let rows = db::chunks::list_chunks_by_call(&db_t.pool, TEST_CALL_A)
             .await
             .unwrap();
         assert_eq!(rows[0].status, "failed");
@@ -581,15 +595,15 @@ mod tests {
     async fn system_error_degraded_ok_mic_persisted_sys_none() {
         // Mic ok, system fails → chunk done с system_transcript_json=NULL.
         let db_t = fresh_db().await;
-        setup_chunk(&db_t.pool, "c1", 0).await;
+        setup_chunk(&db_t.pool, TEST_CALL_A, 0).await;
         let mic = MockProvider::ok(fake_transcript(vec!["mic content"]));
         let sys = MockProvider::err(TranscriptionError::Provider("sys boom".into()));
-        let out = run_chunk(&db_t.pool, &mic, &sys, input("c1", 0, None))
+        let out = run_chunk(&db_t.pool, &mic, &sys, input(TEST_CALL_A, 0, None))
             .await
             .unwrap();
         // segment_count учитывает только mic когда sys = None.
         assert_eq!(out.segment_count, 1);
-        let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
+        let rows = db::chunks::list_chunks_by_call(&db_t.pool, TEST_CALL_A)
             .await
             .unwrap();
         assert_eq!(rows[0].status, "done");
@@ -600,15 +614,15 @@ mod tests {
     #[tokio::test]
     async fn both_tracks_fail_marks_failed() {
         let db_t = fresh_db().await;
-        setup_chunk(&db_t.pool, "c1", 0).await;
+        setup_chunk(&db_t.pool, TEST_CALL_A, 0).await;
         let mic = MockProvider::err(TranscriptionError::Provider("mic dead".into()));
         let sys = MockProvider::err(TranscriptionError::Provider("sys dead".into()));
-        let err = run_chunk(&db_t.pool, &mic, &sys, input("c1", 0, None))
+        let err = run_chunk(&db_t.pool, &mic, &sys, input(TEST_CALL_A, 0, None))
             .await
             .unwrap_err();
         // Mic fail доминирует — это критичная ошибка.
         assert!(format!("{err}").contains("mic dead"));
-        let rows = db::chunks::list_chunks_by_call(&db_t.pool, "c1")
+        let rows = db::chunks::list_chunks_by_call(&db_t.pool, TEST_CALL_A)
             .await
             .unwrap();
         assert_eq!(rows[0].status, "failed");
@@ -635,11 +649,16 @@ mod tests {
             }],
         };
         let db_t = fresh_db().await;
-        setup_chunk(&db_t.pool, "c1", 0).await;
+        setup_chunk(&db_t.pool, TEST_CALL_A, 0).await;
         let provider = MockProvider::ok(transcript);
-        let out = run_chunk(&db_t.pool, &provider, &provider, input("c1", 0, None))
-            .await
-            .unwrap();
+        let out = run_chunk(
+            &db_t.pool,
+            &provider,
+            &provider,
+            input(TEST_CALL_A, 0, None),
+        )
+        .await
+        .unwrap();
         let word_count = out.transcript_tail.split_whitespace().count();
         assert_eq!(word_count, 50);
         // Первое слово tail'а должно быть слово10 (60−50).
@@ -660,9 +679,14 @@ mod tests {
         .unwrap();
         // НЕ создаём chunk row.
         let provider = MockProvider::ok(fake_transcript(vec!["test"]));
-        let err = run_chunk(&db_t.pool, &provider, &provider, input("c1", 0, None))
-            .await
-            .unwrap_err();
+        let err = run_chunk(
+            &db_t.pool,
+            &provider,
+            &provider,
+            input(TEST_CALL_A, 0, None),
+        )
+        .await
+        .unwrap_err();
         assert!(format!("{err}").contains("not in 'pending'"));
         // Provider НЕ должен был быть вызван если FSM gate fail'нулся first.
         assert!(!provider.called.load(Ordering::Relaxed));
@@ -742,7 +766,7 @@ mod tests {
 
         sqlx::query(
             "INSERT INTO calls (id, started_at, status, path_label, created_at, updated_at)
-             VALUES ('c1', CURRENT_TIMESTAMP, 'processing', 'managed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+             VALUES ('aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', CURRENT_TIMESTAMP, 'processing', 'managed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
         )
         .execute(&db_t.pool)
         .await
@@ -767,27 +791,27 @@ mod tests {
         let counts: [i16; 3] = [3, 2, 4];
         for (idx, &n) in counts.iter().enumerate() {
             let idx = idx as u32;
-            write_wav(&store.chunk_mic_path("c1", idx), n);
-            write_wav(&store.chunk_system_path("c1", idx), n);
+            write_wav(&store.chunk_mic_path(&cid(TEST_CALL_A), idx), n);
+            write_wav(&store.chunk_system_path(&cid(TEST_CALL_A), idx), n);
             db::chunks::insert_chunk(
                 &db_t.pool,
-                "c1",
+                TEST_CALL_A,
                 idx,
                 u64::from(idx) * 600_000,
-                &store.chunk_mic_path("c1", idx),
-                &store.chunk_system_path("c1", idx),
+                &store.chunk_mic_path(&cid(TEST_CALL_A), idx),
+                &store.chunk_system_path(&cid(TEST_CALL_A), idx),
             )
             .await
             .unwrap();
             let mic = MockProvider::ok(fake_transcript(vec!["a"]));
             let sys = MockProvider::ok(fake_transcript(vec!["b"]));
             let inp = ChunkRunInput {
-                call_id: "c1".into(),
+                call_id: TEST_CALL_A.into(),
                 chunk_idx: idx,
                 start_ms: u64::from(idx) * 600_000,
                 end_ms: (u64::from(idx) + 1) * 600_000,
-                mic_path: store.chunk_mic_path("c1", idx),
-                system_path: store.chunk_system_path("c1", idx),
+                mic_path: store.chunk_mic_path(&cid(TEST_CALL_A), idx),
+                system_path: store.chunk_system_path(&cid(TEST_CALL_A), idx),
                 prev_prompt: None,
                 lang: "auto".into(),
                 app_data_dir: None,
@@ -799,7 +823,7 @@ mod tests {
         }
 
         // Assembly: 3 chunk'а с offset'ами.
-        let (mic_t, _sys_t) = chunk_assembly::load_chunked_transcripts(&db_t.pool, "c1")
+        let (mic_t, _sys_t) = chunk_assembly::load_chunked_transcripts(&db_t.pool, TEST_CALL_A)
             .await
             .unwrap()
             .unwrap();
@@ -812,11 +836,13 @@ mod tests {
         assert!((mic_t.duration_sec - 1800.0).abs() < 1e-9);
 
         // Merge: root mic samples = сумма всех 3 chunk'ов (3+2+4=9), в порядке.
-        let (mic_r, _) =
-            audio_merger::merge_both_tracks(&store.chunks_dir("c1"), &store.call_dir("c1"));
+        let (mic_r, _) = audio_merger::merge_both_tracks(
+            &store.chunks_dir(&cid(TEST_CALL_A)),
+            &store.call_dir(&cid(TEST_CALL_A)),
+        );
         let report = mic_r.expect("mic merge ok");
         assert_eq!(report.total_samples, 9, "merge включает ВСЕ chunk'и");
-        let merged: Vec<i16> = WavReader::open(store.call_dir("c1").join("mic.wav"))
+        let merged: Vec<i16> = WavReader::open(store.call_dir(&cid(TEST_CALL_A)).join("mic.wav"))
             .unwrap()
             .into_samples::<i16>()
             .collect::<Result<_, _>>()

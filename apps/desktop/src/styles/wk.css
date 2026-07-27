@@ -1,6 +1,6 @@
 /* ─────────────────────────────────────────────────────────────
    Wotold v2 · component layer (uikit) — primitives (BASE + LAYOUT).
-   Источник: ~/Downloads/Wotold v2/uikit.css §2–5. ROADMAP §B18.
+   Источник: docs/design/wotold-v2/_reference/uikit.css §2–5. ROADMAP §B18.
    Парный слой — styles/components.css (app-специфичные классы).
    Токены — из tokens.css (uikit).
    ───────────────────────────────────────────────────────────── */
@@ -159,7 +159,7 @@ button.chip:hover { filter: brightness(.98); background: var(--active); }
 
 /* — Kbd — */
 .kbd {
-  font-family: var(--mono); font-size: 10.5px; color: var(--text-faint);
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
   border: 1px solid var(--border-2); border-radius: var(--r-xs); padding: 1px 5px;
   background: var(--panel); line-height: 1.4; white-space: nowrap;
 }
@@ -189,11 +189,53 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .seg button:hover { color: var(--text); }
 .seg button[data-active="true"] { background: var(--panel); color: var(--text); box-shadow: var(--shadow-sm); }
 
+/* ── [TD-29a] Системный focus-visible для примитивов ──────────────────
+ * Ни один примитив его не имел: фокус рисовался UA-дефолтом WebKit, а
+ * комментарий в global.css при этом утверждал, что reset живёт здесь.
+ * Стратегия была реактивной — семь точечных классов, добавленных по итогам
+ * a11y-ревью отдельных фич. Здесь она становится системной: один блок на
+ * все интерактивные примитивы, точечные правила остаются как есть и просто
+ * перекрывают его там, где нужен свой вид.
+ *
+ * `:focus-visible` стоит ВНУТРИ `:where()` намеренно. Снаружи он добавлял бы
+ * блоку специфичность класса (0,0,1,0) — тогда правило не «не перебивает
+ * ничего», а ничьёй проигрывает порядку исходника и выигрывает у `.btn`,
+ * `.iconbtn`, `.chip`, объявленных выше: радиус скакал бы с 6px на 4px на
+ * время фокуса. Внутри `:where()` вся конструкция действительно нулевая.
+ *
+ * `border-radius` здесь не задаётся: outline и так повторяет собственный
+ * радиус элемента, а явное значение как раз и ломало форму. */
+:where(
+  .btn:focus-visible,
+  .iconbtn:focus-visible,
+  .navitem:focus-visible,
+  .tab:focus-visible,
+  .seg button:focus-visible,
+  .trow:focus-visible,
+  .menu-item:focus-visible,
+  .switch:focus-visible,
+  .chip:focus-visible,
+  .th-sort:focus-visible
+) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* — Switch — */
 .switch { width: 34px; height: 20px; border-radius: var(--r-pill); background: var(--border-strong); position: relative; transition: background var(--base); flex: 0 0 auto; }
 .switch[data-on="true"] { background: var(--accent); }
 .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform var(--base) var(--ease); box-shadow: var(--shadow-sm); }
 .switch[data-on="true"]::after { transform: translateX(14px); }
+/* [TD-29b] Сам контрол 34×20 при минимуме 24×24 (WCAG 2.5.8). Визуал не
+ * трогаем — расширяем область попадания невидимым слоем, как уже сделано у
+ * `button.chip` в components.css. Сам `.switch` уже `position: relative`
+ * в базовом правиле выше — второй раз объявлять не нужно. */
+.switch::before {
+  content: '';
+  position: absolute;
+  inset: -4px -2px;
+  border-radius: var(--r-pill);
+}
 
 /* — Tabs — */
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); }
@@ -220,7 +262,10 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .navitem .nav-meta { font-size: var(--t-11); color: var(--text-faint); font-family: var(--mono); }
 .sec-label {
   display: flex; align-items: center; justify-content: space-between; padding: 0 8px;
-  height: 26px; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-faint);
+  /* [TD-29c] Заголовок секции. Внутри .rail фон --panel (4.66:1, ок), но
+     в .side-list ассистента фон прозрачный и падает до --bg (4.47:1) —
+     поэтому --text-2, он безопасен на любом из этих фонов. */
+  height: 26px; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-2);
 }
 
 /* — Menu / Popover — */
@@ -238,7 +283,8 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .menu-item--danger { color: var(--danger-text); }
 .menu-item--danger .mi-ico { color: var(--danger-text); }
 .menu-sep { height: 1px; background: var(--border); margin: 5px -5px; }
-.menu-label { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); padding: 8px 9px 4px; }
+/* [TD-29c] Несущий текст, а не декор: --text-faint даёт ≈2.6:1. */
+.menu-label { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); padding: 8px 9px 4px; }
 
 /* — Modal / Dialog — */
 .overlay { position: fixed; inset: 0; z-index: 100; background: rgba(13,13,17,.4); backdrop-filter: blur(var(--blur)); display: flex; align-items: flex-start; justify-content: center; }
@@ -299,7 +345,9 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
   align-items: center; gap: var(--s3); padding: 0 var(--s4) 0 var(--s3); height: 38px;
 }
 .tbl-head { height: 32px; position: sticky; top: 0; z-index: 2; background: var(--bg);
-  border-bottom: 1px solid var(--border); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-faint); }
+  /* [TD-29c] Заголовки колонок на фоне --bg: --text-3 даёт там 4.47:1,
+   то есть чуть НЕ дотягивает до 4.5:1. Берём --text-2 (8.18:1). */
+  border-bottom: 1px solid var(--border); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
 .tbl-head .th-sort { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .tbl-head .th-sort:hover { color: var(--text-2); }
 .trow { height: 44px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background var(--fast); text-align: left; width: 100%; }
@@ -324,7 +372,9 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .turn { display: grid; grid-template-columns: 140px minmax(0,1fr); gap: var(--s4); padding: 11px 0; }
 .turn + .turn { border-top: 1px solid var(--border); }
 .turn-sp { font-size: var(--t-12); font-weight: 600; display: flex; align-items: center; gap: 7px; }
-.turn-time { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); margin-top: 4px; padding-left: 27px; }
+/* [TD-29c] Таймкод реплики — читаемый контент. Фон здесь --bg, так что
+   --text-3 (4.47:1) не дотягивает; --text-2 = 8.18:1. */
+.turn-time { font-family: var(--mono); font-size: 10.5px; color: var(--text-2); margin-top: 4px; padding-left: 27px; }
 .turn-text { font-size: var(--t-15); line-height: 1.6; color: var(--text); }
 .turn--seek { cursor: pointer; }
 .turn--seek:hover { background: var(--hover); margin: 0 -12px; padding-left: 12px; padding-right: 12px; border-radius: var(--r-sm); }

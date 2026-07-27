@@ -1,6 +1,6 @@
 /* ─────────────────────────────────────────────────────────────
    Wotold · Design Tokens (Wotold v2 — uikit)
-   Источник: ~/Downloads/Wotold v2/uikit.css §1 TOKENS. ROADMAP §B18.0.
+   Источник: docs/design/wotold-v2/_reference/uikit.css §1 TOKENS. ROADMAP §B18.0.
 
    Тема:  data-theme="light" | "dark" на <html> (одна атрибут-смена).
    Акцент: МОНО-ГРАФИТ (ink) — один набор, без data-accent (решение B18.0).
@@ -9,7 +9,9 @@
 
 :root {
   /* type */
-  --font: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* [TD-47] Onest вместо Hanken Grotesk: у того нет базовой кириллицы,
+     и весь русский интерфейс уходил в системный фолбэк. */
+  --font: 'Onest', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   --t-11: 11px; --t-12: 12px; --t-13: 13px; --t-14: 14px;

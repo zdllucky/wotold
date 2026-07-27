@@ -124,7 +124,7 @@ export function VoiceModelSection() {
       await localEngineModelDownload('pyannote-segmentation');
       await refreshPyannote();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     } finally {
       setPyannoteDownloading(false);
       setPyannotePct(null);
@@ -138,7 +138,7 @@ export function VoiceModelSection() {
     try {
       await setSetting(SETTINGS_KEYS.AUTO_BIND_ENABLED, next ? '1' : '0');
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -147,7 +147,7 @@ export function VoiceModelSection() {
     try {
       await setSetting(SETTINGS_KEYS.AUTO_BIND_THRESHOLD, next);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -156,7 +156,7 @@ export function VoiceModelSection() {
     try {
       await setSetting(SETTINGS_KEYS.MIC_DIARIZATION_ENABLED, next ? '1' : '0');
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -167,7 +167,7 @@ export function VoiceModelSection() {
       setInfo(i);
       setError(null);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   }, []);
 
@@ -217,7 +217,7 @@ export function VoiceModelSection() {
     try {
       await voiceModelDownload();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
       setDownloading(false);
       setProgress(null);
     }
@@ -230,7 +230,7 @@ export function VoiceModelSection() {
       await voiceModelDelete();
       await refresh();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     } finally {
       setDeleting(false);
     }

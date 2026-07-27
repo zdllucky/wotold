@@ -83,7 +83,7 @@ export function LabsSection() {
     try {
       await setSetting(SETTINGS_KEYS.SUMMARY_V2_ENABLED, next ? '1' : '0');
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -92,7 +92,7 @@ export function LabsSection() {
     try {
       await setSetting(SETTINGS_KEYS.SUMMARY_SPECULATIVE_DECODING, next ? '1' : '0');
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -103,7 +103,7 @@ export function LabsSection() {
     try {
       await setSetting(SETTINGS_KEYS.MIC_DIARIZATION_NUM_SPEAKERS, next);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 

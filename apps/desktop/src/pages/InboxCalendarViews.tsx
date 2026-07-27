@@ -1,5 +1,5 @@
 // [B18.2b] Inbox calendar/grid views — Карточки / Неделя / Месяц. Ports of
-// ~/Downloads/Wotold v2/wk-inbox.jsx (InboxCards/InboxWeek/InboxMonth/CalHeader).
+// docs/design/wotold-v2/_reference/wk-inbox.jsx (InboxCards/InboxWeek/InboxMonth/CalHeader).
 // Self-contained: render the already-filtered `calls` + speaker initials; no new
 // APIs. Today = real new Date(). Month/weekday labels via Intl. [B19.2] CalHeader
 // label is a Dropdown with year-nav + month-grid for quick jumps.

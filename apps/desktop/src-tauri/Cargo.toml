@@ -109,10 +109,10 @@ audio-macos = []
 # Windows-захват = unimplemented (R4). Фича-флаг для будущего.
 audio-windows = []
 # [B3.7] Включает OnnxEmbedder (ort + ndarray + Kaldi fbank preprocessing).
-# Production-сборка включает; default off для быстрого dev build.
+# В default с B25 (см. выше) — без него биометрический матчинг мёртв.
 voice-onnx = ["dep:sherpa-onnx"]
 # [M15.9] ONNX-реализация текст-эмбеддера ассистента (retrieval Ph2).
-# Не в default: dev-сборка быстрее, graceful degradation до BM25 без него.
+# В default с B25: без него семантический поиск деградирует до BM25 навсегда.
 assistant-embed = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 
 # [B16 audit P1]: жёстче политика на unsafe code и common pitfalls.

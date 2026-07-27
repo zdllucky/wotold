@@ -11,12 +11,15 @@ pub mod answer;
 pub mod budget;
 pub mod classifier;
 pub mod contacts_ctx;
+pub mod direct;
 pub mod embed_cache;
 pub mod embedder;
 #[cfg(test)]
 mod eval;
 pub mod fusion;
 pub mod indexer;
+pub mod lazy_provider;
+pub mod period;
 pub mod retrieval;
 pub mod router;
 pub mod types;
@@ -168,7 +171,7 @@ pub async fn ask_core_with(
     // 1c. [B26.2] Темпоральный префильтр: явный период («вчера», «в прошлом
     // месяце», «в июне») сужает архив до звонков за период. Пустой период →
     // честное «не нашлось» без похода в поиск и LLM.
-    let period_filter = router::period_call_filter(pool, &question).await?;
+    let period_filter = period::period_call_filter(pool, &question).await?;
     if let Some(set) = &period_filter {
         if set.is_empty() {
             let ans = AssistantAnswer {
@@ -358,15 +361,10 @@ pub async fn ask(
     pool: &SqlitePool,
     args: AskArgs,
 ) -> Result<AskOutcome, AppError> {
-    use crate::pipeline::PipelineSettings;
-
-    let s = PipelineSettings::load(pool).await?;
     let app_data_dir = {
         let state = tauri::Manager::state::<crate::state::AppState>(app);
         state.app_data_dir.clone()
     };
-    let (provider, _preset) =
-        crate::pipeline::build_local_llm_provider(pool, &app_data_dir, app, &s).await?;
     // Метка очереди — из chat.call_id (истина в БД): follow-up в треде звонка
     // приходит только с chat_id, args.call_id тогда пуст.
     let queue_label = match (&args.chat_id, &args.call_id) {
@@ -377,9 +375,16 @@ pub async fn ask(
         (None, None) => None,
     }
     .unwrap_or_else(|| "assistant".to_string());
-    // cache_prompt: стабильный префикс [system][fragments] переживает
-    // follow-up-ходы на resident-сервере (PRD §6.4).
-    let provider = provider.with_call(queue_label).with_cache_prompt(true);
+    // [TD-23] Провайдер строится ЛЕНИВО, при первом обращении к модели.
+    // Раньше он поднимался здесь, до роутера, и при невыбранном пресете
+    // мета-вопросы, отказ и пустая ветка падали «модель не установлена» —
+    // то есть весь смысл роутера M16.4 («нулевая латентность без LLM»).
+    let provider = lazy_provider::LazyLocalProvider::new(
+        pool.clone(),
+        app.clone(),
+        app_data_dir.clone(),
+        queue_label,
+    );
     let bus = EventBus::new(Some(app));
     // [M15.11] Гибридный retrieval, если эмбеддер доступен (feature + модель).
     let text_embedder = embedder::shared(&app_data_dir).await;
@@ -898,7 +903,7 @@ mod tests {
     /// поднятого llama-server (HTTP-путь провайдера не требует AppHandle).
     /// Запуск только явно:
     /// ```sh
-    /// WOTOLD_LIVE_DB_DIR=<dir-с-копией-app.db> WOTOLD_LIVE_LLM_URL=http://127.0.0.1:47331 \
+    /// WOTOLD_LIVE_DB_DIR=<dir-с-копией-app.db> WOTOLD_LIVE_LLM_URL=http://127.0.0.1:<порт из лога старта> \
     ///   cargo test --lib live_gate_ph1 -- --ignored --nocapture
     /// ```
     #[cfg(target_os = "macos")]
@@ -919,7 +924,12 @@ mod tests {
             std::path::Path::new(&db_dir),
             preset.llm_model_id(),
         )
-        .with_server(Some(url))
+        .with_server(Some(crate::local_engine::llm::ServerHandle {
+            url,
+            // [TD-08] Ключ вручную поднятого сервера. Пусто — сервер без
+            // LLAMA_API_KEY, авторизации не требует.
+            api_key: std::env::var("WOTOLD_LIVE_LLM_KEY").unwrap_or_default(),
+        }))
         .with_cache_prompt(true);
         let bus = EventBus::new(None);
 

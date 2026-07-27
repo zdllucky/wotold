@@ -38,7 +38,7 @@ export function UpdateBanner() {
       await invoke('apply_update');
     } catch (e) {
       setInstalling(false);
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 

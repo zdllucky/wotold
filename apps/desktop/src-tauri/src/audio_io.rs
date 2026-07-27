@@ -18,28 +18,19 @@ pub struct AudioClip {
     pub sample_rate: u32,
 }
 
-/// Прочитать всё WAV-файл целиком. Конвертит i16 → f32 нормализованно.
+/// Прочитать WAV-файл целиком, mono f32 в `[-1.0, 1.0)`.
+///
+/// [TD-38] Делегирует в `audio::wav_chunker` — тот же декодер, что режет
+/// сегменты для voice-эмбеддингов. До слияния это были два независимых ридера
+/// одного и того же формата, расходившихся в поведении: здесь делили на
+/// `i16::MAX` и падали на stereo, там делили на 32768 и сворачивали каналы
+/// усреднением. Осталась одна реализация-надмножество; этот модуль отвечает
+/// только за нарезку по таймштампам.
 pub fn read_wav(path: &Path) -> Result<AudioClip, AppError> {
-    let mut reader =
-        hound::WavReader::open(path).map_err(|e| AppError::Other(format!("wav open: {e}")))?;
-    let spec = reader.spec();
-    if spec.channels != 1 {
-        return Err(AppError::Other(format!(
-            "expected mono WAV, got {} channels",
-            spec.channels
-        )));
-    }
-    let samples: Result<Vec<f32>, _> = match spec.sample_format {
-        hound::SampleFormat::Int => reader
-            .samples::<i16>()
-            .map(|r| r.map(|s| s as f32 / i16::MAX as f32))
-            .collect(),
-        hound::SampleFormat::Float => reader.samples::<f32>().collect(),
-    };
-    let samples = samples.map_err(|e| AppError::Other(format!("wav decode: {e}")))?;
+    let seg = crate::audio::wav_chunker::read_wav_full(path)?;
     Ok(AudioClip {
-        samples,
-        sample_rate: spec.sample_rate,
+        samples: seg.samples,
+        sample_rate: seg.sample_rate,
     })
 }
 
@@ -124,7 +115,11 @@ mod tests {
     }
 
     #[test]
-    fn read_wav_rejects_stereo() {
+    fn read_wav_folds_stereo_to_mono_by_averaging() {
+        // [TD-38] Поведение изменилось намеренно: раньше `read_wav` падал на
+        // stereo, а `wav_chunker` (тот, что реально кормит voice-эмбеддинги)
+        // усреднял каналы. Ридер теперь один — усреднение победило: для
+        // биометрии два канала полезнее ошибки.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("stereo.wav");
         let spec = hound::WavSpec {
@@ -134,12 +129,46 @@ mod tests {
             sample_format: hound::SampleFormat::Int,
         };
         let mut writer = hound::WavWriter::create(&path, spec).unwrap();
-        writer.write_sample(0_i16).unwrap();
+        // Один фрейм: L = +полная шкала, R = 0 → mono ≈ 0.5.
+        writer.write_sample(i16::MAX).unwrap();
         writer.write_sample(0_i16).unwrap();
         writer.finalize().unwrap();
 
-        let err = read_wav(&path).unwrap_err();
-        assert!(matches!(err, AppError::Other(_)));
+        let clip = read_wav(&path).unwrap();
+        assert_eq!(clip.samples.len(), 1, "2 канала → 1 mono-фрейм");
+        assert!(
+            (clip.samples[0] - 0.5).abs() < 1e-3,
+            "got {}",
+            clip.samples[0]
+        );
+    }
+
+    #[test]
+    fn read_wav_and_read_wav_segment_agree_on_same_file() {
+        // [TD-38] Главный инвариант слияния: оба публичных API дают
+        // побитово те же сэмплы. До фикса они делили на разные константы
+        // (i16::MAX против 32768) и расходились в амплитуде.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agree.wav");
+        let samples: Vec<i16> = vec![0, i16::MAX, i16::MIN, 1234, -4321];
+        write_test_wav(&path, &samples, 16_000);
+
+        let full = read_wav(&path).unwrap();
+        let seg = crate::audio::wav_chunker::read_wav_segment(&path, 0.0, 1.0).unwrap();
+        assert_eq!(full.sample_rate, seg.sample_rate);
+        assert_eq!(full.samples, seg.samples);
+    }
+
+    #[test]
+    fn read_wav_normalizes_i16_min_without_clipping() {
+        // [TD-38] Делитель 32768, не i16::MAX: на 32767 минимум i16 дал бы
+        // -1.00003, то есть выход за пределы [-1.0, 1.0].
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("min.wav");
+        write_test_wav(&path, &[i16::MIN], 16_000);
+
+        let clip = read_wav(&path).unwrap();
+        assert_eq!(clip.samples[0], -1.0);
     }
 
     #[test]

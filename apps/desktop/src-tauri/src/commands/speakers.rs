@@ -133,23 +133,14 @@ pub async fn get_voice_sample_audio(
             }
         };
 
-    // Whitelist track_kind defensive. DB CHECK constraint уже enforce'ит,
-    // но extra parse гарантирует typo'у не пройти в filesystem path.
-    let track_filename = match track_kind.as_str() {
-        "mic" => "mic.wav",
-        "system" => "system.wav",
-        other => {
-            return Err(AppError::Other(format!(
-                "voice_sample_track_invalid: {other}"
-            )));
-        }
-    };
-
+    // [TD-05] Путь строит CallStore, а не ручной join: source_call приходит из
+    // БД (voice_samples.source_call), но единая точка сборки пути дешевле, чем
+    // ещё один callsite, который легко забыть при следующей правке.
+    let track = crate::call_store::AudioKind::from_str(&track_kind)
+        .ok_or_else(|| AppError::Other(format!("voice_sample_track_invalid: {track_kind}")))?;
     let wav_path = state
-        .app_data_dir
-        .join("calls")
-        .join(&source_call)
-        .join(track_filename);
+        .store
+        .audio_path(&crate::call_id::CallId::from_db(&source_call), track);
     if !wav_path.exists() {
         return Err(AppError::Other(format!(
             "voice_sample_source_missing: {}",

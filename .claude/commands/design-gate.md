@@ -1,5 +1,5 @@
 ---
-description: Run the Wotold Atelier v2 design gate — mandatory before any UI/CSS work.
+description: Run the Wotold v2 (uikit) design gate — mandatory before any UI/CSS work.
 ---
 
 # /design-gate
@@ -25,9 +25,9 @@ The skill output is a structured alignment block. No code is written by this com
 
 ## Source of truth
 
-- `docs/design/atelier-v2/README.md`
-- `docs/design/atelier-v2/MIGRATION.md`
-- `docs/design/atelier-v2/tokens.css`
-- `docs/design/atelier-v2/wotold.css`
+- `docs/design/wotold-v2/README.md` — canon summary
+- `docs/design/wotold-v2/_reference/` — the prototype itself (spec = code; open `index.html`)
+- `docs/design/wotold-v2/assistant.md` + `_reference-assistant/` — assistant surfaces (M15/B24)
+- `apps/desktop/src/styles/{tokens,wk,components}.css` — the live implementation
 
-If a surface is not yet mapped in `MIGRATION.md`, STOP and update `MIGRATION.md` first.
+`docs/design/atelier-v2/` is the superseded generation — history only, do not use it as a reference.

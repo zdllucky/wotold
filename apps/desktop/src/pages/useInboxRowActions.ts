@@ -28,12 +28,22 @@ export interface InboxRowActions {
 export function useInboxRowActions({ t, toast, refresh, markActive }: RowActionDeps): InboxRowActions {
   const onRowReprocess = (call: Call) => {
     void (async () => {
+      // [TD-26] Подтверждение — как на CallDetailPage. Та же операция из
+      // row-меню шла без вопроса, хотя перезапускает весь пайплайн; соседний
+      // onRowDelete confirm имел.
+      const ok = await ask(t('callDetail.reprocessConfirmBody'), {
+        title: t('callDetail.reprocessConfirmTitle'),
+        kind: 'warning',
+        okLabel: t('callDetail.reprocessConfirmOk'),
+        cancelLabel: t('common.cancel'),
+      });
+      if (!ok) return;
       try {
         await reprocessCall(call.id);
         markActive(call.id);
         toast.show({ tone: 'success', message: t('inbox.reprocessStarted') });
       } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
+        toast.show({ tone: 'danger', message: humanError(e, t) });
       }
     })();
   };
@@ -50,7 +60,7 @@ export function useInboxRowActions({ t, toast, refresh, markActive }: RowActionD
           title: t('callDetail.exportTitle'),
         })) as string | null;
       } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
+        toast.show({ tone: 'danger', message: humanError(e, t) });
         return;
       }
       if (!dest) return; // cancelled
@@ -58,7 +68,7 @@ export function useInboxRowActions({ t, toast, refresh, markActive }: RowActionD
         await exportCallMarkdown(call.id, dest);
         toast.show({ tone: 'success', message: t('inbox.exported') });
       } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
+        toast.show({ tone: 'danger', message: humanError(e, t) });
       }
     })();
   };
@@ -80,7 +90,7 @@ export function useInboxRowActions({ t, toast, refresh, markActive }: RowActionD
         refresh();
         toast.show({ tone: 'success', message: t('inbox.deleted') });
       } catch (e) {
-        toast.show({ tone: 'danger', message: humanError(e) });
+        toast.show({ tone: 'danger', message: humanError(e, t) });
       }
     })();
   };

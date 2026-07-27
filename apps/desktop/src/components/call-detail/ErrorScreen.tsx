@@ -97,7 +97,7 @@ export function ErrorScreen({
   // 429/upstream-error JSON) в дружелюбное сообщение. Raw оригинал остаётся
   // в ErrorDiagnostics для траблшутинга.
   const rawReason = call.failed_reason?.trim();
-  const reason = rawReason ? humanError(rawReason) : t('callDetail.failBadge');
+  const reason = rawReason ? humanError(rawReason, t) : t('callDetail.failBadge');
   const provider = call.provider?.trim() || null;
   const alternativeProvider = provider
     ? provider === 'soniox'

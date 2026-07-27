@@ -448,8 +448,15 @@ export function InboxView({
 
   const refresh = () => {
     listCalls()
-      .then(setCalls)
-      .catch((e: unknown) => setError(humanError(e)));
+      .then((rows) => {
+        setCalls(rows);
+        // [TD-26] Успех обязан снимать ошибку. Раньше error только ставился,
+        // а рендер держит error-ветку первой — один transient
+        // «database is locked» показывал текст ошибки вместо списка до
+        // перезапуска приложения.
+        setError(null);
+      })
+      .catch((e: unknown) => setError(humanError(e, t)));
   };
 
   // [B19.7, B20.5] Row-menu actions (reprocess/export/delete) — общий hook,
@@ -560,6 +567,34 @@ export function InboxView({
     () => (calls ?? []).filter((c) => matchesFacets(c, facets, text.trim(), callPersons)),
     [calls, facets, text, callPersons],
   );
+
+  // [TD-26] Сортировка была нарисована, но не существовала: колонки имели
+  // иконку и cursor:pointer, а ни onClick, ни состояния не было. Класс
+  // `.th-sort` есть в каноне uikit, то есть аффорданса задумана — доводим её
+  // до рабочего состояния, а не убираем.
+  //
+  // Группировка по месяцам осмысленна только при сортировке по дате: она и
+  // есть дата. При сортировке по длительности группы выключаются, иначе
+  // «самый длинный» означало бы «самый длинный внутри своего месяца».
+  const [sort, setSort] = useState<{ key: 'date' | 'duration'; dir: 'asc' | 'desc' }>({
+    key: 'date',
+    dir: 'desc',
+  });
+  const toggleSort = (key: 'date' | 'duration') =>
+    setSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }));
+  const ariaSort = (key: 'date' | 'duration'): 'ascending' | 'descending' | 'none' =>
+    sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+
+  const sorted = useMemo(() => {
+    const rows = [...filtered];
+    const sign = sort.dir === 'asc' ? 1 : -1;
+    rows.sort((a, b) =>
+      sort.key === 'duration'
+        ? sign * ((a.duration_sec ?? 0) - (b.duration_sec ?? 0))
+        : sign * (new Date(a.started_at).getTime() - new Date(b.started_at).getTime()),
+    );
+    return rows;
+  }, [filtered, sort]);
 
   const pluralForms: [string, string, string] = [
     t('calls.callsForm1'),
@@ -724,19 +759,26 @@ export function InboxView({
               <span />
               <span>{t('inbox.colName')}</span>
               <span>{t('inbox.colParticipants')}</span>
-              <span className="th-sort">
-                {t('inbox.colDuration')}
-                <Icon name="sort" size={11} />
+              <span role="columnheader" aria-sort={ariaSort('duration')}>
+                <button type="button" className="th-sort" onClick={() => toggleSort('duration')}>
+                  {t('inbox.colDuration')}
+                  <Icon name="sort" size={11} />
+                </button>
               </span>
-              <span className="th-sort">
-                {t('inbox.colDate')}
-                <Icon name="sort" size={11} />
+              <span role="columnheader" aria-sort={ariaSort('date')}>
+                <button type="button" className="th-sort" onClick={() => toggleSort('date')}>
+                  {t('inbox.colDate')}
+                  <Icon name="sort" size={11} />
+                </button>
               </span>
               <span />
             </div>
-            {groupByMonth(filtered, locale).map((g) => (
-              <div key={g.label}>
-                <div className="tbl-group">{g.label}</div>
+            {(sort.key === 'date'
+              ? groupByMonth(sorted, locale)
+              : [{ label: '', calls: sorted }]
+            ).map((g) => (
+              <div key={g.label || 'flat'}>
+                {g.label && <div className="tbl-group">{g.label}</div>}
                 {g.calls.map((c) => (
                   <TableRow
                     key={c.id}

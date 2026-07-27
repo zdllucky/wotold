@@ -1,7 +1,7 @@
 # PRD: M15 «Ассистент» — локальный RAG-чат по звонкам
 
 > Статус: **approved for implementation** (2026-07-22).
-> Дизайн-хендофф: `~/Downloads/design_handoff_wotold_assistant/` — мок = истина по вёрстке и состояниям, `01-SPEC.md` = истина по бизнес-логике. Canon-addendum: [`design/wotold-v2/assistant.md`](design/wotold-v2/assistant.md).
+> Дизайн-хендофф: [`design/wotold-v2/_reference-assistant/`](design/wotold-v2/_reference-assistant/) — мок = истина по вёрстке и состояниям, `01-SPEC.md` = истина по бизнес-логике. Canon-addendum: [`design/wotold-v2/assistant.md`](design/wotold-v2/assistant.md).
 > Декомпозиция и статус задач: [`ROADMAP.md`](ROADMAP.md) §M15 + §B24.
 
 ## TL;DR

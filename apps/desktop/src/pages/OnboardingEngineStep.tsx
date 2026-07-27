@@ -70,7 +70,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         setHw(report);
         setChosenPreset(report.recommendation ?? 'light');
       } catch (e) {
-        setError(humanError(e));
+        setError(humanError(e, t));
       }
     })();
   }, []);
@@ -135,7 +135,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
     const next = downloadQueue[0];
     if (!next) return;
     void localEngineModelDownload(next).catch((e) => {
-      setError(humanError(e));
+      setError(humanError(e, t));
       setDownloading(false);
     });
   }, [downloadQueue, downloading, onAdvance]);
@@ -165,7 +165,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
       setDownloadQueue(queue);
       setDownloading(true);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   }, [chosenPreset, onAdvance]);
 

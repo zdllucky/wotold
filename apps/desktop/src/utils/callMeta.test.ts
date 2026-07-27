@@ -12,6 +12,21 @@ import {
 } from './callMeta';
 import type { Call } from '../api/recording';
 import type { CallSpeakerView } from '../api/speakers';
+import { ru } from '../i18n/ru';
+import type { Locale, TranslationKey } from '../i18n';
+
+// [TD-25] Настоящий русский словарь — тексты в ассертах остаются реальными,
+// а отсутствующий ключ вернётся как сам ключ и уронит проверку.
+const t = (key: TranslationKey, params?: Record<string, string | number>): string => {
+  const value = key
+    .split('.')
+    .reduce<unknown>((acc, part) => (acc as Record<string, unknown>)?.[part], ru);
+  const str = typeof value === 'string' ? value : key;
+  return params
+    ? Object.entries(params).reduce((out, [k, v]) => out.replaceAll(`{${k}}`, String(v)), str)
+    : str;
+};
+const locale: Locale = 'ru';
 
 function mkCall(overrides: Partial<Call> = {}): Call {
   return {
@@ -109,12 +124,12 @@ describe('formatHeaderMeta', () => {
 describe('simpleDateTitle', () => {
   test('formats date in Russian', () => {
     const call = mkCall({ started_at: '2026-05-20T16:04:00Z' });
-    expect(simpleDateTitle(call)).toBe('Звонок · 20 мая');
+    expect(simpleDateTitle(call, t, locale)).toBe('Звонок · 20 мая');
   });
 
   test('fallback on invalid date includes id slice', () => {
     const call = mkCall({ id: 'abcdef1234567890', started_at: 'invalid' });
-    expect(simpleDateTitle(call)).toBe('Звонок abcdef12');
+    expect(simpleDateTitle(call, t, locale)).toBe('Звонок abcdef12');
   });
 });
 
@@ -140,76 +155,76 @@ describe('hashCallId', () => {
 
 describe('pluralParticipants', () => {
   test('1 → участник', () => {
-    expect(pluralParticipants(1)).toBe('участник');
-    expect(pluralParticipants(21)).toBe('участник');
-    expect(pluralParticipants(101)).toBe('участник');
+    expect(pluralParticipants(1, t)).toBe('участник');
+    expect(pluralParticipants(21, t)).toBe('участник');
+    expect(pluralParticipants(101, t)).toBe('участник');
   });
 
   test('2-4 → участника', () => {
-    expect(pluralParticipants(2)).toBe('участника');
-    expect(pluralParticipants(3)).toBe('участника');
-    expect(pluralParticipants(4)).toBe('участника');
-    expect(pluralParticipants(22)).toBe('участника');
-    expect(pluralParticipants(103)).toBe('участника');
+    expect(pluralParticipants(2, t)).toBe('участника');
+    expect(pluralParticipants(3, t)).toBe('участника');
+    expect(pluralParticipants(4, t)).toBe('участника');
+    expect(pluralParticipants(22, t)).toBe('участника');
+    expect(pluralParticipants(103, t)).toBe('участника');
   });
 
   test('5-20 → участников', () => {
-    expect(pluralParticipants(5)).toBe('участников');
-    expect(pluralParticipants(10)).toBe('участников');
-    expect(pluralParticipants(11)).toBe('участников');
-    expect(pluralParticipants(12)).toBe('участников');
-    expect(pluralParticipants(14)).toBe('участников');
-    expect(pluralParticipants(20)).toBe('участников');
+    expect(pluralParticipants(5, t)).toBe('участников');
+    expect(pluralParticipants(10, t)).toBe('участников');
+    expect(pluralParticipants(11, t)).toBe('участников');
+    expect(pluralParticipants(12, t)).toBe('участников');
+    expect(pluralParticipants(14, t)).toBe('участников');
+    expect(pluralParticipants(20, t)).toBe('участников');
   });
 
   test('0 → участников (общее правило)', () => {
-    expect(pluralParticipants(0)).toBe('участников');
+    expect(pluralParticipants(0, t)).toBe('участников');
   });
 });
 
 describe('humanSpeakerLabel', () => {
   test('owner → Я', () => {
-    expect(humanSpeakerLabel('owner')).toBe('Я');
+    expect(humanSpeakerLabel('owner', t)).toBe('Я');
   });
 
   test('Speaker N → Голос N+1 (Soniox формат)', () => {
-    expect(humanSpeakerLabel('Speaker 0')).toBe('Голос 1');
-    expect(humanSpeakerLabel('Speaker 5')).toBe('Голос 6');
-    expect(humanSpeakerLabel('Speaker 12')).toBe('Голос 13');
+    expect(humanSpeakerLabel('Speaker 0', t)).toBe('Голос 1');
+    expect(humanSpeakerLabel('Speaker 5', t)).toBe('Голос 6');
+    expect(humanSpeakerLabel('Speaker 12', t)).toBe('Голос 13');
   });
 
   test('SN → Голос N+1 (сокращённый формат)', () => {
-    expect(humanSpeakerLabel('S0')).toBe('Голос 1');
-    expect(humanSpeakerLabel('S3')).toBe('Голос 4');
+    expect(humanSpeakerLabel('S0', t)).toBe('Голос 1');
+    expect(humanSpeakerLabel('S3', t)).toBe('Голос 4');
   });
 
   test('кастомный тег возвращается как есть', () => {
-    expect(humanSpeakerLabel('Marina')).toBe('Marina');
-    expect(humanSpeakerLabel('Customer 1')).toBe('Customer 1');
+    expect(humanSpeakerLabel('Marina', t)).toBe('Marina');
+    expect(humanSpeakerLabel('Customer 1', t)).toBe('Customer 1');
   });
 
   test('пустой / странный input — fallback на "Голос"', () => {
-    expect(humanSpeakerLabel('')).toBe('Голос');
+    expect(humanSpeakerLabel('', t)).toBe('Голос');
   });
 
   test('case-insensitive Speaker', () => {
-    expect(humanSpeakerLabel('speaker 0')).toBe('Голос 1');
-    expect(humanSpeakerLabel('SPEAKER 9')).toBe('Голос 10');
+    expect(humanSpeakerLabel('speaker 0', t)).toBe('Голос 1');
+    expect(humanSpeakerLabel('SPEAKER 9', t)).toBe('Голос 10');
   });
 
   test('локальный формат speaker:N → «Спикер N» (0-indexed, как у участников)', () => {
-    expect(humanSpeakerLabel('speaker:0')).toBe('Спикер 0');
-    expect(humanSpeakerLabel('speaker:1')).toBe('Спикер 1');
-    expect(humanSpeakerLabel('speaker:2')).toBe('Спикер 2');
+    expect(humanSpeakerLabel('speaker:0', t)).toBe('Спикер 0');
+    expect(humanSpeakerLabel('speaker:1', t)).toBe('Спикер 1');
+    expect(humanSpeakerLabel('speaker:2', t)).toBe('Спикер 2');
   });
 
   test('speaker:unknown → «Спикер ?»', () => {
-    expect(humanSpeakerLabel('speaker:unknown')).toBe('Спикер ?');
+    expect(humanSpeakerLabel('speaker:unknown', t)).toBe('Спикер ?');
   });
 
   test('speaker:owner и owner → «Я»', () => {
-    expect(humanSpeakerLabel('speaker:owner')).toBe('Я');
-    expect(humanSpeakerLabel('owner')).toBe('Я');
+    expect(humanSpeakerLabel('speaker:owner', t)).toBe('Я');
+    expect(humanSpeakerLabel('owner', t)).toBe('Я');
   });
 });
 
@@ -247,13 +262,13 @@ const sampleRawStt = JSON.stringify({
 
 describe('findSpeakerAtTime', () => {
   test('returns owner with «Я» display by default', () => {
-    const out = findSpeakerAtTime(sampleRawStt, [], 2);
+    const out = findSpeakerAtTime(sampleRawStt, [], 2, t);
     expect(out).toEqual({ tag: 'owner', displayName: 'Я', colorIdx: 0 });
   });
 
   test('uses contact_display_name for confirmed match', () => {
     const speakers = [mkSpeaker('S1', 'Иван', true)];
-    const out = findSpeakerAtTime(sampleRawStt, speakers, 7);
+    const out = findSpeakerAtTime(sampleRawStt, speakers, 7, t);
     expect(out?.displayName).toBe('Иван');
     expect(out?.tag).toBe('S1');
     expect(out?.colorIdx).toBe(1);
@@ -262,31 +277,31 @@ describe('findSpeakerAtTime', () => {
   test('falls back to humanSpeakerLabel for unconfirmed speaker', () => {
     // S2 не confirmed → fallback на человечный label "Голос 3".
     const speakers = [mkSpeaker('S2', 'Marina', false)];
-    const out = findSpeakerAtTime(sampleRawStt, speakers, 14);
+    const out = findSpeakerAtTime(sampleRawStt, speakers, 14, t);
     expect(out?.displayName).toBe('Голос 3');
   });
 
   test('250ms slack за конец сегмента', () => {
     // Сегмент кончается на 5.0, slack 0.25 → 5.2 ещё owner.
-    const out = findSpeakerAtTime(sampleRawStt, [], 5.2);
+    const out = findSpeakerAtTime(sampleRawStt, [], 5.2, t);
     expect(out?.tag).toBe('owner');
   });
 
   test('null at unknown time (gap)', () => {
     // Empty raw or beyond last segment + slack.
-    const out = findSpeakerAtTime(sampleRawStt, [], 999);
+    const out = findSpeakerAtTime(sampleRawStt, [], 999, t);
     expect(out).toBeNull();
   });
 
   test('null on null/invalid raw', () => {
-    expect(findSpeakerAtTime(null, [], 0)).toBeNull();
-    expect(findSpeakerAtTime('not-json', [], 0)).toBeNull();
-    expect(findSpeakerAtTime('{}', [], 0)).toBeNull();
+    expect(findSpeakerAtTime(null, [], 0, t)).toBeNull();
+    expect(findSpeakerAtTime('not-json', [], 0, t)).toBeNull();
+    expect(findSpeakerAtTime('{}', [], 0, t)).toBeNull();
   });
 
   test('null on NaN/Infinity time', () => {
-    expect(findSpeakerAtTime(sampleRawStt, [], NaN)).toBeNull();
-    expect(findSpeakerAtTime(sampleRawStt, [], Infinity)).toBeNull();
+    expect(findSpeakerAtTime(sampleRawStt, [], NaN, t)).toBeNull();
+    expect(findSpeakerAtTime(sampleRawStt, [], Infinity, t)).toBeNull();
   });
 
   test('skips malformed segments в merged', () => {
@@ -298,7 +313,7 @@ describe('findSpeakerAtTime', () => {
         { speakerTag: 'S1', start: 5, end: 10 },
       ],
     });
-    const out = findSpeakerAtTime(corruptRaw, [], 7);
+    const out = findSpeakerAtTime(corruptRaw, [], 7, t);
     expect(out?.tag).toBe('S1');
   });
 });

@@ -12,10 +12,10 @@
 //! и используется matching pipeline для suggestion_contact_id.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::audio::wav_chunker::read_wav_segment;
-use crate::embeddings::Embedder;
+use crate::embeddings::{Embedder, StubEmbedder};
 use crate::pipeline::merge::OWNER_TAG;
 use crate::providers::transcription::TranscriptSegment;
 use crate::AppError;
@@ -30,6 +30,51 @@ const MAX_SEGMENT_SEC: f32 = 10.0;
 const TARGET_SR: u32 = 16_000;
 
 pub type ClusterMap = HashMap<String, Vec<f32>>;
+
+/// [TD-18] Загрузить эмбеддер и извлечь кластеры **вне async-executor'а**.
+///
+/// `extract_clusters` читает WAV и гоняет ONNX-инференс на каждый сегмент —
+/// секунды чистого CPU и диска на длинном звонке. На tokio-worker'ах крутятся
+/// Tauri-команды UI, поэтому считаем в blocking-пуле (инженерное правило 5).
+/// Соседи по пайплайну (`SortformerDiarizer::diarize_real`, `audio_merger`)
+/// уже так делают — здесь просто выравнивание.
+///
+/// Загрузка эмбеддера тоже переехала внутрь: оба вызывающих собирали её
+/// одинаково, и она сама по себе блокирующая (чтение модели + инициализация
+/// ONNX-сессии). `log_tag` попадает в сообщения о выбранном движке.
+///
+/// Синхронный `extract_clusters` остаётся публичным — его зовёт
+/// `chunk_runner::build_chunk_embeddings_json`, уже внутри своего
+/// `spawn_blocking`.
+pub async fn load_and_extract_clusters(
+    merged: Vec<TranscriptSegment>,
+    mic_path: PathBuf,
+    system_path: PathBuf,
+    app_data_dir: &Path,
+    log_tag: &str,
+) -> Result<ClusterMap, AppError> {
+    let model_path = app_data_dir.join("models").join("embedder.onnx");
+    let log_tag = log_tag.to_string();
+    tokio::task::spawn_blocking(move || {
+        let embedder: Box<dyn Embedder> =
+            match crate::embeddings::try_load_onnx_embedder(&model_path) {
+                Some(e) => {
+                    log::info!("{log_tag}: OnnxEmbedder ({})", model_path.display());
+                    e
+                }
+                None => {
+                    log::debug!(
+                        "{log_tag}: StubEmbedder (нет модели в {})",
+                        model_path.display()
+                    );
+                    Box::new(StubEmbedder)
+                }
+            };
+        extract_clusters(&merged, &mic_path, &system_path, embedder.as_ref())
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("cluster extraction task join: {e}")))?
+}
 
 /// Извлечь embedding clusters per speaker_tag из merged транскрипта.
 /// owner-segments читаются из `mic_path`, остальные из `system_path`.

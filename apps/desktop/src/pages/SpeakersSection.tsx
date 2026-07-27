@@ -83,7 +83,7 @@ export function SpeakersSection({
       setSystemSrc(sys.status === 'fulfilled' ? convertFileSrc(sys.value) : null);
       setError(null);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -122,7 +122,7 @@ export function SpeakersSection({
       setNewConsent(false);
       await notifyChanged();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     } finally {
       setBusyAdd(false);
     }
@@ -139,7 +139,7 @@ export function SpeakersSection({
       setPickFor((m) => ({ ...m, [s.id]: '' }));
       await notifyChanged();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -152,7 +152,7 @@ export function SpeakersSection({
       await unbindCallSpeaker(s.id);
       await notifyChanged();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -327,10 +327,10 @@ export function SpeakersSection({
                     </div>
                     <div className="muted" style={{ fontSize: 12 }}>
                       {group.speakers.length === 1
-                        ? humanSpeakerLabel(first.speaker_tag)
+                        ? humanSpeakerLabel(first.speaker_tag, t)
                         : t('speakers.voiceMergedNote', {
                             tags: group.speakers
-                              .map((s) => humanSpeakerLabel(s.speaker_tag))
+                              .map((s) => humanSpeakerLabel(s.speaker_tag, t))
                               .join(' + '),
                             n: group.speakers.length,
                           })}
@@ -343,12 +343,12 @@ export function SpeakersSection({
                         type="button"
                         className="btn btn--quiet btn--sm"
                         onClick={() => void handleUnbind(s)}
-                        title={t('speakers.unbindAria', { label: humanSpeakerLabel(s.speaker_tag) })}
+                        title={t('speakers.unbindAria', { label: humanSpeakerLabel(s.speaker_tag, t) })}
                       >
                         {group.speakers.length === 1
                           ? t('speakers.unbindOne')
                           : t('speakers.unbindLabeled', {
-                              label: humanSpeakerLabel(s.speaker_tag),
+                              label: humanSpeakerLabel(s.speaker_tag, t),
                             })}
                       </button>
                     ))}

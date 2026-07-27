@@ -315,12 +315,21 @@ async fn fuse_pass(
     exclude_call: Option<&str>,
     period: Option<&std::collections::HashSet<String>>,
 ) -> Result<Vec<PassageHit>, AppError> {
-    // [B26.2] BM25 — пост-фильтр по периоду (SQL не трогаем), cosine —
-    // условие в отборе кандидатов.
-    let mut bm25 = search_fts(pool, expr, FUSION_CANDIDATES, only_call, exclude_call).await?;
-    if let Some(set) = period {
-        bm25.retain(|h| set.contains(&h.call_id));
-    }
+    // [TD-22] Период — условие ВНУТРИ запроса, а не пост-фильтр. Раньше
+    // BM25 брал глобальный топ-30 и только потом отбрасывал звонки не за
+    // период: на большом архиве нужный звонок в топ-30 не попадал, и вопрос
+    // «что обсуждали вчера про бюджет» получал ложное «ничего не найдено».
+    // Cosine-канал так делал с самого начала — каналы расходились.
+    let allowed: Option<Vec<String>> = period.map(|set| set.iter().cloned().collect());
+    let bm25 = crate::db::assistant_search::search_fts_in_calls(
+        pool,
+        expr,
+        FUSION_CANDIDATES,
+        only_call,
+        exclude_call,
+        allowed.as_deref(),
+    )
+    .await?;
     let bm25_ids: Vec<i64> = bm25.iter().map(|h| h.id).collect();
     let cosine_ids = cosine_top_n(
         rows,

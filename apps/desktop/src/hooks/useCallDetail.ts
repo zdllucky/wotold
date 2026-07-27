@@ -52,6 +52,7 @@ import {
   type RecordingDurationEvent,
 } from '../api/recording';
 import { humanError } from '../api/errors';
+import { useI18n } from '../i18n';
 
 export interface UseCallDetailResult {
   call: Call | null;
@@ -99,6 +100,8 @@ export interface UseCallDetailResult {
 }
 
 export function useCallDetail(callId: string): UseCallDetailResult {
+  // [TD-25] Тексты ошибок берутся из словаря — humanError требует `t`.
+  const { t } = useI18n();
   const [call, setCallState] = useState<Call | null>(null);
   const [recap, setRecap] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string | null>(null);
@@ -147,6 +150,10 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   // recap.md когда юзер открыл звонок до завершения pipeline) не ломал все
   // state setters.
   useEffect(() => {
+    // [TD-24] Флаг отмены — как в useCallAudio. Без него resolve запроса по
+    // старому звонку перезаписывал данные уже открытого нового: 12 ресурсов
+    // резолвятся вразнобой, а страница до этого монтировалась без key.
+    let cancelled = false;
     setLoading(true);
     setError(null);
     Promise.allSettled([
@@ -178,11 +185,14 @@ export function useCallDetail(callId: string): UseCallDetailResult {
           rDecisions,
           rOpenQ,
         ]) => {
+          // [TD-24] Звонок уже сменился — молча уходим, чужие данные в
+          // состояние текущего не пишем.
+          if (cancelled) return;
           // Call meta — критично. Без неё страница не имеет смысла.
           if (rCall.status === 'fulfilled') {
             setCallState(rCall.value);
           } else {
-            setError(humanError(rCall.reason));
+            setError(humanError(rCall.reason, t));
           }
           if (rRecap.status === 'fulfilled') setRecap(rRecap.value);
           if (rTrans.status === 'fulfilled') setTranscript(rTrans.value);
@@ -212,7 +222,12 @@ export function useCallDetail(callId: string): UseCallDetailResult {
           }
         },
       )
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [callId]);
 
   // [V7] auto-bound event — pipeline закончил matching и нашёл N speaker'ов

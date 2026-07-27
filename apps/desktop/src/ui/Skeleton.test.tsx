@@ -16,7 +16,7 @@ afterEach(() => cleanup());
 describe('Skeleton', () => {
   test('renders with aria-hidden="true" (decorative, not announced)', () => {
     const { container } = render(<Skeleton />);
-    const el = container.querySelector('.ds-skeleton')!;
+    const el = container.querySelector('.skeleton')!;
     expect(el).toBeInTheDocument();
     expect(el).toHaveAttribute('aria-hidden', 'true');
   });
@@ -27,7 +27,7 @@ describe('CallRowSkeleton', () => {
     const { container } = render(<CallRowSkeleton />);
     const wrapper = container.firstChild as HTMLElement;
     expect(wrapper.style.pointerEvents).toBe('none');
-    const skeletons = container.querySelectorAll('.ds-skeleton');
+    const skeletons = container.querySelectorAll('.skeleton');
     expect(skeletons.length).toBeGreaterThanOrEqual(4);
   });
 });
