@@ -43,6 +43,7 @@ pub mod chunk_assembly;
 // Без этого AudioScrubber играет только первый chunk вместо полной записи.
 pub mod audio_merger;
 // [M13 fix] Recovery сломанных chunked-записей из on-disk WAV'ов.
+pub mod chunk_lang;
 pub mod chunk_recovery;
 /// [P1.3] Periodic `recap:progress` event emitter wrapper. Оборачивает
 /// local LLM future чтобы каждые 15s emit'ить elapsed_sec — UI рендерит
@@ -91,6 +92,7 @@ pub(crate) mod recap_steps;
 
 // [B20.3] Render-side bold известных имён в recap.md (детерминированно).
 pub(crate) mod recap_md;
+pub(crate) mod recap_render;
 
 // [Q] Per-resource очереди тяжёлых local-ресурсов (stt/diarization/llm,
 // concurrency=1) + `queue:state` снапшоты для QueueMonitor.
@@ -278,7 +280,7 @@ pub(crate) async fn chunks_ready(pool: &SqlitePool, call_id: &str) -> Result<Chu
 /// «en» → [FOREIGN] на русской речи). Fallback на mic если system почти пуст.
 /// `None` если оба ниже порога речи — тогда пин не делаем.
 fn call_language(mic: &DiarizedTranscript, sys: &DiarizedTranscript) -> Option<String> {
-    use crate::pipeline::chunk_runner::{real_word_count, MIN_WORDS_FOR_LANG_PIN};
+    use crate::pipeline::chunk_lang::{real_word_count, MIN_WORDS_FOR_LANG_PIN};
     if real_word_count(sys) >= MIN_WORDS_FOR_LANG_PIN {
         if let Some(l) = sys.lang_detected.as_deref().filter(|s| !s.is_empty()) {
             return Some(l.to_string());
