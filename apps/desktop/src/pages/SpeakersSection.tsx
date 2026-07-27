@@ -83,7 +83,7 @@ export function SpeakersSection({
       setSystemSrc(sys.status === 'fulfilled' ? convertFileSrc(sys.value) : null);
       setError(null);
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -122,7 +122,7 @@ export function SpeakersSection({
       setNewConsent(false);
       await notifyChanged();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     } finally {
       setBusyAdd(false);
     }
@@ -139,7 +139,7 @@ export function SpeakersSection({
       setPickFor((m) => ({ ...m, [s.id]: '' }));
       await notifyChanged();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 
@@ -152,7 +152,7 @@ export function SpeakersSection({
       await unbindCallSpeaker(s.id);
       await notifyChanged();
     } catch (e) {
-      setError(humanError(e));
+      setError(humanError(e, t));
     }
   };
 

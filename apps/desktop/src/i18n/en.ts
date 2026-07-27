@@ -86,6 +86,113 @@ export const en: TranslationStrings = {
     removeRange: 'Remove date range',
   },
 
+  // [TD-25] Тексты ошибок — были захардкожены в api/errors.ts мимо словаря.
+  errors: {
+    unknown: 'Unknown error',
+    network: {
+      human: 'No connection to the Wotold server.',
+      hint: 'Check your internet and try again.',
+    },
+    llmTimeout: {
+      human: 'The local model did not respond within 10 minutes.',
+      hint: 'Try the “Light” preset — it is faster. Settings → Local engine.',
+    },
+    modelMissing: {
+      human: 'The local model is not installed.',
+      hint: 'Download it in Settings → Local engine.',
+    },
+    presetNotSet: {
+      human: 'No local engine preset selected.',
+      hint: 'Pick Light / Balanced / Quality in Settings → Local engine.',
+    },
+    transcriptEmpty: {
+      human: 'The transcript is empty — nothing to summarize.',
+    },
+    noAppHandle: {
+      human: 'Internal application error.',
+      hint: 'Restart Wotold and try again.',
+    },
+    transcriptRead: {
+      human: 'Could not read the transcript from disk.',
+      hint: 'Try reprocessing the whole call (Actions → Reprocess).',
+    },
+    sttFailed: {
+      human: 'Local transcription failed on one of the tracks.',
+      hint: 'Check that the models are installed in Settings → Local engine.',
+    },
+    recapPersist: {
+      human: 'The summary was generated but not saved.',
+      hint: 'Try regenerating the summary.',
+    },
+    llmFailed: {
+      human: 'The local model could not handle the task.',
+      hint: 'Try the “Light” preset in Settings → Local engine.',
+    },
+    recapBlank: {
+      human: 'The model returned an empty summary — nothing could be extracted from the transcript.',
+      hint: 'Try regenerating the summary.',
+    },
+    regenPanic: {
+      human: 'Could not regenerate the summary — internal error.',
+      hint: 'Try again. If it repeats, restart Wotold.',
+    },
+    chunksRetry: {
+      human: 'Some segments were not recognized.',
+      hint: 'Retry them before continuing — press ↻ Retry on each failed segment below.',
+    },
+    timeout: {
+      human: 'The request took too long.',
+      hint: 'Try again. If it repeats, check your internet.',
+    },
+    permission: {
+      human: 'No system permission.',
+      hint: 'Open “macOS Settings → Privacy & Security” and grant Wotold access.',
+    },
+    micPermission: {
+      human: 'No microphone access.',
+      hint: 'Open Settings → Microphone, enable Wotold, then restart the app.',
+    },
+    screenPermission: {
+      human: 'No access to system audio recording.',
+      hint: 'Open Settings → System audio capture, enable Wotold, then restart the app.',
+    },
+    alreadyRecording: {
+      human: 'Recording is already in progress.',
+    },
+    notRecording: {
+      human: 'Nothing is being recorded right now.',
+    },
+    sidecarMissing: {
+      human: 'The audio recording component is missing.',
+      hint: 'Reinstall Wotold or let us know — the build is damaged.',
+    },
+    diskFull: {
+      human: 'Not enough disk space.',
+      hint: 'Free up space or delete old recordings.',
+    },
+    dbLocked: {
+      human: 'The database is busy — another operation is running.',
+      hint: 'Try again in a second.',
+    },
+    dbCorrupt: {
+      human: 'The database is corrupted.',
+      hint: 'Wotold saved a backup (app.db.corrupt-*) and started with a clean one. Calls may be missing.',
+    },
+    badShape: {
+      human: 'The recognition service returned an unexpected format.',
+      hint: 'Restart processing for this call — it sometimes helps.',
+    },
+    badRequest: {
+      human: 'Invalid request.',
+    },
+    notFound: {
+      human: 'Not found.',
+    },
+    cancelled: {
+      human: 'Operation cancelled.',
+    },
+  },
+
   common: {
     winClose: 'Close window',
     winMinimize: 'Minimize window',

@@ -52,6 +52,7 @@ import {
   type RecordingDurationEvent,
 } from '../api/recording';
 import { humanError } from '../api/errors';
+import { useI18n } from '../i18n';
 
 export interface UseCallDetailResult {
   call: Call | null;
@@ -99,6 +100,8 @@ export interface UseCallDetailResult {
 }
 
 export function useCallDetail(callId: string): UseCallDetailResult {
+  // [TD-25] Тексты ошибок берутся из словаря — humanError требует `t`.
+  const { t } = useI18n();
   const [call, setCallState] = useState<Call | null>(null);
   const [recap, setRecap] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string | null>(null);
@@ -189,7 +192,7 @@ export function useCallDetail(callId: string): UseCallDetailResult {
           if (rCall.status === 'fulfilled') {
             setCallState(rCall.value);
           } else {
-            setError(humanError(rCall.reason));
+            setError(humanError(rCall.reason, t));
           }
           if (rRecap.status === 'fulfilled') setRecap(rRecap.value);
           if (rTrans.status === 'fulfilled') setTranscript(rTrans.value);

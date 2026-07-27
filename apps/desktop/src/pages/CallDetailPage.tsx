@@ -97,7 +97,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
   // retry и без «назад».
   const toast = useToast();
   const actionError = (e: unknown) =>
-    toast.show({ message: humanError(e), tone: 'danger' });
+    toast.show({ message: humanError(e, t), tone: 'danger' });
 
   // [B17 V3.9] Default tab → transcript (per artboard §5 reference).
   const [tab, setTab] = useState<Tab>('transcript');
@@ -237,7 +237,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
     try {
       await reprocessCall(call.id);
     } catch (e) {
-      toast.show({ message: t('callDetail.reprocessFailed', { error: humanError(e) }), tone: 'danger' });
+      toast.show({ message: t('callDetail.reprocessFailed', { error: humanError(e, t) }), tone: 'danger' });
       // [P16.1] Immediate revert optimistic patch — UI status вернётся в
       // failed без задержки. refetchAll ниже подтянет свежий failed_reason
       // (backend P16.2 теперь пишет failed_reason на chunks gate reject).
@@ -307,7 +307,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
       await regenerateRecap(callId);
     } catch (e) {
       // Reject = guard «уже обрабатывается» / spawn-ошибка → revert busy + state.
-      toast.show({ message: t('callDetail.regenerateFailed', { error: humanError(e) }), tone: 'danger' });
+      toast.show({ message: t('callDetail.regenerateFailed', { error: humanError(e, t) }), tone: 'danger' });
       // [P16.1 review] Functional updater — restore только patched поле
       // (recap_failed_reason), не stomp concurrent state из `call:progress`.
       // bgBusy-модель (regen = фон-задача): setBgBusy(false) на reject,
@@ -330,7 +330,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
     try {
       await regenerateTitle(callId);
     } catch (e) {
-      toast.show({ message: t('callDetail.regenerateTitleFailed', { error: humanError(e) }), tone: 'danger' });
+      toast.show({ message: t('callDetail.regenerateTitleFailed', { error: humanError(e, t) }), tone: 'danger' });
       setBgBusy(false);
     }
   };
@@ -621,7 +621,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
                 proxy wraps Anthropic 429 как provider_error + raw JSON;
                 humanError ловит "upstream error / 502 / Bad Gateway" → "Сервис
                 временно занят. Попробуйте ещё раз через минуту". */}
-            {humanError(call.recap_failed_reason)}
+            {humanError(call.recap_failed_reason, t)}
           </p>
           <button
             type="button"
@@ -710,7 +710,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
             emptyBody={
               call.recap_failed_reason
                 ? t('callDetail.recapEmptyFailed', {
-                    error: humanError(call.recap_failed_reason),
+                    error: humanError(call.recap_failed_reason, t),
                   })
                 : call.status === 'processing'
                   ? t('callDetail.recapEmptyProcessing')
