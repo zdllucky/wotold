@@ -86,6 +86,17 @@ export const kk: TranslationStrings = {
     removeRange: 'Кезеңді алып тастау',
   },
 
+  speakerLabel: {
+    voice: 'Дауыс',
+    me: 'Мен',
+    unknown: 'Сөйлеуші ?',
+    speakerN: '{n}-сөйлеуші',
+    voiceN: '{n}-дауыс',
+  },
+  callTitle: {
+    byDate: 'Қоңырау · {date}',
+    byId: 'Қоңырау {id}',
+  },
   // [TD-25] Тексты ошибок — были захардкожены в api/errors.ts мимо словаря.
   errors: {
     unknown: 'Белгісіз қате',

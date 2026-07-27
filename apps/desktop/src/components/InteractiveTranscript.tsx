@@ -242,7 +242,7 @@ export const InteractiveTranscript = forwardRef<InteractiveTranscriptHandle, Pro
         const contactLabel = labels.get(g.tag);
         const firstName = contactLabel
           ? contactLabel.split(/\s+/)[0] ?? contactLabel
-          : humanSpeakerLabel(g.tag);
+          : humanSpeakerLabel(g.tag, t);
         const text = g.segments
           .map((s) => s.text.trim())
           .filter(Boolean)

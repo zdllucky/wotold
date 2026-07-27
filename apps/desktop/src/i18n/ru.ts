@@ -91,6 +91,17 @@ const ruInternal = {
   },
 
   // ── Common buttons / labels / states ────────────────────────────────────
+  speakerLabel: {
+    voice: 'Голос',
+    me: 'Я',
+    unknown: 'Спикер ?',
+    speakerN: 'Спикер {n}',
+    voiceN: 'Голос {n}',
+  },
+  callTitle: {
+    byDate: 'Звонок · {date}',
+    byId: 'Звонок {id}',
+  },
   // [TD-25] Тексты ошибок — были захардкожены в api/errors.ts мимо словаря.
   errors: {
     unknown: 'Неизвестная ошибка',
