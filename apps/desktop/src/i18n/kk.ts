@@ -279,6 +279,15 @@ export const kk: TranslationStrings = {
   },
 
   callDetail: {
+    // [TD-37] Өңдеу сапасы туралы ескертпелер.
+    degradedTitle: 'Ескертпелермен өңделді',
+    degraded: {
+      partial_transcript: 'Жазбаның барлық бөлігі транскрипцияланбады',
+      system_track_not_diarized: 'Әңгімелесушілердің дауыстары бөлінбеді',
+      mic_track_not_diarized: 'Сіздің жолыңыздағы дауыстар бөлінбеді',
+      speaker_clustering_failed: 'Сөйлеушілер дауыс бойынша топталмады',
+      language_repin_failed: 'Мәтіннің бір бөлігі басқа тілде танылды',
+    },
     notFound: 'Қоңырау табылмады.',
     tabRecap: 'Қорытынды',
     tabTranscript: 'Транскрипт',

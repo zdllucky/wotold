@@ -11,6 +11,7 @@ use std::path::Path;
 use sqlx::SqlitePool;
 use tauri::AppHandle;
 
+use crate::db::DegradedFlag;
 use crate::{db, AppError};
 
 use super::diarize::{diarize_mic_track, diarize_system_track, relabel_owner_on_mic_full_file};
@@ -148,6 +149,9 @@ pub(super) async fn run_local_inner(
                 "call {}: partial transcript — {done}/{total} chunks done, failed idx {failed:?}",
                 ctx.call_id
             );
+            // [TD-37] Правило 3: деградация, влияющая на результат звонка,
+            // обязана оставить след для UI, а не только строку в логе.
+            mark_degraded(pool, &ctx.call_id, DegradedFlag::PartialTranscript).await;
         }
         _ => {}
     }
@@ -238,12 +242,20 @@ pub(super) async fn run_local_inner(
                                 );
                                 mic = re;
                             }
-                            Err(e) => log::warn!(
-                                "call {}: re-STT mic (lang={call_lang}) failed, \
-                                 оставляем mis-detected {:?}: {e}",
-                                ctx.call_id,
-                                mic.lang_detected
-                            ),
+                            Err(e) => {
+                                log::warn!(
+                                    "call {}: re-STT mic (lang={call_lang}) failed, \
+                                     оставляем mis-detected {:?}: {e}",
+                                    ctx.call_id,
+                                    mic.lang_detected
+                                );
+                                mark_degraded(
+                                    pool,
+                                    &ctx.call_id,
+                                    DegradedFlag::LanguageRepinFailed,
+                                )
+                                .await;
+                            }
                         }
                     }
                     if sys.lang_detected.as_deref() != Some(call_lang.as_str()) {
@@ -257,12 +269,20 @@ pub(super) async fn run_local_inner(
                                 );
                                 sys = re;
                             }
-                            Err(e) => log::warn!(
-                                "call {}: re-STT system (lang={call_lang}) failed, \
-                                 оставляем mis-detected {:?}: {e}",
-                                ctx.call_id,
-                                sys.lang_detected
-                            ),
+                            Err(e) => {
+                                log::warn!(
+                                    "call {}: re-STT system (lang={call_lang}) failed, \
+                                     оставляем mis-detected {:?}: {e}",
+                                    ctx.call_id,
+                                    sys.lang_detected
+                                );
+                                mark_degraded(
+                                    pool,
+                                    &ctx.call_id,
+                                    DegradedFlag::LanguageRepinFailed,
+                                )
+                                .await;
+                            }
                         }
                     }
                 }
@@ -538,5 +558,17 @@ async fn audio_byte_total(mic: &Path, sys: &Path) -> Option<i64> {
         Some(total)
     } else {
         None
+    }
+}
+
+/// [TD-37] Записать оговорку о качестве обработки. Ошибка записи не роняет
+/// звонок: это диагностика на пути, который уже деградировал, и падать из-за
+/// неё было бы хуже самой деградации.
+async fn mark_degraded(pool: &SqlitePool, call_id: &str, flag: DegradedFlag) {
+    if let Err(e) = db::add_degraded_flag(pool, call_id, flag).await {
+        log::warn!(
+            "degraded flag {} для {call_id} не записан: {e}",
+            flag.as_str()
+        );
     }
 }

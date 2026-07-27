@@ -1,4 +1,5 @@
 mod clusters;
+mod degraded;
 mod delete;
 mod lifecycle;
 mod paging;
@@ -9,6 +10,7 @@ mod suggestions;
 mod sweep;
 
 pub use clusters::*;
+pub use degraded::*;
 pub use delete::*;
 pub use lifecycle::*;
 pub use paging::*;

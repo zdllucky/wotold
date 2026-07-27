@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { retryChunk } from '../api/recording';
+import { listCallDegradedFlags } from '../api/calls';
 import { useQueueState } from '../hooks/useQueueState';
 import { useCallDetailActions } from './useCallDetailActions';
 import { localEngineEvalRecap } from '../api/local-engine';
@@ -189,6 +190,28 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
         : null,
     [confirmingTag, speakersLite],
   );
+
+  // [TD-37] Оговорки о качестве обработки — читаются отдельной командой:
+  // это диагностика, и тянуть её в горячий Call-контракт (27 callsite'ов)
+  // ради шапки одного экрана незачем.
+  const [degradedFlags, setDegradedFlags] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void listCallDegradedFlags(callId)
+      .then((flags) => {
+        // Значок качества не должен ронять экран звонка. Пустой ответ
+        // приходит не только ошибкой: команда может вернуть null (старая
+        // сборка бэкенда, мок в тесте) — это тоже «оговорок нет».
+        if (!cancelled) setDegradedFlags(Array.isArray(flags) ? flags : []);
+      })
+      .catch(() => {
+        // Значок качества — не повод рушить экран звонка.
+        if (!cancelled) setDegradedFlags([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [callId, call?.status]);
 
   // [TD-49] Команды над звонком со своими busy-флагами живут отдельно —
   // страница знает о них только через обработчики.
@@ -376,6 +399,16 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
                   callType={call.call_type}
                   confidence={call.call_type_confidence}
                 />
+                {/* [TD-37] Оговорки о качестве обработки. Пайплайн деградирует,
+                    а не падает: пользователь должен видеть, чем именно
+                    результат неполон, а не гадать «один голос или не
+                    разделилось». */}
+                {degradedFlags.length > 0 && (
+                  <span className="chip" title={degradedTitle(degradedFlags, t)}>
+                    <Icon name="alert" size={11} />
+                    {t('callDetail.degradedTitle')}
+                  </span>
+                )}
               </div>
 
       {/* [V8] Если есть прежние артефакты (recap или transcript) → это
@@ -655,6 +688,24 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
 type TFn = ReturnType<typeof useI18n>['t'];
 
 // Время начала звонка для meta-чипа (HH:MM в локали интерфейса).
+/** [TD-37] Расшифровка кодов деградации. Карта явная, а не шаблонный ключ:
+ *  код приходит из БД, и незнакомый (запись сделана более новой версией)
+ *  должен молча выпасть из подсказки, а не выдать сырую строку в UI. */
+const DEGRADED_LABELS = {
+  partial_transcript: 'callDetail.degraded.partial_transcript',
+  system_track_not_diarized: 'callDetail.degraded.system_track_not_diarized',
+  mic_track_not_diarized: 'callDetail.degraded.mic_track_not_diarized',
+  speaker_clustering_failed: 'callDetail.degraded.speaker_clustering_failed',
+  language_repin_failed: 'callDetail.degraded.language_repin_failed',
+} as const;
+
+function degradedTitle(flags: string[], t: TFn): string {
+  return flags
+    .filter((f): f is keyof typeof DEGRADED_LABELS => f in DEGRADED_LABELS)
+    .map((f) => t(DEGRADED_LABELS[f]))
+    .join('\n');
+}
+
 function fmtClock(iso: string, locale: string): string {
   try {
     return new Date(iso).toLocaleTimeString(

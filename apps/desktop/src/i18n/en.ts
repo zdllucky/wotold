@@ -279,6 +279,16 @@ export const en: TranslationStrings = {
   },
 
   callDetail: {
+    // [TD-37] Quality caveats — the pipeline degrades instead of failing, so
+    // the user has to see what exactly is incomplete.
+    degradedTitle: 'Processed with caveats',
+    degraded: {
+      partial_transcript: 'Not every part of the recording was transcribed',
+      system_track_not_diarized: 'Other speakers were not separated',
+      mic_track_not_diarized: 'Voices on your track were not separated',
+      speaker_clustering_failed: 'Speakers were not grouped by voice',
+      language_repin_failed: 'Some text was recognised in the wrong language',
+    },
     notFound: 'Call not found.',
     tabRecap: 'Recap',
     tabTranscript: 'Transcript',

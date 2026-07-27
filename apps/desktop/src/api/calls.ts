@@ -167,3 +167,9 @@ export function getActivePipelineCount(): Promise<number> {
 export function exportCallMarkdown(callId: string, destPath: string): Promise<void> {
   return invoke<void>('export_call_markdown', { callId, destPath });
 }
+
+/** [TD-37] Оговорки о качестве обработки звонка. Пустой список — обработка
+ *  прошла без деградаций (или звонок записан до появления флагов). */
+export function listCallDegradedFlags(callId: string): Promise<string[]> {
+  return invoke<string[]>('list_call_degraded_flags', { callId });
+}
