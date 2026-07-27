@@ -116,6 +116,12 @@ public enum SidecarEvent {
     /// [TD-07] Захват фактически остановлен/возобновлён на обеих дорожках.
     case paused
     case resumed
+    /// [TD-21e] Дорожка замолчала: кадры перестали приходить дольше порога.
+    /// Операционное, как `rotateError` — запись продолжается, вторая дорожка
+    /// жива, а эта может вернуться сама.
+    case deviceLost(leg: RotateLeg, message: String)
+    /// [TD-21e] Кадры вернулись. `gapSec` — сколько секунд дорожки потеряно.
+    case deviceRecovered(leg: RotateLeg, gapSec: Double, restarted: Bool)
     case error(String)
     case callDetectStarted
     case callDetectStopped
@@ -159,6 +165,15 @@ public enum SidecarEvent {
             return ["event": "paused"]
         case .resumed:
             return ["event": "resumed"]
+        case let .deviceLost(leg, message):
+            return ["event": "device_lost", "leg": leg.rawValue, "message": message]
+        case let .deviceRecovered(leg, gapSec, restarted):
+            return [
+                "event": "device_recovered",
+                "leg": leg.rawValue,
+                "gap_sec": gapSec,
+                "restarted": restarted,
+            ]
         case let .error(message):
             return ["event": "error", "message": message]
         case .callDetectStarted:

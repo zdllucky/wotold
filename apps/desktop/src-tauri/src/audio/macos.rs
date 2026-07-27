@@ -318,7 +318,9 @@ fn classify_event(ev: &str) -> EventClass {
         "level" => EventClass::Level,
         "rotated" => EventClass::Rotated,
         "stopped" | "error" => EventClass::Terminal,
-        "rotate_error" => EventClass::NonFatal,
+        // [TD-21e] Дорожка замолчала / вернулась. Как и rotate_error —
+        // операционное: вторая дорожка жива, запись продолжается.
+        "rotate_error" | "device_lost" | "device_recovered" => EventClass::NonFatal,
         _ => EventClass::Passthrough,
     }
 }
@@ -394,14 +396,30 @@ async fn run_dispatcher(
                     // звонок failed. Персистентный degraded-флаг для UI — TD-37.
                     EventClass::NonFatal => {
                         let leg = json.get("leg").and_then(Value::as_str).unwrap_or("?");
-                        let mic_rotated = json
-                            .get("mic_rotated")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false);
-                        let msg = json.get("message").and_then(Value::as_str).unwrap_or("");
-                        log::warn!(
-                            "audio degraded (запись продолжается): leg={leg} mic_rotated={mic_rotated}: {msg}"
-                        );
+                        // [TD-21e] У device_* своя нагрузка: длительность
+                        // провала вместо флага ротации. Логируем то, что есть,
+                        // не выдумывая недостающее.
+                        let detail = match ev {
+                            "device_lost" => json
+                                .get("message")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string(),
+                            "device_recovered" => {
+                                let gap =
+                                    json.get("gap_sec").and_then(Value::as_f64).unwrap_or(0.0);
+                                format!("дорожка вернулась, потеряно {gap:.1} с")
+                            }
+                            _ => {
+                                let mic_rotated = json
+                                    .get("mic_rotated")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false);
+                                let msg = json.get("message").and_then(Value::as_str).unwrap_or("");
+                                format!("mic_rotated={mic_rotated}: {msg}")
+                            }
+                        };
+                        log::warn!("audio degraded (запись продолжается): {ev} leg={leg} {detail}");
                     }
                     EventClass::Passthrough => {
                         log::debug!("audio passthrough event: {json}");
@@ -546,6 +564,18 @@ mod tests {
     fn stopped_and_error_stay_terminal() {
         assert_eq!(classify_event("stopped"), EventClass::Terminal);
         assert_eq!(classify_event("error"), EventClass::Terminal);
+    }
+
+    #[test]
+    fn device_events_are_non_fatal() {
+        // [TD-21e] Отвалившийся микрофон не должен убивать сессию: системная
+        // дорожка жива, а микрофонная может вернуться сама. Без явной
+        // классификации оба события ушли бы в Passthrough и растворились в
+        // debug-логе — то есть фикс существовал бы только на стороне Swift.
+        assert_eq!(classify_event("device_lost"), EventClass::NonFatal);
+        assert_eq!(classify_event("device_recovered"), EventClass::NonFatal);
+        assert_ne!(classify_event("device_lost"), EventClass::Terminal);
+        assert_ne!(classify_event("device_lost"), EventClass::Passthrough);
     }
 
     #[test]
