@@ -504,11 +504,7 @@ async fn run_recap(
     lang_detected: Option<&str>,
     models_ids: LocalModels,
 ) -> Result<(), AppError> {
-    use crate::local_engine::{
-        llm::LocalLlamaProvider,
-        models::{self, ModelId},
-        preset::LocalEnginePreset,
-    };
+    use crate::local_engine::models::{self, ModelId};
     let preset = models_ids.preset;
     let llm_id = models_ids.llm;
     let whisper_id: ModelId = models_ids.whisper;
@@ -547,26 +543,19 @@ async fn run_recap(
     // и cloud (с CallType hint от классификатора).
     let llm_result = match transcript_md_read {
         Ok(transcript_md) if !transcript_md.trim().is_empty() => {
-            // [M14 T-16 P2] Speculative decoding — pass draft model path
-            // когда (а) flag enabled (Labs opt-in), (b) preset=Quality
-            // (только 7B заметно выигрывает от 0.5B draft), (c) file existence
-            // checked внутри provider (graceful fallback на non-speculative).
-            let draft_path: Option<std::path::PathBuf> =
-                if s.summary_speculative_decoding && preset == LocalEnginePreset::Quality {
-                    Some(crate::local_engine::models::model_path(
-                        &ctx.app_data_dir,
-                        crate::local_engine::models::ModelId::QWEN25_0_5B.as_str(),
-                    ))
-                } else {
-                    None
-                };
-            // [P1.3] Per-preset timeout (Light 5min / Balanced 10min / Quality 15min).
-            let provider = LocalLlamaProvider::for_preset(&ctx.app_data_dir, llm_id)
-                .with_call(ctx.call_id.clone())
-                .with_timeout(crate::local_engine::llm::timeout_for_preset(preset))
-                .with_app(app.clone())
-                .await
-                .with_draft_model(draft_path);
+            // [TD-36] Провайдер собирается общим билдером — тем же, что у
+            // регенерации. Раньше здесь стояла своя сборка, и различие было не
+            // косметическим: она не подключала резидентный llama-server, то
+            // есть рекап при записи всегда поднимал модель заново, хотя
+            // прогретая уже висела в памяти (B2).
+            let (provider, _preset) = super::local_llm::build_local_llm_provider(
+                pool,
+                &ctx.app_data_dir,
+                app,
+                s,
+                Some(&ctx.call_id),
+            )
+            .await?;
             // [F3] Step-события для thinking-блока UI.
             let step_sink = recap_steps::BusStepSink {
                 app: Some(app.clone()),

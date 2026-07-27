@@ -56,6 +56,8 @@ impl LazyLocalProvider {
                     &self.app_data_dir,
                     &self.app,
                     &s,
+                    // Ассистент не привязан к одному звонку — метки нет.
+                    None,
                 )
                 .await?;
                 // cache_prompt: стабильный префикс [system][fragments]
