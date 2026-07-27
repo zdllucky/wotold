@@ -157,7 +157,7 @@ pub fn sanitize_merged(segments: Vec<TranscriptSegment>) -> Vec<TranscriptSegmen
         seg.text = cleaned;
 
         // 2. drop галлюцинаций (включая опустевшие после strip) + global loop.
-        if is_hallucination(&seg.text)
+        if is_hallucination(&seg.text, seg.confidence)
             || (!loop_texts.is_empty() && loop_texts.contains(&normalize_text(&seg.text)))
         {
             dropped += 1;
