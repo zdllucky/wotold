@@ -370,7 +370,7 @@ pub(crate) const MIN_WORDS_FOR_LANG_PIN: usize = 8;
 pub(crate) fn real_word_count(t: &DiarizedTranscript) -> usize {
     t.segments
         .iter()
-        .filter(|s| !is_hallucination(&s.text))
+        .filter(|s| !is_hallucination(&s.text, s.confidence))
         .map(|s| s.text.split_whitespace().count())
         .sum()
 }
