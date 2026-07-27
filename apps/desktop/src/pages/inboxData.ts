@@ -5,6 +5,7 @@
 import { bcp47 } from '../i18n';
 import type { Call } from '../api/recording';
 import type { CallState } from '../types/callState';
+import type { IconName } from '../ui/Icon';
 
 export const VIRTUALIZATION_THRESHOLD = 200;
 export const ROW_HEIGHT = 72;
@@ -282,4 +283,13 @@ export function initials(name: string): string {
       .map((w) => w[0]?.toUpperCase() ?? '')
       .join('') || '·'
   );
+}
+
+/** [TD-49] Описание фасета для омни-бара. Жил в `InboxView`, поднят сюда,
+ *  когда омни-бар переехал в свой модуль и стал вторым потребителем. */
+export interface FacetDef {
+  key: StrFacetKey;
+  label: string;
+  icon: IconName;
+  values: { v: string; label: string }[];
 }
