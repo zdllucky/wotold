@@ -429,4 +429,6 @@ async fn drain_pending(
 }
 
 #[cfg(test)]
+mod probes;
+#[cfg(test)]
 mod tests;
