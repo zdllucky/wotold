@@ -248,22 +248,12 @@ impl PipelineRunner {
 
         // 3. Restore SQL.
         if artifacts_intact {
-            let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query(
-                "UPDATE calls
-                 SET status = 'ready',
-                     failed_reason = NULL,
-                     pipeline_step = NULL,
-                     pipeline_pct = NULL,
-                     pipeline_eta_sec = NULL,
-                     upload_bytes = NULL,
-                     updated_at = ?1
-                 WHERE id = ?2",
-            )
-            .bind(&now)
-            .bind(call_id)
-            .execute(pool)
-            .await?;
+            // [TD-17] Через db-слой, а не сырым SQL: SET-клауза идентична
+            // mark_call_ready (status + failed_reason + pipeline_* + updated_at),
+            // но раньше писалась здесь копией — то есть мимо любых гейтов,
+            // которые db-слой захочет ввести. Переход processing → ready
+            // легален (артефакты на диске целы, отменённый run восстановлен).
+            crate::db::mark_call_ready(pool, call_id).await?;
             // [M15.3] Артефакты целы, звонок снова ready — вернуть в индекс
             // ассистента (reprocess его деиндексировал на старте).
             if let Err(e) = crate::assistant::indexer::index_call(pool, store, call_id).await {

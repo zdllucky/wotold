@@ -230,19 +230,29 @@ pub async fn finish_recording(
     let now = chrono::Utc::now().to_rfc3339();
     let duration_secs_i64 = duration_sec.round() as i64;
 
-    sqlx::query(
+    // [TD-17] FSM-гейт по образцу `db::chunks::mark_chunk_*`: легален только
+    // переход `recording → processing`. Раньше `WHERE id = ?1` позволял
+    // отставшему stop-flow утащить уже `ready`/`failed` звонок обратно в
+    // обработку. 0 строк — настоящая ошибка (функция обязана вернуть Call),
+    // и без гейта следующий get_call падал с невнятным «disappeared».
+    let updated = sqlx::query(
         "UPDATE calls
          SET status = 'processing',
              ended_at = ?2,
              duration_sec = ?3,
              updated_at = ?2
-         WHERE id = ?1",
+         WHERE id = ?1 AND status = 'recording'",
     )
     .bind(call_id)
     .bind(&now)
     .bind(duration_secs_i64)
     .execute(pool)
     .await?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Other(format!(
+            "finish_recording: звонок {call_id} не в статусе 'recording'"
+        )));
+    }
 
     get_call(pool, call_id)
         .await?
@@ -598,7 +608,16 @@ pub async fn fail_recording_with_reason(
     let now = chrono::Utc::now().to_rfc3339();
     // [V6.2] Очищаем pipeline_* — звонок больше не processing, UI должен
     // показывать error variant, а не ProgressRail.
-    sqlx::query(
+    // [TD-17] Гейт: провалить можно только активный звонок. Раньше
+    // `WHERE id = ?1` позволял перевести уже `ready` звонок в `failed` и
+    // заодно перетереть его `ended_at`.
+    //
+    // 0 строк — **warn, а не Err**: функция живёт в error-path, четыре
+    // callsite'а зовут её через `let _ =`, а два через `?`
+    // (pipeline_runner, pipeline::run). Превращать «не смогли записать
+    // провал» в новую ошибку поверх исходной нельзя — потеряется первичная
+    // причина. Так же требует и формулировка аудита («с warn-логом»).
+    let updated = sqlx::query(
         "UPDATE calls
          SET status = 'failed',
              ended_at = ?2,
@@ -608,13 +627,19 @@ pub async fn fail_recording_with_reason(
              pipeline_eta_sec = NULL,
              upload_bytes = NULL,
              updated_at = ?2
-         WHERE id = ?1",
+         WHERE id = ?1 AND status IN ('recording', 'processing')",
     )
     .bind(call_id)
     .bind(&now)
     .bind(reason)
     .execute(pool)
     .await?;
+    if updated.rows_affected() == 0 {
+        log::warn!(
+            "fail_recording: звонок {call_id} не в активном статусе — \
+             нелегальный переход проигнорирован (reason: {reason:?})"
+        );
+    }
     Ok(())
 }
 
@@ -696,6 +721,79 @@ mod tests {
         mark_call_ready(&db.pool, &call.id).await.unwrap();
         let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
         assert_eq!(after.status, "ready");
+    }
+
+    // ============================================================
+    // [TD-17] FSM-гейты: нелегальные переходы не проходят
+    // ============================================================
+
+    #[tokio::test]
+    async fn finish_recording_rejects_non_recording_status() {
+        // Регрессия: `WHERE id = ?1` позволял отставшему stop-flow утащить уже
+        // готовый звонок обратно в processing.
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &call.id, 10.0).await.unwrap();
+        mark_call_ready(&db.pool, &call.id).await.unwrap();
+
+        let err = finish_recording(&db.pool, &call.id, 10.0)
+            .await
+            .expect_err("ready → processing нелегален");
+        assert!(
+            format!("{err}").contains("не в статусе 'recording'"),
+            "внятная ошибка вместо «disappeared», получили: {err}"
+        );
+
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert_eq!(after.status, "ready", "статус не должен был измениться");
+    }
+
+    #[tokio::test]
+    async fn fail_recording_on_ready_call_is_warn_noop() {
+        // Гейт для fail — warn, а не Err: функция живёт в error-path, и новая
+        // ошибка поверх исходной потеряла бы первичную причину.
+        let db = fresh_db().await;
+        let call = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &call.id, 10.0).await.unwrap();
+        mark_call_ready(&db.pool, &call.id).await.unwrap();
+        let before = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+
+        fail_recording_with_reason(&db.pool, &call.id, Some("поздний фейл"))
+            .await
+            .expect("нелегальный переход не должен возвращать Err");
+
+        let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
+        assert_eq!(after.status, "ready", "готовый звонок не помечается failed");
+        assert!(after.failed_reason.is_none(), "reason не записывается");
+        assert_eq!(
+            after.ended_at, before.ended_at,
+            "ended_at не перетирается — раньше это происходило безусловно"
+        );
+    }
+
+    #[tokio::test]
+    async fn fail_recording_allowed_from_recording_and_processing() {
+        // Легальные переходы обязаны продолжать работать.
+        let db = fresh_db().await;
+
+        let a = insert_recording(&db.pool, "managed").await.unwrap();
+        fail_recording_with_reason(&db.pool, &a.id, Some("из recording"))
+            .await
+            .unwrap();
+        assert_eq!(
+            get_call(&db.pool, &a.id).await.unwrap().unwrap().status,
+            "failed"
+        );
+
+        let b = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &b.id, 5.0).await.unwrap();
+        fail_recording_with_reason(&db.pool, &b.id, Some("из processing"))
+            .await
+            .unwrap();
+        assert_eq!(
+            get_call(&db.pool, &b.id).await.unwrap().unwrap().status,
+            "failed"
+        );
     }
 
     #[tokio::test]
