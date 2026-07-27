@@ -327,6 +327,23 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    /// [TD-48] Ждать наступления состояния, а не «30 мс».
+    ///
+    /// Все ожидания в этих тестах — про наблюдаемое состояние очереди
+    /// (кто держит ресурс, кто в очереди, сколько снапшотов эмитнуто), и для
+    /// него есть честная проверка. Фиксированная задержка проверяла лишь то,
+    /// что раннер успел, — на нагруженном CI это и есть источник флаков
+    /// (правило 6).
+    async fn wait_until(mut cond: impl FnMut() -> bool, what: &str) {
+        for _ in 0..50_000 {
+            if cond() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("не дождались: {what}");
+    }
+
     fn res_state<'a>(ev: &'a QueueStateEvent, id: &str) -> &'a ResourceStateDto {
         ev.resources.iter().find(|r| r.id == id).unwrap()
     }
@@ -339,15 +356,23 @@ mod tests {
         let first = reg.acquire(Resource::Stt, Some("c1")).await;
 
         let mut handles = Vec::new();
-        for name in ["c2", "c3", "c4"] {
+        let reg_for_probe = Arc::clone(&reg);
+        for (queued, name) in ["c2", "c3", "c4"].into_iter().enumerate() {
             let reg = Arc::clone(&reg);
             let order = Arc::clone(&order);
             handles.push(tokio::spawn(async move {
                 let _p = reg.acquire(Resource::Stt, Some(name)).await;
                 order.lock().unwrap().push(name.to_string());
             }));
-            // Даём каждому встать в очередь по порядку.
-            tokio::time::sleep(Duration::from_millis(20)).await;
+            // Ждём, что этот успел встать в очередь, — иначе порядок FIFO
+            // проверялся бы на очереди, которой ещё нет.
+            let reg_probe = Arc::clone(&reg_for_probe);
+            let expected = queued + 1;
+            wait_until(
+                || res_state(&reg_probe.snapshot(), "stt").waiting.len() == expected,
+                "waiter встал в очередь",
+            )
+            .await;
         }
 
         drop(first);
@@ -366,7 +391,11 @@ mod tests {
         let waiter = tokio::spawn(async move {
             let _p = reg2.acquire(Resource::Llm, Some("c2")).await;
         });
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        wait_until(
+            || res_state(&reg.snapshot(), "llm").waiting.len() == 1,
+            "c2 встал в очередь за llm",
+        )
+        .await;
 
         let snap = reg.snapshot();
         let llm = res_state(&snap, "llm");
@@ -385,17 +414,35 @@ mod tests {
         let (reg, sink) = registry_with_sink();
         let p1 = reg.acquire(Resource::Stt, Some("c1")).await;
 
+        // Держатель отпускает ресурс по сигналу теста, а не по таймеру.
+        let held = Arc::new(tokio::sync::Notify::new());
+        let held2 = Arc::clone(&held);
         let reg2 = Arc::clone(&reg);
         let waiter = tokio::spawn(async move {
             let _p = reg2.acquire(Resource::Stt, Some("c2")).await;
-            // Держим чуть-чуть чтобы снапшот успел показать busy=c2.
-            tokio::time::sleep(Duration::from_millis(30)).await;
+            // Держим, пока тест не снимет снапшот с busy=c2.
+            held2.notified().await;
         });
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        wait_until(
+            || res_state(&reg.snapshot(), "stt").waiting.len() == 1,
+            "c2 встал в очередь за stt",
+        )
+        .await;
 
         let before = sink.count();
         drop(p1);
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        wait_until(
+            || {
+                sink.count() > before
+                    && res_state(&reg.snapshot(), "stt")
+                        .busy
+                        .as_ref()
+                        .and_then(|t| t.call_id.as_deref())
+                        == Some("c2")
+            },
+            "c2 получил ресурс и снапшот эмитнут",
+        )
+        .await;
         assert!(sink.count() > before, "release + acquire должны эмитить");
         let snap = reg.snapshot();
         assert_eq!(
@@ -407,6 +454,7 @@ mod tests {
                 .as_deref(),
             Some("c2")
         );
+        held.notify_one();
         waiter.await.unwrap();
     }
 
@@ -419,12 +467,19 @@ mod tests {
         let waiter = tokio::spawn(async move {
             let _p = reg2.acquire(Resource::Diarization, Some("c2")).await;
         });
-        tokio::time::sleep(Duration::from_millis(30)).await;
-        assert_eq!(res_state(&reg.snapshot(), "diarization").waiting.len(), 1);
+        wait_until(
+            || res_state(&reg.snapshot(), "diarization").waiting.len() == 1,
+            "c2 встал в очередь за diarization",
+        )
+        .await;
 
         let before = sink.count();
         waiter.abort();
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        wait_until(
+            || res_state(&reg.snapshot(), "diarization").waiting.is_empty(),
+            "abort убрал ждущего из очереди",
+        )
+        .await;
 
         assert_eq!(
             res_state(&reg.snapshot(), "diarization").waiting.len(),
@@ -443,11 +498,13 @@ mod tests {
             let _q = permit; // permit живёт внутри blocking-задачи
             std::thread::sleep(Duration::from_millis(80));
         });
-        tokio::time::sleep(Duration::from_millis(30)).await;
-        assert!(
-            res_state(&reg.snapshot(), "diarization").busy.is_some(),
-            "ресурс busy пока blocking-задача жива"
-        );
+        // Сон ВНУТРИ blocking-задачи — это предмет теста (она держит permit),
+        // а не синхронизация: снаружи ждём наблюдаемое состояние.
+        wait_until(
+            || res_state(&reg.snapshot(), "diarization").busy.is_some(),
+            "blocking-задача заняла ресурс",
+        )
+        .await;
         blocking.await.unwrap();
         assert!(res_state(&reg.snapshot(), "diarization").busy.is_none());
     }

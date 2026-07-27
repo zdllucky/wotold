@@ -11,7 +11,7 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc, Mutex,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 /// Helper для test config с короткими интервалами (тесты не ждут реальные
 /// 10 мин).
@@ -27,6 +27,91 @@ fn test_config() -> ChunkOrchestratorConfig {
     }
 }
 
+/// [TD-48] Счётчик вызовов с сигналом. Тест ждёт «оркестратор дошёл до N-го
+/// вызова», а не «прошло 50 мс»: на нагруженном раннере второе не гарантирует
+/// первого, и именно так эти тесты флачили (правило 6).
+#[derive(Clone)]
+struct CallProbe {
+    tx: Arc<watch::Sender<usize>>,
+    rx: watch::Receiver<usize>,
+}
+
+impl CallProbe {
+    fn new() -> Self {
+        let (tx, rx) = watch::channel(0usize);
+        Self {
+            tx: Arc::new(tx),
+            rx,
+        }
+    }
+
+    fn hit(&self) {
+        self.tx.send_modify(|c| *c += 1);
+    }
+
+    fn count(&self) -> usize {
+        *self.rx.borrow()
+    }
+
+    /// Дождаться `n`-го вызова. Таймаут — страховка от зависания: без него
+    /// сломанный оркестратор вешал бы прогон вместо внятного падения.
+    async fn wait_for(&self, n: usize) {
+        let mut rx = self.rx.clone();
+        let waited = tokio::time::timeout(Duration::from_secs(5), async {
+            rx.wait_for(|&c| c >= n).await.map(|_| ())
+        })
+        .await;
+        assert!(
+            waited.is_ok(),
+            "не дождались {n} вызовов за 5 с (было {})",
+            self.count()
+        );
+    }
+
+    /// Убедиться, что за `within` вызовов НЕ прибавилось. Для утверждений
+    /// «ротации не случилось» сигнала не существует по определению —
+    /// единственный честный способ это ограниченное ожидание.
+    async fn expect_none_within(&self, within: Duration) {
+        let mut rx = self.rx.clone();
+        let changed = tokio::time::timeout(within, rx.changed()).await;
+        assert!(
+            changed.is_err(),
+            "ожидали тишину, а вызовов стало {}",
+            self.count()
+        );
+    }
+}
+
+/// [TD-48] Отправить пачку RMS и дождаться, что оркестратор её **забрал**.
+///
+/// Канал ёмкости 1: возврат `send` означает, что предыдущий сэмпл уже принят,
+/// поэтому дубль последнего и есть барьер. Без него порядок «RMS доехали →
+/// пауза» держался только на `sleep(30)`, и на нагруженном раннере пауза
+/// могла обогнать сэмплы — тогда момент начала паузы фиксировался по нулевому
+/// таймкоду, накопленная пауза выходила втрое больше, и чанк не резался
+/// вообще.
+async fn send_rms_settled(tx: &mpsc::Sender<(u64, f32)>, samples: &[(u64, f32)]) {
+    for s in samples {
+        tx.send(*s).await.unwrap();
+    }
+    if let Some(last) = samples.last() {
+        tx.send(*last).await.unwrap();
+    }
+}
+
+/// [TD-48] Отправить команду паузы и дождаться, что оркестратор её **обработал**.
+///
+/// Сигнала на это нет, зато есть встречное давление канала: при ёмкости 1
+/// третий `send` проходит только после того, как приёмник забрал первый И
+/// довертел тело своей ветки `select!` (цикл однопоточный). Команда паузы
+/// идемпотентна по контракту — это отдельно проверяет
+/// `pause_resume_idempotent_no_crash`, — поэтому повтор безвреден.
+async fn set_paused_and_settle(tx: &mpsc::Sender<bool>, paused: bool) {
+    for _ in 0..3 {
+        tx.send(paused).await.unwrap();
+    }
+}
+
 /// Mock rotate fn — counts invocations + sends rotated event через канал
 /// (имитирует sidecar ack).
 fn make_rotate_fn(
@@ -34,11 +119,27 @@ fn make_rotate_fn(
     rotated_tx: mpsc::Sender<Value>,
     rotated_duration_ms: u64,
 ) -> impl Fn(u32) -> RotateFut + Send + 'static {
+    make_rotate_fn_probed(
+        rotate_count,
+        rotated_tx,
+        rotated_duration_ms,
+        CallProbe::new(),
+    )
+}
+
+fn make_rotate_fn_probed(
+    rotate_count: Arc<AtomicU32>,
+    rotated_tx: mpsc::Sender<Value>,
+    rotated_duration_ms: u64,
+    probe: CallProbe,
+) -> impl Fn(u32) -> RotateFut + Send + 'static {
     move |_idx| {
         let count = rotate_count.clone();
         let tx = rotated_tx.clone();
+        let probe = probe.clone();
         Box::pin(async move {
             count.fetch_add(1, Ordering::SeqCst);
+            probe.hit();
             // Имитируем sidecar ack через канал.
             let ev = serde_json::json!({
                 "event": "rotated",
@@ -58,11 +159,22 @@ fn make_enqueue_fn(
     calls: Arc<Mutex<Vec<(u32, u64, u64, Option<String>)>>>,
     tail_template: String,
 ) -> impl Fn(u32, u64, u64, Option<String>) -> EnqueueFut + Send + 'static {
+    make_enqueue_fn_probed(calls, tail_template, CallProbe::new())
+}
+
+#[allow(clippy::type_complexity)]
+fn make_enqueue_fn_probed(
+    calls: Arc<Mutex<Vec<(u32, u64, u64, Option<String>)>>>,
+    tail_template: String,
+    probe: CallProbe,
+) -> impl Fn(u32, u64, u64, Option<String>) -> EnqueueFut + Send + 'static {
     move |idx, start, end, prev| {
         let calls = calls.clone();
         let tail = format!("{tail_template}-{idx}");
+        let probe = probe.clone();
         Box::pin(async move {
             calls.lock().unwrap().push((idx, start, end, prev));
+            probe.hit();
             Ok(Some(tail))
         })
     }
@@ -104,6 +216,7 @@ async fn rotated_event_enqueues_chunk() {
     let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
 
     let calls_clone = calls.clone();
+    let enqueued = CallProbe::new();
     let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
     let handle = tokio::spawn(run(
         test_config(),
@@ -112,7 +225,7 @@ async fn rotated_event_enqueues_chunk() {
         stop_rx,
         pause_rx,
         make_rotate_fn(rotate_count, rotated_back_tx, 0),
-        make_enqueue_fn(calls_clone, "tail".into()),
+        make_enqueue_fn_probed(calls_clone, "tail".into(), enqueued.clone()),
     ));
 
     // Симулируем rotated event приходящий из dispatcher.
@@ -126,8 +239,8 @@ async fn rotated_event_enqueues_chunk() {
         .await
         .unwrap();
 
-    // Дать orchestrator'у обработать.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Ждём сам факт обработки, а не «50 мс прошло».
+    enqueued.wait_for(1).await;
     let _ = stop_tx.send(());
     let summary = handle.await.unwrap();
     assert_eq!(summary.chunks_completed, 1);
@@ -154,6 +267,7 @@ async fn parallel_mode_never_passes_prev_prompt() {
     let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
 
     let calls_clone = calls.clone();
+    let enqueued = CallProbe::new();
     let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
     let handle = tokio::spawn(run(
         test_config(),
@@ -162,7 +276,7 @@ async fn parallel_mode_never_passes_prev_prompt() {
         stop_rx,
         pause_rx,
         make_rotate_fn(rotate_count, rotated_back_tx, 0),
-        make_enqueue_fn(calls_clone, "tail".into()),
+        make_enqueue_fn_probed(calls_clone, "tail".into(), enqueued.clone()),
     ));
 
     // Два последовательных rotated event'а.
@@ -176,8 +290,8 @@ async fn parallel_mode_never_passes_prev_prompt() {
             }))
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(30)).await;
     }
+    enqueued.wait_for(2).await;
 
     let _ = stop_tx.send(());
     let summary = handle.await.unwrap();
@@ -208,6 +322,7 @@ async fn parallel_spawn_drains_all_on_stop() {
     let rotate_count = Arc::new(AtomicU32::new(0));
     let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
     let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
+    let enqueued = CallProbe::new();
 
     let handle = tokio::spawn(run(
         test_config(),
@@ -216,7 +331,7 @@ async fn parallel_spawn_drains_all_on_stop() {
         stop_rx,
         pause_rx,
         make_rotate_fn(rotate_count, rotated_back_tx, 0),
-        make_enqueue_fn(calls.clone(), "tail".into()),
+        make_enqueue_fn_probed(calls.clone(), "tail".into(), enqueued.clone()),
     ));
 
     for dur in [1.0, 1.0, 1.0] {
@@ -230,8 +345,8 @@ async fn parallel_spawn_drains_all_on_stop() {
             .await
             .unwrap();
     }
-    // Дать spawn'нутым task'ам шанс start'нуть до stop'а.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Ждём, что все три задачи реально стартовали, а не «дали шанс».
+    enqueued.wait_for(3).await;
 
     let _ = stop_tx.send(());
     let summary = handle.await.unwrap();
@@ -259,6 +374,7 @@ async fn final_chunk_coords_reported_on_stop() {
     let rotate_count = Arc::new(AtomicU32::new(0));
     let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
     let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
+    let enqueued = CallProbe::new();
 
     let handle = tokio::spawn(run(
         test_config(),
@@ -267,7 +383,7 @@ async fn final_chunk_coords_reported_on_stop() {
         stop_rx,
         pause_rx,
         make_rotate_fn(rotate_count, rotated_back_tx, 0),
-        make_enqueue_fn(calls, "tail".into()),
+        make_enqueue_fn_probed(calls, "tail".into(), enqueued.clone()),
     ));
 
     // 2 rotated events (dur 1.0s, 2.0s) → chunk_idx=2, chunk_start=3000ms.
@@ -281,8 +397,8 @@ async fn final_chunk_coords_reported_on_stop() {
             }))
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(30)).await;
     }
+    enqueued.wait_for(2).await;
 
     let _ = stop_tx.send(());
     let summary = handle.await.unwrap();
@@ -425,14 +541,16 @@ async fn silence_in_window_triggers_rotate() {
     let rotate_count_clone = rotate_count.clone();
 
     let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
+    let rotated = CallProbe::new();
+    let enqueued = CallProbe::new();
     let handle = tokio::spawn(run(
         test_config(),
         rms_rx,
         rotate_rx,
         stop_rx,
         pause_rx,
-        make_rotate_fn(rotate_count_clone, rotate_back_tx, 950),
-        make_enqueue_fn(calls.clone(), "tail".into()),
+        make_rotate_fn_probed(rotate_count_clone, rotate_back_tx, 950, rotated.clone()),
+        make_enqueue_fn_probed(calls.clone(), "tail".into(), enqueued.clone()),
     ));
 
     // Push RMS samples: 0-850ms loud, 870-1050ms silence (в window 900-1100).
@@ -443,8 +561,10 @@ async fn silence_in_window_triggers_rotate() {
         rms_tx.send((ts, 0.001)).await.unwrap();
     }
 
-    // Ждать чтобы interval tick фаирнул find_cut.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Ждём саму ротацию, а не тик по часам.
+    rotated.wait_for(1).await;
+    // И её последствие — закрытый чанк ушёл в очередь.
+    enqueued.wait_for(1).await;
 
     let _ = stop_tx.send(());
     let summary = handle.await.unwrap();
@@ -471,6 +591,7 @@ async fn no_silence_still_falls_back_to_local_min_rms() {
 
     let rotate_back_tx = rotate_tx.clone();
     let rotate_count_clone = rotate_count.clone();
+    let rotated = CallProbe::new();
 
     let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
     let handle = tokio::spawn(run(
@@ -479,7 +600,7 @@ async fn no_silence_still_falls_back_to_local_min_rms() {
         rotate_rx,
         stop_rx,
         pause_rx,
-        make_rotate_fn(rotate_count_clone, rotate_back_tx, 1000),
+        make_rotate_fn_probed(rotate_count_clone, rotate_back_tx, 1000, rotated.clone()),
         make_enqueue_fn(calls.clone(), "tail".into()),
     ));
 
@@ -491,7 +612,7 @@ async fn no_silence_still_falls_back_to_local_min_rms() {
             .unwrap();
     }
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    rotated.wait_for(1).await;
     let _ = stop_tx.send(());
     let _ = handle.await.unwrap();
     assert_eq!(rotate_count.load(Ordering::SeqCst), 1);
@@ -507,13 +628,14 @@ async fn does_not_rotate_before_window_start() {
 
     let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
     let (_pause_tx, pause_rx) = mpsc::channel::<bool>(1);
+    let rotated = CallProbe::new();
     let handle = tokio::spawn(run(
         test_config(),
         rms_rx,
         rotate_rx,
         stop_rx,
         pause_rx,
-        make_rotate_fn(rotate_count.clone(), rotated_back_tx, 1000),
+        make_rotate_fn_probed(rotate_count.clone(), rotated_back_tx, 1000, rotated.clone()),
         make_enqueue_fn(calls.clone(), "tail".into()),
     ));
 
@@ -521,8 +643,10 @@ async fn does_not_rotate_before_window_start() {
     for ts in (0..500).step_by(20) {
         rms_tx.send((ts, 0.005)).await.unwrap();
     }
-    // Дать orchestrator'у несколько tick'ов посмотреть.
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    // Утверждение отрицательное: сигнала «ничего не произошло» не бывает,
+    // поэтому здесь ограниченное ожидание — но с явным намерением, а не
+    // голым sleep. Окно 250 мс = минимум два тика конфига (100 мс).
+    rotated.expect_none_within(Duration::from_millis(250)).await;
 
     let _ = stop_tx.send(());
     let _ = handle.await.unwrap();
@@ -540,14 +664,16 @@ async fn pause_freezes_chunk_elapsed() {
     // pause-aware orchestrator увидел бы wall_elapsed > window_end и
     // rotate'нул раньше. С pause-aware effective_elapsed остаётся в
     // pre-rotate зоне до достижения target active time.
-    let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(100);
+    // Ёмкость 1 — так `send_rms_settled` работает барьером.
+    let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(1);
     let (rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
     let (stop_tx, stop_rx) = oneshot::channel();
-    let (pause_tx, pause_rx) = mpsc::channel::<bool>(8);
+    let (pause_tx, pause_rx) = mpsc::channel::<bool>(1);
     let rotate_count = Arc::new(AtomicU32::new(0));
     let calls = Arc::new(Mutex::new(Vec::new()));
     let rotate_back_tx = rotate_tx.clone();
     let rotate_count_clone = rotate_count.clone();
+    let rotated = CallProbe::new();
 
     let handle = tokio::spawn(run(
         test_config(),
@@ -555,37 +681,31 @@ async fn pause_freezes_chunk_elapsed() {
         rotate_rx,
         stop_rx,
         pause_rx,
-        make_rotate_fn(rotate_count_clone, rotate_back_tx, 950),
+        make_rotate_fn_probed(rotate_count_clone, rotate_back_tx, 950, rotated.clone()),
         make_enqueue_fn(calls.clone(), "tail".into()),
     ));
 
-    // 0-500ms active speech (loud RMS).
-    for ts in (0..500).step_by(20) {
-        rms_tx.send((ts, 0.5)).await.unwrap();
-    }
+    // 0-500ms active speech (loud RMS). Барьер обязателен: пауза должна
+    // фиксироваться по таймкоду 480, а не по нулю.
+    let loud: Vec<_> = (0..500).step_by(20).map(|ts| (ts, 0.5f32)).collect();
+    send_rms_settled(&rms_tx, &loud).await;
     // Pause at 500ms. Sidecar продолжает emit'ить RMS (silence) — без
     // pause-aware silence сейчас зарегистрировался бы как cut.
-    pause_tx.send(true).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(30)).await;
+    set_paused_and_settle(&pause_tx, true).await;
     // Имитация pause-периода: 500-1300ms low RMS (sidecar тишина).
-    for ts in (520..=1300).step_by(20) {
-        rms_tx.send((ts, 0.001)).await.unwrap();
-    }
+    let quiet: Vec<_> = (520..=1300).step_by(20).map(|ts| (ts, 0.001f32)).collect();
+    send_rms_settled(&rms_tx, &quiet).await;
     // Resume — 800ms pause накапливается в paused_total_ms_in_chunk.
-    pause_tx.send(false).await.unwrap();
-    // Дать orchestrator'у обработать pause/resume.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    set_paused_and_settle(&pause_tx, false).await;
     // 1320-1850ms active speech. effective_elapsed = 500 + (1850-1320) = 1030
     // → > window_start_offset_ms=900. Должен rotate.
-    for ts in (1320..=1850).step_by(20) {
-        rms_tx.send((ts, 0.5)).await.unwrap();
-    }
+    let after: Vec<_> = (1320..=1850).step_by(20).map(|ts| (ts, 0.5f32)).collect();
+    send_rms_settled(&rms_tx, &after).await;
     // Тишина в окне для cut detection.
-    for ts in (1870..=1950).step_by(20) {
-        rms_tx.send((ts, 0.001)).await.unwrap();
-    }
+    let tail: Vec<_> = (1870..=1950).step_by(20).map(|ts| (ts, 0.001f32)).collect();
+    send_rms_settled(&rms_tx, &tail).await;
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    rotated.wait_for(1).await;
     let _ = stop_tx.send(());
     let _ = handle.await.unwrap();
 
@@ -608,10 +728,11 @@ async fn pause_resume_idempotent_no_crash() {
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(100);
     let (_rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
     let (stop_tx, stop_rx) = oneshot::channel();
-    let (pause_tx, pause_rx) = mpsc::channel::<bool>(8);
+    let (pause_tx, pause_rx) = mpsc::channel::<bool>(1);
     let rotate_count = Arc::new(AtomicU32::new(0));
     let calls = Arc::new(Mutex::new(Vec::new()));
     let (rotated_back_tx, _) = mpsc::channel::<Value>(1);
+    let rotated = CallProbe::new();
 
     let handle = tokio::spawn(run(
         test_config(),
@@ -619,22 +740,20 @@ async fn pause_resume_idempotent_no_crash() {
         rotate_rx,
         stop_rx,
         pause_rx,
-        make_rotate_fn(rotate_count.clone(), rotated_back_tx, 950),
+        make_rotate_fn_probed(rotate_count.clone(), rotated_back_tx, 950, rotated.clone()),
         make_enqueue_fn(calls.clone(), "tail".into()),
     ));
 
     // Несколько pause/resume циклов — orchestrator должен пережить.
-    pause_tx.send(true).await.unwrap();
-    pause_tx.send(true).await.unwrap(); // idempotent
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    pause_tx.send(false).await.unwrap();
-    pause_tx.send(false).await.unwrap(); // idempotent
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Повтор внутри хелпера и есть проверка идемпотентности.
+    set_paused_and_settle(&pause_tx, true).await;
+    set_paused_and_settle(&pause_tx, false).await;
     // Push несколько samples — orchestrator alive.
     for ts in (0..100).step_by(20) {
         rms_tx.send((ts, 0.5)).await.unwrap();
     }
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Ротации быть не должно — чанк слишком короткий.
+    rotated.expect_none_within(Duration::from_millis(100)).await;
     let _ = stop_tx.send(());
     // Не должно паниковать. Summary возвращается — task alive.
     let summary = handle.await.unwrap();
@@ -650,9 +769,11 @@ async fn pause_after_rotation_resets_accumulator() {
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(100);
     let (rotate_tx, rotate_rx) = mpsc::channel::<Value>(10);
     let (stop_tx, stop_rx) = oneshot::channel();
-    let (pause_tx, pause_rx) = mpsc::channel::<bool>(8);
+    let (pause_tx, pause_rx) = mpsc::channel::<bool>(1);
     let rotate_count = Arc::new(AtomicU32::new(0));
     let calls = Arc::new(Mutex::new(Vec::new()));
+    let enqueued = CallProbe::new();
+    let rotated = CallProbe::new();
 
     let handle = tokio::spawn(run(
         test_config(),
@@ -660,17 +781,16 @@ async fn pause_after_rotation_resets_accumulator() {
         rotate_rx,
         stop_rx,
         pause_rx,
-        make_rotate_fn(rotate_count.clone(), rotate_tx.clone(), 0),
-        make_enqueue_fn(calls.clone(), "tail".into()),
+        make_rotate_fn_probed(rotate_count.clone(), rotate_tx.clone(), 0, rotated.clone()),
+        make_enqueue_fn_probed(calls.clone(), "tail".into(), enqueued.clone()),
     ));
 
     // Pause+resume в первом chunk'е.
-    pause_tx.send(true).await.unwrap();
+    set_paused_and_settle(&pause_tx, true).await;
     for ts in (0..400).step_by(20) {
         rms_tx.send((ts, 0.001)).await.unwrap();
     }
-    pause_tx.send(false).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    set_paused_and_settle(&pause_tx, false).await;
 
     // Симулируем rotated event — закрываем chunk 0.
     rotate_tx
@@ -682,7 +802,7 @@ async fn pause_after_rotation_resets_accumulator() {
         }))
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    enqueued.wait_for(1).await;
 
     // Сейчас chunk_idx=1, accumulator должен быть 0. Push minimal active
     // RMS. Если accumulator не сброшен — orchestrator подумает что много
@@ -693,7 +813,7 @@ async fn pause_after_rotation_resets_accumulator() {
     for ts in (1520..=1700).step_by(20) {
         rms_tx.send((ts, 0.001)).await.unwrap();
     }
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    rotated.wait_for(1).await;
     let _ = stop_tx.send(());
     let _ = handle.await.unwrap();
 
