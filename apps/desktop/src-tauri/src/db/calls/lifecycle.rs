@@ -944,9 +944,23 @@ mod tests {
     async fn list_calls_orders_by_started_desc() {
         let db = fresh_db().await;
         let first = insert_recording(&db.pool, "managed").await.unwrap();
-        // Гарантируем разный started_at (rfc3339 секундная гранулярность).
-        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         let second = insert_recording(&db.pool, "managed").await.unwrap();
+        // [TD-32] Раньше здесь спали 1100 мс — ждали, пока сменится секунда в
+        // rfc3339. Полторы секунды настенного времени на один assert, и на
+        // нагруженном раннере это всё равно не гарантия. Порядок задаём
+        // явно: тест про сортировку, а не про часы.
+        sqlx::query("UPDATE calls SET started_at = ?1 WHERE id = ?2")
+            .bind("2020-01-01T00:00:00Z")
+            .bind(&first.id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE calls SET started_at = ?1 WHERE id = ?2")
+            .bind("2026-07-27T00:00:00Z")
+            .bind(&second.id)
+            .execute(&db.pool)
+            .await
+            .unwrap();
         let list = list_calls(&db.pool).await.unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].id, second.id, "newest first");
@@ -1195,23 +1209,36 @@ mod tests {
         assert!(res.is_err());
     }
 
+    /// [TD-32] Отодвинуть `paused_at` в прошлое на `ms`, чтобы `resume_call`
+    /// увидел нужную длительность паузы БЕЗ настоящего ожидания. Тесты про
+    /// накопление паузы измеряли её реальным `sleep` — полсекунды настенного
+    /// времени и флаки на нагруженном раннере, при том что проверяется
+    /// арифметика, а не часы.
+    async fn backdate_pause(pool: &SqlitePool, call_id: &str, ms: i64) {
+        let earlier = chrono::Utc::now() - chrono::Duration::milliseconds(ms);
+        sqlx::query("UPDATE calls SET paused_at = ?1 WHERE id = ?2")
+            .bind(earlier.to_rfc3339())
+            .bind(call_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn resume_clears_timestamp_and_accumulates_total() {
         let db = fresh_db().await;
         let call = insert_recording(&db.pool, "managed").await.unwrap();
         pause_call(&db.pool, &call.id).await.unwrap();
-        // Симулируем реальную паузу.
-        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        backdate_pause(&db.pool, &call.id, 150).await;
         resume_call(&db.pool, &call.id).await.unwrap();
         let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
         assert!(after.paused_at.is_none(), "paused_at должен очиститься");
-        // ≥ 100ms запас, в worst case CI medium может быть 120-130ms.
+        // Время задано явно, поэтому запас нужен только на округление.
         assert!(
-            after.paused_total_ms >= 100,
+            after.paused_total_ms >= 150,
             "paused_total_ms должен накопить ~150ms, got {}",
             after.paused_total_ms
         );
-        // Sanity — но не больше секунды (мы спали только 150ms).
         assert!(after.paused_total_ms < 1000);
     }
 
@@ -1233,17 +1260,15 @@ mod tests {
 
         for _ in 0..3 {
             pause_call(&db.pool, &call.id).await.unwrap();
-            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            backdate_pause(&db.pool, &call.id, 80).await;
             resume_call(&db.pool, &call.id).await.unwrap();
-            // Короткий «живой» период между паузами.
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
 
         let after = get_call(&db.pool, &call.id).await.unwrap().unwrap();
         assert!(after.paused_at.is_none(), "финально не на паузе");
-        // 3 × ~80ms ≈ 240ms. С запасом на CI jitter: ≥ 180ms.
+        // 3 × 80ms = 240ms ровно — время задано, jitter'а больше нет.
         assert!(
-            after.paused_total_ms >= 180,
+            after.paused_total_ms >= 240,
             "expected ~240ms accumulated, got {}",
             after.paused_total_ms
         );
@@ -1258,7 +1283,7 @@ mod tests {
         let db = fresh_db().await;
         let call = insert_recording(&db.pool, "managed").await.unwrap();
         pause_call(&db.pool, &call.id).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        backdate_pause(&db.pool, &call.id, 120).await;
 
         let finished = finish_recording(&db.pool, &call.id, 30.0).await.unwrap();
         assert_eq!(finished.status, "processing");
@@ -1267,7 +1292,7 @@ mod tests {
             "lingering paused_at должен схлопнуться"
         );
         assert!(
-            finished.paused_total_ms >= 80,
+            finished.paused_total_ms >= 120,
             "pending pause должна быть учтена, got {}",
             finished.paused_total_ms
         );
