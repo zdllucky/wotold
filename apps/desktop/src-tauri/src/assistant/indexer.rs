@@ -410,6 +410,18 @@ async fn embed_batch(
     tokio::task::spawn_blocking(move || {
         let refs: Vec<&str> = rows.iter().map(|(_, t)| t.as_str()).collect();
         let vecs = emb.embed_passages(&refs)?;
+        // [TD-19] `zip` молча усекает по короткой стороне: при недоборе
+        // векторов (баг реализации TextEmbedder, OOM в ONNX) лишние пассажи
+        // просто выпадали без ошибки и оставались missing — а backfill-цикл
+        // ниже крутится «пока есть missing», то есть уходил в вечный цикл
+        // без прогресса и без единого лога.
+        if vecs.len() != rows.len() {
+            return Err(AppError::Other(format!(
+                "embed_passages вернул {} векторов на {} пассажей",
+                vecs.len(),
+                rows.len()
+            )));
+        }
         Ok(rows
             .iter()
             .zip(vecs.iter())
@@ -459,7 +471,18 @@ pub(crate) async fn embed_backfill_with(
             break;
         }
         let dim = emb.dim() as i64;
+        let rows_len = rows.len();
         let blobs = embed_batch(emb.clone(), rows).await?;
+        // [TD-19] Страховка от вечного цикла: если итерация не дала прогресса,
+        // те же строки вернутся из list_passages_missing_embedding на следующем
+        // круге. Проверка выше уже ловит недобор ошибкой, но guard оставляем —
+        // цикл не должен зависеть от одного-единственного инварианта.
+        if blobs.is_empty() {
+            log::warn!(
+                "embed_backfill: итерация не дала прогресса на {rows_len} строках — прерываем"
+            );
+            break;
+        }
         crate::db::assistant_embeddings::upsert_embeddings(pool, dim, &blobs).await?;
         total += blobs.len();
     }
@@ -766,6 +789,80 @@ mod tests {
         // Переиндексация идемпотентна.
         let (count2, _) = index_call(&db.pool, &store, "c1").await.unwrap();
         assert_eq!(count, count2);
+    }
+
+    // ============================================================
+    // [TD-19] Батч эмбеддингов без молчаливых потерь
+    // ============================================================
+
+    /// Эмбеддер-недоборщик: возвращает на один вектор меньше, чем просили.
+    /// Имитирует баг реализации TextEmbedder / OOM в ONNX.
+    struct ShortEmbedder;
+
+    impl crate::assistant::embedder::TextEmbedder for ShortEmbedder {
+        fn embed_passages(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, AppError> {
+            // На один меньше — ровно тот случай, что `zip` глотал.
+            Ok(texts.iter().skip(1).map(|_| vec![0.0f32; 8]).collect())
+        }
+        fn embed_query(&self, _q: &str) -> Result<Vec<f32>, AppError> {
+            Ok(vec![0.0f32; 8])
+        }
+        fn dim(&self) -> usize {
+            8
+        }
+    }
+
+    #[tokio::test]
+    async fn embed_batch_errors_on_vector_count_mismatch() {
+        // Регрессия TD-19: `rows.iter().zip(vecs.iter())` усекал по короткой
+        // стороне — лишние пассажи выпадали БЕЗ ошибки и оставались missing.
+        let rows = vec![
+            (1i64, "первый".to_string()),
+            (2i64, "второй".to_string()),
+            (3i64, "третий".to_string()),
+        ];
+        let err = embed_batch(std::sync::Arc::new(ShortEmbedder), rows)
+            .await
+            .expect_err("недобор векторов обязан быть ошибкой, а не тихим усечением");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("2") && msg.contains("3"),
+            "ошибка обязана назвать оба числа, получили: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn embed_backfill_terminates_on_faulty_embedder() {
+        // Ключевое: цикл «пока есть missing» не должен крутиться вечно.
+        // Тест завершается — значит бесконечного цикла нет. Сам факт
+        // возврата (Err или Ok) и есть проверка.
+        use crate::assistant::embedder::test_support::MockEmbedder;
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        seed_call(&db.pool, "c1", "ready").await;
+        let store = store_with_artifacts(tmp.path(), "c1");
+        index_call_with(
+            &db.pool,
+            &store,
+            "c1",
+            Some(std::sync::Arc::new(MockEmbedder)),
+        )
+        .await
+        .unwrap();
+
+        // Сносим эмбеддинги, чтобы backfill нашёл missing-строки.
+        sqlx::query("DELETE FROM assistant_embeddings")
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let res = embed_backfill_with(&db.pool, std::sync::Arc::new(ShortEmbedder)).await;
+        // Либо Err от проверки количества, либо Ok с break по нулевому
+        // прогрессу — оба исхода означают «цикл завершился».
+        assert!(
+            res.is_err() || res.unwrap_or(0) == 0,
+            "backfill обязан прерваться, а не наматывать круги"
+        );
     }
 
     // ── [M15.10] embed-hook + embed_backfill (MockEmbedder) ──
