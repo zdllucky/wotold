@@ -20,11 +20,12 @@ final class AudioRecorder {
 
     // [B14] Running RMS for live level meter. Frontend reads через
     // {"event":"level","mic":..,"system":..} stdout эмит'ы каждые 100ms.
-    // Не thread-safe чтение из main thread — но atomic-fast enough.
-    private var latestRms: Float = 0
+    // [TD-21] Пишется из обработчика кадров, читается с таймерной очереди —
+    // раньше без всякой синхронизации. См. AtomicLevel.
+    private let level = AtomicLevel()
     private var isPaused = false
 
-    var currentRms: Float { latestRms }
+    var currentRms: Float { level.value }
 
     /// [TD-07] Пауза на уровне ЗАХВАТА: кадры дропаются до записи в WAV.
     /// До этого пауза жила только в БД, и сказанное «на паузе» попадало в
@@ -109,7 +110,7 @@ final class AudioRecorder {
         // уровня должен показывать, что звук НЕ пишется, а не замирать на
         // последнем значении — для privacy-фичи это часть контракта.
         if isPaused {
-            latestRms = 0
+            level.reset()
             return
         }
         // Reads writer/converter/outFormat из self.* — rotate(to:) может
@@ -158,7 +159,7 @@ final class AudioRecorder {
         }
 
         // [B14] RMS post-write — frontend читает latestRms через эмит таймер.
-        latestRms = computeInt16Rms(outBuffer)
+        level.set(computeInt16Rms(outBuffer))
     }
 
     /// [M13] Атомарно завершает текущий chunk WAV и открывает новый. Tap
@@ -223,7 +224,7 @@ final class AudioRecorder {
         inputFormat = nil
         startTime = nil
         bytesWritten = 0
-        latestRms = 0
+        level.reset()
 
         return (durationSec: duration, micBytes: bytes)
     }
