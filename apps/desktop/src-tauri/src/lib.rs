@@ -165,6 +165,7 @@ pub fn run() {
             commands::check_for_update,
             commands::apply_update,
             commands::list_call_speakers,
+            commands::list_call_speakers_batch,
             commands::confirm_call_speaker,
             commands::unbind_call_speaker,
             commands::list_voice_samples,

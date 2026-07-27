@@ -36,6 +36,14 @@ export function listCallSpeakers(callId: string): Promise<CallSpeakerView[]> {
   return invoke<CallSpeakerView[]>('list_call_speakers', { callId });
 }
 
+/** [TD-46] Спикеры сразу для списка звонков — один вызов вместо вызова на
+ *  строку списка. Звонки без спикеров в ответе отсутствуют. */
+export function listCallSpeakersBatch(
+  callIds: string[],
+): Promise<Record<string, CallSpeakerView[]>> {
+  return invoke<Record<string, CallSpeakerView[]>>('list_call_speakers_batch', { callIds });
+}
+
 export function confirmCallSpeaker(
   callSpeakerId: string,
   contactId: string,
