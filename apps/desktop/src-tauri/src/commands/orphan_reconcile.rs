@@ -111,6 +111,73 @@ pub async fn reconcile_orphan_recordings(
     Ok(handled)
 }
 
+/// [TD-50] Убрать каталоги звонков, которых больше нет в БД.
+///
+/// Найдено при уборке за живым прогоном: в `calls/` было двадцать каталогов
+/// при тринадцати строках, семь лишних — месячной давности. Проверено: все
+/// семь **пустые**, то есть аудио удалилось, а каталог остался. Значит это не
+/// утечка приватности и не место, а мусор — но мусор, по которому нельзя
+/// отличить «звонок удалён» от «звонок есть, а файлы пропали», и который
+/// растёт с каждым удалением. Какой путь их оставляет (или пересоздаёт после
+/// удаления — `create_dir_all` на пути чтения артефакта делает это молча) —
+/// археология; самолечение на старте закрывает и прошлые, и будущие.
+///
+/// Осторожность здесь важнее полноты:
+/// - трогаем только прямых детей `calls/`, чьё имя — валидный `CallId`;
+///   каталог с чужим именем не наш и не удаляется;
+/// - при ошибке чтения БД не удаляем **ничего**: неизвестное состояние — не
+///   повод сносить пользовательские записи;
+/// - вызывается только на старте, где ни одна запись не идёт. Периодический
+///   вызов был бы гонкой: `start_recording` создаёт каталог до вставки строки.
+///
+/// Возвращает число удалённых каталогов.
+pub async fn remove_orphan_call_dirs(
+    pool: &SqlitePool,
+    store: &CallStore,
+) -> Result<usize, AppError> {
+    let root = store.calls_root();
+    let mut entries = match tokio::fs::read_dir(&root).await {
+        Ok(e) => e,
+        // Каталога ещё нет — первый запуск.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(AppError::Other(format!("read {}: {e}", root.display()))),
+    };
+
+    let known: std::collections::HashSet<String> =
+        sqlx::query_scalar::<_, String>("SELECT id FROM calls")
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .collect();
+
+    let mut removed = 0usize;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| AppError::Other(format!("scan {}: {e}", root.display())))?
+    {
+        if !entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Имя обязано быть валидным id звонка — иначе каталог не наш.
+        let Ok(call_id) = CallId::parse(&name) else {
+            continue;
+        };
+        if known.contains(&name) {
+            continue;
+        }
+        match store.remove_call_dir(&call_id).await {
+            Ok(()) => {
+                log::warn!("orphan call dir {name}: удалён (строки в БД нет)");
+                removed += 1;
+            }
+            Err(e) => log::warn!("orphan call dir {name}: удалить не удалось: {e}"),
+        }
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +293,72 @@ mod tests {
             !store.call_dir(&CallId::from_db(&id)).exists(),
             "call dir (incl. chunks) removed"
         );
+    }
+
+    // ============================================================
+    // [TD-50] Уборка каталогов без строки в БД
+    // ============================================================
+
+    async fn make_call_dir(store: &CallStore, name: &str) -> std::path::PathBuf {
+        let dir = store.calls_root().join(name);
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        tokio::fs::write(dir.join("mic.wav"), b"x").await.unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn removes_only_dirs_without_a_row() {
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = CallStore::new(tmp.path().to_path_buf());
+
+        let kept = db::insert_recording(&db.pool, "local").await.unwrap();
+        let kept_dir = make_call_dir(&store, &kept.id).await;
+        let orphan_dir = make_call_dir(&store, &uuid::Uuid::new_v4().to_string()).await;
+
+        let removed = remove_orphan_call_dirs(&db.pool, &store).await.unwrap();
+
+        assert_eq!(removed, 1);
+        assert!(kept_dir.exists(), "звонок с строкой в БД не трогаем");
+        assert!(!orphan_dir.exists(), "аудио удалённого звонка убрано");
+    }
+
+    #[tokio::test]
+    async fn leaves_foreign_directories_alone() {
+        // Каталог с чужим именем — не наш звонок. Снести его значило бы
+        // удалить что-то, о чём мы ничего не знаем.
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = CallStore::new(tmp.path().to_path_buf());
+        let foreign = make_call_dir(&store, "backup-2026-06").await;
+        let dotted = make_call_dir(&store, ".DS_Store_dir").await;
+
+        let removed = remove_orphan_call_dirs(&db.pool, &store).await.unwrap();
+
+        assert_eq!(removed, 0);
+        assert!(foreign.exists());
+        assert!(dotted.exists());
+    }
+
+    #[tokio::test]
+    async fn missing_calls_root_is_not_an_error() {
+        // Первый запуск: каталога ещё нет.
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = CallStore::new(tmp.path().join("nope"));
+        assert_eq!(remove_orphan_call_dirs(&db.pool, &store).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn files_in_calls_root_are_ignored() {
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = CallStore::new(tmp.path().to_path_buf());
+        tokio::fs::create_dir_all(store.calls_root()).await.unwrap();
+        let stray = store.calls_root().join("readme.txt");
+        tokio::fs::write(&stray, b"hi").await.unwrap();
+
+        assert_eq!(remove_orphan_call_dirs(&db.pool, &store).await.unwrap(), 0);
+        assert!(stray.exists());
     }
 }
