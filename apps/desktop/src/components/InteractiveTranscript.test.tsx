@@ -386,3 +386,35 @@ describe('InteractiveTranscript — malformed data', () => {
     expect(screen.getByText('…')).toBeInTheDocument();
   });
 });
+
+// ─── [TD-27] reduced-motion ──────────────────────────────────────────────────
+
+describe('InteractiveTranscript — reduced motion', () => {
+  test('автоскролл мгновенный при prefers-reduced-motion', () => {
+    // Плавный скролл запускается на КАЖДОЙ смене активной реплики, то есть во
+    // время воспроизведения почти непрерывно — ровно тот случай, ради
+    // которого настройка и существует.
+    const original = window.matchMedia;
+    window.matchMedia = ((q: string) =>
+      ({
+        matches: q.includes('prefers-reduced-motion'),
+        media: q,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }) as unknown as MediaQueryList) as typeof window.matchMedia;
+
+    const spy = vi.spyOn(window.HTMLElement.prototype, 'scrollIntoView');
+    render(<InteractiveTranscript rawSttJson={BASIC_RAW} fallbackMd={null} currentTime={1} />);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'auto' }));
+
+    spy.mockRestore();
+    window.matchMedia = original;
+  });
+
+  test('автоскролл плавный когда движение не ограничено', () => {
+    const spy = vi.spyOn(window.HTMLElement.prototype, 'scrollIntoView');
+    render(<InteractiveTranscript rawSttJson={BASIC_RAW} fallbackMd={null} currentTime={1} />);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+    spy.mockRestore();
+  });
+});
