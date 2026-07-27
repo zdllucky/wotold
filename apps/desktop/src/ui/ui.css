@@ -1,42 +1,14 @@
-/* [B17] Atelier v2 — ui/* компоненты теперь эмитят .btn/.card/.dot/.input/etc
- * из styles/wotold.css или inline-style. Здесь остаётся только Skeleton
- * (shimmer-анимация) — единственное что не покрывается wotold.css.
+/* [TD-30] Здесь жила третья параллельная shimmer-система (`.ds-skeleton` +
+ * `ds-skeleton-shimmer`), при том что канонический `.skeleton` из wk.css был
+ * фактически мёртв. `ui/Skeleton.tsx` переведён на канон, система удалена.
  *
- * Удалено: .ds-button/.ds-card/.ds-badge/.ds-pill/.ds-statusdot/.ds-field/
- * .ds-input/.ds-tabs/.ds-toolbar/.ds-usagebar/.ds-empty — больше не
- * используются, классы заменены на новые Atelier-классы или token-driven
- * inline стили.
- */
+ * Прежняя шапка этого файла ссылалась на `styles/wotold.css`, удалённый ещё
+ * в B18.6 — комментарий пережил свой предмет на несколько волн.
+ *
+ * Остался только модификатор inline: на нём висит display/vertical-align,
+ * которых у канонического `.skeleton` нет. */
 
-.ds-skeleton {
-  display: block;
-  background: linear-gradient(
-    90deg,
-    var(--sunken) 0%,
-    color-mix(in oklch, var(--sunken) 60%, var(--panel)) 50%,
-    var(--sunken) 100%
-  );
-  background-size: 200% 100%;
-  animation: ds-skeleton-shimmer 1.4s ease-in-out infinite;
-}
-
-.ds-skeleton[data-inline='true'] {
+.skeleton[data-inline='true'] {
   display: inline-block;
   vertical-align: middle;
-}
-
-@keyframes ds-skeleton-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ds-skeleton {
-    animation: none;
-    background: var(--sunken);
-  }
 }

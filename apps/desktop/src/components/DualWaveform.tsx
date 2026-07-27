@@ -8,6 +8,13 @@
 
 import { useEffect, useRef } from 'react';
 
+// [TD-30] Фолбэки на случай, когда getComputedStyle недоступен (canvas)
+// требует литеральных цветов). Значения — светлая тема styles/tokens.css;
+// при правке палитры менять здесь же.
+const FALLBACK_INK = '#1A1B23'; // --text (tokens.css)
+const FALLBACK_ACCENT = '#3C3D49'; // --accent (tokens.css)
+const FALLBACK_LINE = '#E9EAEE'; // --border (tokens.css:51)
+
 interface DualWaveformProps {
   /** Mic rolling history 0..1. */
   mic: number[];
@@ -88,11 +95,15 @@ function render(
   const css = parent ? window.getComputedStyle(parent) : null;
   // Read --text and --accent via parent's resolved values (canvas needs
   // literal colors). Если css не доступен — v2 fallback дефолты (graphite).
-  const inkColor = css?.getPropertyValue('--text')?.trim() || '#1A1B23';
-  const accentColor = css?.getPropertyValue('--accent')?.trim() || '#3C3D49';
+  const inkColor = css?.getPropertyValue('--text')?.trim() || FALLBACK_INK;
+  const accentColor = css?.getPropertyValue('--accent')?.trim() || FALLBACK_ACCENT;
+  // [TD-30] Фолбэк был '#ECEAE3' — тёплый тон старой Atelier-гаммы, которого
+  // в v2-палитре нет вовсе, и в тёмной теме он давал светлую линию на тёмном
+  // фоне. Берём значение --border из tokens.css (светлая тема); соседние
+  // фолбэки --text/--accent синхронизированы так же.
   const lineColor =
     css?.getPropertyValue(centerColorVar.replace('var(', '').replace(')', '').trim())?.trim() ||
-    '#ECEAE3';
+    FALLBACK_LINE;
 
   const mid = h / 2;
   const halfH = mid;
