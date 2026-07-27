@@ -697,6 +697,8 @@ const DEGRADED_LABELS = {
   mic_track_not_diarized: 'callDetail.degraded.mic_track_not_diarized',
   speaker_clustering_failed: 'callDetail.degraded.speaker_clustering_failed',
   language_repin_failed: 'callDetail.degraded.language_repin_failed',
+  mic_track_gap_padded: 'callDetail.degraded.mic_track_gap_padded',
+  system_track_gap_padded: 'callDetail.degraded.system_track_gap_padded',
 } as const;
 
 function degradedTitle(flags: string[], t: TFn): string {

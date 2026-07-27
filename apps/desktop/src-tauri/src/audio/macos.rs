@@ -408,7 +408,20 @@ async fn run_dispatcher(
                             "device_recovered" => {
                                 let gap =
                                     json.get("gap_sec").and_then(Value::as_f64).unwrap_or(0.0);
-                                format!("дорожка вернулась, потеряно {gap:.1} с")
+                                // [TD-45/TD-37] Дыру сайдкар заполнил тишиной,
+                                // чтобы дорожка не уехала относительно второй.
+                                // Это фабрикация содержимого в файле, который
+                                // пользователь считает записью разговора —
+                                // значит она обязана быть видимой, а не только
+                                // в логе.
+                                if gap > 0.0 {
+                                    let app_flag = app.clone();
+                                    let leg_flag = leg.to_string();
+                                    tauri::async_runtime::spawn(async move {
+                                        mark_audio_gap(&app_flag, &leg_flag, gap).await;
+                                    });
+                                }
+                                format!("дорожка вернулась, потеряно {gap:.1} с (дыра заполнена тишиной)")
                             }
                             _ => {
                                 let mic_rotated = json
@@ -542,6 +555,29 @@ async fn update_duration_from_rotate(app: &AppHandle) {
         call_id,
         duration_sec: duration_sec.round() as i64,
     });
+}
+
+/// [TD-45] Пометить звонок оговоркой «в дорожке была дыра, выровнена тишиной».
+///
+/// Нужен `AppState`, потому что событие приходит из сайдкара без call_id:
+/// активная запись одна, и её id знает состояние приложения.
+async fn mark_audio_gap(app: &AppHandle, leg: &str, gap_sec: f64) {
+    let state = tauri::Manager::state::<crate::state::AppState>(app);
+    let call_id = {
+        let guard = state.recording.lock().await;
+        match guard.as_ref() {
+            Some(s) => s.call_id.clone(),
+            // Запись уже остановлена — помечать нечего.
+            None => return,
+        }
+    };
+    let flag = match leg {
+        "system" => crate::db::DegradedFlag::SystemTrackGapPadded,
+        _ => crate::db::DegradedFlag::MicTrackGapPadded,
+    };
+    if let Err(e) = crate::db::add_degraded_flag(&state.db, &call_id, flag).await {
+        log::warn!("degraded flag для {call_id} (провал {gap_sec:.1} с) не записан: {e}");
+    }
 }
 
 #[cfg(test)]

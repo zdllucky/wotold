@@ -287,6 +287,8 @@ export const kk: TranslationStrings = {
       mic_track_not_diarized: 'Сіздің жолыңыздағы дауыстар бөлінбеді',
       speaker_clustering_failed: 'Сөйлеушілер дауыс бойынша топталмады',
       language_repin_failed: 'Мәтіннің бір бөлігі басқа тілде танылды',
+      mic_track_gap_padded: 'Микрофон үзілді — бос орын тыныштықпен толтырылды',
+      system_track_gap_padded: 'Жүйелік дыбыс үзілді — бос орын тыныштықпен толтырылды',
     },
     notFound: 'Қоңырау табылмады.',
     tabRecap: 'Қорытынды',
