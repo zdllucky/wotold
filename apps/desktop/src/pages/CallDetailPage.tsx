@@ -22,7 +22,7 @@ import { unbindCallSpeaker } from '../api/speakers';
 import { useQueueState } from '../hooks/useQueueState';
 import { localEngineEvalRecap } from '../api/local-engine';
 import { humanError } from '../api/errors';
-import { Dropdown, Icon, IconBtn, MenuItem, MenuSep, Tabs } from '../ui';
+import { Dropdown, Icon, IconBtn, MenuItem, MenuSep, Tabs, useToast } from '../ui';
 import {
   AutoBoundBanner,
   CallDetailSkeleton,
@@ -87,10 +87,17 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
     justGenerated,
     loading,
     error,
-    setError,
     refetchAll,
     refetchSpeakersAndContacts,
   } = useCallDetail(callId);
+
+  // [TD-24] Сбой несмертельного действия (экспорт, регенерация, отвязка) —
+  // в тост, а не в общий error-state. Раньше упавший экспорт заменял весь
+  // открытый звонок — транскрипт, плеер, рекап — одним красным абзацем без
+  // retry и без «назад».
+  const toast = useToast();
+  const actionError = (e: unknown) =>
+    toast.show({ message: humanError(e), tone: 'danger' });
 
   // [B17 V3.9] Default tab → transcript (per artboard §5 reference).
   const [tab, setTab] = useState<Tab>('transcript');
@@ -208,7 +215,6 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
     });
     if (!ok) return;
     setReprocessing(true);
-    setError(null);
     // [V8] Optimistic patch — сразу переводим call.status='processing' чтобы
     // ReprocessBanner показался. Backend `reprocess_call` теперь spawn'ит
     // task и возвращается мгновенно; точное состояние подтянется через
@@ -231,7 +237,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
     try {
       await reprocessCall(call.id);
     } catch (e) {
-      setError(t('callDetail.reprocessFailed', { error: humanError(e) }));
+      toast.show({ message: t('callDetail.reprocessFailed', { error: humanError(e) }), tone: 'danger' });
       // [P16.1] Immediate revert optimistic patch — UI status вернётся в
       // failed без задержки. refetchAll ниже подтянет свежий failed_reason
       // (backend P16.2 теперь пишет failed_reason на chunks gate reject).
@@ -279,19 +285,17 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
   // [B20.7] Отвязать конкретный голос от контакта. Зеркально confirm-flow:
   // после отвязки имя спикера в рекапе устарело → предлагаем regen.
   const onUnbindVoice = async (callSpeakerId: string) => {
-    setError(null);
     try {
       await unbindCallSpeaker(callSpeakerId);
       await refetchSpeakersAndContacts();
       setPendingRecapRegen(true);
     } catch (e) {
-      setError(humanError(e));
+      actionError(e);
     }
   };
 
   const onRegenerateRecap = async () => {
     setBgBusy(true);
-    setError(null);
     // [P1.3] Сброс elapsed timer'а на старте — UI начинает с «Пересоздаём…».
     setRecapElapsedSec(null);
     // [Bug-fix #6] Регенерация запущена — recap-regen suggestion больше не нужен.
@@ -303,7 +307,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
       await regenerateRecap(callId);
     } catch (e) {
       // Reject = guard «уже обрабатывается» / spawn-ошибка → revert busy + state.
-      setError(t('callDetail.regenerateFailed', { error: humanError(e) }));
+      toast.show({ message: t('callDetail.regenerateFailed', { error: humanError(e) }), tone: 'danger' });
       // [P16.1 review] Functional updater — restore только patched поле
       // (recap_failed_reason), не stomp concurrent state из `call:progress`.
       // bgBusy-модель (regen = фон-задача): setBgBusy(false) на reject,
@@ -323,11 +327,10 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
   // подтянется через refetchAll на pipeline:finished.
   const onRegenerateTitle = async () => {
     setBgBusy(true);
-    setError(null);
     try {
       await regenerateTitle(callId);
     } catch (e) {
-      setError(t('callDetail.regenerateTitleFailed', { error: humanError(e) }));
+      toast.show({ message: t('callDetail.regenerateTitleFailed', { error: humanError(e) }), tone: 'danger' });
       setBgBusy(false);
     }
   };
@@ -343,16 +346,15 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
         title: t('callDetail.exportTitle'),
       })) as string | null;
     } catch (e) {
-      setError(humanError(e));
+      actionError(e);
       return;
     }
     if (!dest) return; // cancel
     setExporting(true);
-    setError(null);
     try {
       await exportCallMarkdown(call.id, dest);
     } catch (e) {
-      setError(humanError(e));
+      actionError(e);
     } finally {
       setExporting(false);
     }
@@ -375,7 +377,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
       await deleteCall(call.id);
       onBack();
     } catch (e) {
-      setError(humanError(e));
+      actionError(e);
       setDeleting(false);
     }
   };
@@ -488,7 +490,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
                       `g-eval avg ${s.average.toFixed(2)}\ncoherence ${s.coherence} · faithfulness ${s.faithfulness} · relevance ${s.relevance} · conciseness ${s.conciseness}\n\n${s.justification}`,
                     ),
                   )
-                  .catch((e) => setError(humanError(e)));
+                  .catch(actionError);
               }}
             >
               g-eval (dev)
@@ -561,7 +563,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
               // [Tech-debt P0.2] retry_chunk fire-and-forget — status update
               // придёт через transcript:chunk_done event, ChunkProgressStrip
               // отжмёт "Повторяем…" автоматически.
-              void retryChunk(call.id, idx).catch((e) => setError(humanError(e)));
+              void retryChunk(call.id, idx).catch(actionError);
             }}
           />
         ))}
