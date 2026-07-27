@@ -6,6 +6,9 @@
 
 import type { Call } from '../api/recording';
 import type { CallSpeakerView } from '../api/speakers';
+import { bcp47, type Locale, type TranslationKey, type useI18n } from '../i18n';
+
+type TFn = ReturnType<typeof useI18n>['t'];
 
 /** [V5.3] Превращает технический speaker_tag (от STT диаризации) в
  *  человекочитаемую подпись:
@@ -18,27 +21,27 @@ import type { CallSpeakerView } from '../api/speakers';
  *  Используется во всех UI местах где раньше отображался raw speaker_tag
  *  (SpeakerCard subtitle, SpeakersSection «Подтверждены» подпись, и т.д.).
  *  Маппинг 1-based чтобы юзеру не казалось «нулевой голос». */
-export function humanSpeakerLabel(speakerTag: string): string {
-  if (!speakerTag) return 'Голос';
-  if (speakerTag === 'owner' || speakerTag === 'speaker:owner') return 'Я';
+export function humanSpeakerLabel(speakerTag: string, t: TFn): string {
+  if (!speakerTag) return t('speakerLabel.voice');
+  if (speakerTag === 'owner' || speakerTag === 'speaker:owner') return t('speakerLabel.me');
   // [P-fix] Локальный формат диаризации "speaker:N" / "speaker:unknown".
   // Согласовано с чипами участников (ParticipantsRow speakerOrdinal):
   // «Спикер N» (0-indexed), «Спикер ?» для overflow-кластера. Без этого
   // транскрипт-строки показывали сырой тег → CSS uppercase → «SPEAKER:1».
-  if (speakerTag === 'speaker:unknown') return 'Спикер ?';
+  if (speakerTag === 'speaker:unknown') return t('speakerLabel.unknown');
   const mLocal = /^speaker:(\d+)$/.exec(speakerTag);
-  if (mLocal) return `Спикер ${mLocal[1]}`;
+  if (mLocal) return t('speakerLabel.speakerN', { n: mLocal[1] ?? '?' });
   // "Speaker N" (Soniox) → "Голос N+1"
   const m1 = /^Speaker\s+(\d+)$/i.exec(speakerTag);
   if (m1) {
     const n = Number(m1[1]);
-    if (Number.isFinite(n) && n >= 0) return `Голос ${n + 1}`;
+    if (Number.isFinite(n) && n >= 0) return t('speakerLabel.voiceN', { n: n + 1 });
   }
   // "SN" сокращённое → "Голос N+1"
   const m2 = /^S(\d+)$/.exec(speakerTag);
   if (m2) {
     const n = Number(m2[1]);
-    if (Number.isFinite(n) && n >= 0) return `Голос ${n + 1}`;
+    if (Number.isFinite(n) && n >= 0) return t('speakerLabel.voiceN', { n: n + 1 });
   }
   // Произвольный кастомный тег — оставляем как есть.
   return speakerTag;
@@ -51,9 +54,10 @@ export function humanSpeakerLabel(speakerTag: string): string {
  *    - "Marina"     → "M"  (первая буква)
  *  Когда speaker_tag не numeric (custom display name), берём первую букву —
  *  избегаем «peake»-truncation глитч на длинных строках. */
-export function shortSpeakerLabel(speakerTag: string): string {
+export function shortSpeakerLabel(speakerTag: string, t: TFn): string {
   if (!speakerTag) return '·';
-  if (speakerTag === 'owner' || speakerTag === 'speaker:owner') return 'Я';
+  // [TD-25] «Я» рендерится в кружке аватара — тоже user-visible строка.
+  if (speakerTag === 'owner' || speakerTag === 'speaker:owner') return t('speakerLabel.me');
   // [P-fix] Локальный формат "speaker:N" / "speaker:unknown" (см. humanSpeakerLabel).
   if (speakerTag === 'speaker:unknown') return '?';
   const mLocal = /^speaker:(\d+)$/.exec(speakerTag);
@@ -117,17 +121,19 @@ export function capitalize(s: string): string {
 }
 
 /** Fallback title когда LLM не сгенерировал call.title — «Звонок · 20 мая». */
-export function simpleDateTitle(call: Call): string {
+export function simpleDateTitle(call: Call, t: TFn, locale: Locale): string {
   try {
     const d = new Date(call.started_at);
-    if (Number.isNaN(d.getTime())) return `Звонок ${call.id.slice(0, 8)}`;
-    const date = d.toLocaleDateString('ru-RU', {
+    if (Number.isNaN(d.getTime()))
+      return t('callTitle.byId', { id: call.id.slice(0, 8) });
+    // [TD-25] Формат даты по локали пользователя — было прибито к 'ru-RU'.
+    const date = d.toLocaleDateString(bcp47(locale), {
       day: 'numeric',
       month: 'long',
     });
-    return `Звонок · ${date}`;
+    return t('callTitle.byDate', { date });
   } catch {
-    return `Звонок ${call.id.slice(0, 8)}`;
+    return t('callTitle.byId', { id: call.id.slice(0, 8) });
   }
 }
 
@@ -139,12 +145,21 @@ export function hashCallId(id: string): number {
 }
 
 /** Pluralization ru: «1 участник / 2-4 участника / 5+ участников». */
-export function pluralParticipants(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'участник';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'участника';
-  return 'участников';
+export function pluralParticipants(n: number, t: TFn): string {
+  // [TD-25] Формы берутся из словаря. Правило склонения общее для ru/kk/en:
+  // у языков без склонения обе «множественные» формы совпадают, и правило
+  // просто всегда возвращает одну и ту же строку.
+  const forms: [TranslationKey, TranslationKey, TranslationKey] = [
+    'participants.one',
+    'participants.few',
+    'participants.many',
+  ];
+  const abs = Math.abs(n) % 100;
+  const tail = abs % 10;
+  if (abs >= 11 && abs <= 14) return t(forms[2]);
+  if (tail === 1) return t(forms[0]);
+  if (tail >= 2 && tail <= 4) return t(forms[1]);
+  return t(forms[2]);
 }
 
 /**
@@ -161,6 +176,7 @@ export function findSpeakerAtTime(
   rawSttJson: string | null,
   speakers: CallSpeakerView[],
   currentTime: number,
+  t: TFn,
 ): CurrentSpeakerInfo | null {
   if (!rawSttJson || !Number.isFinite(currentTime)) return null;
   try {
@@ -187,7 +203,7 @@ export function findSpeakerAtTime(
           (s) => s.confirmed && s.contact_display_name && s.speaker_tag === tag,
         );
         const displayName =
-          labelMatch?.contact_display_name ?? humanSpeakerLabel(tag);
+          labelMatch?.contact_display_name ?? humanSpeakerLabel(tag, t);
         const colorIdx = tagOrder.indexOf(tag);
         return { tag, displayName, colorIdx: Math.max(0, colorIdx) };
       }

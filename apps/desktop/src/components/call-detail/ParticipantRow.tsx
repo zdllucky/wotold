@@ -43,7 +43,7 @@ function VoiceMenuRow({
   onUnbind: (callSpeakerId: string) => void;
 }) {
   const { t } = useI18n();
-  const label = humanSpeakerLabel(speaker.speaker_tag);
+  const label = humanSpeakerLabel(speaker.speaker_tag, t);
   return (
     <div
       className="menu-item"

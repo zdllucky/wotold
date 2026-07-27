@@ -391,7 +391,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
     );
   if (!call) return <p className="muted">{t('callDetail.notFound')}</p>;
 
-  const title = call.title?.trim() || simpleDateTitle(call);
+  const title = call.title?.trim() || simpleDateTitle(call, t, locale);
   const hasFailedChunks = (chunks ?? []).some((c) => c.status === 'failed');
 
   return (

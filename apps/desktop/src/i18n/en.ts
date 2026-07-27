@@ -86,6 +86,17 @@ export const en: TranslationStrings = {
     removeRange: 'Remove date range',
   },
 
+  speakerLabel: {
+    voice: 'Voice',
+    me: 'Me',
+    unknown: 'Speaker ?',
+    speakerN: 'Speaker {n}',
+    voiceN: 'Voice {n}',
+  },
+  callTitle: {
+    byDate: 'Call · {date}',
+    byId: 'Call {id}',
+  },
   // [TD-25] Тексты ошибок — были захардкожены в api/errors.ts мимо словаря.
   errors: {
     unknown: 'Unknown error',

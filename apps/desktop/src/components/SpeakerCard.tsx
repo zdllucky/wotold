@@ -322,7 +322,7 @@ export function SpeakerCard({
         <div className="small-caps">
           {t('speakers.cardEyebrow', { idx: idx + 1, total })}
         </div>
-        <div className="small-caps muted">{humanSpeakerLabel(speaker.speaker_tag)}</div>
+        <div className="small-caps muted">{humanSpeakerLabel(speaker.speaker_tag, t)}</div>
       </div>
 
       <div className="title" style={{ fontSize: 28, marginBottom: 28 }}>
@@ -358,7 +358,7 @@ export function SpeakerCard({
             flexShrink: 0,
           }}
         >
-          {shortSpeakerLabel(speaker.speaker_tag)}
+          {shortSpeakerLabel(speaker.speaker_tag, t)}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
