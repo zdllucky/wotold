@@ -53,6 +53,10 @@ struct WotoldAudioMain {
         // дорожки сюда. Событие идёт в общий поток вне очереди команд: оно
         // возникает само по себе, а не в ответ на команду.
         mic.onDeviceEvent = { event in emit(event.jsonObject) }
+        // [TD-44] Системная дорожка сообщает о том же и туда же — до этого
+        // фикса она молчала, и «система ушла в тишину» юзер узнавал только по
+        // пустому транскрипту собеседника (правило 2, близнецы).
+        system.onDeviceEvent = { event in emit(event.jsonObject) }
 
         let router = CommandRouter(
             mic: mic,

@@ -244,12 +244,10 @@ final class AudioRecorder {
             // Индикатор обязан упасть в ноль: иначе он замирает на последнем
             // значении речи и показывает живой сигнал у мёртвой дорожки.
             level.reset()
-            let silent = now() - since
             onDeviceEvent?(
                 .deviceLost(
                     leg: .mic,
-                    message: "микрофонная дорожка молчит \(String(format: "%.1f", silent)) с — "
-                        + "устройство ввода пропало или сменилось"
+                    message: DeviceEventText.lost(leg: .mic, silentSec: now() - since)
                 ))
         case let .recovered(gapSec):
             onDeviceEvent?(
