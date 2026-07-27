@@ -555,6 +555,10 @@ function AppShell() {
         />
         {view === 'call' && detailCallId && (
           <CallDetailPage
+            // [TD-24] key по звонку: смена звонка размонтирует страницу вместо
+            // переиспользования со старым состоянием. Без этого мидфлайтовые
+            // резолвы старого звонка догоняли уже открытый новый.
+            key={detailCallId}
             callId={detailCallId}
             onBack={() => {
               setDetailCallId(null);
