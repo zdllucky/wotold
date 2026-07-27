@@ -66,3 +66,47 @@ describe('Tabs', () => {
     spy.mockRestore();
   });
 });
+
+// ── [TD-29d] Клавиатурная навигация ──────────────────────────────────────
+
+describe('Tabs — клавиатура', () => {
+  test('стрелки переключают вкладку', async () => {
+    // Регрессия TD-29: roving tabindex был сделан (неактивные триггеры вне
+    // Tab-обхода), а стрелок к нему не было — вкладки оказывались недостижимы
+    // с клавиатуры вовсе.
+    const user = userEvent.setup();
+    const { onChange } = setup('a');
+    const first = screen.getByRole('tab', { name: /First/ });
+    first.focus();
+
+    await user.keyboard('{ArrowRight}');
+    expect(onChange).toHaveBeenCalledWith('b');
+  });
+
+  test('disabled-вкладка пропускается', async () => {
+    // Третья вкладка disabled: с последней активной ←/→ обязаны обойти её,
+    // а не сфокусировать.
+    const user = userEvent.setup();
+    const { onChange } = setup('b');
+    screen.getByRole('tab', { name: /Second/ }).focus();
+
+    await user.keyboard('{ArrowRight}');
+    // Круговой обход через disabled → возвращаемся на первую.
+    expect(onChange).toHaveBeenCalledWith('a');
+  });
+
+  test('Home и End прыгают на края', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup('b');
+    screen.getByRole('tab', { name: /Second/ }).focus();
+
+    await user.keyboard('{Home}');
+    expect(onChange).toHaveBeenCalledWith('a');
+
+    onChange.mockClear();
+    screen.getByRole('tab', { name: /Second/ }).focus();
+    await user.keyboard('{End}');
+    // Последняя НЕ-disabled — вторая же, потому что третья отключена.
+    expect(onChange).toHaveBeenCalledWith('b');
+  });
+});
