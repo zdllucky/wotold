@@ -217,12 +217,17 @@ jobs:
       # версию. GITHUB_TOKEN в чужой репозиторий не пишет — нужен PAT с
       # доступом только к тапу.
       - name: Update Homebrew tap
-        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION_SHA: ${{ steps.dmg.outputs.sha256 }}
         run: |
           set -euo pipefail
+          # Контекст `secrets` в `if:` недоступен — проверяем здесь. Без токена
+          # каск просто не обновляется: релиз это ронять не должно.
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN не задан — обновление каска пропущено"
+            exit 0
+          fi
           VERSION="${TAG#v}"
           git clone --depth 1 \
             "https://x-access-token:${GH_TOKEN}@github.com/zdllucky/homebrew-wotold.git" /tmp/tap
