@@ -189,7 +189,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 ### C. Code / feature debt
 
 - [x] ~~**device-id HMAC-bind**~~ **[REMOVED — local-only 0.3]** Относилось к квоте прокси по device-id; прокси и device-id удалены — задача снята.
-- [ ] **M12.6 cancellation flow** — SIGTERM на sidecar при delete звонка during processing. `tauri_plugin_shell::Child::kill()` + spawn-handle tracking.
+- [x] **M12.6 cancellation flow** — **Сделано:** удаление звонка сначала снимает работу (`PipelineRunner::abort_silently`), потом чистит базу и каталог. Раньше сайдкар считал удалённый звонок ещё минуты, а пайплайн создавал каталог заново — оставались пустые директории без строки в базе. Сам SIGKILL сайдкару делает `SidecarGuard::drop` при раскрутке стека.
 - [x] **identify_speakers pipeline wire / reconcile** — **сверено.** Эмбеддинг-канал `identify.rs` вытеснен `run_cluster_pipeline` целиком (тот же матчинг по consenting `voice_samples`, но поверх уже посчитанных кластеров, без повторного ONNX-прохода). Не вытеснен LLM-канал: `suggestion_source` `llm`/`both` не появляется никогда. Статус зафиксирован в шапке `identify.rs`; удаление модуля не делалось — он остаётся готовой реализацией канала.
 - [ ] **LLM-подсказка спикеров (R2 booster) — отдельный майлстоун** — подключить `llm_hint` + `merge_signals` поверх кластеров живого пути. Не «дозакрытие», а продуктовое решение: лишний проход локальной LLM по всему транскрипту на каждую запись (время + тепло), и подсказка по определению слабее биометрии. Требует явного согласия владельца на цену.
 - [ ] **Settings auto-name из NSFullUserName** — default «Я» + edit в онбординге. Требует Swift bridge.
@@ -202,7 +202,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **Per-cluster centroid distances** — `log::debug` cos_dist на каждый merge в `speaker_reclustering`. Detail polish. **Сделано:** `log::debug` на merge и на near-miss (в пределах 0.05 от порога).
 - [ ] **Sortformer → ECAPA-TDNN / Wespeaker v2** — отдельный milestone, heavy research. Текущий WeSpeaker — baseline.
 - [x] **LLM progress %** — **закрыто вердиктом, процента не будет.** Единственный источник — стриминг `llama-server` (`stream:true`), и считать его пришлось бы как `n_decoded / n_predict`. `n_predict` — это потолок (4096 по умолчанию), а генерация останавливается на EOS обычно много раньше: полоса дошла бы до ~15% и прыгнула в 100%. Честные сигналы уже есть: тикающий elapsed на рекапе и счётчик шагов «N / M» в thinking-блоке для цепочки refine. Токен-стриминг как таковой — отдельный пункт ниже.
-- [ ] **Cancel button во время recap regen** — `CancelToken` + propagation через `local_orchestrator::run_v2_pipeline` + `SidecarGuard::kill()`.
+- [x] **Cancel button во время recap regen** — **Сделано:** кнопка «Остановить» в полосе фоновой генерации. Отдельный CancelToken не понадобился: задача регена зарегистрирована под тем же call_id, `cancel_reprocess` её обрывает, `SidecarGuard` убивает llama, а `pipeline:cancelled` снимает busy-состояние в UI.
 - [ ] **Expected-duration hint** «~5 из 10 мин» — preset-dependent estimate из telemetry median.
 - [x] **Periodic emit во время STT** — **Сделано:** эмиттер обобщён (`with_stt_progress_emitter`), новое событие `stt:progress` с тем же payload; UI показывает «Распознаём речь — N с» в панели обработки на шаге 2. Процентов у full-file STT по-прежнему нет (whisper отдаёт результат целиком) — счётчик отличает работу от зависания.
 

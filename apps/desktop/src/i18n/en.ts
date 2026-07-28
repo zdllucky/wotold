@@ -325,6 +325,7 @@ export const en: TranslationStrings = {
     // [Processing status] strip above tabs during background regen.
     bgBusyStrip: 'Regenerating summary…',
     bgBusyStripElapsed: 'Regenerating summary… {sec}s',
+    bgBusyCancel: 'Stop',
     generatingRecap: 'Generating summary…',
     generatingTranscript: 'Transcribing speech…',
     // [F3] Live generation steps (RecapThinking).

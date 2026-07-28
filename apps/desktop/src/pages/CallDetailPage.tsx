@@ -450,11 +450,23 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <CallStateTag state="processing" labelOverride={t('callState.busyGeneric')} />
-            <span className="muted" style={{ fontSize: 13 }}>
+            <span className="muted" style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
               {recapElapsedSec != null
                 ? t('callDetail.bgBusyStripElapsed', { sec: recapElapsedSec })
                 : t('callDetail.bgBusyStrip')}
             </span>
+            {/* Пересоздание саммари на Quality-пресете идёт минутами, и до
+                сих пор прервать его было нечем: кнопка отмены жила только у
+                полной переобработки. Команда та же — задача регена
+                зарегистрирована под тем же call_id; abort раскручивает стек,
+                и SidecarGuard убивает llama-процесс. */}
+            <button
+              type="button"
+              className="btn btn--quiet btn--sm"
+              onClick={() => void onCancelReprocess()}
+            >
+              {t('callDetail.bgBusyCancel')}
+            </button>
           </div>
           <ProgressRail indeterminate ariaLabel={t('callState.busyGeneric')} />
         </div>

@@ -274,6 +274,30 @@ impl PipelineRunner {
         Ok(CancelOutcome { artifacts_intact })
     }
 
+    /// [M12.6] Оборвать работу по звонку **без** восстановления статуса и без
+    /// событий. Возвращает `true`, если что-то бежало.
+    ///
+    /// Отличие от [`cancel`](Self::cancel): та чинит состояние звонка (ready
+    /// либо failed) и сообщает об этом UI. Здесь звонок сейчас исчезнет
+    /// целиком, восстанавливать нечего — нужно только снять работу.
+    ///
+    /// Зачем вообще: удаление звонка сносило строки и каталог, но не трогало
+    /// задачу. Сайдкар whisper/llama продолжал считать удалённый звонок
+    /// (минуты, на Quality — дольше), а пайплайн следом писал артефакты в
+    /// заново созданный каталог — оставались пустые директории от несуществующих
+    /// звонков. Abort раскручивает стек, и `SidecarGuard::drop` убивает процесс.
+    pub async fn abort_silently(tasks: PipelineTasks, call_id: &str) -> bool {
+        let handle = tasks.lock().await.remove(call_id);
+        let Some(h) = handle else {
+            return false;
+        };
+        h.abort();
+        // Ждём фактического drop'а: пока стек не раскрутился, сайдкар жив и
+        // файлы ещё могут появиться — то есть удалять каталог рано.
+        let _ = h.await;
+        true
+    }
+
     /// [TD-13] Spawn задачи с **барьером регистрации**.
     ///
     /// Гонка, которую это чинит: раньше обе точки спавна делали
@@ -443,6 +467,35 @@ mod tests {
             wait_until_empty(&tasks, 1000).await,
             "повторный spawn после abort проходит и чистится"
         );
+    }
+
+    #[tokio::test]
+    async fn abort_silently_stops_the_work_before_deletion() {
+        // [M12.6] Удаление звонка обязано снять работу: иначе сайдкар считает
+        // удалённый звонок, а пайплайн создаёт каталог заново.
+        let tasks = empty_tasks();
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done_in_task = done.clone();
+        let (_hold_tx, hold_rx) = tokio::sync::oneshot::channel::<()>();
+        PipelineRunner::spawn_registered(tasks.clone(), "c1".into(), async move {
+            let _ = hold_rx.await;
+            done_in_task.store(true, std::sync::atomic::Ordering::SeqCst);
+        })
+        .await;
+
+        assert!(PipelineRunner::abort_silently(tasks.clone(), "c1").await);
+        assert!(tasks.lock().await.is_empty(), "запись снята из реестра");
+        assert!(
+            !done.load(std::sync::atomic::Ordering::SeqCst),
+            "работа не должна была доработать до конца"
+        );
+    }
+
+    #[tokio::test]
+    async fn abort_silently_is_a_noop_without_running_work() {
+        // Удаление обычного (уже готового) звонка не должно ничего искать.
+        let tasks = empty_tasks();
+        assert!(!PipelineRunner::abort_silently(tasks.clone(), "c1").await);
     }
 
     fn arc_device(id: &str) -> Arc<str> {

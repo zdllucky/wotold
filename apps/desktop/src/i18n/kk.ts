@@ -323,6 +323,7 @@ export const kk: TranslationStrings = {
     // [Processing status] фон-regen кезінде табтар үстіндегі strip.
     bgBusyStrip: 'Қорытындыны қайта жасаудамыз…',
     bgBusyStripElapsed: 'Қорытындыны қайта жасаудамыз… {sec}s',
+    bgBusyCancel: 'Тоқтату',
     generatingRecap: 'Қорытынды жасалуда…',
     generatingTranscript: 'Сөйлеу танылуда…',
     // [F3] Рекап генерациясының тірі қадамдары (RecapThinking).
