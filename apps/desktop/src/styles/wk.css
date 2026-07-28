@@ -22,6 +22,13 @@ a { color: inherit; text-decoration: none; }
 .u-faint { color: var(--text-faint); }
 .u-strong { font-weight: 600; }
 .u-trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Только для скринридера: живые области статуса, которым нечего показывать
+   глазами (визуальный сигнал уже есть — таймер, точка, полоса). display:none
+   и visibility:hidden не годятся — их скринридер тоже не читает. */
+.u-sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
 
 /* scrollbars */
 .scroll { overflow-y: auto; }
@@ -39,7 +46,7 @@ a { color: inherit; text-decoration: none; }
   display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; transition: background var(--fast), transform var(--fast); }
 .minirail .mr-rec:hover { background: var(--accent-hover); }
 /* Запись: красный фон → белый контент (дорожка), как .btn--danger. */
-.minirail .mr-rec[data-rec="true"] { background: var(--danger); color: #fff; }
+.minirail .mr-rec[data-rec="true"] { background: var(--danger); color: var(--on-danger); }
 .minirail .mr-rec[data-rec="true"]:hover { filter: brightness(1.06); }
 .minirail-sep { width: 26px; height: 1px; background: var(--border); margin: 4px 0; flex: 0 0 auto; }
 .minirail .mr-spacer { flex: 1 1 auto; }
@@ -109,7 +116,7 @@ a { color: inherit; text-decoration: none; }
 .btn--ghost:hover { background: var(--hover); color: var(--text); }
 .btn--soft { background: var(--accent-soft); color: var(--accent-text); }
 .btn--soft:hover { background: var(--accent-line); }
-.btn--danger { background: var(--danger); color: #fff; }
+.btn--danger { background: var(--danger); color: var(--on-danger); }
 .btn--danger:hover { filter: brightness(1.06); }
 .btn--danger-ghost { color: var(--danger-text); }
 .btn--danger-ghost:hover { background: var(--danger-soft); }
@@ -479,7 +486,7 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .rec-btn { width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto; background: var(--panel); box-shadow: inset 0 0 0 2px var(--danger); display: inline-flex; align-items: center; justify-content: center; transition: transform var(--fast); }
 .rec-btn::after { content: ''; width: 17px; height: 17px; border-radius: 50%; background: var(--danger); transition: transform var(--fast); }
 .rec-btn:hover::after { transform: scale(1.1); }
-.stop-btn { width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto; background: var(--danger); display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+.stop-btn { width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto; background: var(--danger); display: inline-flex; align-items: center; justify-content: center; color: var(--on-danger); }
 
 /* — Ask chat bubbles — */
 .ask-thread { display: flex; flex-direction: column; gap: var(--s3); }

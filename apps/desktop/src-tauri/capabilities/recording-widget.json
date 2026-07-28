@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "recording-widget",
+  "description": "Плавающий виджет записи. Раньше он делил набор с главным окном, то есть имел shell:allow-execute (запуск сайдкаров), updater, dialog и deep-link — ничего из этого виджету не нужно: он показывает таймер, дорожку и три кнопки. Здесь только то, чем он действительно пользуется: события и invoke (core:default), перетаскивание за корпус и закрытие/сворачивание собственного окна.",
+  "windows": ["recording-widget"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-start-dragging"
+  ]
+}

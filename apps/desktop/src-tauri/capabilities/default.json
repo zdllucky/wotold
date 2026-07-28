@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set: core + updater (M11.6) + dialog (confirms) + shell (audio sidecar + OAuth open + M12 local-engine sidecars) + deep-link. [Security M-3] args.validator regex здесь — последняя граница. Primary control — Rust-side path construction (constants + UUIDs) + ensure_path_under() в local_engine::llm.",
-  "windows": ["main", "recording-widget"],
+  "description": "[B18 a11y/least-privilege] Только главное окно — виджет записи имеет свой урезанный набор (capabilities/recording-widget.json): ему не нужны ни shell, ни updater, ни deep-link. Default capability set: core + updater (M11.6) + dialog (confirms) + shell (audio sidecar + OAuth open + M12 local-engine sidecars) + deep-link. [Security M-3] args.validator regex здесь — последняя граница. Primary control — Rust-side path construction (constants + UUIDs) + ensure_path_under() в local_engine::llm.",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "updater:default",

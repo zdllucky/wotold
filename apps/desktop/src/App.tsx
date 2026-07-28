@@ -539,6 +539,17 @@ function AppShell() {
       <main className="app-main">
         {/* [recording] Нижняя плашка RecStrip убрана — индикатор записи (живая
             дорожка + таймер + стоп) живёт в rail/навбар-кнопках. */}
+        {/* [a11y SC 4.1.3] Смена состояния записи видна только глазами: точка,
+            таймер, форма кнопки. Скринридеру объявлять было нечего — фокус при
+            старте и остановке не двигается. Область живёт всегда (её текст
+            меняется), иначе объявление первого перехода теряется. */}
+        <p className="u-sr-only" role="status" aria-live="polite">
+          {rec.status.kind === 'recording'
+            ? t('recording.announceRecording')
+            : rec.status.kind === 'paused'
+              ? t('recording.announcePaused')
+              : t('recording.announceIdle')}
+        </p>
         <SuggestBanner />
         <UpdateBanner />
         {localError && (

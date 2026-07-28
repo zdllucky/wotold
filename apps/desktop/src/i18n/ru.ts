@@ -8,18 +8,13 @@
 const ruInternal = {
   // ── Top nav (App.tsx rail) ──────────────────────────────────────────────
   nav: {
-    home: 'Главная',
     calls: 'Звонки',
     contacts: 'Контакты',
     settings: 'Настройки',
-    ds: 'DS · dev',
     main: 'Главная навигация',
-    processingOne: 'обрабатываем',
-    processingMany: 'обрабатываем · {n}',
     processingTitle: 'Обработка {n} {plural}…',
     callsPluralOne: 'звонка',
     callsPluralMany: 'звонков',
-    brandFooter: 'Локально · macOS',
   },
 
   // [B18.1a] Wotold v2 shell rail.
@@ -63,7 +58,6 @@ const ruInternal = {
     viewCards: 'Карточки',
     viewWeek: 'Неделя',
     viewMonth: 'Месяц',
-    comingSoon: 'Скоро',
     todayBtn: 'Сегодня',
     filter: 'Фильтр',
     recordShort: 'Записать',
@@ -214,44 +208,21 @@ const ruInternal = {
     winMinimize: 'Свернуть окно',
     winMaximize: 'На весь экран',
     dismiss: 'Закрыть',
-    save: 'Сохранить',
+    dismissToast: 'Закрыть уведомление: {message}',
     cancel: 'Отмена',
     delete: 'Удалить',
     deleting: 'Удаляем…',
-    confirm: 'Подтвердить',
-    confirmed: 'Подтверждены',
-    confirming: 'Сохраняем…',
-    close: 'Закрыть',
     edit: 'Редактировать',
-    download: 'Скачать',
     loading: 'Загрузка…',
     loadingShort: '…',
-    ok: 'OK',
     next: 'Дальше →',
     back: '← Назад',
     backAll: 'Все звонки',
     skip: 'Пропустить',
-    done: 'Готово',
     gotIt: 'Понятно ✓',
     later: 'Позже',
-    refresh: 'Обновить',
-    refreshNow: '↻ Обновить',
-    saved: '✓ Сохранено',
     add: 'Добавить',
-    create: 'Создать',
-    finish: 'Готово',
     select: 'Выбрать',
-    open: 'Открыть',
-    unbind: 'Отвязать',
-    notDetermined: 'Не определены',
-    newContact: 'Новый контакт',
-    error: 'Ошибка',
-    actions: 'Действия',
-    progress: 'Прогресс',
-    yes: 'Да',
-    no: 'Нет',
-    none: '—',
-    chooseFile: 'Выбрать файл',
     selectNone: '— не выбран —',
     selectSearch: 'Поиск…',
   },
@@ -320,10 +291,7 @@ const ruInternal = {
     railActions: 'Действия',
     railExport: 'Экспортировать рекап',
     exportBusy: 'Экспортируем…',
-    tabTasks: 'Задачи',
-    tabSpeakers: 'Участники',
     actionsAria: 'Действия со звонком',
-    actionsTitle: 'Действия',
     reprocess: '↻ Переобработать целиком',
     reprocessing: 'Переобработка…',
     regenerateRecap: '↻ Пересоздать саммари',
@@ -348,12 +316,10 @@ const ruInternal = {
       inProgress: 'Выполняется',
       stepFailed: 'Пропущено',
     },
-    regenerateNoTranscript: 'Нет транскрипта для регенерации',
     // [M14 T-17] Title-only regen — отдельный lightweight LLM-call.
     regenerateTitle: '↻ Пересоздать название',
     regeneratingTitle: 'Пересоздаём название…',
     regenerateTitleFailed: 'Не удалось пересоздать название: {error}',
-    regenerateTitleNoTranscript: 'Нет транскрипта для регенерации названия',
     exportMd: '↓ Скачать .md',
     exporting: 'Сохраняем…',
     exportTitle: 'Сохранить расшифровку звонка',
@@ -385,9 +351,6 @@ const ruInternal = {
     emptyTranscript: 'Транскрипт ещё не готов.',
     emptyTasks:
       'Здесь будут задачи, упомянутые в звонке. Пока Wotold их не нашёл — попробуй переобработать звонок или дождись пересборки.',
-    taskStatusDone: '✓ done',
-    taskStatusOpen: 'open',
-    taskDueShort: '· до {date}',
     reprocessFailed: 'Не удалось перезапустить: {error}',
     regenerateFailed: 'Не удалось пересоздать саммари: {error}',
     // [V6.4] Reassurance строчка под PipelineStrip: юзер видит длинный
@@ -421,12 +384,9 @@ const ruInternal = {
     errorAudioSaved: 'Аудио сохранено локально, его можно прослушать ниже.',
     errorRetry: 'Попробовать ещё раз',
     errorRetryProvider: 'Попробовать через {provider}',
-    errorOpenSettings: 'Открыть настройки',
     errorDiagnosticsTitle: 'Диагностика',
     errorDiagnosticsCode: 'Код',
     errorDiagnosticsProvider: 'Провайдер',
-    errorDiagnosticsAttempts: 'Попыток',
-    errorDiagnosticsFirstAt: 'Первая попытка',
     errorDiagnosticsLastAt: 'Последняя попытка',
     errorDiagnosticsQuota: 'Списано из квоты',
   },
@@ -498,9 +458,6 @@ const ruInternal = {
     sourceVoiceLlm: 'голос + LLM',
     sourceVoice: 'голос',
     sourceLlm: 'LLM',
-    ownerLabel: 'Я',
-    voiceN: 'Голос {n}',
-    voiceFallback: 'Голос',
     suggestionRoleNone: '—',
   },
 
@@ -510,11 +467,8 @@ const ruInternal = {
     few: 'участника',
     many: 'участников',
     // [Bug-fix] Anonymous chip — sortformer выделил голос, контакт не привязан.
-    anonymousLabel: 'Спикер {n}',
-    anonymousHint: 'Нажмите чтобы привязать к контакту',
     // [P14.3] Hint когда спикеров много — overflow noise обычно от
     // sortformer'а на перекрытиях. User может уточнить через Labs.
-    tooManyBadge: 'много?',
     tooManyHint:
       'Если реально меньше — в Настройки → Labs выбери «Принудительное количество спикеров».',
   },
@@ -525,8 +479,6 @@ const ruInternal = {
     pause: 'Пауза',
     progressAria: 'Аудио прогресс',
     jumpToCurrent: 'К текущему участку',
-    speakerJumpTitle: 'Перейти к блоку «{name}» в расшифровке',
-    pausedItalic: 'пауза',
     trackGroup: 'Дорожка',
     trackSystemTitle: 'Звук собеседника (системный аудио)',
     trackSystemLabel: 'Собеседник',
@@ -662,9 +614,7 @@ const ruInternal = {
     hotkeyPauseHint:
       'Срабатывает только во время активной записи. По умолчанию ⌘⇧P.',
     // [S1] Auto-detect (R3 deviation, opt-in).
-    callDetectLabel: 'Авто-предложение записи',
     callDetectHint: 'Уведомление «Записать?» при обнаружении звонка. По умолчанию выключено для приватности.',
-    callDetectCooldownLabel: 'Не предлагать снова в течение',
     callDetectCooldownOption: '{n} мин',
     voiceLede:
       'Wotold может предлагать кто говорит на основе совпадения голоса — но только после скачивания биометрической модели (25 МБ, опционально). Финальное подтверждение всегда за тобой (R2 паспорта).',
@@ -753,8 +703,6 @@ const ruInternal = {
 
   // [M14 T-11] Action item v2 — confidence badges + категории + evidence.
   actionItem: {
-    ownerInferred: 'Исполнитель определён по контексту — проверь',
-    unassigned: 'Без владельца',
     category: {
       commitment: 'обязательство',
       proposal: 'предложение',
@@ -780,7 +728,6 @@ const ruInternal = {
     featureOff:
       '⚠ В этой сборке фича voice-onnx не включена. Модель можно скачать, но pipeline её не использует — биометрический матчинг останется выключенным. В production-сборке (`--features voice-onnx`) скачивание автоматически активирует матчинг.',
     modelName: 'Модуль распознавания голоса',
-    modelEyebrow: 'Модель',
     statusValid: 'установлена',
     statusMissing: 'нет',
     statusCorrupted: 'повреждена',
@@ -794,14 +741,6 @@ const ruInternal = {
     btnRedownload: '↻ Перекачать',
     btnDownloading: 'Скачиваем…',
     btnDelete: 'Удалить',
-    btnDeleting: 'Удаляем…',
-    techDetails: 'Технические детали',
-    techUrl: 'URL',
-    techSha: 'SHA256',
-    techSize: 'Размер',
-    techFeature: 'Build feature',
-    featureEnabled: 'voice-onnx ✓',
-    featureDisabled: '— (не включена)',
     mb: '{n} МБ',
     verifyFailed:
       'SHA256 не совпал — файл повреждён или сменилась версия модели. Попробуй снова.',
@@ -858,7 +797,6 @@ const ruInternal = {
     statusDownloading: 'качаем…',
     statusAbsent: 'не установлено',
     installedFootprint: 'Установлено: {size}',
-    manageStorage: 'Освободить место',
     storageTitle: 'Хранилище моделей',
     storageLede:
       'Что установлено локально. Удалите неиспользуемые модели чтобы освободить место. Wotold не удаляет модели сам.',
@@ -871,10 +809,8 @@ const ruInternal = {
     downloadAria: 'Скачать {name}',
     delete: 'Удалить',
     deleteAria: 'Удалить {name}',
-    close: 'Закрыть',
     statusActive: 'активна',
     statusCorrupted: 'повреждена',
-    deleteActiveConfirmTitle: 'Удалить активную модель?',
     deleteActiveConfirmMsg:
       'Модель {id} используется текущей сборкой. Удаление переключит сборку. Продолжить?',
     qualityConfirmTitle: 'Quality на этом Mac',
@@ -1017,12 +953,14 @@ const ruInternal = {
 
   // ── Live recording / waveforms (HomePage recording state) ───────────────
   recording: {
-    overlayLabel: 'Идёт запись',
     // [W3] RecStrip labels — persistent strip rendered above main content
     // while a recording is active (or paused).
     stripRecording: 'Идёт запись',
     tooShort: 'Запись короче {sec} с — не сохранена',
     stripPaused: 'Пауза · записано',
+    announceRecording: 'Идёт запись',
+    announcePaused: 'Запись на паузе',
+    announceIdle: 'Запись не идёт',
     pauseAction: 'Поставить на паузу',
     resumeAction: 'Продолжить запись',
     stopAction: 'Остановить запись',
@@ -1120,8 +1058,6 @@ const ruInternal = {
     fragLoading: 'загрузка…',
     fragLoadError: 'Не удалось загрузить фрагмент',
     fragRefLabel: 'Фрагмент {n}',
-    durHours: '{h} ч {m} мин',
-    durMinutes: '{m} мин',
     emptyTitle: 'Поиск по всем звонкам',
     emptyDesc:
       'Вопрос — это поиск по расшифровкам и рекапам, ответ — с указанием источников. Каждый диалог — новый чат.',
@@ -1133,7 +1069,6 @@ const ruInternal = {
     copy: 'Скопировать',
     copied: 'Скопировано',
     share: 'Поделиться',
-    sourcesLabel: 'Источники',
     escalate: 'Искать во всех звонках',
     newChat: 'Новый чат',
     noChats: 'Чатов пока нет',

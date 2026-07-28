@@ -42,6 +42,19 @@ describe('Toast', () => {
     expect(document.querySelector('.toast')).toBeNull();
   });
 
+  test('кнопка закрытия называет само уведомление', () => {
+    // [a11y SC 4.1.2] Три тоста подряд давали три кнопки «Закрыть» — по имени
+    // не отличить, какую нажимаешь.
+    render(
+      <ToastProvider>
+        <Trigger />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByText('go'));
+    const label = document.querySelector('.toast-close')!.getAttribute('aria-label') ?? '';
+    expect(label).toContain('hello toast');
+  });
+
   test('useToast outside provider throws', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(() => render(<Trigger />)).toThrow(/ToastProvider/);
