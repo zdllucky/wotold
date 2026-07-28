@@ -209,7 +209,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 ### E. UX / прочее
 
 - [x] **Audio player conditional badge** — «Аудио недоступно до завершения обработки» когда merged WAV ещё processing + «X из Y чанков готово» hint (derived из `useCallDetail.chunks`). **Сделано:** чип «аудио готовится» + «X из Y чанков» над плеером.
-- [ ] **Telemetry `chunk_failed`** — `db/telemetry.rs` schema extension `(call_id, chunk_idx, reason, retried_count, created_at)` + dev-only aggregate dashboard «X% chunks failed last 7 days», per-preset breakdown.
+- [x] **Telemetry `chunk_failed`** — **Сделано:** миграция 0024 `chunk_failure_log(call_id, chunk_idx, reason, retry_idx, preset, created_at)`, запись из `mark_chunk_failed` (единственная точка `* → failed`), агрегат `chunk_failure_stats(days)` с разбивкой по пресету и причине и командой `telemetry_chunk_failures`. `retry_idx` считается из уже записанных падений: «упало и починилось ретраем» отличимо от «падает всегда». Экрана нет — данные локальные, читаются командой (как `summary_generation_log`).
 - [ ] **Reprocess incremental** — reuse `status='done'` chunks вместо полного re-STT. `chunk_assembly` уже фильтрует done, но reprocess сбрасывает все к pending. Rerun только failed → экономия для частично-успешных записей.
 - [x] **Dev hot-reload auto-restart** — `scripts/dev.sh` с watchexec/entr на `src-tauri/src/`, on change `pkill -SIGTERM wotold-desktop` → tauri dev сам re-launch'ит. Минимально-инвазивный (~10 строк bash). Сейчас edit Rust требует ручного kill + рестарта. **Сделано:** `scripts/dev.sh` — зачистка зависших процессов и порта 5173 перед стартом, watchexec/entr опционально.
 

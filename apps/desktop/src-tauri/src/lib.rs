@@ -169,6 +169,7 @@ pub fn run() {
             commands::get_call,
             commands::delete_call,
             commands::wipe_all_data,
+            commands::telemetry_chunk_failures,
             commands::list_call_action_items,
             commands::read_call_artifact,
             commands::get_audio_permissions,

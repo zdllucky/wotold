@@ -51,3 +51,26 @@ pub async fn check_for_update(app: AppHandle) -> Result<Option<AvailableUpdate>,
 pub async fn apply_update(app: AppHandle) -> Result<(), AppError> {
     crate::updater::apply(&app).await
 }
+
+/// Диагностика: сводка падений чанков за `days` суток (по умолчанию 7).
+///
+/// Экрана для неё нет и не планируется — это ответ на вопрос «часто ли у меня
+/// вообще падают чанки и на чём», который иначе требует гриппинга ротируемых
+/// логов. Данные локальные, наружу не уходят (как и `summary_generation_log`).
+#[tauri::command]
+pub async fn telemetry_chunk_failures(
+    state: State<'_, AppState>,
+    days: Option<i64>,
+) -> Result<serde_json::Value, AppError> {
+    let days = days.unwrap_or(7).clamp(1, 365);
+    let s = crate::db::telemetry::chunk_failure_stats(&state.db, days).await?;
+    Ok(serde_json::json!({
+        "days": days,
+        "failures": s.failures,
+        "distinct_chunks": s.distinct_chunks,
+        "chunks_total": s.chunks_total,
+        "failed_pct": s.failed_pct(),
+        "by_preset": s.by_preset,
+        "by_reason": s.by_reason,
+    }))
+}
