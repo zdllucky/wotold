@@ -1,0 +1,662 @@
+/* ─────────────────────────────────────────────────────────────
+   Wotold · site.css — единственный стилевой слой сайта.
+
+   Три задачи, в этом порядке:
+     1. Импортировать канон приложения как есть (tokens + wk-примитивы).
+     2. Переложить переменные Starlight на токены Wotold, чтобы доки
+        выглядели тем же продуктом, а не дефолтной темой генератора.
+     3. Добавить маркетинговый слой, которого в приложении нет и быть
+        не должно (hero-типографика, ритм секций).
+
+   Design gate: канон — docs/design/wotold-v2/README.md. Сырых hex и
+   oklch здесь нет ни одного: всё через var(--*) из tokens.css. Новые
+   токены — только §3, только типографика и ритм, и живут они здесь,
+   а не в tokens.css: приложению hero-заголовок не нужен.
+
+   Шрифты подключаются не отсюда, а <link>'ом на public/fonts/fonts.css
+   (см. astro.config.mjs) — их пути должны пережить base=/wotold.
+   ───────────────────────────────────────────────────────────── */
+
+/* ── 1 · Канон приложения ────────────────────────────────────── */
+
+/* Порядок слоёв объявляется здесь, до импортов, и это не косметика.
+   Starlight держит ВСЕ свои стили в `@layer starlight.*`, а неслоистые
+   правила по спецификации выигрывают у любых слоистых независимо от
+   специфичности. Пока `wk.css` импортировался вне слоёв, его базовое
+   `a { color: inherit }` перебивало правило Starlight для активного пункта
+   сайдбара — тот красился цветом текста страницы поверх акцентной плашки
+   (1.4:1). Канон приложения обязан лежать НИЖЕ слоёв Starlight; собственные
+   правила сайта ниже остаются неслоистыми и выигрывают у обоих. */
+@layer wotold.canon, starlight.base, starlight.reset, starlight.core, starlight.content,
+  starlight.components, starlight.utils;
+
+/* Источник истины — десктоп. Копий нет: правка токена в приложении
+   доезжает до сайта сама. wk.css даёт .btn/.chip/.panel/.turn/.wave;
+   components.css (1710 строк экранов приложения) намеренно НЕ берём. */
+@import '../../../desktop/src/styles/tokens.css' layer(wotold.canon);
+@import '../../../desktop/src/styles/wk.css' layer(wotold.canon);
+
+/* wk.css §2 задаёт `html, body { height: 100% }` — это верно для окна Tauri,
+   где шелл занимает вьюпорт целиком и скроллятся внутренние области. На
+   скроллящемся документе фиксированная высота body ломает `position: sticky`:
+   шапка перестаёт липнуть, как только скролл уходит за первые 100vh. Возвращаем
+   документу нормальный поток. */
+html,
+body {
+  height: auto;
+  min-height: 100%;
+}
+
+/* Базовый кегль приложения — 13px, плотность интерфейса. Читаемому тексту
+   страницы этого мало; секции и карточки задают свои размеры поверх. */
+body.lp {
+  font-size: var(--t-15);
+}
+
+/* ── 2 · Starlight на токенах Wotold ─────────────────────────── */
+
+/* Starlight переключает тему тем же атрибутом data-theme на <html>, что и
+   приложение, поэтому маппинг пишется один раз: значения токенов уже разные
+   в light и dark.
+   Селектор с атрибутами обязателен. Starlight объявляет часть своих
+   переменных внутри `:root[data-theme='light']` — это (0,1,1) против (0,0,1)
+   у голого `:root`, и голый проигрывает независимо от порядка подключения.
+   Ровно на этом активный пункт сайдбара получал светлый текст на светлом
+   фоне (1.4:1). */
+:root,
+:root[data-theme='light'],
+:root[data-theme='dark'] {
+  --sl-font: var(--font);
+  --sl-font-mono: var(--mono);
+
+  --sl-color-text: var(--text);
+  /* Starlight красит активный пункт навигации как `color: text-invert` на
+     `background: text-accent`. Пара обязана быть контрастной, поэтому берётся
+     готовая пара токенов --accent / --on-accent: --accent-text предназначен
+     для текста НА фоне страницы и в этой роли давал светлое на светлом. */
+  --sl-color-text-accent: var(--accent);
+  --sl-color-text-invert: var(--on-accent);
+  --sl-color-white: var(--text);
+  --sl-color-black: var(--bg);
+
+  --sl-color-bg: var(--bg);
+  --sl-color-bg-nav: var(--panel);
+  --sl-color-bg-sidebar: var(--bg);
+  --sl-color-bg-inline-code: var(--sunken);
+  --sl-color-bg-accent: var(--accent);
+
+  --sl-color-accent: var(--accent);
+  --sl-color-accent-low: var(--accent-soft);
+  --sl-color-accent-high: var(--accent-text);
+
+  --sl-color-gray-1: var(--text);
+  --sl-color-gray-2: var(--text-2);
+  --sl-color-gray-3: var(--text-3);
+  --sl-color-gray-4: var(--text-faint);
+  --sl-color-gray-5: var(--border-strong);
+  --sl-color-gray-6: var(--sunken);
+  --sl-color-gray-7: var(--panel);
+
+  --sl-color-hairline: var(--border);
+  --sl-color-hairline-light: var(--border);
+  --sl-color-hairline-shade: var(--border-2);
+
+  --sl-shadow-sm: var(--shadow-sm);
+  --sl-shadow-md: var(--shadow);
+  --sl-shadow-lg: var(--shadow-lg);
+
+  --sl-text-h1: var(--t-hero-sm);
+  --sl-text-h2: var(--t-28);
+  --sl-text-h3: var(--t-22);
+  --sl-text-h4: var(--t-18);
+
+  --sl-color-backdrop-overlay: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+/* Семантические цвета Starlight (note/tip/caution/danger в asides). */
+:root,
+:root[data-theme='light'],
+:root[data-theme='dark'] {
+  --sl-color-blue: var(--accent);
+  --sl-color-blue-low: var(--info-soft);
+  --sl-color-blue-high: var(--accent-text);
+  --sl-color-green: var(--ok);
+  --sl-color-green-low: var(--ok-soft);
+  --sl-color-green-high: var(--ok);
+  --sl-color-orange: var(--warn);
+  --sl-color-orange-low: var(--warn-soft);
+  --sl-color-orange-high: var(--warn);
+  --sl-color-red: var(--danger);
+  --sl-color-red-low: var(--danger-soft);
+  --sl-color-red-high: var(--danger-text);
+}
+
+/* ── 3 · Маркетинговый слой ──────────────────────────────────── */
+
+/* Единственные новые токены на сайте. Шкала приложения кончается на
+   --t-28: этого хватает экрану, но не первому экрану лендинга. Нижняя
+   граница каждого clamp() совпадает с существующим шагом шкалы, чтобы
+   на узком вьюпорте типографика возвращалась в канон. */
+:root {
+  --t-hero: clamp(2rem, 1.15rem + 3.6vw, 3.75rem); /* 32 → 60 */
+  --t-hero-sm: clamp(1.75rem, 1.3rem + 1.9vw, 2.5rem); /* 28 → 40 */
+  --t-lead: clamp(1rem, 0.94rem + 0.28vw, 1.1875rem); /* 16 → 19 */
+
+  --s-section: clamp(3.5rem, 2rem + 5vw, 7rem); /* 56 → 112 */
+  --s-block: clamp(1.5rem, 1rem + 2vw, 2.5rem); /* 24 → 40 */
+
+  --site-measure: 68ch;
+  --site-max: 1120px;
+}
+
+/* ── Лендинг ─────────────────────────────────────────────────── */
+
+.lp {
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+}
+
+.lp-wrap {
+  max-width: var(--site-max);
+  margin-inline: auto;
+  padding-inline: var(--s5);
+}
+
+.lp-section {
+  padding-block: var(--s-section);
+}
+
+.lp-section + .lp-section {
+  border-top: 1px solid var(--border);
+}
+
+.lp-eyebrow {
+  font-family: var(--mono);
+  font-size: var(--t-11);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: var(--s3);
+}
+
+.lp-h1 {
+  font-size: var(--t-hero);
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.lp-h2 {
+  font-size: var(--t-hero-sm);
+  line-height: 1.14;
+  letter-spacing: -0.018em;
+  font-weight: 650;
+  margin: 0 0 var(--s4);
+  text-wrap: balance;
+}
+
+.lp-lead {
+  font-size: var(--t-lead);
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: var(--site-measure);
+  margin: var(--s5) 0 0;
+}
+
+.lp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  align-items: center;
+  margin-top: var(--s6);
+}
+
+/* Кнопки — .btn из wk.css. Здесь размер: на лендинге цель крупнее, чем в
+   плотном интерфейсе приложения.
+   Плюс перенос текста. В приложении у .btn стоит `white-space: nowrap` — там
+   подписи короткие и в фиксированной панели это верно. На странице подпись
+   бывает длинной («Полная политика конфиденциальности» — 331px), и на узком
+   экране nowrap выдавливал горизонтальный скролл всему документу. */
+.lp-actions .btn {
+  height: auto;
+  min-height: 40px;
+  padding-block: var(--s2);
+  padding-inline: var(--s5);
+  font-size: var(--t-14);
+  white-space: normal;
+  text-align: start;
+  max-width: 100%;
+}
+
+.lp-note {
+  font-size: var(--t-12);
+  color: var(--text-3);
+  margin-top: var(--s3);
+}
+
+/* ── Hero ────────────────────────────────────────────────────── */
+
+.lp-hero {
+  padding-block: clamp(3rem, 1.5rem + 6vw, 6rem) var(--s-section);
+}
+
+.lp-hero-grid {
+  display: grid;
+  gap: var(--s-block);
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@media (min-width: 1000px) {
+  .lp-hero-grid {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: var(--s8);
+    align-items: center;
+  }
+}
+
+/* ── Сетка карточек ──────────────────────────────────────────── */
+
+.lp-grid {
+  display: grid;
+  gap: var(--s4);
+  grid-template-columns: 1fr;
+  margin-top: var(--s7);
+}
+
+@media (min-width: 720px) {
+  .lp-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1000px) {
+  .lp-grid[data-cols='3'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Первая карточка шире остальных: равномерная сетка одинаковых плиток —
+   ровно тот «дефолтный шаблон», который канон запрещает. Иерархия задаётся
+   размером, а не только текстом.
+   Ширина сетки — две колонки, а не три: пять карточек в трёх колонках дают
+   ряд 1 + ряд 3 + сирота, в двух — 1 + 2 + 2, ряды закрыты. */
+@media (min-width: 720px) {
+  .lp-grid[data-feature] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lp-grid[data-feature] > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Ведущая карточка несёт главный тезис — ей больше воздуха и крупнее заголовок. */
+.lp-grid[data-feature] > :first-child {
+  padding: var(--s6);
+}
+
+.lp-grid[data-feature] > :first-child h3 {
+  font-size: var(--t-18);
+}
+
+.lp-grid[data-feature] > :first-child p {
+  font-size: var(--t-15);
+  max-width: var(--site-measure);
+}
+
+.lp-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.lp-card h3 {
+  font-size: var(--t-16);
+  font-weight: 650;
+  margin: 0;
+  color: var(--text);
+}
+
+.lp-card p {
+  font-size: var(--t-14);
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.lp-card-ico {
+  color: var(--text-3);
+  margin-bottom: var(--s2);
+  display: inline-flex;
+}
+
+/* ── Шаги пайплайна ──────────────────────────────────────────── */
+
+.lp-steps {
+  display: grid;
+  gap: var(--s3);
+  margin-top: var(--s7);
+  grid-template-columns: 1fr;
+  counter-reset: step;
+}
+
+@media (min-width: 860px) {
+  .lp-steps {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.lp-step {
+  position: relative;
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--s4);
+}
+
+.lp-step::before {
+  counter-increment: step;
+  content: counter(step);
+  font-family: var(--mono);
+  font-size: var(--t-11);
+  color: var(--text-faint);
+  display: block;
+  margin-bottom: var(--s2);
+}
+
+.lp-step h3 {
+  font-size: var(--t-14);
+  font-weight: 650;
+  margin: 0 0 var(--s1);
+}
+
+.lp-step p {
+  font-size: var(--t-12);
+  line-height: 1.5;
+  color: var(--text-3);
+  margin: 0;
+}
+
+/* ── Полоса приватности ──────────────────────────────────────── */
+
+.lp-band {
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: var(--s7) var(--s6);
+}
+
+.lp-band ul {
+  list-style: none;
+  margin: var(--s5) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s3);
+}
+
+.lp-band li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+  font-size: var(--t-14);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.lp-band li svg {
+  margin-top: 2px;
+  color: var(--ok);
+}
+
+/* ── Донат ───────────────────────────────────────────────────── */
+
+.lp-sponsor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s5);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--s6);
+}
+
+.lp-sponsor p {
+  margin: var(--s2) 0 0;
+  font-size: var(--t-14);
+  color: var(--text-2);
+  max-width: 52ch;
+}
+
+/* ── Подвал ──────────────────────────────────────────────────── */
+
+.lp-footer {
+  border-top: 1px solid var(--border);
+  padding-block: var(--s7);
+  font-size: var(--t-13);
+  color: var(--text-3);
+}
+
+.lp-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  margin-bottom: var(--s5);
+}
+
+/* Правовой блок — отдельная колонка с заголовком, а не ещё четыре ссылки в
+   общем ряду. Политика и условия должны находиться там, где их привыкли
+   искать, и выглядеть документами, а не пунктами меню. */
+.lp-footer-cols {
+  display: grid;
+  gap: var(--s5);
+  grid-template-columns: 1fr;
+  padding-bottom: var(--s5);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--s5);
+}
+
+@media (min-width: 720px) {
+  .lp-footer-cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.lp-footer-legal {
+  flex-direction: column;
+  gap: var(--s2);
+  margin-bottom: 0;
+}
+
+.lp-footer-legal h2 {
+  font-family: var(--mono);
+  font-size: var(--t-11);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 500;
+  margin: 0 0 var(--s1);
+}
+
+.lp-footer a {
+  color: var(--text-2);
+  text-decoration: none;
+}
+
+.lp-footer a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* ── Мокап интерфейса ────────────────────────────────────────── */
+
+/* Декоративная реплика окна приложения на тех же примитивах wk.css.
+   Не имитирует работающий продукт: aria-hidden, рядом текстовое
+   описание. */
+.mock {
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  font-size: var(--t-12);
+  user-select: none;
+}
+
+.mock-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  height: 36px;
+  padding-inline: var(--s3);
+  background: var(--sunken);
+  border-bottom: 1px solid var(--border);
+}
+
+.mock-lights {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.mock-lights i {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  display: block;
+}
+
+.mock-lights i:nth-child(1) {
+  background: var(--wc-close);
+}
+
+.mock-lights i:nth-child(2) {
+  background: var(--wc-min);
+}
+
+.mock-lights i:nth-child(3) {
+  background: var(--wc-max);
+}
+
+.mock-title {
+  font-family: var(--mono);
+  font-size: var(--t-11);
+  color: var(--text-3);
+}
+
+.mock-body {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 560px) {
+  .mock-body {
+    grid-template-columns: 148px minmax(0, 1fr);
+  }
+}
+
+.mock-rail {
+  display: none;
+  border-right: 1px solid var(--border);
+  padding: var(--s3);
+  background: var(--bg);
+}
+
+@media (min-width: 560px) {
+  .mock-rail {
+    display: block;
+  }
+}
+
+.mock-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  height: 28px;
+  padding-inline: var(--s2);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: var(--t-12);
+}
+
+.mock-nav[data-active] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.mock-main {
+  padding: var(--s4);
+  min-width: 0;
+}
+
+.mock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+.mock-h {
+  font-size: var(--t-15);
+  font-weight: 650;
+  color: var(--text);
+}
+
+.mock-turns {
+  display: grid;
+  gap: var(--s1);
+}
+
+/* .turn из wk.css рассчитан на широкую колонку транскрипта; в мокапе
+   она узкая, поэтому колонка спикера ужимается. Класс не форкается —
+   переопределяется только сетка. */
+.mock .turn {
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: var(--s3);
+  padding: var(--s2) 0;
+}
+
+.mock .turn-text {
+  font-size: var(--t-13);
+  line-height: 1.5;
+}
+
+.mock .turn-time {
+  padding-left: 0;
+}
+
+.mock-rec {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--danger);
+  font-family: var(--mono);
+  font-size: var(--t-11);
+}
+
+/* ── Утилиты ─────────────────────────────────────────────────── */
+
+.lp-stack {
+  display: grid;
+  gap: var(--s3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp *,
+  .mock * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

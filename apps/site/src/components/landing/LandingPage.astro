@@ -1,0 +1,176 @@
+---
+/**
+ * Лендинг целиком — одна разметка на три локали.
+ *
+ * Страницы (`pages/index.astro`, `pages/en/index.astro`, `pages/kk/index.astro`)
+ * остаются тонкими: разъезжаться должны тексты в data/landing.ts, а не секции.
+ */
+import Landing from '../../layouts/Landing.astro';
+import AppMockup from './AppMockup.astro';
+import Icon from '../Icon.astro';
+import { LANDING, type Lang } from '../../data/landing';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const c = LANDING[lang];
+const base = import.meta.env.BASE_URL;
+// Доки не переведены — Starlight отдаёт русский оригинал с плашкой,
+// но адрес обязан оставаться в своей локали, иначе переключатель языка
+// выбрасывает читателя обратно в русскую версию.
+const doc = (slug: string) => `${base}${lang === 'ru' ? '' : lang + '/'}${slug}/`;
+---
+
+<Landing lang={lang} title={c.meta.title} description={c.meta.description}>
+  <section class="lp-section lp-hero">
+    <div class="lp-wrap lp-hero-grid">
+      <div>
+        <p class="lp-eyebrow">{c.hero.eyebrow}</p>
+        <h1 class="lp-h1">{c.hero.title}</h1>
+        <p class="lp-lead">{c.hero.lead}</p>
+
+        <div class="lp-actions">
+          <a class="btn btn--primary" href={doc('download')}>
+            <Icon name="download" size={15} />
+            {c.hero.primary}
+          </a>
+          <a class="btn btn--ghost" href={doc('how-it-works')}>
+            {c.hero.secondary}
+            <Icon name="arrowRight" size={15} />
+          </a>
+        </div>
+
+        <p class="lp-note">{c.hero.note}</p>
+      </div>
+
+      <div>
+        <AppMockup lang={lang} />
+        <p class="u-sr-only">{c.hero.mockupAlt}</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section" id="features">
+    <div class="lp-wrap">
+      <p class="lp-eyebrow">{c.features.eyebrow}</p>
+      <h2 class="lp-h2">{c.features.title}</h2>
+
+      <div class="lp-grid" data-cols="3" data-feature>
+        {
+          c.features.items.map((f) => (
+            <article class="lp-card">
+              <span class="lp-card-ico">
+                <Icon name={f.icon} size={20} />
+              </span>
+              <h3>{f.title}</h3>
+              <p>{f.body}</p>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section" id="how">
+    <div class="lp-wrap">
+      <p class="lp-eyebrow">{c.how.eyebrow}</p>
+      <h2 class="lp-h2">{c.how.title}</h2>
+      <p class="lp-lead">{c.how.lead}</p>
+
+      <div class="lp-steps">
+        {
+          c.how.steps.map((s) => (
+            <article class="lp-step">
+              <h3>{s.title}</h3>
+              <p>{s.body}</p>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section">
+    <div class="lp-wrap">
+      <div class="lp-band">
+        <p class="lp-eyebrow">{c.privacy.eyebrow}</p>
+        <h2 class="lp-h2">{c.privacy.title}</h2>
+        <p class="lp-lead">{c.privacy.lead}</p>
+
+        <ul>
+          {
+            c.privacy.points.map((p) => (
+              <li>
+                <Icon name="checkCircle" size={18} />
+                <span>{p}</span>
+              </li>
+            ))
+          }
+        </ul>
+
+        <div class="lp-actions">
+          <a class="btn btn--default" href={doc('legal/privacy')}>
+            {c.privacy.link}
+            <Icon name="arrowRight" size={15} />
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section" id="download">
+    <div class="lp-wrap">
+      <h2 class="lp-h2">{c.cta.title}</h2>
+      <p class="lp-lead">{c.cta.lead}</p>
+
+      <div class="lp-actions">
+        <a class="btn btn--primary" href="https://github.com/zdllucky/wotold/releases">
+          <Icon name="download" size={15} />
+          {c.cta.primary}
+        </a>
+        <a class="btn btn--ghost" href={doc('download')}>
+          {c.cta.secondary}
+          <Icon name="arrowRight" size={15} />
+        </a>
+      </div>
+
+      <p class="lp-note">{c.cta.note}</p>
+    </div>
+  </section>
+
+  <section class="lp-section">
+    <div class="lp-wrap">
+      <div class="lp-sponsor">
+        <div>
+          <h2 class="lp-h2" style="margin-bottom: 0; font-size: var(--t-22);">
+            {c.sponsor.title}
+          </h2>
+          <p>{c.sponsor.lead}</p>
+        </div>
+        <a class="btn btn--default" href="https://github.com/sponsors/zdllucky">
+          <Icon name="heart" size={15} />
+          {c.sponsor.action}
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="lp-footer">
+    <div class="lp-wrap lp-footer-cols">
+      <nav aria-label="Project">
+        {c.footer.links.map((l) => <a href={l.href}>{l.label}</a>)}
+      </nav>
+
+      <nav class="lp-footer-legal" aria-labelledby="lp-legal-h">
+        <h2 id="lp-legal-h">{c.footer.legalHeading}</h2>
+        {c.footer.legal.map((l) => <a href={doc(l.slug)}>{l.label}</a>)}
+      </nav>
+    </div>
+
+    <div class="lp-wrap">
+      <p>{c.footer.license}</p>
+    </div>
+  </footer>
+</Landing>

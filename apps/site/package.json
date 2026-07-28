@@ -1,0 +1,25 @@
+{
+  "name": "@wotold/site",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Wotold project website — landing page and documentation, deployed to GitHub Pages",
+  "scripts": {
+    "dev": "node scripts/sync-fonts.mjs && astro dev",
+    "prebuild": "node scripts/sync-fonts.mjs",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "sync:fonts": "node scripts/sync-fonts.mjs"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.0",
+    "@astrojs/starlight": "^0.36.0",
+    "astro": "^5.16.0",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,266 @@
+---
+/**
+ * Оболочка лендинга — намеренно вне Starlight.
+ *
+ * Стартлайт даёт сайдбар, хлебные крошки и оглавление: всё это нужно докам и
+ * мешает первому экрану. Поэтому `src/pages/index.astro` перекрывает корневой
+ * роут Starlight, а общее у них — токены (site.css), шрифты и одно и то же
+ * хранилище темы, чтобы переключатель не «забывал» выбор при переходе
+ * лендинг ↔ доки.
+ */
+import '../styles/site.css';
+import Icon from '../components/Icon.astro';
+
+interface Props {
+  lang: 'ru' | 'en' | 'kk';
+  title: string;
+  description: string;
+}
+
+const { lang, title, description } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const docs = (slug: string) => `${base}${lang === 'ru' ? '' : lang + '/'}${slug}/`;
+
+const NAV = {
+  ru: { features: 'Возможности', download: 'Установка', legal: 'Правовая информация', docs: 'Документация' },
+  en: { features: 'Features', download: 'Install', legal: 'Legal', docs: 'Docs' },
+  kk: { features: 'Мүмкіндіктер', download: 'Орнату', legal: 'Құқықтық ақпарат', docs: 'Құжаттама' },
+}[lang];
+
+const LOCALES = [
+  { code: 'ru', label: 'RU', href: base },
+  { code: 'en', label: 'EN', href: `${base}en/` },
+  { code: 'kk', label: 'KK', href: `${base}kk/` },
+];
+
+const THEME_LABEL = { ru: 'Переключить тему', en: 'Toggle theme', kk: 'Тақырыпты ауыстыру' }[lang];
+const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://zdllucky.github.io');
+---
+
+<!doctype html>
+<html lang={lang} data-density="cozy">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical.href} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical.href} />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link
+      rel="preload"
+      href={`${base}fonts/onest-cyrillic-400-700.woff2`}
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href={`${base}fonts/fonts.css`} />
+
+    {/* Тема ставится до первой отрисовки — иначе тёмная тема моргает белым.
+        Ключ localStorage тот же, что у Starlight, чтобы выбор переживал
+        переход между лендингом и доками. */}
+    <script is:inline>
+      (() => {
+        const stored = (() => {
+          try {
+            return localStorage.getItem('starlight-theme');
+          } catch {
+            return null;
+          }
+        })();
+        const theme =
+          stored === 'light' || stored === 'dark'
+            ? stored
+            : matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+  </head>
+
+  <body class="lp">
+    <header class="lp-topbar">
+      <div class="lp-wrap lp-topbar-inner">
+        <a class="lp-brand" href={base}>Wotold</a>
+
+        <nav class="lp-topnav" aria-label={NAV.docs}>
+          <a href={docs('features')}>{NAV.features}</a>
+          <a href={docs('download')}>{NAV.download}</a>
+          <a href={docs('legal')}>{NAV.legal}</a>
+        </nav>
+
+        <div class="lp-topactions">
+          <div class="seg" role="group" aria-label="Language">
+            {
+              LOCALES.map((l) => (
+                <a
+                  href={l.href}
+                  hreflang={l.code}
+                  data-active={l.code === lang ? 'true' : undefined}
+                  aria-current={l.code === lang ? 'true' : undefined}
+                >
+                  {l.label}
+                </a>
+              ))
+            }
+          </div>
+
+          <button class="iconbtn" type="button" data-theme-toggle aria-label={THEME_LABEL}>
+            <Icon name="sun" size={16} class="lp-ico-light" />
+            <Icon name="moon" size={16} class="lp-ico-dark" />
+          </button>
+
+          <a class="btn btn--default" href="https://github.com/zdllucky/wotold" aria-label="GitHub">
+            <Icon name="code" size={15} />
+            <span>GitHub</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main><slot /></main>
+
+    <script is:inline>
+      document.querySelector('[data-theme-toggle]')?.addEventListener('click', () => {
+        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem('starlight-theme', next);
+        } catch {
+          /* приватный режим — тема просто не переживёт перезагрузку */
+        }
+      });
+    </script>
+  </body>
+</html>
+
+<style>
+  .lp-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(var(--blur));
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lp-topbar-inner {
+    display: flex;
+    align-items: center;
+    gap: var(--s5);
+    height: 56px;
+  }
+
+  .lp-brand {
+    font-weight: 700;
+    font-size: var(--t-16);
+    letter-spacing: -0.01em;
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .lp-topnav {
+    display: none;
+    gap: var(--s5);
+    margin-inline-end: auto;
+  }
+
+  @media (min-width: 860px) {
+    .lp-topnav {
+      display: flex;
+    }
+  }
+
+  .lp-topnav a {
+    font-size: var(--t-13);
+    color: var(--text-2);
+    text-decoration: none;
+  }
+
+  .lp-topnav a:hover {
+    color: var(--text);
+  }
+
+  .lp-topactions {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    margin-inline-start: auto;
+  }
+
+  @media (min-width: 860px) {
+    .lp-topactions {
+      margin-inline-start: 0;
+    }
+  }
+
+  /* Переключатель языка виден всегда. Прятать его на узком экране значило бы
+     оставить читателя с телефона без единственного способа сменить язык —
+     на трёхъязычном сайте это не косметика. Ужимается вместо этого подпись
+     кнопки GitHub: иконка сама по себе понятна, aria-label остаётся. */
+  @media (max-width: 559px) {
+    .lp-topactions .btn span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .lp-topactions .seg a {
+      padding-inline: 7px;
+    }
+  }
+
+  /* .seg в wk.css стилизует потомков-button. Переключатель языка — навигация,
+     то есть ссылки; повторяем ровно то же правило, а не заводим второй вид. */
+  .lp-topactions .seg a {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--r-xs);
+    font-size: var(--t-12);
+    font-weight: 550;
+    color: var(--text-3);
+    text-decoration: none;
+    transition:
+      background var(--fast),
+      color var(--fast);
+  }
+
+  .lp-topactions .seg a:hover {
+    color: var(--text);
+  }
+
+  .lp-topactions .seg a[data-active='true'] {
+    background: var(--panel);
+    color: var(--text);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Иконка показывает, куда переключишься, а не текущее состояние. */
+  :global([data-theme='dark']) .lp-ico-dark,
+  .lp-ico-light {
+    display: none;
+  }
+
+  :global([data-theme='dark']) .lp-ico-light {
+    display: block;
+  }
+
+  .lp-ico-dark {
+    display: block;
+  }
+
+  .lp-topactions .btn {
+    gap: 6px;
+  }
+</style>

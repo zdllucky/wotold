@@ -27,6 +27,12 @@ apps/desktop/src-tauri/binaries/wotold-audio-*
 *.tsbuildinfo
 .tsc-cache/
 
+# Astro
+apps/site/.astro/
+# Шрифты сайта синхронизируются из десктопа скриптом sync-fonts.mjs на
+# prebuild. Источник истины один — apps/desktop/public/fonts/.
+apps/site/public/fonts/
+
 # Env / secrets
 .env
 .env.*
