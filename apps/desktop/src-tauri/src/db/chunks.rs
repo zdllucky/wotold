@@ -176,7 +176,10 @@ pub async fn mark_chunk_done(
 
 /// Транзишн `* → failed`. Принимаем из любого статуса — обычно из processing,
 /// но из pending тоже валидно (например chunk файл повреждён до STT).
-/// `reason` логируется (не persistим — failed обычно retry'ится).
+///
+/// `reason` уходит в лог и в `chunk_failure_log`: сам статус историю не
+/// хранит — ретрай переводит чанк обратно в `pending`, и после удачной второй
+/// попытки от падения не остаётся следа ни в базе, ни (после ротации) в логе.
 pub async fn mark_chunk_failed(
     pool: &SqlitePool,
     call_id: &str,
@@ -194,6 +197,11 @@ pub async fn mark_chunk_failed(
     .execute(pool)
     .await
     .map_err(AppError::from)?;
+    // Телеметрия не должна ронять переход в failed: чанк уже упал, второй
+    // отказ поверх первого ничего не чинит.
+    if let Err(e) = super::telemetry::record_chunk_failure(pool, call_id, chunk_idx, reason).await {
+        log::warn!("chunk_failure_log {call_id}/{chunk_idx}: {e}");
+    }
     Ok(())
 }
 
@@ -538,6 +546,17 @@ mod tests {
             .unwrap();
         let rows = list_chunks_by_call(&test_db.pool, "c1").await.unwrap();
         assert_eq!(rows[0].status, "failed");
+        // Падение должно попасть в журнал: статус его не хранит — ретрай
+        // вернёт чанк в pending, и следа не останется.
+        let (n, reason): (i64, String) = sqlx::query_as(
+            "SELECT COUNT(*), MAX(reason) FROM chunk_failure_log WHERE call_id = ?1",
+        )
+        .bind("c1")
+        .fetch_one(&test_db.pool)
+        .await
+        .unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(reason, "test reason");
     }
 
     // [Tech-debt P0.2] mark_chunk_pending — FSM gate failed → pending only.
