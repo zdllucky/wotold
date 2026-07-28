@@ -33,6 +33,8 @@ apps/desktop/         Tauri 2 (фронт TS + Rust ядро + Swift sidecar Cor
   src-tauri/          Rust ядро, capabilities, tauri.conf.json
   sidecars/macos-audio/  Swift sidecar (Core Audio process tap)
 
+apps/site/            Публичный сайт (Astro 5 + Starlight) → GitHub Pages
+
 services/mcp/         Локальный MCP-сервер (read-only)
 
 packages/contracts/   ОБЩИЕ типы — DiarizedTranscript, Recap JSON, latest.json
@@ -41,6 +43,26 @@ packages/contracts/   ОБЩИЕ типы — DiarizedTranscript, Recap JSON, la
 docs/                 Паспорт и сопутствующие документы
 .claude/              ECC dev-харнесс (W7 — не часть продукта, исключён из артефактов)
 ```
+
+### Документация: три уровня
+
+Репозиторий публичный, и у документации три разных адресата. Путать их не нужно.
+
+| Уровень | Где | Для кого |
+|---|---|---|
+| **Пользователь** | `apps/site/src/content/docs/` | Установка, фичи, приватность, consent, MCP-гайд, FAQ, легал. Три локали (ru по умолчанию, en/kk с префиксом; непереведённое Starlight фолбэчит на ru) |
+| **Контрибьютор** | `docs/`, `CONTRIBUTING.md`, `SECURITY.md` | Паспорт, ROADMAP, TECH_DEBT, PRD, дизайн-канон, RELEASING. Внутренние — по-русски; community-файлы в корне — по-английски |
+| **Провенанс** | `docs/audits/`, `.claude/` | История находок и dev-харнесс. Публичны, на сайт не выносятся |
+
+`docs/PRIVACY.md` и `docs/MCP.md` — **стабы**: канонический текст живёт на сайте. Правки контента идут туда, не в `docs/`.
+
+### Сайт (`apps/site`)
+
+- **Токены и примитивы не копируются** — `site.css` импортирует `apps/desktop/src/styles/{tokens,wk}.css` напрямую, шрифты синхронизируются `scripts/sync-fonts.mjs` на prebuild (`apps/site/public/fonts/` в `.gitignore`). `components.css` намеренно не подключается.
+- **Импорты канона лежат в `@layer wotold.canon`.** Starlight держит свои стили в `@layer starlight.*`, а неслоистые правила выигрывают у слоистых независимо от специфичности — без слоя базовое `a { color: inherit }` из `wk.css` перебивало стили Starlight.
+- **Ноль сторонних хостов** — enforced `scripts/check-site-assets.mjs` в CI и в `pages.yml`, а не ревью.
+- `base` и `site` берутся из env (`SITE_BASE`, `SITE_URL`), дефолт — `/wotold` на `zdllucky.github.io`.
+- Деплой — `.github/workflows/pages.yml`, только с `main`. На PR сайт лишь проверяется джобой `site` в `ci.yml`.
 
 ## Этапы реализации
 
