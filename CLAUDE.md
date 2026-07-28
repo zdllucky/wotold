@@ -48,7 +48,7 @@ docs/                 Паспорт и сопутствующие докуме�
 
 **Декомпозиция фич и текущий статус** → [`docs/ROADMAP.md`](docs/ROADMAP.md). Это источник истины по тому что сделано/в работе/осталось. Параллельно ведётся TaskList в харнессе Claude Code — обновляется руками одновременно с ROADMAP при смене статуса.
 
-**Технический долг** → [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md) — groomed-беклог по итогам аудита 2026-07 (TD-01…TD-40, волны W1–W9). Тянуть по одной TD-задаче за сессию. Провенанс находок — [`docs/audits/`](docs/audits/).
+**Технический долг** → [`docs/TECH_DEBT.md`](docs/TECH_DEBT.md) — сводка закрытого долга по итогам аудита 2026-07 (TD-01…TD-50, волны W1–W9; закрыты все 50). Карта TD-NN держит живыми ссылки из комментариев кода, раздел «Действующие решения» — принятые компромиссы. Развёрнутые постановки — в истории git, провенанс находок — [`docs/audits/`](docs/audits/).
 
 ## Контракты (S2)
 
@@ -73,12 +73,12 @@ docs/                 Паспорт и сопутствующие докуме�
 
 1. **Клей тестируется первым.** Любая оркестрация (`pipeline::run`, recovery-флоу, композиция хуков) получает happy-path + минимум один fail-path тест до mark-done. Покрытие листьев за покрытие клея не считается: все три прод-бага M13 были именно в клее, при параноидально покрытых листьях.
 2. **Twin parity.** Фикс бага в одном из парных модулей обязан включать проверку близнеца на ту же дыру: `AudioRecorder` ↔ `ProcessTapRecorder`, chunk-FSM ↔ call-lifecycle, `searchCalls` ↔ `findContactsByName`. «Одинаковый контракт, разная зрелость» — главный источник будущих багов в этом репо.
-3. **Деградация видима.** Путь «warn-and-continue», влияющий на результат звонка, обязан выставлять персистентный degraded-флаг, доступный UI (инфраструктура — TD-37). «Только в лог» запрещено: юзер не должен гадать, один там голос или система-трек ушла в speaker:0.
+3. **Деградация видима.** Путь «warn-and-continue», влияющий на результат звонка, обязан выставлять персистентный degraded-флаг, доступный UI (инфраструктура готова: `packages/contracts/src/degraded.ts`, миграция 0023, чип в шапке звонка). «Только в лог» запрещено: юзер не должен гадать, один там голос или система-трек ушла в speaker:0.
 4. **i18n тотален.** Все user-visible строки — через `t()` и три локали, включая нижние слои (`api/errors.ts`, `utils/callMeta.ts`). Образец — `utils/modelLabel.ts` (принимает `TFn`). Русский литерал в UI-пути = замечание ревью.
 5. **CPU >10мс не на async-executor.** Левенштейн, кластеризация, ONNX-инференс, WAV-чтение — только внутри `spawn_blocking`. На tokio-worker крутятся Tauri-команды UI; образцы правильного кода — `SortformerDiarizer.diarize_real`, `audio_merger`.
-6. **Тесты без реального времени.** `sleep()` для синхронизации с фоновой задачей запрещён — инжектируемое время, `Notify`/oneshot или `tokio::time::pause()`. Паттерн уже есть в `providers/transcription/retry.rs`, обобщается в TD-32.
+6. **Тесты без реального времени.** `sleep()` для синхронизации с фоновой задачей запрещён — инжектируемое время, `Notify`/oneshot или `tokio::time::pause()`. Образцы — `pipeline/resource_queue.rs`, `audio/call_detect.rs` (`Notify`); TD-32/TD-48 распространили это на оркестратор и очередь ресурсов.
 7. **Границы доверия валидируются.** Любой id из webview или MCP валидируется (UUID) до участия в файловых путях; путь дополнительно проходит `ensure_path_under` (defense-in-depth). Новая Tauri/MCP-команда с параметром, попадающим в путь или SQL-паттерн, без этого не проходит ревью.
-8. **800 строк меряются по итоговому файлу.** Не по диффу и не по фрагменту Edit'а (гейт чинится в TD-03). Новый модуль планируется под лимит заранее — «порежем потом» не работает, см. `pipeline/mod.rs`. **Исключение — словари переводов** (`src/i18n/{ru,en,kk}.ts`, TD-49): правило про модули, а локаль — плоская таблица строк с одной когезией по определению. Резать её по неймспейсам значит платить тремя правками в трёх файлах за каждую новую строку и ловить расхождения между локалями. Гейт их пропускает намеренно.
+8. **800 строк меряются по итоговому файлу.** Не по диффу и не по фрагменту Edit'а (гейт `scripts/hooks/pre-write.mjs` считает итоговый размер и блокирует только **рост** за лимит: правку файла, который уже длиннее, он пропускает). Новый модуль планируется под лимит заранее — «порежем потом» не работает, см. `pipeline/mod.rs`. **Исключение — словари переводов** (`src/i18n/{ru,en,kk}.ts`, TD-49): правило про модули, а локаль — плоская таблица строк с одной когезией по определению. Резать её по неймспейсам значит платить тремя правками в трёх файлах за каждую новую строку и ловить расхождения между локалями. Гейт их пропускает намеренно.
 
 ## Design Gate (Wotold v2, [B18] — ОБЯЗАТЕЛЬНО до любой UI работы)
 
@@ -105,7 +105,7 @@ docs/                 Паспорт и сопутствующие докуме�
 - Все цвета/spacing/radius/shadow → `var(--*)` из [`apps/desktop/src/styles/tokens.css`](apps/desktop/src/styles/tokens.css). Запрещены сырые hex/oklch в `.tsx`/любом `.css` кроме handoff sources.
 - Компонентные классы из [`apps/desktop/src/styles/wk.css`](apps/desktop/src/styles/wk.css) (uikit, канон): `.btn`(+`--primary/--default/--ghost/--soft/--danger`), `.iconbtn`, `.chip`, `.avatar`, `.dot`, `.kbd`, `.input`, `.field`, `.seg`, `.switch`, `.tabs`/`.tab`, `.navitem`, `.rail`/`.minirail`, `.menu`, `.overlay`/`.modal`, `.palette`, `.tbl`/`.trow`, `.turn`, `.doc`, `.rrail`, `.composer-dock`, `.rec-widget`, `.wave`, `.optioncard`, `.setting-row`. App-специфичные компонентные классы (transcript/pipeline/stat-tag/rec-float/banners/modal-frame и пр.) — в [`apps/desktop/src/styles/components.css`](apps/desktop/src/styles/components.css) (порт Atelier, token-clean). React-обёртки над классами — `src/ui/*` (Switch/Segmented/IconBtn/Dot/Wave/Kbd/NavItem/Panel/Avatar/Chip/SettingRow/OptionCard/Modal/Menu + Button/Select/Tabs/Field/Badge/…). Иконки — `<Icon name=… />` из [`src/ui/Icon.tsx`](apps/desktop/src/ui/Icon.tsx) (line 1.5px, без emoji).
 - `var(--danger)` (красный) — **только** запись и destructive actions. Все остальные акценты — `var(--accent)` (моно-графит `ink`). Legacy Atelier-токены (`--signal`/`--ink`/`--line`/…) удалены — используй uikit-набор напрямую.
-- Шрифты: **Hanken Grotesk** (UI / текст / транскрипт), **IBM Plex Mono** (timestamps / IDs / код). Serif выпилен.
+- Шрифты: **Onest** (UI / текст / транскрипт), **IBM Plex Mono** (timestamps / IDs / код). Serif выпилен. Hanken Grotesk снят в TD-47 — у него нет базовой кириллицы, и весь русский интерфейс рисовался системным шрифтом.
 - Любая новая страница / модал / форма должна работать корректно в **light + dark** (акцент один — графит, picker убран в B18.5). Density фикс `cozy`.
 - Логика сохраняется 1-в-1 (хоткеи, consent gates, useEffect, API). Меняется только JSX + className.
 
@@ -140,7 +140,7 @@ docs/                 Паспорт и сопутствующие докуме�
 | Rust core | `cargo test` + cargo-llvm-cov | `#[cfg(test)] mod tests` внутри файлов; helper `crate::db::test_support::fresh_db` для SQLite-репозиториев |
 | Frontend (apps/desktop) | vitest + jsdom + React Testing Library | `*.test.ts` / `*.test.tsx` рядом с модулем; setup `src/test/setup.ts` |
 | MCP (services/mcp) | vitest (node env) | `*.test.ts` рядом с handler |
-| Coverage gate (CI) | `cargo llvm-cov` + vitest `--coverage` v8 | Артефакт `lcov.info` + html, baseline 10-30% lines, цель 80% |
+| Coverage gate (CI) | `cargo llvm-cov` + vitest `--coverage` v8 | Артефакт `lcov.info` + html. Пороги-ratchet: фронт `lines/statements 69, functions 58, branches 82` (`vitest.config.ts`), Rust `--fail-under-lines 50` (`.github/workflows/ci.yml`) |
 
 ECC-агенты для теста:
 - `tdd-guide` — для алгоритмических модулей (PRD-driven test-first)
@@ -148,7 +148,7 @@ ECC-агенты для теста:
 - `pr-test-analyzer` — оценка покрытия PR
 - `silent-failure-hunter` — поиск swallowed errors
 
-При нехватке покрытия — сначала тесты, потом фича. Понижение coverage threshold в `vitest.config.ts` или `Cargo.toml` — только по явному согласованию.
+При нехватке покрытия — сначала тесты, потом фича. Понижение порогов в `vitest.config.ts` или `.github/workflows/ci.yml` — только по явному согласованию.
 
 ## Security-review триггеры (W5 паспорта — обязательно)
 

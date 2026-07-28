@@ -41,6 +41,14 @@ interface OptionCardProps {
   disabled?: boolean;
   /** [B21] Внутри radiogroup — role=radio + aria-checked (Settings/Onboarding). */
   radio?: boolean;
+  /**
+   * [B21.6] Кто держит табостановку группы. По умолчанию — выбранный вариант.
+   * Передавать явно нужно там, где выбора может ещё не быть (пресет не
+   * выбран): иначе все карточки получают `tabIndex=-1`, и в группу нельзя
+   * попасть с клавиатуры вообще. По WAI-ARIA APG в таком случае табостановку
+   * держит первый вариант.
+   */
+  tabStop?: boolean;
 }
 
 export function OptionCard({
@@ -55,6 +63,7 @@ export function OptionCard({
   onClick,
   disabled,
   radio,
+  tabStop,
 }: OptionCardProps) {
   // [B21.6] Roving tabindex. Внутри radiogroup табом входят в группу один раз —
   // на выбранный вариант, — а переключаются стрелками. Пока все карточки были
@@ -85,7 +94,7 @@ export function OptionCard({
       type="button"
       role={radio ? 'radio' : undefined}
       aria-checked={radio ? !!active : undefined}
-      tabIndex={radio && !active ? -1 : undefined}
+      tabIndex={radio ? ((tabStop ?? !!active) ? 0 : -1) : undefined}
       className="optioncard"
       data-active={active ? 'true' : undefined}
       disabled={disabled}

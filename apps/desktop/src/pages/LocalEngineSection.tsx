@@ -592,6 +592,9 @@ export function LocalEngineSection() {
                   key={p}
                   radio
                   active={preset?.preset === p}
+                  // Пресет ещё не выбран (свежая установка) — табостановку
+                  // держит первый вариант, иначе в группу не войти с клавиатуры.
+                  tabStop={preset ? preset.preset === p : qi === 0}
                   title={t(`localEngine.preset.${p}`)}
                   badge={
                     hw?.recommendation === p ? t('localEngine.presetRecommend') : undefined
