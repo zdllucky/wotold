@@ -156,7 +156,10 @@ function Toaster({
           <button
             type="button"
             className="toast-close"
-            aria-label={t('common.dismiss')}
+            // [a11y SC 4.1.2] «Закрыть» без контекста: при нескольких тостах
+            // подряд скринридер зачитывает три одинаковые кнопки. Имя должно
+            // говорить, что именно закрывается.
+            aria-label={t('common.dismissToast', { message: toast.message })}
             onClick={() => onDismiss(toast.id)}
           >
             <Icon name="x" size={13} />
