@@ -190,7 +190,8 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 - [x] ~~**device-id HMAC-bind**~~ **[REMOVED — local-only 0.3]** Относилось к квоте прокси по device-id; прокси и device-id удалены — задача снята.
 - [ ] **M12.6 cancellation flow** — SIGTERM на sidecar при delete звонка during processing. `tauri_plugin_shell::Child::kill()` + spawn-handle tracking.
-- [ ] **identify_speakers pipeline wire / reconcile** — сверить, нужен ли старый `identify_speakers` orchestrator (#25: embedding+llm+merge_signals) при работающем B3.x cluster-path (`run_cluster_pipeline`), либо он вытеснен. Переформулировать/выпилить мёртвый путь.
+- [x] **identify_speakers pipeline wire / reconcile** — **сверено.** Эмбеддинг-канал `identify.rs` вытеснен `run_cluster_pipeline` целиком (тот же матчинг по consenting `voice_samples`, но поверх уже посчитанных кластеров, без повторного ONNX-прохода). Не вытеснен LLM-канал: `suggestion_source` `llm`/`both` не появляется никогда. Статус зафиксирован в шапке `identify.rs`; удаление модуля не делалось — он остаётся готовой реализацией канала.
+- [ ] **LLM-подсказка спикеров (R2 booster) — отдельный майлстоун** — подключить `llm_hint` + `merge_signals` поверх кластеров живого пути. Не «дозакрытие», а продуктовое решение: лишний проход локальной LLM по всему транскрипту на каждую запись (время + тепло), и подсказка по определению слабее биометрии. Требует явного согласия владельца на цену.
 - [ ] **Settings auto-name из NSFullUserName** — default «Я» + edit в онбординге. Требует Swift bridge.
 
 ### D. Diarization / LLM-progress polish
