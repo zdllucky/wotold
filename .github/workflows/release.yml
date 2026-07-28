@@ -130,5 +130,3 @@ jobs:
     with:
       tag: ${{ needs.tag.outputs.tag }}
     secrets: inherit
-    permissions:
-      contents: write
