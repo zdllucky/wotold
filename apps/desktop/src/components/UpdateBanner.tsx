@@ -56,14 +56,13 @@ export function UpdateBanner() {
 
   return (
     <div
-      className="panel panel--raised"
+      className="panel panel--raised update-banner"
       role="status"
-      style={{ margin: 'var(--s4) var(--s6) 0', padding: 'var(--s4)' }}
     >
-      <p style={{ margin: 0, fontSize: 'var(--t-13)' }}>
+      <p className="update-banner-title">
         {t('update.mandatoryPending', { version: pending.version })}
       </p>
-      <p className="u-faint" style={{ margin: 'var(--s1) 0 0', fontSize: 'var(--t-12)' }}>
+      <p className="u-faint update-banner-hint">
         {t('update.mandatoryPendingHint')}
       </p>
     </div>

@@ -112,7 +112,7 @@ export function AboutSection() {
       </SettingRow>
 
       {state.kind === 'failed' && (
-        <p role="alert" style={{ margin: 'var(--s2) 0 0', fontSize: 'var(--t-12)' }}>
+        <p role="alert" className="update-error">
           {state.message}
         </p>
       )}

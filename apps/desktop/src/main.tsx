@@ -13,6 +13,7 @@ import './styles/components.css';
 // Вынесен из components.css — тот упёрся в лимит 800 строк, а тосты
 // когезивны и ни от чего в нём не зависят.
 import './styles/toast.css';
+import './styles/update.css';
 import './ui/ui.css';
 
 const root = document.getElementById('root');
