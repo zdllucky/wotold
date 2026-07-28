@@ -647,13 +647,29 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
               />
             </div>
           ) : (
-            <AudioScrubber
-              audio={audio}
-              seed={hashCallId(callId)}
-              enabled
-              onJump={onJumpToCurrent}
-              followActive={follow}
-            />
+            <>
+              {/* Плеер играет склеенный WAV, а он собирается в самом конце
+                  обработки. Без этой строки на месте звука пустой скрубер,
+                  по которому не понять — файл потерян или ещё собирается. */}
+              {call.status === 'processing' && (
+                <p className="chip" role="status" style={{ marginBottom: 10 }}>
+                  <Icon name="clock" size={11} />
+                  {t('callDetail.audioPendingTitle')}
+                  {chunks.length > 0 &&
+                    ` · ${t('callDetail.audioPendingChunks', {
+                      done: chunks.filter((c) => c.status === 'done').length,
+                      total: chunks.length,
+                    })}`}
+                </p>
+              )}
+              <AudioScrubber
+                audio={audio}
+                seed={hashCallId(callId)}
+                enabled
+                onJump={onJumpToCurrent}
+                followActive={follow}
+              />
+            </>
           )}
         </div>
 

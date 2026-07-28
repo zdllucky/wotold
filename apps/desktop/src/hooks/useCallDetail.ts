@@ -28,8 +28,8 @@ import {
   listCallOpenQuestions,
   readCallArtifact,
   type ActionItem,
-  type Decision,
-  type OpenQuestion,
+  type DecisionRow,
+  type OpenQuestionRow,
   type PipelineCancelledEvent,
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
@@ -71,8 +71,8 @@ export interface UseCallDetailResult {
   chunks: CallChunk[];
   /** [M14 T-11] V2 structured summary blocks. Пустой массив для legacy
    *  schema_version=1 либо если LLM не вернул decisions. */
-  decisions: Decision[];
-  openQuestions: OpenQuestion[];
+  decisions: DecisionRow[];
+  openQuestions: OpenQuestionRow[];
   micSrc: string | null;
   systemSrc: string | null;
   /** [P1.3] Elapsed seconds во время local LLM recap regen. `null` если нет
@@ -110,8 +110,8 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [speakers, setSpeakers] = useState<CallSpeakerView[]>([]);
   const [chunks, setChunks] = useState<CallChunk[]>([]);
-  const [decisions, setDecisions] = useState<Decision[]>([]);
-  const [openQuestions, setOpenQuestions] = useState<OpenQuestion[]>([]);
+  const [decisions, setDecisions] = useState<DecisionRow[]>([]);
+  const [openQuestions, setOpenQuestions] = useState<OpenQuestionRow[]>([]);
   const [micSrc, setMicSrc] = useState<string | null>(null);
   const [systemSrc, setSystemSrc] = useState<string | null>(null);
   // [P1.3] Elapsed timer для recap regen UI. См. JSDoc на интерфейсе.

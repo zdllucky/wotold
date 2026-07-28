@@ -281,6 +281,9 @@ export const en: TranslationStrings = {
   callDetail: {
     // [TD-37] Quality caveats — the pipeline degrades instead of failing, so
     // the user has to see what exactly is incomplete.
+    // Player: the merged WAV is only assembled at the end of processing.
+    audioPendingTitle: 'Audio becomes available after processing',
+    audioPendingChunks: 'Parts ready: {done} of {total}',
     degradedTitle: 'Processed with caveats',
     degraded: {
       partial_transcript: 'Not every part of the recording was transcribed',

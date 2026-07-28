@@ -19,8 +19,13 @@ export interface ActionItem {
   evidence_start_ms: number | null;
 }
 
-/** [M14 T-11] Decision row для DecisionsBlock UI. */
-export interface Decision {
+/** [M14 T-11] Строка решения из БД для DecisionsBlock UI.
+ *
+ *  [S2] Это НЕ `Decision` из `@wotold/contracts` — там форма summary-JSON от
+ *  модели (вложенный `evidence`, поля необязательные). Здесь строка таблицы:
+ *  плоские `evidence_*`, `call_id`, `order_idx`. Имя с суффиксом `Row`
+ *  повторяет `DecisionRow` в Rust, чтобы слои не путались. */
+export interface DecisionRow {
   id: string;
   call_id: string;
   text: string;
@@ -32,8 +37,9 @@ export interface Decision {
   order_idx: number;
 }
 
-/** [M14 T-11] Open question row для OpenQuestionsBlock UI. */
-export interface OpenQuestion {
+/** [M14 T-11] Строка открытого вопроса из БД. См. оговорку про слои у
+ *  [`DecisionRow`]. Зеркалит `OpenQuestionRow` в Rust. */
+export interface OpenQuestionRow {
   id: string;
   call_id: string;
   text: string;
@@ -44,12 +50,12 @@ export interface OpenQuestion {
   order_idx: number;
 }
 
-export function listCallDecisions(callId: string): Promise<Decision[]> {
-  return invoke<Decision[]>('list_call_decisions', { callId });
+export function listCallDecisions(callId: string): Promise<DecisionRow[]> {
+  return invoke<DecisionRow[]>('list_call_decisions', { callId });
 }
 
-export function listCallOpenQuestions(callId: string): Promise<OpenQuestion[]> {
-  return invoke<OpenQuestion[]>('list_call_open_questions', { callId });
+export function listCallOpenQuestions(callId: string): Promise<OpenQuestionRow[]> {
+  return invoke<OpenQuestionRow[]>('list_call_open_questions', { callId });
 }
 
 export type CallArtifactKind = 'recap' | 'transcript' | 'raw_stt';

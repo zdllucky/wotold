@@ -280,6 +280,8 @@ export const kk: TranslationStrings = {
 
   callDetail: {
     // [TD-37] Өңдеу сапасы туралы ескертпелер.
+    audioPendingTitle: 'Дыбыс өңдеуден кейін қолжетімді болады',
+    audioPendingChunks: 'Дайын бөліктер: {done} / {total}',
     degradedTitle: 'Ескертпелермен өңделді',
     degraded: {
       partial_transcript: 'Жазбаның барлық бөлігі транскрипцияланбады',

@@ -124,8 +124,30 @@ pub fn agglomerative_cluster(
                 let ra = find(&mut parent, a);
                 let rb = find(&mut parent, b);
                 if ra != rb {
+                    // Дистанция каждого слияния — единственный способ понять
+                    // постфактум, почему два голоса схлопнулись в один: порог
+                    // один на всех, а близость у пар разная. Тегами, без
+                    // текста реплик.
+                    log::debug!(
+                        "recluster merge: {}#{} + {}#{} cos={sim:.3} (порог {cosine_threshold:.3})",
+                        pa.local_tag,
+                        pa.chunk_idx,
+                        pb.local_tag,
+                        pb.chunk_idx
+                    );
                     parent[ra] = rb;
                 }
+            } else if sim >= cosine_threshold - 0.05 {
+                // Пара почти слилась. Именно эта зона объясняет жалобы «один
+                // человек разъехался на двух спикеров» — по ней видно,
+                // насколько порог мимо.
+                log::debug!(
+                    "recluster near-miss: {}#{} + {}#{} cos={sim:.3} (порог {cosine_threshold:.3})",
+                    pa.local_tag,
+                    pa.chunk_idx,
+                    pb.local_tag,
+                    pb.chunk_idx
+                );
             }
         }
     }
