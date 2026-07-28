@@ -108,7 +108,6 @@ pnpm -r test
 - **Вопрос или обсуждение** → [Discussions](https://github.com/zdllucky/wotold/discussions).
 - **Уязвимость** → приватный репорт по [`SECURITY.md`](SECURITY.md), не через публичный issue.
 - **Код** → [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- **Поддержать деньгами** → [GitHub Sponsors](https://github.com/sponsors/zdllucky).
 
 ## Документация
 

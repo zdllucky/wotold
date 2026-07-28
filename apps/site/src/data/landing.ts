@@ -25,7 +25,9 @@ export interface LandingCopy {
   how: { eyebrow: string; title: string; lead: string; steps: Step[] };
   privacy: { eyebrow: string; title: string; lead: string; points: string[]; link: string };
   cta: { title: string; lead: string; primary: string; secondary: string; note: string };
+  /** Секция спонсорства снята с лендинга до выбора фискального хоста; тексты сохранены. */
   sponsor: { title: string; lead: string; action: string };
+  help: { title: string; lead: string; action: string };
   footer: {
     links: { label: string; href: string }[];
     /** Правовой блок подвала: отдельная колонка, не вперемешку со ссылками на GitHub. */
@@ -136,6 +138,11 @@ export const LANDING: Record<Lang, LandingCopy> = {
       lead: 'Wotold пишет один человек, и у проекта нет ни подписки, ни платной версии. Если он экономит тебе время — спонсорство помогает продолжать.',
       action: 'GitHub Sponsors',
     },
+    help: {
+      title: 'Чем помочь',
+      lead: 'Wotold пишет один человек. Больше всего сейчас нужны не деньги, а подтверждённые баги, замеры на разном железе и размеченные записи для проверки качества диаризации.',
+      action: 'Как помочь',
+    },
     footer: {
       links: [
         { label: 'GitHub', href: REPO },
@@ -238,6 +245,11 @@ export const LANDING: Record<Lang, LandingCopy> = {
       lead: 'Wotold is written by one person, and there is no subscription and no paid tier. If it saves you time, sponsorship is what keeps it going.',
       action: 'GitHub Sponsors',
     },
+    help: {
+      title: 'How to help',
+      lead: 'Wotold is written by one person. What helps most right now is not money: confirmed bug reports, measurements on hardware I do not have, and labelled recordings for checking diarization quality.',
+      action: 'Ways to help',
+    },
     footer: {
       links: [
         { label: 'GitHub', href: REPO },
@@ -339,6 +351,11 @@ export const LANDING: Record<Lang, LandingCopy> = {
       title: 'Жобаны қолдау',
       lead: 'Wotold-ты бір адам жазады, жобада жазылым да, ақылы нұсқа да жоқ. Егер ол сіздің уақытыңызды үнемдесе — демеушілік жалғастыруға көмектеседі.',
       action: 'GitHub Sponsors',
+    },
+    help: {
+      title: 'Қалай көмектесуге болады',
+      lead: 'Wotold-ты бір адам жазады. Қазір ақшадан гөрі басқа нәрсе қажет: расталған қателер, менде жоқ жабдықтағы өлшеулер және диаризация сапасын тексеруге арналған белгіленген жазбалар.',
+      action: 'Көмектесу жолдары',
     },
     footer: {
       links: [

@@ -94,7 +94,6 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request — this
 - **Question or discussion** → [Discussions](https://github.com/zdllucky/wotold/discussions).
 - **Vulnerability** → report privately per [`SECURITY.md`](SECURITY.md), not through a public issue.
 - **Code** → [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- **Support the project** → [GitHub Sponsors](https://github.com/sponsors/zdllucky).
 
 ## Documentation
 

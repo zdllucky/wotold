@@ -68,6 +68,6 @@ Wotold пишет микрофон и системный звук раздель
 Один разработчик. У проекта нет компании, подписки и платной версии; лицензия —
 [Apache 2.0](../legal/license/).
 
-Помочь можно тремя способами: [сообщить о баге](https://github.com/zdllucky/wotold/issues),
-[прислать код](https://github.com/zdllucky/wotold/blob/main/CONTRIBUTING.md) или
-[поддержать через GitHub Sponsors](https://github.com/sponsors/zdllucky).
+Помочь можно двумя способами: [сообщить о баге](https://github.com/zdllucky/wotold/issues) или
+[прислать код](https://github.com/zdllucky/wotold/blob/main/CONTRIBUTING.md). Что нужнее всего —
+на [странице поддержки](../support/).

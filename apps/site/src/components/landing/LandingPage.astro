@@ -143,18 +143,22 @@ const doc = (slug: string) => `${base}${lang === 'ru' ? '' : lang + '/'}${slug}/
     </div>
   </section>
 
+  {/* Блок спонсорства снят до выбора фискального хоста: кнопка «поддержать»,
+      ведущая на несуществующую страницу, хуже её отсутствия. Тексты остались
+      в data/landing.ts — вернуть секцию можно одной правкой. */}
+
   <section class="lp-section">
     <div class="lp-wrap">
       <div class="lp-sponsor">
         <div>
           <h2 class="lp-h2" style="margin-bottom: 0; font-size: var(--t-22);">
-            {c.sponsor.title}
+            {c.help.title}
           </h2>
-          <p>{c.sponsor.lead}</p>
+          <p>{c.help.lead}</p>
         </div>
-        <a class="btn btn--default" href="https://github.com/sponsors/zdllucky">
-          <Icon name="heart" size={15} />
-          {c.sponsor.action}
+        <a class="btn btn--default" href={doc('support')}>
+          {c.help.action}
+          <Icon name="arrowRight" size={15} />
         </a>
       </div>
     </div>
