@@ -55,6 +55,12 @@ process.stdin.on('end', () => {
     /\/styles\/fonts\.css$/,
     /^\/?docs\/design\//,
     /^\/?\.claude\//,
+    // Единственный стилевой файл сайта. Он импортирует канон приложения и
+    // раскладывает переменные Starlight на токены Wotold; сырых цветов в нём
+    // нет и быть не должно, но маркетинговые токены типографики и ритма
+    // (--t-hero, --s-section) живут именно там, а не в tokens.css —
+    // приложению они не нужны.
+    /^\/?apps\/site\/src\/styles\/site\.css$/,
   ];
   if (WHITELIST.some((re) => re.test(rel))) process.exit(0);
 

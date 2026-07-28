@@ -85,6 +85,13 @@ if (ext === '.rs') {
     REPO,
     'cargo check',
   );
+} else if (rel.startsWith('apps/site/') && ['.ts', '.tsx', '.astro'].includes(ext)) {
+  // У сайта свой чекер: astro check понимает .astro, а tsc — нет.
+  if (!existsSync(`${REPO}/node_modules`)) {
+    process.stderr.write('[post-write] node_modules нет — пропускаю astro check (pnpm install)\n');
+    process.exit(0);
+  }
+  run('pnpm', ['--filter', '@wotold/site', 'check'], REPO, 'astro check');
 } else if (ext === '.ts' || ext === '.tsx') {
   if (!existsSync(`${REPO}/node_modules`)) {
     process.stderr.write('[post-write] node_modules нет — пропускаю typecheck (pnpm install)\n');

@@ -1,0 +1,84 @@
+name: Pages
+
+# [TD-02] Все actions запинены на полный commit-SHA; трейлинг-комментарий
+# (# vX.Y.Z) — машинный контракт с Dependabot, он бампает SHA и версию вместе.
+# Причина: mutable-теги (@v4, @beta) переписываются владельцем action'а,
+# и компрометация тега = выполнение чужого кода на раннере.
+#
+# Деплой сайта (apps/site) на GitHub Pages.
+#
+# Разделение с ci.yml намеренное: там сайт только проверяется на PR
+# (astro check + build), здесь он публикуется — и только с main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/site/**'
+      # Шрифты синхронизируются из десктопа скриптом sync-fonts.mjs:
+      # их обновление обязано перевыкатывать сайт.
+      - 'apps/desktop/public/fonts/**'
+      # Токены и примитивы импортируются напрямую — та же причина.
+      - 'apps/desktop/src/styles/tokens.css'
+      - 'apps/desktop/src/styles/wk.css'
+      - 'apps/desktop/src/styles/fonts.css'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# Единственный write-скоуп — pages. Секретов сборки у сайта нет и быть не
+# должно: это статика, собираемая из публичного содержимого репозитория (S1).
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Параллельные деплои Pages конфликтуют. Незавершённый деплой не отменяем —
+# оборванный на середине выкат оставил бы сайт в неопределённом состоянии.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        id: pages
+
+      # base по умолчанию /wotold. configure-pages отдаёт реальный origin —
+      # берём его, чтобы sitemap и canonical не разъехались, если сайт
+      # переедет на собственный домен.
+      - name: Build
+        run: pnpm --filter @wotold/site build
+        env:
+          SITE_URL: ${{ steps.pages.outputs.origin }}
+
+      - name: Verify assets and links
+        run: node scripts/check-site-assets.mjs apps/site/dist
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: apps/site/dist
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        id: deployment

@@ -37,6 +37,18 @@ jobs:
     # Гейт по наличию ANTHROPIC_API_KEY и контексту PR (не на форках без секретов
     # и не на ботах). На @claude-меншене в обычном комменте — проверяем что
     # коммент в PR (не в issue).
+    #
+    # [public-repo] Комментарные триггеры дополнительно ограничены по
+    # author_association. До публикации репозитория комментировать мог только
+    # владелец, и ограничение было бы бессмысленным; на публичном репозитории
+    # `@claude` в комментарии мог бы написать кто угодно, а джоба ходит в
+    # платный API и имеет `pull-requests: write` + `issues: write`. Это два
+    # разных вектора: неограниченный расход бюджета владельца и бот, которым
+    # посторонний рулит текстом своего комментария (тело комментария и есть
+    # промпт). OWNER / MEMBER / COLLABORATOR закрывают оба, не мешая работе.
+    #
+    # Ветка pull_request остаётся как была: она уже отсечена по
+    # head.repo.full_name, то есть форк-PR до секрета не доходит.
     if: |
       (
         github.event_name == 'pull_request' &&
@@ -45,11 +57,13 @@ jobs:
       (
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
-        contains(github.event.comment.body, '@claude')
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
       ) ||
       (
         github.event_name == 'pull_request_review_comment' &&
-        contains(github.event.comment.body, '@claude')
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
       )
     steps:
       - name: Guard — skip if ANTHROPIC_API_KEY not set
@@ -86,17 +100,23 @@ jobs:
                permissions C1, local_engine sidecar args/path-traversal (M12.4),
                cascade delete C5 — flag any change here as CRITICAL if
                authorization/validation/PII handling is touched.
-            2. R1-R8 constraints (CLAUDE.md раздел 12 паспорта) — do NOT
-               flag as bugs; if PR appears to "fix" R1/R2/R3/R4/R5/R6/R7/R8,
-               flag as CRITICAL "scope violation, requires explicit паспорт update".
+            2. Accepted limitations (CLAUDE.md / раздел 12 паспорта) — do NOT
+               flag as bugs. Live constraints: R2, R3, R4, R6, R9-R13.
+               R1/R5/R7/R8 are superseded (cloud segment removed in 0.3) — do
+               not cite them. If a PR appears to "fix" a live constraint, flag
+               as CRITICAL "scope violation, requires explicit паспорт update".
             3. Test coverage gates (cargo llvm-cov + vitest v8). For modules
                with clear algorithmic surface (matching, parsing, utilities,
                db repository, middleware) — test-first is mandatory.
             4. Конвенции: rust фигачит cargo fmt/clippy -D warnings, TS
                под strict, no `any` без обоснования, no swallowed errors.
-            5. Контракты — изменения формата DiarizedTranscript/Recap/API
-               прокси/latest.json должны идти через `packages/contracts`,
-               не дублироваться.
+            5. Контракты — изменения формата DiarizedTranscript/Recap/
+               latest.json должны идти через `packages/contracts`,
+               не дублироваться. (Прокси удалён в 0.3 — его API больше нет.)
+
+            6. UI-правки (`.tsx`/`.css`) обязаны нести design-gate
+               alignment-блок в описании PR и не содержать сырых hex/oklch
+               вне token-источников. Отсутствие блока — HIGH.
 
             Be terse. List findings by severity: CRITICAL / HIGH / MEDIUM / LOW.
             Skip nitpicks. End with explicit "Approve" / "Block" verdict.
