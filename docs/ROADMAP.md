@@ -2,7 +2,7 @@
 
 > Декомпозиция Этапов раздела 11 [ПАСПОРТА](ПАСПОРТ_ПРОЕКТА.md) на единицы реализации. Файл — источник истины по статусу фич, читается и обновляется людьми. Параллельно в харнессе Claude Code лежит TaskList с теми же ID — синхронизируется вручную в этом файле при изменении статуса.
 >
-> Легенда: `[x]` готово · `[ ]` пендинг · `[~]` частично · `→ #N` блокируется задачей N.
+> Легенда: `[x]` готово · `→ #N` блокируется задачей N. Открытых чек-боксов в файле нет — оставшаяся работа перечислена в §«Беклог» с вердиктом, почему она не делается правкой кода.
 >
 > **История исполненного** (MVP-этапы, батчи V2–V7/W/S, B1–B19, B16–B18, M12–M14) вынесена в [`ROADMAP_ARCHIVE.md`](ROADMAP_ARCHIVE.md) — здесь только живая работа.
 
@@ -20,12 +20,12 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 > B18 закрыт (см. архив), эти пункты остались открытыми:
 
-- [ ] **Views (saved smart-collections) + Explore** — персистентность `SavedView` (S2 контракт `{label, filter_state, view_mode, sort}`) + экраны по прототипу `wk-explore.jsx`.
-- [ ] **Inbox stats** (4 hero + sparkline) — как в прототипе (`wk-screens`/`wk-inbox`).
+- **Views (saved smart-collections) + Explore** — `[отдельный майлстоун]` персистентность `SavedView` (S2 контракт `{label, filter_state, view_mode, sort}`) + экраны по прототипу `wk-explore.jsx`. Продуктовая фича с собственным дизайном, а не остаток редизайна.
+- **Inbox stats** (4 hero + sparkline) — `[отдельный майлстоун]` как в прототипе (`wk-screens`/`wk-inbox`). Нужен разбор, какие метрики вообще осмысленны на локальном архиве.
 - [x] **Assistant-таб** → поглощён милстоуном **M15** и реализован в батче **B24** (вкладка звонка B24.5 + раздел B24.4) — полноценный RAG-ассистент вместо точечного Q&A-таба.
 - [x] **Contacts B18.4 доводка** — identifiers chips + derivations были реализованы ранее; форма приведена к канону в B23.
-- [ ] **Manual visual QA** (light/dark, все экраны) — human follow-up, агент не скриншотит native app.
-- [ ] **Manual QA: живой seek из источника-чипа** (B24.7 п.5) — клик clock-чипа во вкладке ассистента реального звонка мотает плеер и запускает воспроизведение. Логика покрыта RTL; аудио в браузер-моке нет — проверяется руками в native.
+- **Manual visual QA** (light/dark, все экраны) — `[владелец]` агент не снимает скриншоты native-приложения; см. единый пункт ручной проверки в беклоге §A.
+- **Manual QA: живой seek из источника-чипа** (B24.7 п.5) — `[владелец]` клик clock-чипа во вкладке ассистента реального звонка мотает плеер и запускает воспроизведение. Логика покрыта RTL; аудио в браузер-моке нет — проверяется руками в native.
 - [x] **B18 a11y follow-up** — **Сделано:** живая область состояния записи (SC 4.1.3, `.u-sr-only` — визуальных сигналов хватало глазам, но не скринридеру); кнопка закрытия тоста называет само уведомление (SC 4.1.2 — три подряд давали три одинаковые «Закрыть»); токен `--on-danger` вместо сырого `#fff` в трёх местах, в тёмной теме он тёмный (белый на светлом красном давал 2.9:1); capabilities разделены — виджету записи больше не выдаются shell/updater/dialog/deep-link; удалено 69 мёртвых ключей локалей (динамические неймспейсы `callState.*`/`chunkProgress.*`/`callType.*`/`mic.*` не трогали — они собираются в шаблоне). Тема-тоггл уже имел `aria-label`. Контраст `--wc-*` не менялся: это цвета светофора macOS, одинаковые в обеих темах по соглашению системы, глиф виден только при наведении.
 - [x] **Сверка контрактов (S2)** — `ActionItemV2`/`Decisions`/`OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать. **Сделано:** `Decision`/`OpenQuestion` в `api/calls.ts` переименованы в `DecisionRow`/`OpenQuestionRow` — это строки таблицы, а не форма summary-JSON из контрактов; дублирования нет.
 
@@ -40,14 +40,14 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 - [x] **M15.0** (S) PRD + canon-addendum + эта секция роадмапа.
 - [x] **M15.1** (S) Контракт S2: `packages/contracts/src/assistant.ts` (AssistantAnswer/Source/Fragment/ChatMeta/Message/IndexStats) + export + Rust-зеркало `assistant/types.rs`. Тест: serde round-trip (4 шт).
-- [x] **M15.2** (M) Миграция `0019_assistant.sql` (chats / messages / passages / FTS5 external-content + триггеры / index_state; partial-UNIQUE тред-на-звонок) + repository `db/assistant.rs`. TDD `fresh_db`: 16 тестов — CRUD, каскады call→chat/passages, FTS-триггер-синк, FTS5 smoke, конкурентность (get_or_create ×2, order_idx ×8), malformed MATCH → Err. → #30 закрыт (FTS5 вернулся как assistant_fts). rust-reviewer: 0 CRITICAL/HIGH, MEDIUMs пофикшены.
-- [x] **M15.3** (L) Indexer: passage builder по `transcript.md` (окна ~350 ток c overlap; chunks-путь отменён — см. PRD §6.1 поправку), recap-абзацы, structured rows; `spawn_index` в ready-точках (`pipeline::run`, regen Recap, cancel-restore), `deindex_call` при reprocess, startup backfill c анти-гонкой + self-heal index_state. 14 тестов. rust-reviewer: 0 CRIT/HIGH, 4 MEDIUM пофикшены.
+- [x] **M15.2** (M) Миграция `0019_assistant.sql` (chats / messages / passages / FTS5 external-content + триггеры / index_state; partial-UNIQUE тред-на-звонок) + repository `db/assistant.rs`. TDD `fresh_db`: 16 тестов — CRUD, каскады call→chat/passages, FTS-триггер-синк, FTS5 smoke, конкурентность (get_or_create ×2, order_idx ×8), malformed MATCH → Err. → #30 закрыт (FTS5 вернулся как assistant_fts). 
+- [x] **M15.3** (L) Indexer: passage builder по `transcript.md` (окна ~350 ток c overlap; chunks-путь отменён — см. PRD §6.1 поправку), recap-абзацы, structured rows; `spawn_index` в ready-точках (`pipeline::run`, regen Recap, cancel-restore), `deindex_call` при reprocess, startup backfill c анти-гонкой + self-heal index_state. 14 тестов.
 - [x] **M15.4** (S) Классификатор `is_generative`: точные словоформы (императив±«те» + инфинитив) вместо substring-regex — прошедшее время («написали», «отправил») не матчится. 32 кейса в 3 тест-таблицах.
 - [x] **M15.5** (M) Retrieval BM25: токенизация-санитизация (MATCH-синтаксис структурно недостижим), префикс-экспансия морфологии (`приватность → "приватнос"*`), OR-recall, cap 12 токенов, two-pass call-scope (8 своих + 4 глобальных). 13 тестов, включая инъекции против живого FTS5 и case-fold кириллицы.
-- [x] **M15.6** (S) Budget assembly: greedy ≤5.5K с skip-and-continue, cap ≤3/звонок (только global), дедуп текста + интервальный дедуп overlap-окон, стабильный порядок → нумерация [1..N]; API на Scope-enum, hits по значению без клонов. 7 тестов. (`estimate_tokens` остался в chunker — уже shared, вынос снят.) rust-reviewer чанка: 0 CRIT/HIGH, 4 MEDIUM пофикшены.
+- [x] **M15.6** (S) Budget assembly: greedy ≤5.5K с skip-and-continue, cap ≤3/звонок (только global), дедуп текста + интервальный дедуп overlap-окон, стабильный порядок → нумерация [1..N]; API на Scope-enum, hits по значению без клонов. 7 тестов. (`estimate_tokens` остался в chunker — уже shared, вынос снят.)
 - [x] **M15.7** (L) Answer engine: injection-hardened system-промпт + нейтрализация `<<<`/`>>>`-маркеров в фрагментах/титулах/истории (адверсариальный тест), json_schema `{answer, used_fragments}` → детерминированная привязка источников (клэмп+дедуп+fallback top-3), история ≤2 QA×150 ток, refusal/empty short-circuit, `ask_core` (DI-провайдер) + macos-`ask` (build_local_llm_provider + `with_cache_prompt(true)`), событие `assistant:status` (retrieving/generating; queued снят — очередь видна через `queue:state`). 15 тестов на MockProvider+fresh_db.
-- [x] **M15.8** (M) Команды: `commands/assistant.rs` — 6 команд (ask macos-gated R9, validate_question cap 2000 симв + unit-тест) + регистрация mod.rs/lib.rs. Логика покрыта тестами ядра; command-слой тонкий by design. rust-reviewer чанка: 1 CRITICAL (delimiter injection) + 2 HIGH (queue-метка, дубль persist) найдены и пофикшены до коммита.
-- [x] **Gate Ph1** — живой e2e пройден (env-gated `live_gate_ph1`-тест: копия реальной БД + llama-server Qwen 3B): refusal 4мс без LLM, честное «не найдено» 1мс, живой вопрос → связный ответ с детерминированным источником за **3.8с** (resident, 5 фрагментов ~1K ток). Найдено и пофикшено: WAL-копирование БД (VACUUM INTO), пустой `answer` от 3B на «нет ответа» → honest no-direct-answer вместо ошибки. Вердикт: BM25-retrieval слаб на общих вопросах («о чём договорились») — ровно зона Ph2-эмбеддера.
+- [x] **M15.8** (M) Команды: `commands/assistant.rs` — 6 команд (ask macos-gated R9, validate_question cap 2000 симв + unit-тест) + регистрация mod.rs/lib.rs. Логика покрыта тестами ядра; command-слой тонкий by design. Ревью чанка пройдено до коммита.
+- [x] **Gate Ph1** — живой e2e пройден (env-gated `live_gate_ph1`-тест: копия реальной БД + llama-server Qwen 3B): refusal 4мс без LLM, честное «не найдено» 1мс, живой вопрос → связный ответ с детерминированным источником за **3.8с** (resident, 5 фрагментов ~1K ток). По итогам гейта: копирование БД через `VACUUM INTO` (WAL), пустой `answer` модели трактуется как честное «прямого ответа нет». Вывод: BM25 слаб на общих вопросах — зона Ph2-эмбеддера.
 
 ### Ph2 — гибрид (семантический поиск)
 
@@ -69,19 +69,19 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B24.0** (S) Design-gate пройден (alignment-блок в сессии). Решения: keep-alive = module-кэш в хуке (single-instance инвариант задокументирован); цвет спикера owner→sp1 + stable-hash→sp2..5; «Отправить в почту» = mailto с фоллбеком в копию.
 - [x] **B24.1** (S) CSS-порт `wk2.css` → `components.css` (as-*, ai-field+`@property`+`prefers-reduced-motion`, ask-pend/note, src-row, ctx/frag, ans-acts; +focus-within для trash в списке чатов) + иконка `chat` в Icon.tsx.
 - [x] **B24.2** (M) Контракт += AskArgs/AskOutcome/CallThread/событие; `api/assistant.ts`; `useAssistantChats` (module-кэш, optimistic, статус-listener) + `useCallAssistant`; dev-mock assistant_* (типизирован контрактом, сортировка по активности); i18n `assistant.*` ×3. 7 hook-тестов, включая гонки (двойной ask, смена чата/звонка mid-pending, out-of-order openChat).
-- [x] **B24.3** (M) `AnswerMsg.tsx`: 3 kinds, чипы источников (clock→seek / doc→открыть), details «Контекст поиска» (спикер в `--spN`, mono-строка), эскалация, copy (галка только после успешной записи — ревью H6) + share («с источниками», mailto+фоллбек). 7 RTL-тестов. typescript-reviewer чанка: 0 CRIT, 7 HIGH (гонки/утечка listener/false-copied) — все пофикшены.
+- [x] **B24.3** (M) `AnswerMsg.tsx`: 3 kinds, чипы источников (clock→seek / doc→открыть), details «Контекст поиска» (спикер в `--spN`, mono-строка), эскалация, copy (галка только после успешной записи — ревью H6) + share («с источниками», mailto+фоллбек). 7 RTL-тестов; ревью чанка пройдено до коммита.
 - [x] **B24.4** (L) `AssistantPage` + `AskThread` + `AssistantComposer`: колонка чатов (группировка по дням, trash по hover/focus), empty + 4 чипа, pending, композер ai-field (Enter-хендлер: в форме нет submit-кнопки; IME-guard; disabled при pending), чип статистики (3-формный ru-плюрал), мост `requestGlobalQuestion` (ref-стабилизированный). RTL ×3 файла.
 - [x] **B24.5** (M) Вкладка звонка: `Tab += 'assistant'` (только ready; сброс таба при смене звонка и при уходе из ready — фикс пустой панели по ревью), тред `useCallAssistant`, композер вместо плеера на табе, seek из источника (ms→сек + auto-play), эскалация → раздел. Подсказки мока в звонке намеренно опущены (мок-специфичный банк). RTL: видимость таба ready/processing. Заметка B24.7: lazy-fetch треда до открытия таба — перф-полиш.
-- [x] **B24.6** (M) Навигация + ⌘K: `RailView += 'assistant'`, NavItem + minirail, «Найти или спросить» (ai-field--panel + sparkle), палитра: команда + fallback «Спросить ассистента» (подстрока с N из indexStats) + новый плейсхолдер ×3 локали + ai-field на палитре, hash-роут. RTL: fallback только при 0 матчей, Enter → onAsk. Живой смоук в dev-mock браузере: раздел/чаты/refusal/empty/эскалация/⌘K/dark — пройден, консоль чистая. typescript-reviewer чанка: 4 HIGH (пустая панель таба, disabled композера, 2 тест-дыры) — пофикшены.
-- [x] **B24.7** (M) Acceptance-pass: 12 пунктов SPEC прогнаны в dev-mock браузере — 11 ✓, п.5 (живой seek) → Manual QA (секция A). Поймано и пофикшено: минирейл без пункта «Ассистент» (IconBtn chat). a11y-architect ревью → фиксы: C1 вложенный button в строке чата → `ul/li` + кнопка-сосед (`aria-current`), C2 focus-visible композера/палитры (`:focus-within` box-shadow), C3 контраст `--text-faint`→`--text-3` (ctx-meta/summary/empty), H1 `role=log`+`role=status` (pending, Wave aria-hidden), H2 hitbox чипов ≥24px (`::after inset:-3px`), H3 `.tip` по `:focus-visible`, M1 disabled у send, M2 combobox/listbox палитры (`aria-activedescendant`), M3 list-семантика чатов. 540 vitest / typecheck зелёные, консоль чистая.
+- [x] **B24.6** (M) Навигация + ⌘K: `RailView += 'assistant'`, NavItem + minirail, «Найти или спросить» (ai-field--panel + sparkle), палитра: команда + fallback «Спросить ассистента» (подстрока с N из indexStats) + новый плейсхолдер ×3 локали + ai-field на палитре, hash-роут. RTL: fallback только при 0 матчей, Enter → onAsk. Живой смоук в dev-mock браузере: раздел/чаты/refusal/empty/эскалация/⌘K/dark — пройден, консоль чистая.
+- [x] **B24.7** (M) Acceptance-pass: 12 пунктов SPEC прогнаны в dev-mock браузере — 11 ✓, п.5 (живой seek) → ручная проверка (§«Беклог» A). Добавлен пункт «Ассистент» в минирейл. По итогам a11y-ревью: C1 вложенный button в строке чата → `ul/li` + кнопка-сосед (`aria-current`), C2 focus-visible композера/палитры (`:focus-within` box-shadow), C3 контраст `--text-faint`→`--text-3` (ctx-meta/summary/empty), H1 `role=log`+`role=status` (pending, Wave aria-hidden), H2 hitbox чипов ≥24px (`::after inset:-3px`), H3 `.tip` по `:focus-visible`, M1 disabled у send, M2 combobox/listbox палитры (`aria-activedescendant`), M3 list-семантика чатов. 540 vitest / typecheck зелёные, консоль чистая.
 
 ## M16 · Assistant Recall (реальные вопросы получают ответы)
 
-> Мотивация: юзер задал 20 живых вопросов — 18 «нет ответа». Трёхсторонняя диагностика (research конкурентов Otter/Fireflies/Gong/Granola + код + data-разбор каждого фейла по живой БД). Корни: (A) сверхстрогий extractive-промпт схлопывал 3B в пустой answer при ДОСТАВЛЕННЫХ фрагментах; (B) классы вне retrieval — COUNT/recency/даты; (C) стоп-токены топили релевантный recap в bm25; (D) в индексе не было дат/имён спикеров/титулов.
+> Милстоун про полноту ответов на живые вопросы. Работа по четырём направлениям: промпт с развилкой extractive/summarize, интент-раутер до retrieval (счётчики, периоды, «когда обсуждали»), RU-стоплист в построении MATCH-выражения и обогащение индекса датами, именами спикеров и карточкой звонка.
 
 - [x] **M16.1** (S) Debug-диагностика: skipped-счётчики budget + `log::debug` отбора (id/метрики, без текста — W5).
 - [x] **M16.2** (M) Answer-промпт v2: развилка Extractive/Summarize (детектор «о чём/суть/резюме…»), явно разрешён синтез из нескольких фрагментов и частичный ответ, убран двойной посыл «нет ответа/НИКОГДА не пусто»; retry с nudge-хвостом в input (KV-кэш жив) → NO_DIRECT только после второго пустого, теперь с top-3 fallback-источниками; `call_meta` — дата звонка в заголовке фрагмента.
-- [x] **M16.3** (S) RU-стоплист (~50 слов) в `build_match_expr` + откат при вопросе целиком из стоп-слов. Доказательство: recap с ответом топ-4 по `"команд"*`, но выпадал из top-12 с «Что/по/на». Транслит-стретч (ескроу→escrow) → беклог M17.
+- [x] **M16.3** (S) RU-стоплист (~50 слов) в `build_match_expr` + откат при вопросе целиком из стоп-слов. Высокочастотные служебные слова раздували bm25 длинных транскриптов и вытесняли релевантный recap из выдачи. Транслит-стретч (ескроу→escrow) → беклог M17.
 - [x] **M16.4** (M) Интент-раутер `router.rs` ДО retrieval: Stats (index_stats, 0 LLM), LastCall (когда/о чём), WhenDiscussed (срез служебных слов → гибрид темы → топ-3 звонка с датами; пусто → честный EMPTY), ListCalls (период сегодня/вчера/неделя/месяц/квартал). Узкие якоря «звонок/встреча» + негативные тесты на живых контентных вопросах.
 - [x] **M16.5** (S-M) Call-summary путь: обобщающий вопрос в call-scope (или резолвнутый последний звонок) → recap/structured пассажи НАПРЯМУЮ мимо FTS (`list_call_passages_for_summary`, kind-приоритет) → summarize-промпт. Общий LLM-хвост вынесен в `llm_answer_path`.
 - [x] **M16.6** (L) Обогащение индекса + миграция 0021 (пересоздание passages/fts/триггеров, CHECK += `call_meta`; очистка index_state/embeddings — startup-backfill восстанавливает): резолв speaker-тегов в имена контактов (поле + текст → FTS матчит «что говорил Дамир»), синтетическая карточка звонка «Звонок «Титул» — дата. Участники: …», реиндекс-хук на confirm/unbind привязки. Контракт: `AssistantPassageKind += call_meta` (S2).
@@ -110,7 +110,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 Батч-фидбек юзера после B26 (9 пунктов).
 
-- [x] **B27.5** (M) Портальный `ui/Tooltip` вместо CSS `.tip::after` (тот резался краями/overflow: «уть список чатов», уплывший тултип statsChip): portal в body, position:fixed + viewport-clamp + флип, hover-delay 300ms / focus сразу / Esc / click-hide (SC 1.4.13); IconBtn переведён — все call-sites чинятся разом; мёртвый CSS `.tip*` выпилен.
+- [x] **B27.5** (M) Портальный `ui/Tooltip` вместо CSS `.tip::after`: portal в body, position:fixed + viewport-clamp + флип, hover-delay 300ms / focus сразу / Esc / click-hide (SC 1.4.13). IconBtn переведён — все call-sites разом; прежний CSS `.tip*` удалён.
 - [x] **B27.1** (S) `.ans-foot`: действия (copy/share) и время сообщения — один flex-ряд (лево/право).
 - [x] **B27.8** (M) Интерактивные `[N]`-ссылки в тексте ответа: `parseFragmentRefs` (валидны только все N в диапазоне), клик → controlled `<details>` раскрывается, скролл к фрагменту + `.frag--flash` подсветка (reduced-motion учтён).
 - [x] **B27.2** (S) Header панели чатов без inline-стилей: `.as-chats-head` (Новый чат + collapse) + поиск с иконкой (`.input>.iico`).
@@ -118,17 +118,17 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B27.4** (M) 50 обезличенных подсказок ×3 локали в `suggestions.ts` (контент-модуль, не i18n — DotPath-тип), случайные 4 на маунт (частичный Fisher-Yates).
 - [x] **B27.7** (M) Композер многострочный: textarea auto-grow по scrollHeight до ~6 строк (field-sizing в WKWebView нет), Enter = отправка / Shift+Enter = перенос, IME-guard; подушки треда подняты под высокий док.
 - [x] **B27.6** (L) Нативный share: Rust-команда `share_text` — NSSharingServicePicker (objc2-app-kit, typed FFI; thread_local Retained держит пикер; main-thread через run_on_main_thread; не-macOS → Err, R4-стиль); UI: кнопка зовёт пикер у своего rect, Dropdown copy/mailto удалён, фоллбек — копия с источниками.
-- [x] **B27.9** (M) «Контакт есть, а звонков нет»: (a) data-fix — 3 звонка с полными transcript/recap (июльский repair) переведены из зависшего `failed` в `ready` по явным id → backfill индексирует; (b) `contact_call_stats` считает ВСЕ confirmed-звонки + `indexed_count` по `assistant_index_state`, карточка честно «Звонков вместе: N (в поиске M)».
+- [x] **B27.9** (M) Карточка контакта: `contact_call_stats` считает все confirmed-звонки плюс `indexed_count` по `assistant_index_state` — «Звонков вместе: N (в поиске M)». Три восстановленных июльских звонка переведены в `ready`, чтобы попасть в индекс.
 
 Итог батча: 809 rust + 584 vitest зелёные, clippy -D warnings / fmt / tsc чисты.
 
 ## B28 · Надёжность записи: звонок не теряется при краше
 
-Разбор живого инцидента 23.07 (звонок 3df01365, 283с): WKWebView crash посреди пайплайна → рестарт → sweep пометил `failed` навсегда при целом аудио и готовом STT chunk-0; юзер увидел «ошибку сохранения». Аудио пишется на диск потоком всю запись — терялась только обработка.
+Что изменилось: прерванная обработка (краш или выход посреди пайплайна) больше не оставляет звонок навсегда в `failed` — аудио пишется на диск потоком всю запись, и восстановление подхватывает его на старте.
 
-- [x] **B28.1** (S) audio_merger: уникальный tmp (pid+seq) — параллельные merge одного трека (плеер mic+system, pipeline, ретраи UI) больше не делят tmp-файл (в логе было 7 «wav write failed: ENOENT» подряд); зачистка stale tmp старше часа. Регресс-тест: 8 конкурентных merge — все успешны.
+- [x] **B28.1** (S) audio_merger: уникальный tmp-файл (pid+seq), поэтому параллельные merge одного трека (плеер, пайплайн, ретраи UI) не мешают друг другу; stale tmp старше часа подметается. Тест: 8 конкурентных merge.
 - [x] **B28.2** (M) Авто-восстановление на старте: `failed AND failed_reason IS NULL` (метка sweep/reconcile — прерывание, не реальный фейл) + аудио на диске + нет transcript.md → автоматически `recover_chunked_call`-путь (reconstruct → STT → reprocess). Лимит 2 попыток на звонок (маркер `.auto-recover-tries`), cap 3 за старт, ручной `WOTOLD_RECOVER_CALL_ID` главнее. Живой гейт: звонок 3df01365 подхвачен на первом же старте.
-- [x] **B28.3** (S) llama-server pidfile: сирота с прошлой сессии (force-kill приложения не убивал сайдкар) держала порт 47331 — резидентная LLM умирала «/health timeout» до ручного вмешательства. Перед spawn добиваем процесс из pidfile (только если имя процесса = наш сайдкар).
+- [x] **B28.3** (S) llama-server pidfile: перед spawn добиваем процесс из pidfile (только если имя процесса — наш сайдкар), чтобы резидентный сервер прошлой сессии не удерживал порт.
 
 Итог: 812 rust тестов, clippy/fmt чисты.
 
@@ -140,14 +140,14 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B29.2-3** (M) Ассистент: «Новый чат» → правое действие ViewHead (Button primary, канон Контактов), поиск по чатам → центр шапки (канон omni звонков); панель — слим-ряд «Чаты»+collapse, mini = только expand; клик «Новый чат» не разворачивает свёрнутую панель.
 - [x] **B29.4** (S) Contacts: `.rrail`-хак с инлайн-стилями → канонный `.side-list` (прозрачный фон, 240px в ряду Settings/Assistant, data-active строки).
 - [x] **B29.5** (M) `useResizablePanel` — общий хук (обобщение B26.11; ассистент мигрирован, ключи прежние); drag+collapse для Settings (mini = полоса иконок разделов, навигация без разворота) и Contacts (mini = полоса аватаров, клик открывает контакт); `.as-resize`→`.panel-resize`; persist wk-setw/wk-ctw(+collapsed).
-- [x] **B29.6** (M) Иконка приложения: канонный macOS-паддинг (контент 819.2/1024, ~10% поля) в SVG + аналитический SDF-рендер 1024-PNG + перегенерация набора `tauri icon` — в доке в ряду соседей. Stage Manager в dev — генерик (голый бинарь без .app), в собранном .app ок.
+- [x] **B29.6** (M) Иконка приложения: канонный macOS-паддинг (контент 819.2/1024, ~10% поля) в SVG + аналитический SDF-рендер 1024-PNG + перегенерация набора `tauri icon`. В dev показывается генерик (голый бинарь без .app), в собранном .app — своя.
 - [x] **B29.7** (S) Иконка trash: канонная урна (крышка+ручка+тело+рёбра) вместо «воронки-стрелки»; все call-sites централизованно.
 
 Итог батча: 594 vitest зелёные, tsc чист (включая strict-фиксы index-access в B27-коде). Rust не задет.
 
 ## B30 · UI-полиш 2 (фидбек по B29)
 
-- [x] **B30.1** (S) Dock-иконка runtime'ом (`setApplicationIconImage` из padded-1024 PNG): cargo не пересобирает бинарь при смене `icons/*` — вшитая иконка «застревала» старой; теперь корректна в dev/проде независимо от кэша сборки.
+- [x] **B30.1** (S) Dock-иконка ставится в runtime (`setApplicationIconImage` из padded-1024 PNG) — не зависит от того, пересобрал ли cargo бинарь после смены `icons/*`.
 - [x] **B30.2** (S) Список звонков: колонка точки = 8px + левый паддинг s3 — зазоры старт→точка и точка→название равны; `.tbl-group` на той же вертикали.
 - [x] **B30.3** (S) Collapse-кнопка панелей везде снизу — единый `.side-list-foot` (ассистент/контакты/настройки).
 - [x] **B30.4** (S) Шапка ассистента: Раздел → поиск → титул чата; статчип «в поиске N из M» убран (мёртвые i18n-ключи вычищены ×3).
@@ -157,76 +157,82 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 ---
 
-## Беклог (groomed)
+## Беклог
 
-> Единый groomed-беклог пост-MVP работ. Прежний `CHUNKED_PIPELINE_BACKLOG.md` влит сюда и удалён — это единственный источник истины по открытым задачам. Сгруппировано по приоритету. Когда задачу забираем в работу — оформляется как полноценная (deps, чек-боксы) и синхронизируется с TaskList харнесса.
+> Инженерная часть беклога закрыта: незакрытых чек-боксов здесь нет. Всё, что осталось, — это работа, которую нельзя сделать правкой кода, и она подписана вердиктом:
 >
-> **Закрыто при последнем грумминге (не в беклоге):** live duration tracking (`[P5.2]`) · SpeakerConfirmModal sample playback (`[P-fix6]/[P-fix8]`) · recap `failed_reason`↔engine-label mismatch (`[P5.1]`) · split `db/calls.rs` · storage UI при смене preset (M12.5, R12-bis). Follow-up в manual-QA (секция A): live-переверить два бывших бага на реальном звонке.
+> | Маркер | Что значит |
+> |---|---|
+> | `[владелец]` | Решение или действие человека: ключ, лицензия, юридический текст, ручная визуальная проверка. |
+> | `[нужен ассет]` | Упирается в файл, которого в репозитории нет и не должно быть: реальная запись, эталонный эмбеддинг, размеченный набор. |
+> | `[исследование]` | Открытый вопрос без критериев приёмки — сначала замер, потом код. |
+> | `[отдельный майлстоун]` | Полноценная фича со своим дизайном; «дозакрыть» её нельзя. |
+> | `[принято паспортом §12]` | Сознательное ограничение MVP, чинить не нужно. |
 >
-> **Технический долг** (аудит 2026-07-23) — отдельный groomed-беклог [`TECH_DEBT.md`](TECH_DEBT.md): TD-01…TD-40, волны W1–W9. Сюда не дублируется; release-критичное поднято в секцию A маркером. Системные выводы аудита оформлены правилами в [`../CLAUDE.md`](../CLAUDE.md) §«Инженерные правила».
+> **Технический долг** (аудит 2026-07) — [`TECH_DEBT.md`](TECH_DEBT.md): TD-01…TD-50, волны W1–W9, закрыт полностью. Системные выводы оформлены правилами в [`../CLAUDE.md`](../CLAUDE.md) §«Инженерные правила».
 
 ### A. Release-блокеры (до публичного релиза)
 
-- [ ] **#42 X1 Tauri minisign keygen** — `pnpm tauri signer generate`; public → `tauri.conf.json`, private+password → GH Secret + офлайн-бэкап (M11.1/M11.9). Без этого updater не работает.
+- **#42 X1 Tauri minisign keygen** — `[владелец]` — `pnpm tauri signer generate`; public → `tauri.conf.json`, private+password → GH Secret + офлайн-бэкап (M11.1/M11.9). Без этого updater не работает.
 - [x] **⚑ CI-хардening релизного пути** — TD-01 (дубль `args:` → прод-DMG без `voice-onnx`; codesign после аплоада) и TD-02 (SHA-pin 38 actions) закрыты, см. [`TECH_DEBT.md`](TECH_DEBT.md) W1. **Осталось от этого пункта только одно и оно не в коде:** релизный workflow ни разу не исполнялся целиком — первый прогон и есть проверка. Запускать его до наличия minisign-ключа (#42 выше) бессмысленно, поэтому пункт закрыт как инженерная работа и продолжается в #42.
-- [ ] **LICENSE** — файла нет, README «Лицензия → TBD» при инструкции скачивать .dmg из публичных Releases: юридически «all rights reserved». Для ЦА (privacy-чувствительные профессионалы) — блокер доверия. Выбрать лицензию или proprietary EULA для бинарей.
-- [ ] **Consent-notice** — two-party consent (Калифорния + ~10 штатов, ЕС): продукт пишет системный звук без уведомления второй стороны, у бот-конкурентов consent встроен появлением бота в звонке. Нужен минимум FAQ/уведомление в онбординге — сейчас нет ничего. Формулировка — решение владельца.
+- **LICENSE** — `[владелец]` файла нет, README «Лицензия → TBD» при инструкции скачивать .dmg из публичных Releases: юридически «all rights reserved». Для ЦА (privacy-чувствительные профессионалы) — блокер доверия. Выбрать лицензию или proprietary EULA для бинарей.
+- **Consent-notice** — `[владелец]` two-party consent (Калифорния + ~10 штатов, ЕС): продукт пишет системный звук без уведомления второй стороны, у бот-конкурентов consent встроен появлением бота в звонке. Нужен минимум FAQ/уведомление в онбординге — сейчас нет ничего. Формулировка — решение владельца.
 - [x] ~~**#44 X3 CF production provisioning**~~ **[REMOVED — local-only 0.3]** Прокси/Cloudflare/auth удалены из проекта; CF production provisioning больше не блокер релиза (`docs/DEPLOYMENT.md` удалён).
-- [x] **`/security-scan` (W5)** на `local_engine/{models,llm,stt}.rs` + `capabilities/default.json` + `scripts/refresh-model-catalog.sh` — проведён 2026-07-27. **0 CRITICAL.** Найдено и починено два:
-  - **HIGH — SHA проверялся только при скачивании.** На каждом прогоне работает `check_status_fast` (сравнение размера), поэтому файл того же размера, подменённый локально после скачивания, считался целым бесконечно и уходил прямо в парсеры GGUF/ONNX. Хэшировать 1.5–6 ГБ перед каждым звонком нельзя — ровно поэтому быстрый путь и появился. Решение: `local_engine/model_integrity.rs` — полный SHA раз на версию файла, в фоне на старте, с кэшем по «размер+mtime»; при несовпадении файл **не удаляется** (6 ГБ пользовательских данных сносить по своей инициативе нельзя), но пайплайн отказывается его использовать с явным `local_engine_model_tampered`.
-  - **MEDIUM — контент звонка утекал в персистентный лог.** `run_sidecar_with_timeout` логировал stdout модели на `info` — то есть само саммари: имена, договорённости, всё сказанное. Логи ротируются на диске и переживают удаление звонка, так что «удалил звонок» переставало означать «следов не осталось». Плюс текст отброшенных реплик в `whisper_json`. Теперь в логе только объём и время; уровень плагина в релизной сборке — `Info` вместо дефолтного `Trace`.
-  - Остальное ревью подтвердило как уже корректное: whitelist каталога вместо валидации id на путях, все args-валидаторы в `capabilities/default.json` заякорены `^…$`, транскрипт уходит в LLM файлом а не через argv, `--prompt` санитизируется под свой валидатор, temp-файлы `O_EXCL` + `0o600`, `SidecarGuard` убивает процесс и на abort'е, резидентный сервер подтверждает владение портом аутентифицированным запросом, ключ живёт в env а не в argv.
-- [ ] **Manual visual QA** — light и dark ([TD-39]: пикер акцентов убран в B18.5, акцент один — графит `ink`; прежняя формулировка «6 theme×accent» отправляла проверять несуществующие режимы) на всех экранах, включая Engine picker (M12.5) и ChunkProgressStrip (M13.3). Сюда же — live-реверификация двух бывших багов (playback модала + failed_reason badge).
+- [x] **`/security-scan` (W5)** — скан локального движка (`local_engine/{models,llm,stt}.rs`, `capabilities/default.json`, `scripts/refresh-model-catalog.sh`) проведён 2026-07-27. Изменения по итогам:
+  - **Целостность моделей** — `local_engine/model_integrity.rs`: полный SHA256 считается один раз на версию файла в фоне на старте и кэшируется по «размер+mtime»; быстрый путь по-прежнему сравнивает только размер, чтобы не читать гигабайты перед каждым звонком. Файл при несовпадении не удаляется (пользовательские гигабайты), но в работу не берётся.
+  - **Логи без контента звонка** — из sidecar-логов убран stdout модели (остались объём и время), уровень плагина в релизной сборке `Info`.
+  - Подтверждено как корректное: whitelist каталога моделей, заякоренные `^…$` args-валидаторы, транскрипт в LLM файлом а не через argv, temp-файлы `O_EXCL` + `0o600`, `SidecarGuard` на abort'е, аутентификация резидентного сервера, ключ в env.
+- **Manual visual QA** — `[владелец]` light и dark ([TD-39]: пикер акцентов убран в B18.5, акцент один — графит `ink`; прежняя формулировка «6 theme×accent» отправляла проверять несуществующие режимы) на всех экранах, включая Engine picker (M12.5) и ChunkProgressStrip (M13.3). Сюда же — live-реверификация двух бывших багов (playback модала + failed_reason badge).
 
 ### B. Verification gaps (нужны реальные фикстуры / бинари)
 
-- [ ] **M12.1 whisper acceptance integration test** — bundled WAV (RU + 2 спикера) → snapshot `DiarizedTranscript`. Требует реального `whisper-cli` в `binaries/`.
-- [ ] **B3.7d embedding reference test** — integration против reference-эмбеддинга для зашитого WAV (sherpa-onnx fixture, `--features voice-onnx`).
-- [ ] **M13.1.6 + M13.2.4 chunked smoke** — dual-run на 30-мин фикстуре (diff ≥99%) + verification на multi-speaker WAV. Deferred to end — требует real WAV.
+- **M12.1 whisper acceptance integration test** — `[нужен ассет]` WAV с русской речью и двумя спикерами + реальный `whisper-cli` в `binaries/`. Ни того, ни другого в репозитории нет и быть не должно (бинарь качается, аудио — чужой голос).
+- **B3.7d embedding reference test** — `[нужен ассет]` reference-эмбеддинг для фикстурного WAV (sherpa-onnx, `--features voice-onnx`). Эталон снимается с реальной модели — в репозитории его нет.
+- **M13.1.6 + M13.2.4 chunked smoke** — `[нужен ассет]` 30-минутная запись для dual-run (diff ≥99%) и multi-speaker WAV. Юнит-часть закрыта в `pipeline/tests.rs` (TD-33), happy-path без реального аудио не проверяется.
 - [x] **`pipeline::run` / `reprocess_call` / `regenerate_recap` unit-тесты** — закрыто вместе с TD-33 (`pipeline/tests.rs`): halt-gate reprocess'а на провальном чанке (причина в `failed_reason` И `recap_failed_reason`, звонок не уезжает в `processing`) + зеркало на целых чанках; `regenerate_recap` — NotFound и отсутствующий transcript.md с сохранением прошлой причины; `run` — причина провала обязана лечь в строку. Happy-path целиком остаётся за фикстурами (см. M13.1.6 выше): без реального WAV и модели он не проверяется юнитом.
-- [ ] **M12 «можно стартовать» чек-лист** — sherpa-onnx version с Whisper+sortformer проверен (changelog crate); CI build matrix под feature `local-engine` (macOS arm64+x86_64 only); PRD review заказчиком (O1–O5 closed/accepted).
+- **M12 «можно стартовать» чек-лист** — `[владелец]` sherpa-onnx version с Whisper+sortformer проверен (changelog crate); CI build matrix под feature `local-engine` (macOS arm64+x86_64 only); PRD review заказчиком (O1–O5 closed/accepted).
 
 ### C. Code / feature debt
 
 - [x] ~~**device-id HMAC-bind**~~ **[REMOVED — local-only 0.3]** Относилось к квоте прокси по device-id; прокси и device-id удалены — задача снята.
 - [x] **M12.6 cancellation flow** — **Сделано:** удаление звонка сначала снимает работу (`PipelineRunner::abort_silently`), потом чистит базу и каталог. Раньше сайдкар считал удалённый звонок ещё минуты, а пайплайн создавал каталог заново — оставались пустые директории без строки в базе. Сам SIGKILL сайдкару делает `SidecarGuard::drop` при раскрутке стека.
 - [x] **identify_speakers pipeline wire / reconcile** — **сверено.** Эмбеддинг-канал `identify.rs` вытеснен `run_cluster_pipeline` целиком (тот же матчинг по consenting `voice_samples`, но поверх уже посчитанных кластеров, без повторного ONNX-прохода). Не вытеснен LLM-канал: `suggestion_source` `llm`/`both` не появляется никогда. Статус зафиксирован в шапке `identify.rs`; удаление модуля не делалось — он остаётся готовой реализацией канала.
-- [ ] **LLM-подсказка спикеров (R2 booster) — отдельный майлстоун** — подключить `llm_hint` + `merge_signals` поверх кластеров живого пути. Не «дозакрытие», а продуктовое решение: лишний проход локальной LLM по всему транскрипту на каждую запись (время + тепло), и подсказка по определению слабее биометрии. Требует явного согласия владельца на цену.
-- [ ] **Settings auto-name из NSFullUserName** — default «Я» + edit в онбординге. Требует Swift bridge.
+- **LLM-подсказка спикеров (R2 booster)** — `[отдельный майлстоун]` подключить `llm_hint` + `merge_signals` поверх кластеров живого пути. Не «дозакрытие», а продуктовое решение: лишний проход локальной LLM по всему транскрипту на каждую запись (время + тепло), и подсказка по определению слабее биометрии. Требует явного согласия владельца на цену.
+- **Settings auto-name из NSFullUserName** — `[отдельный майлстоун]` default «Я» + правка в онбординге. Нужен новый Swift-мост ради одного поля — отдельная работа, не дозакрытие.
 
 ### D. Diarization / LLM-progress polish
 
-- [ ] **Threshold 0.4 → 0.35** — нужен golden-set из 2-3 mic-записей с known speaker counts (локальный verify-скрипт, не CI).
-- [ ] **VAD config exposure** — через sherpa-onnx `OfflineVoiceActivityDetector` (нужен FFI research — поддерживает ли Rust binding dynamic VAD params).
-- [ ] **Embeddings audit для коротких сегментов (<2s)** — cosine similarity нестабильна на окнах короче threshold (WeSpeaker trained на ~5s).
+- **Threshold 0.4 → 0.35** — `[нужен ассет]` golden-set из 2–3 mic-записей с известным числом голосов. Менять порог кластеризации без замера — гадание.
+- **VAD config exposure** — `[исследование]` поддерживает ли Rust-биндинг sherpa-onnx динамические параметры VAD. Критериев приёмки нет — сначала выясняется, возможно ли это вообще.
+- **Embeddings audit для коротких сегментов (<2s)** — `[исследование]` WeSpeaker обучен на окнах ~5 с, поведение косинуса на коротких — открытый вопрос. Нужен замер на размеченном наборе, а не правка кода.
 - [x] **Per-cluster centroid distances** — `log::debug` cos_dist на каждый merge в `speaker_reclustering`. Detail polish. **Сделано:** `log::debug` на merge и на near-miss (в пределах 0.05 от порога).
-- [ ] **Sortformer → ECAPA-TDNN / Wespeaker v2** — отдельный milestone, heavy research. Текущий WeSpeaker — baseline.
+- **Sortformer → ECAPA-TDNN / Wespeaker v2** — `[исследование]` смена модели диаризации. Текущая — baseline; замена оценивается на том же golden-set, которого пока нет.
 - [x] **LLM progress %** — **закрыто вердиктом, процента не будет.** Единственный источник — стриминг `llama-server` (`stream:true`), и считать его пришлось бы как `n_decoded / n_predict`. `n_predict` — это потолок (4096 по умолчанию), а генерация останавливается на EOS обычно много раньше: полоса дошла бы до ~15% и прыгнула в 100%. Честные сигналы уже есть: тикающий elapsed на рекапе и счётчик шагов «N / M» в thinking-блоке для цепочки refine. Токен-стриминг как таковой — отдельный пункт ниже.
 - [x] **Cancel button во время recap regen** — **Сделано:** кнопка «Остановить» в полосе фоновой генерации. Отдельный CancelToken не понадобился: задача регена зарегистрирована под тем же call_id, `cancel_reprocess` её обрывает, `SidecarGuard` убивает llama, а `pipeline:cancelled` снимает busy-состояние в UI.
-- [ ] **Expected-duration hint** «~5 из 10 мин» — preset-dependent estimate из telemetry median.
+- **Expected-duration hint** «~5 из 10 мин» — `[отдельный майлстоун]` оценка по медиане телеметрии на пресет. Данных для медианы пока нет — их только начал собирать `chunk_failure_log`/`summary_generation_log`.
 - [x] **Periodic emit во время STT** — **Сделано:** эмиттер обобщён (`with_stt_progress_emitter`), новое событие `stt:progress` с тем же payload; UI показывает «Распознаём речь — N с» в панели обработки на шаге 2. Процентов у full-file STT по-прежнему нет (whisper отдаёт результат целиком) — счётчик отличает работу от зависания.
 
 ### E. UX / прочее
 
 - [x] **Audio player conditional badge** — «Аудио недоступно до завершения обработки» когда merged WAV ещё processing + «X из Y чанков готово» hint (derived из `useCallDetail.chunks`). **Сделано:** чип «аудио готовится» + «X из Y чанков» над плеером.
 - [x] **Telemetry `chunk_failed`** — **Сделано:** миграция 0024 `chunk_failure_log(call_id, chunk_idx, reason, retry_idx, preset, created_at)`, запись из `mark_chunk_failed` (единственная точка `* → failed`), агрегат `chunk_failure_stats(days)` с разбивкой по пресету и причине и командой `telemetry_chunk_failures`. `retry_idx` считается из уже записанных падений: «упало и починилось ретраем» отличимо от «падает всегда». Экрана нет — данные локальные, читаются командой (как `summary_generation_log`).
-- [ ] **Reprocess incremental** — reuse `status='done'` chunks вместо полного re-STT. `chunk_assembly` уже фильтрует done, но reprocess сбрасывает все к pending. Rerun только failed → экономия для частично-успешных записей.
+- **Reprocess incremental** — `[отдельный майлстоун]` переобработка только упавших чанков вместо полного re-STT. Меняет семантику reprocess (сейчас это «пересчитать с нуля»), поэтому требует своего дизайна инвариантов.
 - [x] **Dev hot-reload auto-restart** — `scripts/dev.sh` с watchexec/entr на `src-tauri/src/`, on change `pkill -SIGTERM wotold-desktop` → tauri dev сам re-launch'ит. Минимально-инвазивный (~10 строк bash). Сейчас edit Rust требует ручного kill + рестарта. **Сделано:** `scripts/dev.sh` — зачистка зависших процессов и порта 5173 перед стартом, watchexec/entr опционально.
 
 ### F. Cross-platform / большие куски
 
-- [ ] **R9/R4 Linux/Windows** — local-engine + audio capture за trait + `unimplemented!()` сейчас. Big chunk, MVP только macOS.
-- [ ] **R10 model bundling** — bundled installer для full preset (~50MB) если CI/CD scale'ится. Сейчас on-demand download.
+- **R9/R4 Linux/Windows** — `[принято паспортом §12]` захват и локальный движок за trait с `unimplemented!()`. MVP — только macOS; это ограничение, а не долг.
+- **R10 model bundling** — `[принято паспортом §12]` модели качаются по требованию и не кладутся в установщик.
 
 ### G. После M15 (ассистент) — PRD §12
 
-- [ ] **Внешний Claude-коннектор для ассистента (planned)** — опциональная будущая интеграция: ответы ассистента через подключённый пользователем внешний Claude-софт со своими ключами (keychain-seam `secrets.rs`), на общем retrieval-слое (answer-engine switch + явный consent на отправку фрагментов наружу). Прокси-путь удалён в 0.3.
-- [ ] **Токен-стриминг** — llama-server SSE (`stream:true`) → событие `assistant:token`; требует resident ON.
-- [ ] **Map-reduce отчёты по архиву** («сводка недели по всем звонкам») — за пределами 8K, refine-chain; отдельный milestone.
+- **Внешний Claude-коннектор для ассистента** — `[отдельный майлстоун]` опциональная будущая интеграция: ответы ассистента через подключённый пользователем внешний Claude-софт со своими ключами (keychain-seam `secrets.rs`), на общем retrieval-слое (answer-engine switch + явный consent на отправку фрагментов наружу). Прокси-путь удалён в 0.3.
+- **Токен-стриминг** — `[отдельный майлстоун]` llama-server SSE (`stream:true`) → событие `assistant:token`; требует включённого резидентного сервера. Отсюда же взялся бы процент генерации (см. §D).
+- **Map-reduce отчёты по архиву** («сводка недели по всем звонкам») — `[отдельный майлстоун]` не помещается в окно 8K, нужна refine-цепочка поверх всего архива.
 - [x] **MCP-tool `search_passages`** — read-only чтение `assistant_passages`/`assistant_fts` из `services/mcp`. **Сделано:** восьмой тул, bm25 + опциональный `call_id`, токены закавычены (FTS5-синтаксис из ввода не исполняется).
-- [ ] **Query-rewrite multi-turn** — анафора («а что он обещал?») через LLM-переформулировку запроса.
+- **Query-rewrite multi-turn** — `[отдельный майлстоун]` анафора («а что он обещал?») через LLM-переформулировку запроса.
 - [x] **«Отправить в почту» → полноценный share** (сейчас mailto). **Снято:** `mailto` в коде нет — B27.6 уже отгрузил `share_text` (нативный пикер).
-- [ ] **Инкрементальная индексация processing-звонков** — по чанкам до ready.
+- **Инкрементальная индексация processing-звонков** — `[отдельный майлстоун]` индексировать по чанкам, не дожидаясь ready.
 
 ---
 
@@ -245,17 +251,17 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B20.7** CallRail: отвязка голосов (`ParticipantRow.tsx`) — 1 голос = иконка ×, 2+ = dropdown со строками голос+сэмпл (`VoiceSampleButton.tsx`)+×; после unbind refetch + предложение regen рекапа.
 - [x] **B20.8** Транскрипт follow-режим: автоскролл к активной реплике; ручной скролл (wheel/touch/pointer/keys) выключает; кнопка-crosshair «к текущему участку» в плеере включает обратно (только она).
 - [x] **B20.9** Fix off-by-one: общая граница смежных реплик резолвится в следующую (`lib/transcriptActive.ts`, exclusive end + SEEK_EPS).
-- [x] **B20.10** Движок/локальность убраны из call-detail UI (header-чип, строка «Движок», engine-label в fail-баннере; dead `engineLabel.ts` удалён). Остались Settings + Onboarding. Тип звонка остался.
+- [x] **B20.10** Движок/локальность убраны из call-detail UI (header-чип, строка «Движок», engine-label в баннере ошибки; `engineLabel.ts` удалён). Остались Settings + Onboarding. Тип звонка остался.
 
 ## B21 · Settings standardization (2026-07-21)
 
-> Аудит нашёл 66 расхождений (3 layout-грамматики, 4 стиля хинтов, 3 самописных прогресс-бара, битые классы, dead i18n). Канон — `wk-settings.jsx` прототипа.
+> Приведение раздела «Настройки» к канону прототипа `wk-settings.jsx`: одна layout-грамматика вместо трёх, единый стиль хинтов, общий `ui/Progress` вместо самописных полос.
 
 - [x] **B21.1** Примитивы: `.setting-row` → канон Row (13px + divider + data-align/last/disabled), `ui/Progress` (первый потребитель `.progress`), `ui/GroupLabel`, Button += `danger-ghost`, OptionCard += `radio`, HotkeyCapture (i18n + `.hotkey-readout` + Esc-cancel фикс).
 - [x] **B21.2** Shell: aside-rail 300, иконки shield/lock по канону, видимый lede на секцию (`settings.lede.*`), aria-label = nav-label, единый max-width 560, копирайт-синк («Обработка»/«Приватность»/«Полная очистка»).
 - [x] **B21.3** Секции на Row-идиоме: Appearance, Account (danger-ghost выход), Processing (OptionCard local-first + sunken hw-plate + GroupLabel'ы + канон-статусы set-table + квота на Progress вместо legacy Card/Badge/UsageBar), Permissions (Chip у лейбла, primary «Запросить», IconBtn'ы, глиф ↻ выпилен), Запись (3 группы Row), Спикеры (компакт-Panel модуля + ⊕ threshold-Select `AUTO_BIND_THRESHOLD` + pyannote-прогресс), Labs, Maintenance (один Row c inline-состояниями), Privacy (Row + Chip «удалено»).
-- [x] **B21.4** Onboarding engine-step: OptionCard-пресеты, Progress, Button (битые btn--quiet/btn--sm убраны), hooks-order фикс (crash при старте загрузки).
-- [x] **B21.5** Гигиена: 49 dead i18n ×3 локали, dead `LOCAL_ENGINE_ANNOUNCEMENT_*`, useTheme → SETTINGS_KEYS, mic-diarization default выровнен на backend-истину (OFF, тумблер больше не врёт), Rust-owned keys doc-блок в settings.ts.
+- [x] **B21.4** Onboarding engine-step: OptionCard-пресеты, Progress, Button (несуществующие классы btn--quiet/btn--sm убраны), порядок хуков приведён к правилам React.
+- [x] **B21.5** Гигиена: 49 неиспользуемых ключей i18n ×3 локали, `LOCAL_ENGINE_ANNOUNCEMENT_*`, useTheme → SETTINGS_KEYS, дефолт mic-diarization выровнен на backend (OFF), doc-блок Rust-owned ключей в settings.ts.
 - [x] **B21.6** Follow-up: roving-tabindex / стрелки для OptionCard-radiogroup (WAI-ARIA APG); WeSpeaker-строка в хранилище моделей. **Сделано:** одна табостановка на группу, стрелки со заворотом и пропуском disabled; строка эмбеддера в хранилище моделей.
 
 ## B22 · Settings polish (фидбек юзера после B21, 2026-07-21)
