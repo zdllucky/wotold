@@ -27,7 +27,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [ ] **Manual visual QA** (light/dark, все экраны) — human follow-up, агент не скриншотит native app.
 - [ ] **Manual QA: живой seek из источника-чипа** (B24.7 п.5) — клик clock-чипа во вкладке ассистента реального звонка мотает плеер и запускает воспроизведение. Логика покрыта RTL; аудио в браузер-моке нет — проверяется руками в native.
 - [ ] **B18 a11y follow-up** — recording-state live-region (SC 4.1.3); отдельный aria-label тема-toggle; toast dismiss контекст (SC 4.1.2); capabilities least-privilege split для recording-widget; токен `--on-danger`; контраст `--wc-*` в dark; зачистка dead i18n `home.*`/`calls.*`.
-- [ ] **Сверка контрактов (S2)** — `ActionItemV2`/`Decisions`/`OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать.
+- [x] **Сверка контрактов (S2)** — `ActionItemV2`/`Decisions`/`OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать. **Сделано:** `Decision`/`OpenQuestion` в `api/calls.ts` переименованы в `DecisionRow`/`OpenQuestionRow` — это строки таблицы, а не форма summary-JSON из контрактов; дублирования нет.
 
 ---
 
@@ -198,7 +198,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [ ] **Threshold 0.4 → 0.35** — нужен golden-set из 2-3 mic-записей с known speaker counts (локальный verify-скрипт, не CI).
 - [ ] **VAD config exposure** — через sherpa-onnx `OfflineVoiceActivityDetector` (нужен FFI research — поддерживает ли Rust binding dynamic VAD params).
 - [ ] **Embeddings audit для коротких сегментов (<2s)** — cosine similarity нестабильна на окнах короче threshold (WeSpeaker trained на ~5s).
-- [ ] **Per-cluster centroid distances** — `log::debug` cos_dist на каждый merge в `speaker_reclustering`. Detail polish.
+- [x] **Per-cluster centroid distances** — `log::debug` cos_dist на каждый merge в `speaker_reclustering`. Detail polish. **Сделано:** `log::debug` на merge и на near-miss (в пределах 0.05 от порога).
 - [ ] **Sortformer → ECAPA-TDNN / Wespeaker v2** — отдельный milestone, heavy research. Текущий WeSpeaker — baseline.
 - [ ] **LLM progress %** — parse llama-cli streaming (`print_timings` / `n_eval / n_predict`). Сейчас UI показывает только elapsed_sec.
 - [ ] **Cancel button во время recap regen** — `CancelToken` + propagation через `local_orchestrator::run_v2_pipeline` + `SidecarGuard::kill()`.
@@ -207,10 +207,10 @@ MVP реализован и работает (этапы 1–12 паспорта
 
 ### E. UX / прочее
 
-- [ ] **Audio player conditional badge** — «Аудио недоступно до завершения обработки» когда merged WAV ещё processing + «X из Y чанков готово» hint (derived из `useCallDetail.chunks`).
+- [x] **Audio player conditional badge** — «Аудио недоступно до завершения обработки» когда merged WAV ещё processing + «X из Y чанков готово» hint (derived из `useCallDetail.chunks`). **Сделано:** чип «аудио готовится» + «X из Y чанков» над плеером.
 - [ ] **Telemetry `chunk_failed`** — `db/telemetry.rs` schema extension `(call_id, chunk_idx, reason, retried_count, created_at)` + dev-only aggregate dashboard «X% chunks failed last 7 days», per-preset breakdown.
 - [ ] **Reprocess incremental** — reuse `status='done'` chunks вместо полного re-STT. `chunk_assembly` уже фильтрует done, но reprocess сбрасывает все к pending. Rerun только failed → экономия для частично-успешных записей.
-- [ ] **Dev hot-reload auto-restart** — `scripts/dev.sh` с watchexec/entr на `src-tauri/src/`, on change `pkill -SIGTERM wotold-desktop` → tauri dev сам re-launch'ит. Минимально-инвазивный (~10 строк bash). Сейчас edit Rust требует ручного kill + рестарта.
+- [x] **Dev hot-reload auto-restart** — `scripts/dev.sh` с watchexec/entr на `src-tauri/src/`, on change `pkill -SIGTERM wotold-desktop` → tauri dev сам re-launch'ит. Минимально-инвазивный (~10 строк bash). Сейчас edit Rust требует ручного kill + рестарта. **Сделано:** `scripts/dev.sh` — зачистка зависших процессов и порта 5173 перед стартом, watchexec/entr опционально.
 
 ### F. Cross-platform / большие куски
 
@@ -222,9 +222,9 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [ ] **Внешний Claude-коннектор для ассистента (planned)** — опциональная будущая интеграция: ответы ассистента через подключённый пользователем внешний Claude-софт со своими ключами (keychain-seam `secrets.rs`), на общем retrieval-слое (answer-engine switch + явный consent на отправку фрагментов наружу). Прокси-путь удалён в 0.3.
 - [ ] **Токен-стриминг** — llama-server SSE (`stream:true`) → событие `assistant:token`; требует resident ON.
 - [ ] **Map-reduce отчёты по архиву** («сводка недели по всем звонкам») — за пределами 8K, refine-chain; отдельный milestone.
-- [ ] **MCP-tool `search_passages`** — read-only чтение `assistant_passages`/`assistant_fts` из `services/mcp`.
+- [x] **MCP-tool `search_passages`** — read-only чтение `assistant_passages`/`assistant_fts` из `services/mcp`. **Сделано:** восьмой тул, bm25 + опциональный `call_id`, токены закавычены (FTS5-синтаксис из ввода не исполняется).
 - [ ] **Query-rewrite multi-turn** — анафора («а что он обещал?») через LLM-переформулировку запроса.
-- [ ] **«Отправить в почту» → полноценный share** (сейчас mailto).
+- [x] **«Отправить в почту» → полноценный share** (сейчас mailto). **Снято:** `mailto` в коде нет — B27.6 уже отгрузил `share_text` (нативный пикер).
 - [ ] **Инкрементальная индексация processing-звонков** — по чанкам до ready.
 
 ---
@@ -255,7 +255,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [x] **B21.3** Секции на Row-идиоме: Appearance, Account (danger-ghost выход), Processing (OptionCard local-first + sunken hw-plate + GroupLabel'ы + канон-статусы set-table + квота на Progress вместо legacy Card/Badge/UsageBar), Permissions (Chip у лейбла, primary «Запросить», IconBtn'ы, глиф ↻ выпилен), Запись (3 группы Row), Спикеры (компакт-Panel модуля + ⊕ threshold-Select `AUTO_BIND_THRESHOLD` + pyannote-прогресс), Labs, Maintenance (один Row c inline-состояниями), Privacy (Row + Chip «удалено»).
 - [x] **B21.4** Onboarding engine-step: OptionCard-пресеты, Progress, Button (битые btn--quiet/btn--sm убраны), hooks-order фикс (crash при старте загрузки).
 - [x] **B21.5** Гигиена: 49 dead i18n ×3 локали, dead `LOCAL_ENGINE_ANNOUNCEMENT_*`, useTheme → SETTINGS_KEYS, mic-diarization default выровнен на backend-истину (OFF, тумблер больше не врёт), Rust-owned keys doc-блок в settings.ts.
-- [ ] **B21.6** Follow-up: roving-tabindex / стрелки для OptionCard-radiogroup (WAI-ARIA APG); WeSpeaker-строка в хранилище моделей.
+- [x] **B21.6** Follow-up: roving-tabindex / стрелки для OptionCard-radiogroup (WAI-ARIA APG); WeSpeaker-строка в хранилище моделей. **Сделано:** одна табостановка на группу, стрелки со заворотом и пропуском disabled; строка эмбеддера в хранилище моделей.
 
 ## B22 · Settings polish (фидбек юзера после B21, 2026-07-21)
 
