@@ -30,6 +30,25 @@ describe('OptionCard radiogroup', () => {
     expect(items.map((el) => el.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
   });
 
+  test('ничего не выбрано — табостановку держит первый вариант', () => {
+    // Свежая установка: пресет ещё не выбран. Без явного tabStop все карточки
+    // получали tabIndex=-1, и в группу нельзя было попасть с клавиатуры.
+    const { container } = render(
+      <div role="radiogroup" aria-label="Пресет">
+        {['Лёгкий', 'Средний', 'Полный'].map((title, i) => (
+          <OptionCard key={title} radio title={title} tabStop={i === 0} onClick={() => {}} />
+        ))}
+      </div>,
+    );
+    const items = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+    expect(items.map((el) => el.tabIndex)).toEqual([0, -1, -1]);
+    expect(items.map((el) => el.getAttribute('aria-checked'))).toEqual([
+      'false',
+      'false',
+      'false',
+    ]);
+  });
+
   test('стрелка вперёд переносит фокус и выбирает следующий', () => {
     const onPick = vi.fn();
     const { container } = renderGroup(onPick);

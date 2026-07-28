@@ -9,7 +9,6 @@
       "Bash(node:*)",
       "Bash(npx:*)",
       "Bash(tsc:*)",
-      "Bash(wrangler:*)",
       "Bash(git status)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
