@@ -1,0 +1,53 @@
+# Шаблон Homebrew-каска. Плейсхолдеры {{VERSION}} и {{SHA256}} подставляет
+# релизный workflow (.github/workflows/release-app.yml), результат коммитится
+# в отдельный tap-репозиторий zdllucky/homebrew-wotold.
+#
+# Шаблон лежит здесь, а не в тапе, чтобы правка каска ехала тем же PR, что и
+# правка приложения: расхождение между тем, что собрано, и тем, что описано в
+# каске, обнаруживается иначе только сломанной установкой у пользователя.
+cask "wotold" do
+  version "{{VERSION}}"
+  sha256 "{{SHA256}}"
+
+  # Постоянное имя ассета — версионное имя от tauri-action ссылку «на
+  # последний» построить не даёт.
+  url "https://github.com/zdllucky/wotold/releases/download/v#{version}/Wotold-universal.dmg",
+      verified: "github.com/zdllucky/wotold/"
+  name "Wotold"
+  desc "Local call recorder with transcription, speaker diarization and summaries"
+  homepage "https://zdllucky.github.io/wotold/"
+
+  # Захват системного звука упирается в Core Audio process tap, доступный
+  # с 14.4. Установщик на 14.0-14.3 отработает, а запись системной дорожки
+  # там не заведётся.
+  depends_on macos: ">= :sonoma"
+
+  app "Wotold.app"
+
+  # Сборка не нотаризована (ограничение R6). Homebrew ставит карантин, и при
+  # первом запуске Gatekeeper потребует подтверждения через Системные
+  # настройки → Конфиденциальность и безопасность. Обойти это можно
+  # `brew install --cask --no-quarantine wotold`, но тогда проверка
+  # пропускается целиком — решение осознанное, поэтому оно за пользователем,
+  # а не зашито в каск.
+  caveats do
+    <<~EOS
+      Wotold is not notarized by Apple yet. On first launch macOS will block it:
+      open System Settings → Privacy & Security and choose "Open anyway".
+
+      Wotold needs Microphone and Screen Recording permissions. Screen Recording
+      is required only to capture system audio — no frames are ever stored.
+    EOS
+  end
+
+  # Всё, что приложение создаёт на диске. Без этого `brew uninstall --zap`
+  # оставил бы записи звонков и базу — для продукта, который обещает полный
+  # контроль над данными, это худший вид остатка.
+  zap trash: [
+    "~/Library/Application Support/app.wotold.desktop",
+    "~/Library/Caches/app.wotold.desktop",
+    "~/Library/Logs/app.wotold.desktop",
+    "~/Library/Preferences/app.wotold.desktop.plist",
+    "~/Library/Saved Application State/app.wotold.desktop.savedState",
+  ]
+end

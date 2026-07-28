@@ -39,4 +39,21 @@ if (unique.size > 1) {
 }
 
 const [v] = unique;
+
+// Тег — единственное, что видит пользователь и по чему называется релиз.
+// Без этой сверки `v9.9.9` на дереве `0.0.1` собирался бы молча: релиз с
+// одним номером, приложение внутри — с другим, и апдейтер сравнивал бы
+// версию из манифеста с версией, которой ни у кого нет.
+const tag = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : null;
+if (tag) {
+  const tagged = tag.replace(/^v/, '');
+  if (tagged !== v) {
+    console.error(`Version mismatch: tag ${tag} vs ${v} in the tree.`);
+    console.error('Release the version that is committed, or bump the files first.');
+    process.exit(1);
+  }
+  console.log(`All versions match tag ${tag}: ${v}`);
+  process.exit(0);
+}
+
 console.log(`All versions match: ${v}`);

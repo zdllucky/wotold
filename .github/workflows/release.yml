@@ -1,0 +1,134 @@
+name: Release
+
+# [TD-02] Все actions запинены на полный commit-SHA; трейлинг-комментарий
+# (# vX.Y.Z) — машинный контракт с Dependabot.
+#
+# Единственная точка запуска релиза. Merge в main релиза НЕ делает — выпуск
+# всегда отдельное решение владельца.
+#
+# Что происходит: версия проставляется во все четыре файла, коммитится,
+# тегается, и тег отдаётся сборке. Сборка живёт в release-app.yml и вызывается
+# отсюда напрямую (workflow_call), а не через push тега: тег, запушенный с
+# GITHUB_TOKEN, по правилам GitHub не триггерит другие workflow, и цепочка
+# молча обрывалась бы на созданном, но не собранном теге.
+#
+# Ручной `git tag vX.Y.Z && git push --tags` продолжает работать — у
+# release-app.yml остаётся собственный триггер на push тега.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Какую часть версии поднять'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: 'Точная версия X.Y.Z — побеждает bump. Нужна для первого выпуска.'
+        type: string
+        required: false
+      mandatory:
+        description: >-
+          Обновление обязательное: клиент поставит его сам, не спрашивая.
+          Мажорные версии обязательны и без этой галки — она нужна, чтобы
+          форсировать патч или минор (например, фикс безопасности).
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Посчитать версию и остановиться, ничего не публикуя'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    name: Bump version and tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Compute and write version
+        id: bump
+        env:
+          SPEC: ${{ inputs.version != '' && inputs.version || inputs.bump }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node scripts/bump-version.mjs "$SPEC")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "### Release v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- обязательное: ${{ inputs.mandatory }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- dry run: ${{ inputs.dry_run }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Тот же гейт, что и в CI: четыре файла обязаны совпасть между собой.
+      # Здесь он ловит криво отработавший bump до того, как тот станет тегом.
+      - name: Verify version sync
+        run: node scripts/check-versions.mjs
+
+      - name: Fail if tag already exists
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.bump.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Тег $TAG уже существует. Версии не переиздаются."
+            exit 1
+          fi
+
+      - name: Show diff and stop
+        if: inputs.dry_run
+        run: |
+          git --no-pager diff --stat
+          echo "::notice::dry run — ничего не запушено"
+
+      - name: Commit, tag and push
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          MANDATORY: ${{ inputs.mandatory }}
+        run: |
+          set -euo pipefail
+          git config user.name 'Damir Zhalelov'
+          git config user.email '20101012+zdllucky@users.noreply.github.com'
+          git add apps/desktop/src-tauri/Cargo.toml \
+                  apps/desktop/src-tauri/tauri.conf.json \
+                  apps/desktop/package.json package.json
+          git commit -m "chore(release): $TAG"
+
+          # Признак обязательности живёт в теле аннотированного тега.
+          # latest.json целиком генерирует tauri-action, своих полей туда не
+          # добавить — release-app.yml перекладывает маркер отсюда в release
+          # notes, а клиент читает его оттуда (updater::classify).
+          if [ "$MANDATORY" = "true" ]; then
+            git tag -a "$TAG" -m "Wotold $TAG" -m '!mandatory'
+          else
+            git tag -a "$TAG" -m "Wotold $TAG"
+          fi
+
+          git push origin HEAD:main
+          git push origin "$TAG"
+
+  build:
+    name: Build and publish
+    needs: tag
+    if: ${{ !inputs.dry_run }}
+    uses: ./.github/workflows/release-app.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    secrets: inherit
+    permissions:
+      contents: write
