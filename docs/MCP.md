@@ -26,6 +26,7 @@ prompt, но: при подключении к другим клиентам у�
 | `list_participants` | speakers звонка с suggestion/confirm bindings. |
 | `find_calls_by_contact` | **имя** контакта → список звонков где он участвовал (см. отклонение ниже). |
 | `calls_in_range` | звонки в ISO-8601 диапазоне. |
+| `search_passages` | FTS5-поиск по индексу ассистента: фрагменты транскрипта/рекапа/решений с call_id и таймкодами. Опциональный `call_id` сужает до одного звонка. |
 
 ## Отклонения от паспорта
 
@@ -64,7 +65,7 @@ pnpm --filter @wotold/mcp build
 ```
 
 Перезапусти Claude Desktop. Должен появиться индикатор «MCP servers: wotold»
-с 7 tools.
+с 8 tools.
 
 ## Установка в Cursor / mcp-cli
 

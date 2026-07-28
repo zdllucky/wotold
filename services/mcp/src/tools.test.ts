@@ -49,6 +49,26 @@ function seedSchema(rawDb: Database.Database) {
   `);
 }
 
+/** [B27] Индекс ассистента (subset миграции 0021) — отдельно от базовой схемы:
+ *  часть тестов проверяет базу, где его ещё нет. */
+function seedAssistantIndex(rawDb: Database.Database) {
+  rawDb.exec(`
+    CREATE TABLE assistant_passages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      call_id TEXT NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL, speaker TEXT, start_ms INTEGER, end_ms INTEGER,
+      text TEXT NOT NULL, token_est INTEGER NOT NULL
+    );
+    CREATE VIRTUAL TABLE assistant_fts USING fts5(
+      text, content = 'assistant_passages', content_rowid = 'id',
+      tokenize = 'unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER assistant_passages_ai AFTER INSERT ON assistant_passages BEGIN
+      INSERT INTO assistant_fts(rowid, text) VALUES (new.id, new.text);
+    END;
+  `);
+}
+
 async function setupHarness(): Promise<Harness> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wotold-mcp-'));
   const dbPath = path.join(tmpDir, 'app.db');
@@ -80,6 +100,18 @@ async function setupHarness(): Promise<Harness> {
     INSERT INTO action_items (id, call_id, text, owner_contact_id, due, done)
     VALUES
       ('ai-1', '0a000000-0000-4000-8000-00000000000a', 'Send SOW', 'c1', '2026-05-23', 0);
+  `);
+
+  seedAssistantIndex(writer);
+  writer.exec(`
+    INSERT INTO assistant_passages (call_id, kind, speaker, start_ms, end_ms, text, token_est)
+    VALUES
+      ('0a000000-0000-4000-8000-00000000000a', 'transcript', 'Speaker 0', 5000, 9000,
+       'Обсудили бюджет на квартал и сроки поставки', 12),
+      ('0a000000-0000-4000-8000-00000000000a', 'recap', NULL, NULL, NULL,
+       'Договорились о SOW до пятницы', 8),
+      ('0c000000-0000-4000-8000-00000000000c', 'transcript', 'owner', 0, 4000,
+       'Бюджет прошлого года закрыт', 7);
   `);
 
   // Create artifact files
@@ -128,7 +160,7 @@ function unwrapJson<T>(result: { content: { type: string; text?: string }[] }): 
   return JSON.parse(unwrapText(result)) as T;
 }
 
-describe('buildTools — 7 tools registered', () => {
+describe('buildTools — 8 tools registered', () => {
   test('list of names is exact', () => {
     const names = Array.from(h.tools.keys()).sort();
     expect(names).toEqual(
@@ -140,6 +172,7 @@ describe('buildTools — 7 tools registered', () => {
         'get_transcript',
         'list_participants',
         'search_calls',
+        'search_passages',
       ].sort(),
     );
   });
@@ -330,5 +363,85 @@ describe('M8.3 prompt-injection pass-through', () => {
     // Если % не escape'ен, вернёт ВСЕ calls. С escape — 0 совпадений
     // (literal % в title/provider/lang нет).
     expect(body.calls.length).toBe(0);
+  });
+});
+
+describe('search_passages', () => {
+  interface PassageBody {
+    passages: { id: number; call_id: string; kind: string; text: string; start_ms: number | null }[];
+    note?: string;
+  }
+
+  test('находит пассажи по слову, лучший — первым', async () => {
+    const res = await getTool('search_passages').handler({ query: 'бюджет' }, h.ctx);
+    const body = unwrapJson<PassageBody>(res);
+    expect(body.passages.length).toBe(2);
+    expect(body.passages.map((p) => p.call_id).sort()).toEqual([
+      '0a000000-0000-4000-8000-00000000000a',
+      '0c000000-0000-4000-8000-00000000000c',
+    ]);
+  });
+
+  test('call_id сужает выдачу до одного звонка', async () => {
+    const res = await getTool('search_passages').handler(
+      { query: 'бюджет', call_id: '0c000000-0000-4000-8000-00000000000c' },
+      h.ctx,
+    );
+    const body = unwrapJson<PassageBody>(res);
+    expect(body.passages.map((p) => p.call_id)).toEqual(['0c000000-0000-4000-8000-00000000000c']);
+  });
+
+  test('таймкоды и вид пассажа доезжают до клиента', async () => {
+    const res = await getTool('search_passages').handler({ query: 'поставки' }, h.ctx);
+    const body = unwrapJson<PassageBody>(res);
+    expect(body.passages[0]).toMatchObject({ kind: 'transcript', start_ms: 5000 });
+  });
+
+  test('limit режет выдачу', async () => {
+    const res = await getTool('search_passages').handler({ query: 'бюджет', limit: 1 }, h.ctx);
+    expect(unwrapJson<PassageBody>(res).passages.length).toBe(1);
+  });
+
+  test('синтаксис FTS5 во вводе ищется как текст, а не исполняется', async () => {
+    // Без закавычивания токенов такой ввод — либо синтаксическая ошибка
+    // парсера FTS5, либо чужой запрос: `*` раскрывается в префикс, `NEAR`
+    // и `OR` становятся операторами.
+    for (const query of ['"', 'бюджет NEAR/2 сроки', 'сроки OR "', 'a* OR *']) {
+      const res = await getTool('search_passages').handler({ query }, h.ctx);
+      const body = unwrapJson<PassageBody>(res);
+      expect(Array.isArray(body.passages)).toBe(true);
+    }
+  });
+
+  test('запрос без токенов не ходит в БД', async () => {
+    const res = await getTool('search_passages').handler({ query: '...' }, h.ctx);
+    const body = unwrapJson<PassageBody>(res);
+    expect(body.passages).toEqual([]);
+    expect(body.note).toContain('no searchable tokens');
+  });
+
+  test('нелегальный call_id отбраковывается схемой', async () => {
+    await expect(
+      getTool('search_passages').handler({ query: 'бюджет', call_id: '../../etc' }, h.ctx),
+    ).rejects.toThrow();
+  });
+
+  test('база без индекса ассистента отвечает явно, а не пустотой', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wotold-mcp-noidx-'));
+    const dbPath = path.join(tmpDir, 'app.db');
+    const writer = new Database(dbPath);
+    seedSchema(writer);
+    writer.close();
+    const db = new WotoldDb(dbPath);
+    try {
+      const res = await getTool('search_passages').handler(
+        { query: 'бюджет' },
+        { db, appDataDir: tmpDir },
+      );
+      expect(unwrapText(res)).toContain('Assistant index is not built');
+    } finally {
+      db.close();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });
