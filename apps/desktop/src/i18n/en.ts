@@ -803,6 +803,7 @@ export const en: TranslationStrings = {
       vad: 'Speech detector',
       embedder: 'Assistant search module',
       embedderTokenizer: 'Search module vocabulary',
+      voiceEmbedder: 'Voice recognition module',
     },
     statusInstalled: 'installed',
     statusDownloading: 'downloading…',

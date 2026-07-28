@@ -22,6 +22,9 @@ const MODEL_LABEL_KEYS: Record<string, TranslationKey> = {
   // [M15.9] Текст-эмбеддер RAG-ассистента (модель + tokenizer.json).
   'e5-small-qint8': 'localEngine.modelLabel.embedder',
   'e5-small-tokenizer': 'localEngine.modelLabel.embedderTokenizer',
+  // [B21.6] Голосовой эмбеддер — синтетическая строка хранилища, id вне
+  // MODEL_CATALOG (см. utils/voiceStorageRow.ts).
+  'voice-embedder': 'localEngine.modelLabel.voiceEmbedder',
 };
 
 export function modelLabel(id: string, t: TFn): string {
