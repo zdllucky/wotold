@@ -57,6 +57,17 @@ pub async fn delete_call(state: State<'_, AppState>, id: String) -> Result<(), A
     // [TD-05] id из webview: до валидации он не имеет права стать путём.
     // `remove_call_dir("..")` раньше сносил весь app_data_dir вместе с БД.
     let call_id = CallId::parse(&id)?;
+    // [M12.6] Сначала снимаем работу, если звонок сейчас обрабатывается.
+    // Иначе сайдкар считает удалённый звонок ещё минуты, а пайплайн следом
+    // создаёт каталог заново — остаётся пустая директория без строки в базе.
+    if crate::services::pipeline_runner::PipelineRunner::abort_silently(
+        state.pipeline_tasks.clone(),
+        &id,
+    )
+    .await
+    {
+        log::info!("delete_call {id}: обработка прервана до удаления");
+    }
     crate::db::delete_call_and_samples(&state.db, &id).await?;
     if let Err(e) = state.store.remove_call_dir(&call_id).await {
         // Audio удалили частично или не было — БД уже консистентна, логируем но не fail.

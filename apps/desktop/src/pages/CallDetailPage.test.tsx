@@ -202,4 +202,26 @@ describe('CallDetailPage — smoke', () => {
     expect(screen.queryByText('Старый звонок')).not.toBeInTheDocument();
     expect(screen.getAllByText('Новый звонок').length).toBeGreaterThan(0);
   });
+
+  test('фон-реген можно остановить — кнопка зовёт cancel_reprocess', async () => {
+    // Пересоздание саммари идёт минутами; до этого прервать его было нечем —
+    // кнопка отмены жила только у полной переобработки.
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_call') return callRow('c1', 'Звонок', '2026-07-22T10:00:00Z');
+      if (cmd === 'is_call_processing') return true;
+      if (cmd === 'list_call_speakers' || cmd === 'list_call_action_items') return [];
+      if (cmd === 'list_call_decisions' || cmd === 'list_call_open_questions') return [];
+      if (cmd === 'list_call_chunks' || cmd === 'list_contacts') return [];
+      return null;
+    });
+    renderPage(<CallDetailPage callId="c1" onBack={() => {}} />);
+    await flush();
+
+    const stop = screen.getByRole('button', { name: /Остановить|Stop|Тоқтату/ });
+    await act(async () => {
+      stop.click();
+      await Promise.resolve();
+    });
+    expect(mockInvoke).toHaveBeenCalledWith('cancel_reprocess', { callId: 'c1' });
+  });
 });

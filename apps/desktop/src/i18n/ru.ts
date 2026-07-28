@@ -333,6 +333,7 @@ const ruInternal = {
     // [Processing status] strip над табами при фон-regen.
     bgBusyStrip: 'Пересоздаём саммари…',
     bgBusyStripElapsed: 'Пересоздаём саммари… {sec}s',
+    bgBusyCancel: 'Остановить',
     generatingRecap: 'Генерируется саммари…',
     generatingTranscript: 'Распознаётся речь…',
     // [F3] Thinking-блок живых шагов генерации рекапа (RecapThinking).
