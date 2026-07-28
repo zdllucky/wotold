@@ -604,7 +604,7 @@
 ### M12.1 LocalWhisperProvider (PRD §9 step 2)
 
 - [x] **Whisper provider real** — [local_engine/stt.rs](apps/desktop/src-tauri/src/local_engine/stt.rs) спавнит `wotold-whisper` sidecar (whisper.cpp `whisper-cli`). sherpa-onnx Whisper отклонён — несовместим с ggerganov .bin форматом каталога. Sidecar получает `-m <model.bin> -f <audio.wav> --output-json-full -of <stem> -l <lang>`, парсит `<stem>.json`. Per-track speaker tagging (mic → `speaker:owner`, system → `speaker:0`). 12 tests (lang normalize, JSON parse, mic vs system tagging, sort, NaN guard).
-- [x] **Sidecar binary register** — `wotold-whisper` добавлен в `tauri.conf.json::externalBin` + `capabilities/default.json::shell:allow-execute` с args validator'ами. Placeholder бинарь + build инструкции в [binaries/README.md](apps/desktop/src-tauri/binaries/README.md).
+- [x] **Sidecar binary register** — `wotold-whisper` добавлен в `tauri.conf.json::externalBin` + `capabilities/default.json::shell:allow-execute` с args validator'ами. Placeholder бинарь + build инструкции в [binaries/README.md](../apps/desktop/src-tauri/binaries/README.md).
 - **Acceptance integration test** — bundled WAV (RU+2 спикера) → snapshot DiarizedTranscript. Требует реального `whisper-cli` бинаря в `binaries/`.
 
 ### M12.2 LocalDiarizer (PRD §9 step 3)
@@ -618,7 +618,7 @@
 
 - [x] **O2 решено: sidecar** (`wotold-llama` через tauri-plugin-shell). PRD §11 O2 default подтверждён.
 - [x] **Real LlmProvider** — [local_engine/llm.rs](apps/desktop/src-tauri/src/local_engine/llm.rs) `generate()` спавнит `llama-cli` sidecar с prompt-файлом, парсит первый сбалансированный JSON-объект из stdout, валидирует `title/summary`. 5min timeout с kill-on-drop. 15 tests (build_prompt, extract_json brace counting, escape handling, validate shape).
-- [x] **Sidecar binary register** — `wotold-llama` в externalBin + capability whitelist со строгими args validators. Placeholder + build instructions в [binaries/README.md](apps/desktop/src-tauri/binaries/README.md).
+- [x] **Sidecar binary register** — `wotold-llama` в externalBin + capability whitelist со строгими args validators. Placeholder + build instructions в [binaries/README.md](../apps/desktop/src-tauri/binaries/README.md).
 - [x] **Prompt** — `LOCAL_LLM_SYSTEM_PROMPT` (PRD §M12.3.3 «only JSON» + few-shot ru пример) + 2 regression-теста.
 
 ### M12.6 Pipeline integration (PRD §9 step 5)
