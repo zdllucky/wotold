@@ -850,6 +850,7 @@ const ruInternal = {
       vad: 'Детектор речи',
       embedder: 'Модуль поиска ассистента',
       embedderTokenizer: 'Словарь модуля поиска',
+      voiceEmbedder: 'Модуль распознавания голоса',
     },
     statusInstalled: 'установлено',
     statusDownloading: 'качаем…',

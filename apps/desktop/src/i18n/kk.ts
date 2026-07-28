@@ -800,6 +800,7 @@ export const kk: TranslationStrings = {
       vad: 'Сөйлеу детекторы',
       embedder: 'Ассистенттің іздеу модулі',
       embedderTokenizer: 'Іздеу модулінің сөздігі',
+      voiceEmbedder: 'Дауысты тану модулі',
     },
     statusInstalled: 'орнатылған',
     statusDownloading: 'жүктелуде…',
