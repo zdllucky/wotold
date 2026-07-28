@@ -41,6 +41,7 @@ import { AppearanceSection } from './AppearanceSection';
 import { LabsSection } from './LabsSection';
 import { LocalEngineSection } from './LocalEngineSection';
 import { PermissionsSection } from './PermissionsSection';
+import { AboutSection } from './AboutSection';
 import { VoiceModelSection } from './VoiceModelSection';
 
 // [B22] «Обслуживание» (bulk recap) удалено по фидбеку юзера — Rust-команды
@@ -52,7 +53,8 @@ type SectionId =
   | 'recording'
   | 'speakers'
   | 'labs'
-  | 'privacy';
+  | 'privacy'
+  | 'about';
 
 interface SectionMeta {
   id: SectionId;
@@ -70,6 +72,7 @@ const SECTION_ICONS: Record<SectionId, IconName> = {
   speakers: 'users',
   labs: 'bolt',
   privacy: 'lock',
+  about: 'info',
 };
 
 export function SettingsPage() {
@@ -187,6 +190,7 @@ export function SettingsPage() {
     // [M14 T-14] «Лаборатория» — experimental feature flags.
     { id: 'labs', label: t('settings.sectionLabs') },
     { id: 'privacy', label: t('settings.sectionPrivacy') },
+    { id: 'about', label: t('update.sectionAbout') },
   ];
 
   const activeMeta = NAV.find((s) => s.id === section) ?? NAV[0]!;
@@ -313,6 +317,7 @@ export function SettingsPage() {
             {section === 'speakers' && <VoiceModelSection />}
             {section === 'labs' && <LabsSection />}
             {section === 'privacy' && <DeleteAllDataSection />}
+            {section === 'about' && <AboutSection />}
           </SectionShell>
         </div>
       </div>

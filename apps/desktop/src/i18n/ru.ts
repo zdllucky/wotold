@@ -675,6 +675,22 @@ const ruInternal = {
   },
 
   // ── Usage ───────────────────────────────────────────────────────────────
+  update: {
+    sectionAbout: 'О приложении',
+    version: 'Версия',
+    versionHint: 'Установленная сборка. Обновления приходят с GitHub.',
+    check: 'Проверить обновления',
+    checking: 'Проверяем…',
+    upToDate: 'Актуальная версия',
+    availableChip: 'Доступна {version}',
+    checkFailed: 'Не удалось проверить обновления',
+    toastAvailable: 'Вышла версия {version}',
+    toastAction: 'Обновить',
+    mandatoryPending: 'Версия {version} обязательная — установится, как только закончится запись и обработка.',
+    mandatoryPendingHint: 'Запись и обработку обновление не прерывает.',
+    changelog: 'Что изменилось',
+    changelogHint: 'Заметки к выпуску на GitHub.',
+  },
   usage: {
     noLimit: 'лимит не настроен',
   },

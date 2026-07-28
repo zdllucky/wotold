@@ -10,6 +10,9 @@ import './styles/global.css';
 // app-specific component classes (ported from the now-deleted Atelier shim).
 import './styles/wk.css';
 import './styles/components.css';
+// Вынесен из components.css — тот упёрся в лимит 800 строк, а тосты
+// когезивны и ни от чего в нём не зависят.
+import './styles/toast.css';
 import './ui/ui.css';
 
 const root = document.getElementById('root');

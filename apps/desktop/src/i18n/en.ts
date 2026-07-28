@@ -638,6 +638,22 @@ export const en: TranslationStrings = {
     unknownTitle: 'Status unknown',
   },
 
+  update: {
+    sectionAbout: 'About',
+    version: 'Version',
+    versionHint: 'The installed build. Updates come from GitHub.',
+    check: 'Check for updates',
+    checking: 'Checking…',
+    upToDate: 'Up to date',
+    availableChip: '{version} available',
+    checkFailed: 'Could not check for updates',
+    toastAvailable: 'Version {version} is out',
+    toastAction: 'Update',
+    mandatoryPending: 'Version {version} is mandatory — it will install as soon as recording and processing finish.',
+    mandatoryPendingHint: 'An update never interrupts a recording.',
+    changelog: 'What changed',
+    changelogHint: 'Release notes on GitHub.',
+  },
   usage: {
     noLimit: 'no limit configured',
   },

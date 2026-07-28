@@ -17,12 +17,22 @@ import { useI18n } from '../i18n';
 
 type ToastTone = 'info' | 'success' | 'warn' | 'danger';
 
+/**
+ * Действие в тосте. Одно и только одно: тост — не диалог, второй кнопкой он
+ * начинает требовать решения, а не предлагать его.
+ */
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastItem {
   id: number;
   message: string;
   tone: ToastTone;
   /** ms до авто-исчезновения; 0 = sticky (для pause/resume). */
   duration: number;
+  action?: ToastAction;
 }
 
 interface ToastOptions {
@@ -30,6 +40,12 @@ interface ToastOptions {
   tone?: ToastTone;
   /** ms до авто-исчезновения; 0 = не исчезать сам. */
   duration?: number;
+  /**
+   * Кнопка действия. Тост с действием по умолчанию становится sticky:
+   * предложение, исчезающее через 4.5 секунды, — это предложение, которое
+   * пользователь не успел прочесть. Явный `duration` перебивает.
+   */
+  action?: ToastAction;
 }
 
 interface ToastApi {
@@ -75,11 +91,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 
   const show = useCallback(
-    ({ message, tone = 'info', duration = DEFAULT_DURATION }: ToastOptions) => {
+    ({ message, tone = 'info', action, duration }: ToastOptions) => {
       idRef.current += 1;
       const id = idRef.current;
-      setToasts((prev) => [...prev, { id, message, tone, duration }]);
-      armTimer(id, duration);
+      // Тост с действием ждёт решения, а не отсчитывает секунды.
+      const ttl = duration ?? (action ? 0 : DEFAULT_DURATION);
+      setToasts((prev) => [...prev, { id, message, tone, duration: ttl, action }]);
+      armTimer(id, ttl);
     },
     [armTimer],
   );
@@ -153,6 +171,20 @@ function Toaster({
       {toasts.map((toast) => (
         <div key={toast.id} className={`toast toast--${toast.tone}`}>
           <span className="toast-msg">{toast.message}</span>
+          {toast.action && (
+            <button
+              type="button"
+              className="toast-action"
+              onClick={() => {
+                // Тост уходит сразу: действие запущено, повторное нажатие
+                // по той же кнопке ничего хорошего не даст.
+                onDismiss(toast.id);
+                toast.action?.onClick();
+              }}
+            >
+              {toast.action.label}
+            </button>
+          )}
           <button
             type="button"
             className="toast-close"

@@ -1,101 +1,71 @@
-// [B18.1a] Auto-update notice lifted out of HomePage (which is removed). Mounts
-// at App-level so the updater (R11) keeps surfacing available versions on any
-// screen. Self-contained: checks once on mount, applies via Tauri command.
-// Reuses i18n keys home.update* + common.later.
-
+// Баннер обновления.
+//
+// Проверку он больше не делает: она живёт в Rust (`spawn_updater_poll`) и
+// приезжает событием. Раньше проверка сидела в useEffect этого компонента —
+// один раз за запуск, ошибка молча в console.warn. Приложение для записи
+// звонков открыто сутками, и узнавать о новой версии только при следующем
+// холодном старте недостаточно.
+//
+// Баннер остался ровно для одного случая: обязательное обновление ждёт, пока
+// закончится запись или обработка. Об этом нужно сказать явно — иначе
+// перезапуск «сам по себе» через двадцать минут выглядит сбоем. Всё
+// необязательное показывается тостом с кнопкой.
+import { listen } from '@tauri-apps/api/event';
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { humanError } from '../api/errors';
-import { useI18n } from '../i18n';
 
-interface AvailableUpdate {
-  version: string;
-  current_version: string;
-  notes: string | null;
-  pub_date: string | null;
-}
+import { humanError } from '../api/errors';
+import { type AvailableUpdate, UPDATER_AVAILABLE_EVENT, applyUpdate } from '../api/updater';
+import { useI18n } from '../i18n';
+import { useToast } from '../ui/Toast';
 
 export function UpdateBanner() {
   const { t } = useI18n();
-  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
-  const [installing, setInstalling] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+  const [pending, setPending] = useState<AvailableUpdate | null>(null);
 
   useEffect(() => {
-    invoke<AvailableUpdate | null>('check_for_update')
-      .then((u) => {
-        if (u) setUpdate(u);
-      })
-      .catch((e: unknown) => console.warn('updater check failed', e));
-  }, []);
+    const unlisten = listen<AvailableUpdate>(UPDATER_AVAILABLE_EVENT, (event) => {
+      const update = event.payload;
 
-  if (!update) return null;
+      if (update.urgency === 'mandatory') {
+        // Установку уже поставил в очередь Rust — она ждёт простоя. Здесь
+        // только объясняем пользователю предстоящий перезапуск.
+        setPending(update);
+        return;
+      }
 
-  const applyUpdate = async () => {
-    setInstalling(true);
-    setError(null);
-    try {
-      await invoke('apply_update');
-    } catch (e) {
-      setInstalling(false);
-      setError(humanError(e, t));
-    }
-  };
+      toast.show({
+        message: t('update.toastAvailable', { version: update.version }),
+        action: {
+          label: t('update.toastAction'),
+          onClick: () => {
+            void applyUpdate().catch((e: unknown) => {
+              toast.show({ message: humanError(e, t), tone: 'danger' });
+            });
+          },
+        },
+      });
+    });
+
+    return () => {
+      void unlisten.then((off) => off());
+    };
+  }, [t, toast]);
+
+  if (!pending) return null;
 
   return (
     <div
       className="panel panel--raised"
-      role="region"
-      aria-label={t('home.updateInstall')}
+      role="status"
       style={{ margin: 'var(--s4) var(--s6) 0', padding: 'var(--s4)' }}
     >
-      <p style={{ margin: 0, fontSize: 'var(--t-14)' }}>
-        {t('home.updateAvailable', {
-          version: update.version,
-          current: update.current_version,
-        })}
+      <p style={{ margin: 0, fontSize: 'var(--t-13)' }}>
+        {t('update.mandatoryPending', { version: pending.version })}
       </p>
-      {update.notes && (
-        <pre
-          className="mono"
-          style={{
-            fontSize: 12,
-            color: 'var(--text-3)',
-            whiteSpace: 'pre-wrap',
-            margin: '8px 0 0',
-            padding: '8px 12px',
-            background: 'var(--sunken)',
-            borderRadius: 'var(--r-sm)',
-            maxHeight: '12rem',
-            overflow: 'auto',
-          }}
-        >
-          {update.notes}
-        </pre>
-      )}
-      {error && (
-        <p role="alert" style={{ color: 'var(--danger)', margin: '8px 0 0', fontSize: 'var(--t-13)' }}>
-          {error}
-        </p>
-      )}
-      <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-        <button
-          type="button"
-          className="btn btn--primary"
-          onClick={() => void applyUpdate()}
-          disabled={installing}
-        >
-          {installing ? t('home.updateInstalling') : t('home.updateInstall')}
-        </button>
-        <button
-          type="button"
-          className="btn btn--ghost"
-          onClick={() => setUpdate(null)}
-          disabled={installing}
-        >
-          {t('common.later')}
-        </button>
-      </div>
+      <p className="u-faint" style={{ margin: 'var(--s1) 0 0', fontSize: 'var(--t-12)' }}>
+        {t('update.mandatoryPendingHint')}
+      </p>
     </div>
   );
 }

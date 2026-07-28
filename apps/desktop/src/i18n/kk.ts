@@ -634,6 +634,22 @@ export const kk: TranslationStrings = {
     unknownTitle: 'Күй белгісіз',
   },
 
+  update: {
+    sectionAbout: 'Қосымша туралы',
+    version: 'Нұсқа',
+    versionHint: 'Орнатылған құрастырма. Жаңартулар GitHub-тан келеді.',
+    check: 'Жаңартуларды тексеру',
+    checking: 'Тексерудеміз…',
+    upToDate: 'Өзекті нұсқа',
+    availableChip: '{version} қолжетімді',
+    checkFailed: 'Жаңартуларды тексеру мүмкін болмады',
+    toastAvailable: '{version} нұсқасы шықты',
+    toastAction: 'Жаңарту',
+    mandatoryPending: '{version} нұсқасы міндетті — жазба мен өңдеу аяқталған бойда орнатылады.',
+    mandatoryPendingHint: 'Жаңарту жазбаны ешқашан үзбейді.',
+    changelog: 'Не өзгерді',
+    changelogHint: 'GitHub-тағы шығарылым жазбалары.',
+  },
   usage: {
     noLimit: 'лимит бапталмаған',
   },
