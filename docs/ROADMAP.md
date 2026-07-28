@@ -201,7 +201,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [ ] **Embeddings audit для коротких сегментов (<2s)** — cosine similarity нестабильна на окнах короче threshold (WeSpeaker trained на ~5s).
 - [x] **Per-cluster centroid distances** — `log::debug` cos_dist на каждый merge в `speaker_reclustering`. Detail polish. **Сделано:** `log::debug` на merge и на near-miss (в пределах 0.05 от порога).
 - [ ] **Sortformer → ECAPA-TDNN / Wespeaker v2** — отдельный milestone, heavy research. Текущий WeSpeaker — baseline.
-- [ ] **LLM progress %** — parse llama-cli streaming (`print_timings` / `n_eval / n_predict`). Сейчас UI показывает только elapsed_sec.
+- [x] **LLM progress %** — **закрыто вердиктом, процента не будет.** Единственный источник — стриминг `llama-server` (`stream:true`), и считать его пришлось бы как `n_decoded / n_predict`. `n_predict` — это потолок (4096 по умолчанию), а генерация останавливается на EOS обычно много раньше: полоса дошла бы до ~15% и прыгнула в 100%. Честные сигналы уже есть: тикающий elapsed на рекапе и счётчик шагов «N / M» в thinking-блоке для цепочки refine. Токен-стриминг как таковой — отдельный пункт ниже.
 - [ ] **Cancel button во время recap regen** — `CancelToken` + propagation через `local_orchestrator::run_v2_pipeline` + `SidecarGuard::kill()`.
 - [ ] **Expected-duration hint** «~5 из 10 мин» — preset-dependent estimate из telemetry median.
 - [x] **Periodic emit во время STT** — **Сделано:** эмиттер обобщён (`with_stt_progress_emitter`), новое событие `stt:progress` с тем же payload; UI показывает «Распознаём речь — N с» в панели обработки на шаге 2. Процентов у full-file STT по-прежнему нет (whisper отдаёт результат целиком) — счётчик отличает работу от зависания.
