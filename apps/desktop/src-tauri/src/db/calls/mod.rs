@@ -1,9 +1,21 @@
 mod clusters;
+mod degraded;
+mod delete;
 mod lifecycle;
+mod paging;
+mod pause;
+mod recap_meta;
 mod speakers;
 mod suggestions;
+mod sweep;
 
 pub use clusters::*;
+pub use degraded::*;
+pub use delete::*;
 pub use lifecycle::*;
+pub use paging::*;
+pub use pause::*;
+pub use recap_meta::*;
 pub use speakers::*;
 pub use suggestions::*;
+pub use sweep::*;

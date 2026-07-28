@@ -49,6 +49,37 @@ pub async fn with_recap_progress_emitter<F, T>(app: Option<AppHandle>, call_id: 
 where
     F: Future<Output = T>,
 {
+    with_elapsed_emitter(app, call_id, Phase::Recap, fut).await
+}
+
+/// Фаза, за которой тикает счётчик. Различаются только именем события: UI
+/// показывает их в разных местах (рекап — в шапке, STT — в панели обработки).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    Recap,
+    Stt,
+}
+
+/// То же самое для распознавания речи. Full-file STT на длинной записи —
+/// единственный шаг, где прогресс-бар стоит на одном проценте по несколько
+/// минут: whisper-cli отдаёт результат целиком, промежуточных сигналов нет.
+/// Тикающий счётчик отличает «работает» от «повисло».
+pub async fn with_stt_progress_emitter<F, T>(app: Option<AppHandle>, call_id: String, fut: F) -> T
+where
+    F: Future<Output = T>,
+{
+    with_elapsed_emitter(app, call_id, Phase::Stt, fut).await
+}
+
+async fn with_elapsed_emitter<F, T>(
+    app: Option<AppHandle>,
+    call_id: String,
+    phase: Phase,
+    fut: F,
+) -> T
+where
+    F: Future<Output = T>,
+{
     // Spawn ticker. `move` забирает clone'ы для long-running task.
     let ticker = tokio::spawn(async move {
         let mut interval = tokio::time::interval(EMIT_INTERVAL);
@@ -60,10 +91,14 @@ where
             interval.tick().await;
             elapsed_sec += EMIT_INTERVAL.as_secs();
             let bus = EventBus::new(app.as_ref());
-            bus.recap_progress(&RecapProgressEvent {
+            let e = RecapProgressEvent {
                 call_id: call_id.clone(),
                 elapsed_sec,
-            });
+            };
+            match phase {
+                Phase::Recap => bus.recap_progress(&e),
+                Phase::Stt => bus.stt_progress(&e),
+            }
         }
     });
 

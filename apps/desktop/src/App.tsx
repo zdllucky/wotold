@@ -15,7 +15,7 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { getSetting, setSetting, SETTINGS_KEYS } from './api/settings';
 import { getActivePipelineCount } from './api/calls';
-import { listCalls, type Call } from './api/recording';
+import { countCalls, listCallsPage, type Call } from './api/recording';
 import { listContacts } from './api/contacts';
 import { humanError } from './api/errors';
 import { Sidebar, MiniRail, type RailView } from './components/AppSidebar';
@@ -144,12 +144,14 @@ function AppShell() {
   // finishes (titles land) so counts/recents stay current.
   useEffect(() => {
     const load = () => {
-      void listCalls()
-        .then((calls) => {
-          setRecent(calls.slice(0, 50));
-          setCallsCount(calls.length);
-        })
-        .catch((e: unknown) => console.warn('listCalls (rail) failed', e));
+      // [TD-42] Рельсе нужны пятьдесят свежих и счётчик — не вся история на
+      // каждое событие пайплайна.
+      void listCallsPage(RAIL_RECENT_LIMIT)
+        .then(setRecent)
+        .catch((e: unknown) => console.warn('listCallsPage (rail) failed', e));
+      void countCalls()
+        .then(setCallsCount)
+        .catch((e: unknown) => console.warn('countCalls (rail) failed', e));
       void listContacts()
         .then((cs) => setContactsCount(cs.length))
         .catch((e: unknown) => console.warn('listContacts (rail) failed', e));
@@ -537,6 +539,17 @@ function AppShell() {
       <main className="app-main">
         {/* [recording] Нижняя плашка RecStrip убрана — индикатор записи (живая
             дорожка + таймер + стоп) живёт в rail/навбар-кнопках. */}
+        {/* [a11y SC 4.1.3] Смена состояния записи видна только глазами: точка,
+            таймер, форма кнопки. Скринридеру объявлять было нечего — фокус при
+            старте и остановке не двигается. Область живёт всегда (её текст
+            меняется), иначе объявление первого перехода теряется. */}
+        <p className="u-sr-only" role="status" aria-live="polite">
+          {rec.status.kind === 'recording'
+            ? t('recording.announceRecording')
+            : rec.status.kind === 'paused'
+              ? t('recording.announcePaused')
+              : t('recording.announceIdle')}
+        </p>
         <SuggestBanner />
         <UpdateBanner />
         {localError && (
@@ -659,6 +672,9 @@ function AppShell() {
     </div>
   );
 }
+
+/** [TD-42] Сколько строк показывает рельса «Недавние». */
+const RAIL_RECENT_LIMIT = 50;
 
 export function App() {
   return (

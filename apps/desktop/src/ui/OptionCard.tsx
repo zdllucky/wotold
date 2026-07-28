@@ -41,6 +41,14 @@ interface OptionCardProps {
   disabled?: boolean;
   /** [B21] Внутри radiogroup — role=radio + aria-checked (Settings/Onboarding). */
   radio?: boolean;
+  /**
+   * [B21.6] Кто держит табостановку группы. По умолчанию — выбранный вариант.
+   * Передавать явно нужно там, где выбора может ещё не быть (пресет не
+   * выбран): иначе все карточки получают `tabIndex=-1`, и в группу нельзя
+   * попасть с клавиатуры вообще. По WAI-ARIA APG в таком случае табостановку
+   * держит первый вариант.
+   */
+  tabStop?: boolean;
 }
 
 export function OptionCard({
@@ -55,16 +63,43 @@ export function OptionCard({
   onClick,
   disabled,
   radio,
+  tabStop,
 }: OptionCardProps) {
+  // [B21.6] Roving tabindex. Внутри radiogroup табом входят в группу один раз —
+  // на выбранный вариант, — а переключаются стрелками. Пока все карточки были
+  // обычными кнопками, Tab обходил каждую: на трёх пресетах это три остановки
+  // вместо одной, и клавиатурный пользователь не мог понять, что это один
+  // выбор из набора, а не три независимые кнопки.
+  const onRadioKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!radio) return;
+    const forward = e.key === 'ArrowRight' || e.key === 'ArrowDown';
+    const back = e.key === 'ArrowLeft' || e.key === 'ArrowUp';
+    if (!forward && !back) return;
+    const group = e.currentTarget.closest('[role="radiogroup"]');
+    if (!group) return;
+    const items = Array.from(
+      group.querySelectorAll<HTMLButtonElement>('[role="radio"]:not([disabled])'),
+    );
+    const from = items.indexOf(e.currentTarget);
+    if (from < 0 || items.length < 2) return;
+    e.preventDefault();
+    // По паттерну WAI-ARIA стрелка и перемещает фокус, и выбирает вариант.
+    const next = items[(from + (forward ? 1 : -1) + items.length) % items.length];
+    next?.focus();
+    next?.click();
+  };
+
   return (
     <button
       type="button"
       role={radio ? 'radio' : undefined}
       aria-checked={radio ? !!active : undefined}
+      tabIndex={radio ? ((tabStop ?? !!active) ? 0 : -1) : undefined}
       className="optioncard"
       data-active={active ? 'true' : undefined}
       disabled={disabled}
       onClick={onClick}
+      onKeyDown={radio ? onRadioKeyDown : undefined}
     >
       {icon && (
         <span className="optioncard-ico">

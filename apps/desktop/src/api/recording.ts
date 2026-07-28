@@ -100,6 +100,18 @@ export function resumeRecording(): Promise<RecordingState> {
   return invoke<RecordingState>('resume_recording');
 }
 
+/** [TD-42] Страница звонков от свежих к старым. Для поверхностей, которым
+ *  нужны только первые N (рельса «Недавние»): полный `listCalls` тянет всю
+ *  историю целиком на каждый рефетч. */
+export function listCallsPage(limit: number, offset = 0): Promise<Call[]> {
+  return invoke<Call[]>('list_calls_page', { limit, offset });
+}
+
+/** [TD-42] Общее число звонков — счётчик рельсы, которого страница не даёт. */
+export function countCalls(): Promise<number> {
+  return invoke<number>('count_calls');
+}
+
 export function listCalls(): Promise<Call[]> {
   return invoke<Call[]>('list_calls');
 }
@@ -148,6 +160,11 @@ export interface RecapProgressEvent {
   elapsed_sec: number;
 }
 export const RECAP_PROGRESS_EVENT = 'recap:progress';
+
+/** Тик распознавания речи (`stt:progress`). Payload тот же, что у рекапа.
+ *  Процентов у full-file STT нет — whisper отдаёт транскрипт целиком, поэтому
+ *  на длинной записи шаг «Распознаём речь» стоит на месте минутами. */
+export const STT_PROGRESS_EVENT = 'stt:progress';
 
 /** [F3] Усечённое превью промежуточного результата refine-шага —
  *  разворачивается в thinking-блоке RecapThinking. */

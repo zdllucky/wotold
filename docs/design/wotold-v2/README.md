@@ -26,7 +26,7 @@
 - **Акцент**: моно-графит (`ink`), один набор, без picker. Тема: light + dark.
 - **Density**: фикс `cozy` (`<html data-density="cozy">`).
 - **Home** удалён, default-экран = Inbox; запись = dock + floating widget; ⌘K palette.
-- **Assistant**-таб отложен отдельной доработкой.
+- **Assistant** — раздел и вкладка звонка отгружены (M15 + B24); канон поверхностей — [`assistant.md`](assistant.md).
 
 ## Token / class канон (uikit)
 

@@ -251,9 +251,15 @@ pub async fn local_engine_eval_recap(
         .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
     let s = crate::pipeline::settings::PipelineSettings::load(&state.db).await?;
     let (provider, _preset) =
-        crate::pipeline::build_local_llm_provider(&state.db, &state.app_data_dir, &app, &s).await?;
-    // [Q] call_id → LLM-очередь.
-    let provider = provider.with_call(call_id.clone());
+        // [Q/TD-36] call_id → LLM-очередь; метка внутри общего билдера.
+        crate::pipeline::build_local_llm_provider(
+            &state.db,
+            &state.app_data_dir,
+            &app,
+            &s,
+            Some(&call_id),
+        )
+        .await?;
     let scores = crate::pipeline::g_eval::evaluate_summary(
         &provider,
         &transcript,

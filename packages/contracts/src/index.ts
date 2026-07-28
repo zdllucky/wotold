@@ -12,3 +12,4 @@ export * from './summary_v2.js';
 export * from './updater.js';
 export * from './local-engine.js';
 export * from './assistant.js';
+export * from './degraded.js';

@@ -5,7 +5,7 @@ use tauri::State;
 use crate::{
     call_id::CallId,
     call_store::{ArtifactKind, AudioKind},
-    db::{ActionItem, Call},
+    db::{self, ActionItem, Call},
     services::export::compose_call_markdown,
     state::AppState,
     AppError,
@@ -14,6 +14,35 @@ use crate::{
 #[tauri::command]
 pub async fn list_calls(state: State<'_, AppState>) -> Result<Vec<Call>, AppError> {
     crate::db::list_calls(&state.db).await
+}
+
+/// [TD-37] Оговорки о качестве обработки звонка. Пустой список = обработка
+/// прошла без деградаций (или звонок записан до появления флагов).
+#[tauri::command]
+pub async fn list_call_degraded_flags(
+    state: State<'_, AppState>,
+    call_id: String,
+) -> Result<Vec<String>, AppError> {
+    // [правило 7] id из webview.
+    let id = CallId::parse(&call_id)?;
+    db::list_degraded_flags(&state.db, id.as_str()).await
+}
+
+/// [TD-42] Страница «Недавних» для рельсы: она рефетчится на каждое событие
+/// пайплайна и раньше тянула всю историю, чтобы показать пятьдесят строк.
+#[tauri::command]
+pub async fn list_calls_page(
+    state: State<'_, AppState>,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Call>, AppError> {
+    db::list_calls_page(&state.db, limit, offset).await
+}
+
+/// [TD-42] Общее число звонков — счётчик рельсы, который страница уже не даёт.
+#[tauri::command]
+pub async fn count_calls(state: State<'_, AppState>) -> Result<i64, AppError> {
+    db::count_calls(&state.db).await
 }
 
 #[tauri::command]
@@ -28,6 +57,17 @@ pub async fn delete_call(state: State<'_, AppState>, id: String) -> Result<(), A
     // [TD-05] id из webview: до валидации он не имеет права стать путём.
     // `remove_call_dir("..")` раньше сносил весь app_data_dir вместе с БД.
     let call_id = CallId::parse(&id)?;
+    // [M12.6] Сначала снимаем работу, если звонок сейчас обрабатывается.
+    // Иначе сайдкар считает удалённый звонок ещё минуты, а пайплайн следом
+    // создаёт каталог заново — остаётся пустая директория без строки в базе.
+    if crate::services::pipeline_runner::PipelineRunner::abort_silently(
+        state.pipeline_tasks.clone(),
+        &id,
+    )
+    .await
+    {
+        log::info!("delete_call {id}: обработка прервана до удаления");
+    }
     crate::db::delete_call_and_samples(&state.db, &id).await?;
     if let Err(e) = state.store.remove_call_dir(&call_id).await {
         // Audio удалили частично или не было — БД уже консистентна, логируем но не fail.

@@ -158,7 +158,13 @@ fn build_transcript(parsed: WhisperJsonFile, track: TrackKind) -> DiarizedTransc
             // фреймах. Comprehensive filter — exact + substring + shape.
             let ambiguous = is_ambiguous_filler(&text);
             if is_hallucination(&text, confidence) {
-                log::debug!("stt[{track:?}]: hallucination drop: {text:?} (p={confidence:?})");
+                // [security-scan W5] Текст реплики в лог не пишем — это речь
+                // из звонка. Для диагностики фильтра хватает длины и
+                // уверенности.
+                log::debug!(
+                    "stt[{track:?}]: hallucination drop: {} симв. (p={confidence:?})",
+                    text.chars().count()
+                );
                 dropped_count += 1;
                 if ambiguous {
                     filler_dropped += 1;

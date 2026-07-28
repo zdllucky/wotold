@@ -28,8 +28,8 @@ import {
   listCallOpenQuestions,
   readCallArtifact,
   type ActionItem,
-  type Decision,
-  type OpenQuestion,
+  type DecisionRow,
+  type OpenQuestionRow,
   type PipelineCancelledEvent,
 } from '../api/calls';
 import { listContacts, type Contact } from '../api/contacts';
@@ -43,6 +43,7 @@ import {
   RECAP_PROGRESS_EVENT,
   RECAP_STEP_EVENT,
   RECORDING_DURATION_EVENT,
+  STT_PROGRESS_EVENT,
   type Call,
   type CallChunk,
   type CallProgressEvent,
@@ -71,14 +72,16 @@ export interface UseCallDetailResult {
   chunks: CallChunk[];
   /** [M14 T-11] V2 structured summary blocks. Пустой массив для legacy
    *  schema_version=1 либо если LLM не вернул decisions. */
-  decisions: Decision[];
-  openQuestions: OpenQuestion[];
+  decisions: DecisionRow[];
+  openQuestions: OpenQuestionRow[];
   micSrc: string | null;
   systemSrc: string | null;
   /** [P1.3] Elapsed seconds во время local LLM recap regen. `null` если нет
    *  активной generation либо cloud engine (cloud не emit'ит этот event).
    *  Resets на `null` когда `regenerating` flips false в CallDetailPage. */
   recapElapsedSec: number | null;
+  /** Секунды с начала full-file STT (`stt:progress`); null — тиков не было. */
+  sttElapsedSec: number | null;
   setRecapElapsedSec: (v: number | null) => void;
   /** [F3] Живые шаги генерации рекапа (`recap:step`, upsert по step_idx).
    *  Очищается насовсем при смене звонка и на pipeline:finished/cancelled —
@@ -110,12 +113,13 @@ export function useCallDetail(callId: string): UseCallDetailResult {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [speakers, setSpeakers] = useState<CallSpeakerView[]>([]);
   const [chunks, setChunks] = useState<CallChunk[]>([]);
-  const [decisions, setDecisions] = useState<Decision[]>([]);
-  const [openQuestions, setOpenQuestions] = useState<OpenQuestion[]>([]);
+  const [decisions, setDecisions] = useState<DecisionRow[]>([]);
+  const [openQuestions, setOpenQuestions] = useState<OpenQuestionRow[]>([]);
   const [micSrc, setMicSrc] = useState<string | null>(null);
   const [systemSrc, setSystemSrc] = useState<string | null>(null);
   // [P1.3] Elapsed timer для recap regen UI. См. JSDoc на интерфейсе.
   const [recapElapsedSec, setRecapElapsedSec] = useState<number | null>(null);
+  const [sttElapsedSec, setSttElapsedSec] = useState<number | null>(null);
   // [F3] Шаги thinking-блока генерации рекапа.
   const [recapSteps, setRecapSteps] = useState<RecapStepEvent[]>([]);
   // [Global regen] Активна ли фон-задача (reprocess / regen) для звонка.
@@ -369,6 +373,21 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     return () => unlisten?.();
   }, [callId]);
 
+  // Тик распознавания речи. Тот же payload, другое место в UI: STT идёт до
+  // рекапа и показывается в панели обработки.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<RecapProgressEvent>(STT_PROGRESS_EVENT, (e) => {
+      if (e.payload.call_id !== callId) return;
+      setSttElapsedSec(e.payload.elapsed_sec);
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((err) => console.warn('stt:progress listener:', err));
+    return () => unlisten?.();
+  }, [callId]);
+
   // [F3] Живые шаги генерации рекапа — upsert по step_idx (started → done
   // обновляет ту же запись, порядок стабилен). Очистка: смена звонка,
   // pipeline:finished, pipeline:cancelled (см. выше).
@@ -517,6 +536,7 @@ export function useCallDetail(callId: string): UseCallDetailResult {
     micSrc,
     systemSrc,
     recapElapsedSec,
+    sttElapsedSec,
     setRecapElapsedSec,
     recapSteps,
     bgBusy,

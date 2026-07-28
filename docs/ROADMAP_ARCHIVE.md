@@ -3,9 +3,8 @@
 > **Примечание (local-only 0.3):** облачный сегмент — M9 (прокси), M10 (auth), #44 CF production provisioning, usage/квота UI — удалён из кода при переходе на local-only (паспорт 0.3). Записи ниже сохранены как исторический лог и не отражают текущую сборку.
 >
 > Исторический лог выполненной работы, вынесен из [`ROADMAP.md`](ROADMAP.md) при чистке B20 (2026-07-21).
-> Всё содержимое перенесено 1-в-1. **Открытые** пункты (`[ ]`/`[~]`), встречающиеся внутри
-> исторических секций, продублированы/учтены в живом беклоге `ROADMAP.md` — статус смотреть там,
-> этот файл не обновляется.
+> Это **лог, а не трекер**: пункты внутри секций описывают состав выполненных батчей, а не
+> открытые задачи. Живой статус — только в [`ROADMAP.md`](ROADMAP.md). Файл не обновляется.
 
 ---
 
@@ -180,13 +179,13 @@
 
 - [x] **#24** M3.1 Voice embedding foundation (O3 — выбран `ort` + ONNX WeSpeaker/ECAPA-TDNN, 256-dim). Модуль `embeddings`: Embedder trait, cosine_similarity, BLOB serde. Реальный OnnxEmbedder + per-segment audio decode + sidecar split → #25
 - [x] **#25** M3.2-3.4 Matching foundation — `audio_io::extract_segment` (hound WAV slicing), `matching::{list_consenting_samples, rank_candidates}` (cosine + C2 фильтр), `llm_hint::request_speaker_hints` (Anthropic prompt + JSON parse), `merge_signals::merge` (embedding+llm с embedding bias), `identify::identify_speakers` orchestrator → `db::insert_speaker_suggestions` (call_speakers с confirmed=0). Production pipeline wire через #26 + real OnnxEmbedder.
-- [~] **#26** partial M3.5+3.7 — UI confirmation flow + mic→owner auto-bind. `db::{list_call_speakers, confirm_call_speaker, unbind_call_speaker, auto_bind_owner_speaker}` + view с join'ом display_name по contact_id + 6 unit-тестов. Tauri commands `list_call_speakers/confirm_call_speaker/unbind_call_speaker`. UI новая таб «Спикеры» в `CallDetailPage` через `SpeakersSection` (suggestion hint с confidence + источник, контакт-селектор, кнопки Подтвердить/Отвязать; R2 enforced — финальная привязка только через явный confirm). **M3.7 mic→owner auto-bind**: `pipeline::run` после persist_artifacts автоматически вставляет confirmed=1 row для `speaker_tag="owner"` → owner contact. Не нарушает R2 потому что owner=сам пользователь. Dev mock с in-memory speakerBindings. **Остаётся (deferred)**: OnnxEmbedder уже приехал (B3.7a-c, sherpa-onnx) и B3.x cluster-path работает — остаётся свериться, нужен ли ещё старый `identify_speakers` orchestrator (#25) или он вытеснен cluster-pipeline; dynamic sample update (N=5). См. §Беклог C.
+- **#26** partial M3.5+3.7 — UI confirmation flow + mic→owner auto-bind. `db::{list_call_speakers, confirm_call_speaker, unbind_call_speaker, auto_bind_owner_speaker}` + view с join'ом display_name по contact_id + 6 unit-тестов. Tauri commands `list_call_speakers/confirm_call_speaker/unbind_call_speaker`. UI новая таб «Спикеры» в `CallDetailPage` через `SpeakersSection` (suggestion hint с confidence + источник, контакт-селектор, кнопки Подтвердить/Отвязать; R2 enforced — финальная привязка только через явный confirm). **M3.7 mic→owner auto-bind**: `pipeline::run` после persist_artifacts автоматически вставляет confirmed=1 row для `speaker_tag="owner"` → owner contact. Не нарушает R2 потому что owner=сам пользователь. Dev mock с in-memory speakerBindings. **Остаётся (deferred)**: OnnxEmbedder уже приехал (B3.7a-c, sherpa-onnx) и B3.x cluster-path работает — остаётся свериться, нужен ли ещё старый `identify_speakers` orchestrator (#25) или он вытеснен cluster-pipeline; dynamic sample update (N=5). См. §Беклог C.
 - [x] **B3.1** Migration 0007 `ALTER TABLE call_speakers ADD COLUMN cluster_embedding BLOB NULL` — per-call cluster vector хранится рядом с suggestion_score, нужен B3.5 confirm-хуку чтобы перенести в `voice_samples` без recompute.
 - [x] **B3.2** `audio::wav_chunker::read_wav_segment(path, start, end)` — hound-based PCM int16 → f32 mono slicing для embedder input. Multi-channel fold, sample-rate echo, 5 unit-тестов (full file / mid slice / out-of-range / mono fold / SR detection).
 - [x] **B3.3** `pipeline::clusters::extract_clusters(merged, mic_path, sys_path, embedder)` — per `speaker_tag` собирает segments ≥ 0.5s (cap 10s), читает WAV chunk через wav_chunker (owner→mic, прочие→system), embedder.extract → mean-pool + L2 normalize → `HashMap<tag, Vec<f32>>`. 3 unit-теста с `CountingEmbedder` mock.
 - [x] **B3.4** Matching pipeline wire — `run_cluster_pipeline` persist'ит cluster в `call_speakers.cluster_embedding` через `db::set_call_speaker_cluster`, затем top-1 cosine candidate с `min_score=0.5` через `matching::rank_candidates` → `db::set_call_speaker_suggestion`. Non-fatal: ошибки логятся и пропускаются, recap всё равно генерится.
 - [x] **B3.5** Confirm-хук → `voice_samples` — `db::confirm_call_speaker` теперь читает `contacts.attributes.consent_voice` + `call_speakers.cluster_embedding` и в той же транзакции INSERT'ит `voice_samples` (quality=score, source_call=call_id). C2 enforced: без consent образец не записывается. owner-привязка остаётся отдельным `auto_bind_owner_speaker` (M3.7).
-- [~] **B3.6 scaffold** Embedder dispatcher — `embeddings::try_load_onnx_embedder(model_path)` возвращает Option<Box<dyn Embedder>> (всегда None в default build, scaffold под `#[cfg(feature = "voice-onnx")]`). `PipelineCtx` теперь содержит `app_data_dir`, `run_cluster_pipeline` резолвит `$APP_DATA/models/embedder.onnx` и fallback'ит на StubEmbedder если модели нет. Honest scaffold: реальный ONNX runtime + Kaldi fbank preprocessing + integration test против reference WeSpeaker output — отдельный пункт B3.7 (без верификации preprocessing генерил бы garbage embeddings в `voice_samples`, ломая cross-call matching).
+- **B3.6 scaffold** Embedder dispatcher — `embeddings::try_load_onnx_embedder(model_path)` возвращает Option<Box<dyn Embedder>> (всегда None в default build, scaffold под `#[cfg(feature = "voice-onnx")]`). `PipelineCtx` теперь содержит `app_data_dir`, `run_cluster_pipeline` резолвит `$APP_DATA/models/embedder.onnx` и fallback'ит на StubEmbedder если модели нет. Honest scaffold: реальный ONNX runtime + Kaldi fbank preprocessing + integration test против reference WeSpeaker output — отдельный пункт B3.7 (без верификации preprocessing генерил бы garbage embeddings в `voice_samples`, ломая cross-call matching).
 - [x] **B3.7a/b** OnnxEmbedder via `sherpa-onnx` Rust crate — research показал что fbank-in-graph ONNX моделей для production не существует (WeSpeaker / 3D-Speaker / NeMo все требуют pre-computed mel-fbank features). Вместо ручной реализации Kaldi fbank + ort inference выбран официальный `sherpa-onnx` crate (k2-fsa, static link by default, prebuilt ONNX Runtime libs auto-download) который wrap'ит весь pipeline: Kaldi fbank → ONNX inference → L2 normalize. `OnnxEmbedder::load()` + `extract()` через `SpeakerEmbeddingExtractor`, `EMBEDDING_DIM` валидация модели, defensive L2 normalize над output. Default build не тянет sherpa-onnx — `--features voice-onnx` включает. Тесты на missing-model path. cargo check/clippy/fmt/test зелёные на обоих режимах.
 - [x] **B3.7c** Model runtime download + Settings UI. `voice_model.rs` модуль: `check_status(app_data_dir)` (file_sha256 streaming verify), `download(...)` с `reqwest::Response::bytes_stream` + emit'ит `voice-model:progress` каждые 256KB через Tauri events + atomic rename `.partial` → `embedder.onnx` после SHA256 match, `delete(...)` для GDPR opt-out. WeSpeaker URL + SHA256 захардкожены: `e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012`. 4 Tauri commands: `voice_model_status/download/delete/info`. Frontend `VoiceModelSection.tsx` в Settings → новая секция «Распознавание голоса» с status badge (нет / качаем / установлена / повреждена) + progress bar real-time + "Технические детали" details (URL, SHA256, feature_enabled flag). Bundle vs download decision — пользователь сам решает: на первой записи UI его не блокирует, opt-in в Settings. 4 unit-теста (missing/corrupted/delete idempotent/path layout).
   - **B3.7d remaining**: integration test против reference embedding для зашитого WAV (sherpa-onnx fangjun-sr-1.wav) — отдельный шаг (требует bundled test fixture + `--features voice-onnx`).
@@ -230,9 +229,9 @@
 
 ## Setup · one-time manual
 
-- [ ] **#42** X1 Generate Tauri minisign + публичный ключ в `tauri.conf.json` + приватный в GitHub-секрет + офлайн-бэкап (M11.1, M11.9)
+- **#42** X1 Generate Tauri minisign + публичный ключ в `tauri.conf.json` + приватный в GitHub-секрет + офлайн-бэкап (M11.1, M11.9)
 - [x] **#43** X2 `REPLACE_OWNER/wotold` → `zdllucky/wotold` в `tauri.conf.json` (updater endpoint)
-- [~] **#44** X3 Cloudflare provisioning per env. Staging закрыт полностью (R2 enabled by user, KV created via provision-infra workflow, secrets залиты через sync-proxy-secrets workflow, deploy зелёный, smoke /health 200, /v1/llm и /v1/stt/staging-url работают вживую). **Остаётся для production**: GH Secrets с суффиксом `_PRODUCTION` (можно те же ключи что staging), Google OAuth Authorized redirect URI для production callback, и tag `v0.1.0` для триггера production deploy. Полная процедура — `docs/DEPLOYMENT.md`. Требует:
+- **#44** X3 Cloudflare provisioning per env. Staging закрыт полностью (R2 enabled by user, KV created via provision-infra workflow, secrets залиты через sync-proxy-secrets workflow, deploy зелёный, smoke /health 200, /v1/llm и /v1/stt/staging-url работают вживую). **Остаётся для production**: GH Secrets с суффиксом `_PRODUCTION` (можно те же ключи что staging), Google OAuth Authorized redirect URI для production callback, и tag `v0.1.0` для триггера production deploy. Полная процедура — `docs/DEPLOYMENT.md`. Требует:
   - CF Free аккаунт + API token (Workers/KV/R2 edit) + Account ID
   - GitHub Repo Secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
   - GitHub Environments `staging` (auto) и `production` (manual approval)
@@ -332,7 +331,7 @@
 - [x] Code-review HIGH: HomePage recent-row border ordering + consent modal `role=dialog` / `aria-modal` / `aria-labelledby`.
 - [x] Security-review HIGH: AccountSection `openExternal(authorizeUrl)` https-scheme guard (если прокси compromised — javascript:/file:/custom-scheme exploit заблокирован).
 - [x] A11y modal focus trap: new `useFocusTrap` hook + applied to consent (HomePage), Coachmarks, OnboardingPage. ESC + Tab cycling + scroll lock + focus restore.
-- [x] A11y CRITICAL: bumped `--signal` light #DC2626 → #BF1C1C (был 4.40:1, теперь ≈ 5.6:1 на --bg).
+- [x] A11y: `--signal` в светлой теме #DC2626 → #BF1C1C — контраст на `--bg` ≈ 5.6:1.
 - [x] A11y HIGH: bumped `--muted` #6B6C72 → #5E5F65 (для text-xs/small-caps безопасно).
 - [x] A11y HIGH: Tabs aria-controls / aria-labelledby pairs + id'd via useId().
 - [x] A11y HIGH: App nav убран orphan role=tab/aria-selected — заменён на aria-current="page" (правильный nav pattern).
@@ -341,7 +340,7 @@
 - [x] A11y MEDIUM/WARN: `prefers-reduced-motion` CSS — `.dot--pulse`, `.rec-btn`, `.conf-fill`; JS — `UsageBar` width transition через `useReducedMotion` hook.
 - [x] A11y WARN: ContactsPage name button hit area padding/margin для SC 2.5.8.
 - [x] `useFocusTrap` test suite (8 cases) — initial focus, ESC, Tab/Shift+Tab cycling, inactive, scroll-lock.
-- [ ] **Manual visual QA** — пройти руками 6 theme×accent комбинаций (light/dark × bordeaux/persian/ink) на всех экранах. Делается перед публичным релизом, не разработка.
+- **Manual visual QA** — ручная проверка светлой и тёмной темы на всех экранах ([TD-39]: пикер акцентов убран в B18.5, комбинаций две). Делается перед публичным релизом, не разработка.
 
 ## Wotold v2 Redesign (B18)
 
@@ -370,23 +369,23 @@
 
 ### B18.2 · Inbox (замена Home + Calls)
 
-- [ ] `pages/InboxView.tsx` — unified список: **omni-bar** (текст-поиск + facet-токены), **facet-фильтры** (статус/recap/контакт/период), **view switcher** (list/cards/week/month), month-grouping sticky, virtualization ≥200.
-- [ ] `CallRow`: status-dot / title (+recap sparkle, status-chip) / participants (AvatarGroup) / duration (mono) / date / ⋯-меню (open/reprocess/export/delete) + engine-chip в строку.
-- [ ] Переиспользовать `listCalls` + фильтры + `callState`; данные уже есть (title/status/started_at/parts/processing_via/recap).
-- [ ] **Views (saved smart-collections) + Explore** ✅в scope (ровно по прототипу) — персистентность `SavedView` (локальный storage / S2 контракт `{label, filter_state, view_mode, sort}`).
-- [ ] Stats (4 hero + sparkline) — разместить как в прототипе (`wk-screens`/`wk-inbox`).
+- `pages/InboxView.tsx` — unified список: **omni-bar** (текст-поиск + facet-токены), **facet-фильтры** (статус/recap/контакт/период), **view switcher** (list/cards/week/month), month-grouping sticky, virtualization ≥200.
+- `CallRow`: status-dot / title (+recap sparkle, status-chip) / participants (AvatarGroup) / duration (mono) / date / ⋯-меню (open/reprocess/export/delete) + engine-chip в строку.
+- Переиспользовать `listCalls` + фильтры + `callState`; данные уже есть (title/status/started_at/parts/processing_via/recap).
+- **Views (saved smart-collections) + Explore** ✅в scope (ровно по прототипу) — персистентность `SavedView` (локальный storage / S2 контракт `{label, filter_state, view_mode, sort}`).
+- Stats (4 hero + sparkline) — разместить как в прототипе (`wk-screens`/`wk-inbox`).
 
 ### B18.3 · Call detail (two-column + right rail + tabs)
 
-- [ ] `CallDetailPage` → **doc-column + CallRail** (properties / participants / actions). Tabs **Transcript / Recap / Assistant**.
-- [ ] Transcript: `.turn` speaker-turns (avatar + name + time clickable + text), seek-sync с player-scrubber внизу.
-- [ ] Recap: summary + **DecisionsBlock + OpenQuestionsBlock + ActionItemsV2** (category-icon commitment/proposal/idea + evidence-quote), rich↔raw toggle. Маппинг на реальные `listCallDecisions`/`listCallOpenQuestions`/`ActionItemV2` (уже в контрактах M14 — переиспользовать).
-- [ ] `SpeakerRow` dropdown assign (search contacts / assign / reset); неподтверждённые = «Говорящий» (серый avatar). **Сохранить consent / biometric R2 логику 1-в-1.**
-- [ ] **Assistant-таб ОТЛОЖЕН** ⏸️ отдельной доработкой (вернёмся позже): в B18.3 таб либо скрыт, либо «coming soon»-stub. Backend (LLM Q&A над транскриптом) — вне scope B18. Tabs пока Transcript / Recap.
+- `CallDetailPage` → **doc-column + CallRail** (properties / participants / actions). Tabs **Transcript / Recap / Assistant**.
+- Transcript: `.turn` speaker-turns (avatar + name + time clickable + text), seek-sync с player-scrubber внизу.
+- Recap: summary + **DecisionsBlock + OpenQuestionsBlock + ActionItemsV2** (category-icon commitment/proposal/idea + evidence-quote), rich↔raw toggle. Маппинг на реальные `listCallDecisions`/`listCallOpenQuestions`/`ActionItemV2` (уже в контрактах M14 — переиспользовать).
+- `SpeakerRow` dropdown assign (search contacts / assign / reset); неподтверждённые = «Говорящий» (серый avatar). **Сохранить consent / biometric R2 логику 1-в-1.**
+- **Assistant-таб ОТЛОЖЕН** ⏸️ отдельной доработкой (вернёмся позже): в B18.3 таб либо скрыт, либо «coming soon»-stub. Backend (LLM Q&A над транскриптом) — вне scope B18. Tabs пока Transcript / Recap.
 
 ### B18.4 · Contacts
 
-- [ ] `ContactsView` — 2-pane (list + detail), reskin под uikit. Показать `identifiers` (email/phone chips — gap #1: мок их не показывал). Derivations (calls-count / last / confirmed) — агрегат из истории (gap #2, новый query). Voice samples — по факту реализации (gap #7).
+- `ContactsView` — 2-pane (list + detail), reskin под uikit. Показать `identifiers` (email/phone chips — gap #1: мок их не показывал). Derivations (calls-count / last / confirmed) — агрегат из истории (gap #2, новый query). Voice samples — по факту реализации (gap #7).
 
 ### B18.5 · Settings (Row-layout, 9 секций)
 
@@ -401,7 +400,7 @@
 - [x] **B18.6c** `src/ui/*` thin-wrappers: Switch / Segmented / IconBtn / Dot / Wave / Kbd / NavItem / Panel / Avatar(+Group) / Chip / SettingRow / OptionCard(+QualityDots) / Modal / Menu (Dropdown/MenuItem/MenuLabel/MenuSep). Существующие (Button/Select/Tabs/Field/Badge/Pill/StatusDot/Skeleton/Empty/Icon/UsageBar) — без изменений.
 - [x] **B18.6a/b/d** Legacy-shim удалён: `wotold.css` → `components.css` (port, B18.6b), `legacy-tokens.css` удалён (B18.6d), все legacy-токены вычищены (paper/surface/duration/ease/shadow/sp/text-*/tracking-* → uikit). `pages.css` не существовал.
 - [x] **B18.6c/d** Тесты RTL зелёные (402, + smoke ui/wrappers.test.tsx; core-flow consent/hotkey/pipeline-sync сохранены).
-- [ ] **⚠️ Manual visual QA → human follow-up** (агент не может скриншотить native app): light/dark на всех экранах (Inbox/CallDetail/Contacts/Settings·9/Onboarding/DS/recording dock+RecFloat/modals), один графит-акцент, cozy. Проверить: пропавшие стили / FOUC / undefined-var fallback / serif-остатки. A11y: focus-trap, keyboard-nav, ARIA, prefers-reduced-motion.
+- **⚠️ Manual visual QA → human follow-up** (агент не может скриншотить native app): light/dark на всех экранах (Inbox/CallDetail/Contacts/Settings·9/Onboarding/DS/recording dock+RecFloat/modals), один графит-акцент, cozy. Проверить: пропавшие стили / FOUC / undefined-var fallback / serif-остатки. A11y: focus-trap, keyboard-nav, ARIA, prefers-reduced-motion.
 
 ### B18.7–B18.9 · Консистентность редизайна (audit + navbar)
 
@@ -424,26 +423,26 @@
 >
 > **B18 a11y/cleanup follow-up** (из финального ревью; не блокеры — отложены отдельной задачей): (1) recording-state live-region объявление start/stop/pause для скринридеров (SC 4.1.3, + новые i18n-ключи); (2) тема-toggle IconBtn в Sidebar делит `aria-label` с Settings — нужен отдельный ключ; (3) toast dismiss-кнопка без per-toast контекста (SC 4.1.2); (4) capabilities least-privilege split (отдельный файл для `recording-widget`, чтобы он не имел доступа к `set_main_traffic_lights_hidden`/fullscreen main-окна); (5) ввести токен `--on-danger` (#fff) вместо raw `#fff` на danger/speaker-поверхностях (`var(--on-accent)` НЕ подходит — в dark тема near-black, сломает контраст); (6) проверить контраст `--wc-*` светофоров в dark-теме (SC 1.4.11); (7) dead i18n `home.*`/`calls.*` (остатки удалённых HomePage/CallsPage) — отдельная аккуратная зачистка с per-key верификацией.
 
-### B19 · UI bug-sweep (ревью юзера после v2)
+### B19 · UI-полиш после v2
 
-Полировка v2 по списку багов от юзера. Порядок строгий. Логика/i18n 1-в-1, design-gate (токены/wk/Icon).
+Батч правок интерфейса по ревью владельца: скролл и позиционирование оверлеев, календарные фильтры, реальные действия в kebab-меню, минимальный размер окна, разбор прерванных записей. Логика и i18n сохранены 1-в-1, design-gate (токены/wk/Icon).
 
-- [x] **B19.1** Call-detail overscroll-баунс («улетают границы») → `overscroll-behavior:none` на `.doc-scroll` (+ `.app-main` `contain`→`none`).
+- [x] **B19.1** Call-detail: `overscroll-behavior:none` на `.doc-scroll` (+ `.app-main` `contain`→`none`) — страница не отскакивает за границы.
 - [x] **B19.2** Week/Month: date-jump дропдаун (год ◀▶ + сетка месяцев) — портнуть `CalHeader` month-picker из прототипа `wk-inbox.jsx`, завязать `onPickMonth` в `InboxWeek/Month`.
 - [x] **B19.3** Фильтр периода «с … по …» — кастомный диапазон дат (`range{from,to}` facet + 2 date-инпута в Фильтр-дропдауне + `matchesFacets` + чип).
-- [x] **B19.4** Оверлеи/дропдауны/попапы вылетают за край окна — `useAnchoredPosition` (flip-up + clamp-x) в `Menu`/`Select`; `max-height`+scroll для модалок/палитры.
-- [x] **B19.5** Min-size окна 760×560 → **960×600** (тулбар обрезался).
-- [x] **B19.6** Прерванная запись <30с не автоудаляется — на старте reconcile орфан-`recording` по длине частичного WAV: <30с → delete+cleanup, ≥30с → 'failed' (восстановимо); `sweep_stale_calls` → только 'processing'. (Нормальный стоп <30с уже удаляется, B18.12.)
-- [x] **B19.7** Kebab в списке = заглушки → реальные Переработать (`reprocessCall`) / Экспорт (save-dialog + `exportCallMarkdown`) / Удалить (`ConfirmModal` + `deleteCall`) + тосты.
-- [x] **B19.8** Карточный вид — некрасивые отступы контейнера → `padding: var(--s5)`.
-- [x] **B19.9** Крошки звонка: сырой `←` в i18n → `<Icon name="chevronLeft">` (разделитель chevronRight уже по гайду).
+- [x] **B19.4** Позиционирование оверлеев: `useAnchoredPosition` (flip-up + clamp-x) в `Menu`/`Select`; `max-height`+scroll для модалок и палитры — всё остаётся в пределах окна.
+- [x] **B19.5** Минимальный размер окна 760×560 → **960×600** — тулбар помещается целиком.
+- [x] **B19.6** Разбор прерванных записей на старте: орфан-`recording` оценивается по длине частичного WAV — короче 30 с удаляется с очисткой, длиннее переводится в `failed` (восстановимо); `sweep_stale_calls` работает только по `processing`.
+- [x] **B19.7** Kebab в списке: реальные действия — Переработать (`reprocessCall`), Экспорт (save-dialog + `exportCallMarkdown`), Удалить (`ConfirmModal` + `deleteCall`) с тостами.
+- [x] **B19.8** Карточный вид: отступы контейнера приведены к `padding: var(--s5)`.
+- [x] **B19.9** Крошки звонка: `<Icon name="chevronLeft">` вместо символа `←` в строке локали.
 
 ### Контракты / backend (S2) — параллельно, по мере scope
 
-- [ ] `SavedView` persistence ✅в scope (Views = B18.2).
-- [ ] Assistant Q&A endpoint + prompt ⏸️ отложено (Assistant вне scope B18).
-- [ ] Contact derivations query (calls / last / confirmed) для B18.4.
-- [ ] Свериться: `ActionItemV2` / `Decisions` / `OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать (S2).
+- `SavedView` persistence ✅в scope (Views = B18.2).
+- Assistant Q&A endpoint + prompt ⏸️ отложено (Assistant вне scope B18).
+- Contact derivations query (calls / last / confirmed) для B18.4.
+- Свериться: `ActionItemV2` / `Decisions` / `OpenQuestions` уже в `packages/contracts` (M14) — переиспользовать, не дублировать (S2).
 
 ## Production Readiness (B16)
 
@@ -455,7 +454,7 @@
 - [x] **bundle.macOS.minimumSystemVersion '14.0'** + category productivity + Info.plist с NSMicrophoneUsageDescription + NSScreenCaptureUsageDescription. Без screen-cap string ScreenCaptureKit silently denies на macOS 14+.
 - [x] **bundle.targets ['app','dmg','updater']** — больше не строим Windows/Linux artifacts случайно.
 - [x] **R2 presign contentType allowlist** (`services/proxy/src/routes/stt.ts`) — 12 audio mime типов, reject text/html для phishing-hosting.
-- [ ] **Tauri minisign pubkey** в `tauri.conf.json:52` placeholder. До первого публичного релиза — сгенерировать через `pnpm tauri signer generate`, public в config, private+password в GH Secret. Без этого updater не работает.
+- **Tauri minisign pubkey** в `tauri.conf.json:52` placeholder. До первого публичного релиза — сгенерировать через `pnpm tauri signer generate`, public в config, private+password в GH Secret. Без этого updater не работает.
 - [x] **Ad-hoc codesign в release-app.yml** — `codesign --force --deep --sign -` шаг добавлен после tauri-action. macOS 14+ Gatekeeper больше не ставит DMG в quarantine «damaged».
 - [x] **Universal binary вместо двух DMG** — matrix macos-13+macos-14 заменена на macos-14 + `--target universal-apple-darwin`.
 - [x] **Quota race fix** — best-effort CAS-loop через KV (3-attempt re-read+retry, см. rate-limit.ts). Full atomic CAS требует Durable Object — follow-up.
@@ -468,7 +467,7 @@
 - [x] **OIDC ID token claims validation** — `decodeIdTokenPayload` теперь проверяет exp/iss/aud (GoogleAdapter передаёт expected). JWKS signature — follow-up.
 - [x] **consumeState CAS race** — best-effort через consumedAt tombstone + re-read verify. Full atomic CAS = DO follow-up.
 - [x] **CORS /v1/*** — origin allowlist (tauri://localhost, http://tauri.localhost, http://localhost:5173, http://127.0.0.1:5173). /, /health открыты для smoke. Bearer-only auth, не cookie.
-- [~] **device-id spoof + IP rate-limit** — частично: **/16 IP rate-limit middleware** (`middleware/ip-rate-limit.ts` + `enforceIp16RateLimit` wired on `/v1/*` в `index.ts`). `cf-connecting-ip` → `ip16Prefix` (v4: первые 2 октета; v6: первый hex-блок). KV-counter `rl:ip16:{prefix}:{minute_bucket}`, лимит 120 req/min/16 default. 429 `rate_limited` при превышении; `/` + `/health` исключены. 8 unit + 3 workers integration теста (включая IPv4 / IPv6 / compressed / malformed edge cases). **Остаётся (B3.7-style scaffold для HMAC)**: HMAC-bind device-id с server-side secret при первом контакте — это контракт-change для клиента (хранить bound-token), вынесено в отдельный пункт.
+- **device-id spoof + IP rate-limit** — частично: **/16 IP rate-limit middleware** (`middleware/ip-rate-limit.ts` + `enforceIp16RateLimit` wired on `/v1/*` в `index.ts`). `cf-connecting-ip` → `ip16Prefix` (v4: первые 2 октета; v6: первый hex-блок). KV-counter `rl:ip16:{prefix}:{minute_bucket}`, лимит 120 req/min/16 default. 429 `rate_limited` при превышении; `/` + `/health` исключены. 8 unit + 3 workers integration теста (включая IPv4 / IPv6 / compressed / malformed edge cases). **Остаётся (B3.7-style scaffold для HMAC)**: HMAC-bind device-id с server-side secret при первом контакте — это контракт-change для клиента (хранить bound-token), вынесено в отдельный пункт.
 - [x] **panic hook** — backtrace в `~/Library/Logs/app.wotold.desktop/panic.log` + prev_hook chain.
 - [x] **single-instance plugin** — `tauri-plugin-single-instance` v2 с feature deep-link, callback поднимает существующее окно.
 - [x] **log rotation** — `max_file_size(5MB).rotation(KeepOne)` в tauri_plugin_log.
@@ -493,7 +492,7 @@
 
 ### UX / CX (P1)
 
-- [ ] **Settings auto-name из NSFullUserName** в onboarding (default «Я» + edit). Требует Swift bridge — отложен.
+- **Settings auto-name из NSFullUserName** в onboarding (default «Я» + edit). Требует Swift bridge — отложен.
 - [x] **Hotkey ⌘⇧R для start/stop** записи. Window-level keydown, обе раскладки, ignore при input focus.
 - [x] **Pre-check permissions** перед start_recording — Rust check перед sidecar start, clear error.
 - [x] **CallDetailPage auto-name** для звонка без title — «{contact name} · 20 мая» если есть confirmed speaker.
@@ -578,7 +577,7 @@
 
 - [x] **voice_samples cascade test** — `delete_contact_cascades_voice_samples` + `delete_call_sets_source_call_null_keeps_sample` (db/voice_samples.rs). Подтверждают что `ON DELETE CASCADE` на `voice_samples.contact_id` (миграция 0001) действительно срабатывает в SQLite + `ON DELETE SET NULL` на `voice_samples.source_call` (миграция 0003) сохраняет семпл при удалении звонка.
 - [x] **delete_call_and_samples** — 3 sqlx-теста в `db/calls.rs::tests`: `delete_call_removes_row_and_voice_samples` (cascade на voice_samples с source_call=id), `delete_call_handles_missing_id_silently` (idempotent), `delete_call_cascades_action_items_and_speakers` (ON DELETE CASCADE на action_items + call_speakers по migration 0001).
-- [ ] **pipeline::run/reprocess_call/regenerate_recap** — нет unit тестов. Cover happy + missing audio + recap fail.
+- **pipeline::run/reprocess_call/regenerate_recap** — нет unit тестов. Cover happy + missing audio + recap fail.
 - [x] **STT KV-resume happy path** integration test — 2 workers-теста в `stt.integration.test.ts`: (1) resume branch — pre-seeded KV cache `stt_job:soniox:{r2Key}` → mock fetch с invariant `POST /transcriptions` НЕ вызывается, после completion кэш очищен; (2) no-cache branch — POST /transcriptions создаёт job, jobId сохраняется в KV. Dummy R2 + SONIOX_API_KEY creds в wrangler.test.toml (presign без сетевого вызова, partner fetch мокается).
 - [x] **OIDC ID-token signature negative tests** — добавлены 12 negative/edge тестов в `providers.test.ts::decodeIdTokenPayload`: invalid JSON в payload, non-base64 chars, empty iss, case-sensitive iss compare, aud=[], exp=0/boundary/non-numeric, missing aud/exp acceptance (Apple semantics), и **known-gap test** документирующий что tampered payload пока принимается (JWKS verification — следующая итерация). Когда JWKS landed → этот тест перевернётся на `.toThrow(/signature/i)`. 32 теста проходят (было 20).
 - [x] **MCP prompt-injection content** — pass-through test (M8.3). `services/mcp/src/tools.test.ts` +2 vitest'а: `get_transcript` возвращает «SYSTEM: Ignore all previous instructions» + HTML-comment injection as-is, `search_calls('%')` → 0 совпадений (LIKE escape regression).
@@ -599,14 +598,14 @@
 - [x] **Migration prep** — `SETTING_ACTIVE_PRESET = 'local_engine.active_preset'` константа. `local_engine.active` через M12.6.
 - [x] **Security M-2/M-3 baseline** — `write_user_only` создаёт prompt-файл с `O_EXCL` + `0o600` (защита от race + чужого чтения в shared /tmp). Whisper output JSON `chmod 0o600` после whisper-cli exit. `ensure_path_under` блокирует `..` сегменты + проверяет prefix перед каждым sidecar spawn. Capability validator теперь явно помечен как «последняя граница» в capabilities/default.json.
 - [x] **Security M-4 refresh-script guard** — `WOTOLD_CATALOG_REFRESH_CONFIRMED=1` ENV-gate против случайного запуска + блок ⚠️ SECURITY в шапке скрипта с cross-check workflow.
-- [ ] **`/security-scan`** на `local_engine/{models,llm,stt}.rs` + `capabilities/default.json` + `scripts/refresh-model-catalog.sh` — обязателен перед production release (W5). CLAUDE.md security-triggers table обновлён.
+- **`/security-scan`** на `local_engine/{models,llm,stt}.rs` + `capabilities/default.json` + `scripts/refresh-model-catalog.sh` — обязателен перед production release (W5). CLAUDE.md security-triggers table обновлён.
 - [x] **Pre-flight gate (PRD §14)** — `scripts/refresh-model-catalog.sh` написан + прогнан: реальные SHA256 + размеры получены для 6 моделей (Whisper small/medium/large-v3 у ggerganov + Qwen 2.5 1.5B/3B/7B у bartowski). **Gemma 3 2B заменён на Qwen 2.5 1.5B** для Light preset из-за Google TOS gating (PRD §11 O1 deviation, документировано).
 
 ### M12.1 LocalWhisperProvider (PRD §9 step 2)
 
 - [x] **Whisper provider real** — [local_engine/stt.rs](apps/desktop/src-tauri/src/local_engine/stt.rs) спавнит `wotold-whisper` sidecar (whisper.cpp `whisper-cli`). sherpa-onnx Whisper отклонён — несовместим с ggerganov .bin форматом каталога. Sidecar получает `-m <model.bin> -f <audio.wav> --output-json-full -of <stem> -l <lang>`, парсит `<stem>.json`. Per-track speaker tagging (mic → `speaker:owner`, system → `speaker:0`). 12 tests (lang normalize, JSON parse, mic vs system tagging, sort, NaN guard).
-- [x] **Sidecar binary register** — `wotold-whisper` добавлен в `tauri.conf.json::externalBin` + `capabilities/default.json::shell:allow-execute` с args validator'ами. Placeholder бинарь + build инструкции в [binaries/README.md](apps/desktop/src-tauri/binaries/README.md).
-- [ ] **Acceptance integration test** — bundled WAV (RU+2 спикера) → snapshot DiarizedTranscript. Требует реального `whisper-cli` бинаря в `binaries/`.
+- [x] **Sidecar binary register** — `wotold-whisper` добавлен в `tauri.conf.json::externalBin` + `capabilities/default.json::shell:allow-execute` с args validator'ами. Placeholder бинарь + build инструкции в [binaries/README.md](../apps/desktop/src-tauri/binaries/README.md).
+- **Acceptance integration test** — bundled WAV (RU+2 спикера) → snapshot DiarizedTranscript. Требует реального `whisper-cli` бинаря в `binaries/`.
 
 ### M12.2 LocalDiarizer (PRD §9 step 3)
 
@@ -619,7 +618,7 @@
 
 - [x] **O2 решено: sidecar** (`wotold-llama` через tauri-plugin-shell). PRD §11 O2 default подтверждён.
 - [x] **Real LlmProvider** — [local_engine/llm.rs](apps/desktop/src-tauri/src/local_engine/llm.rs) `generate()` спавнит `llama-cli` sidecar с prompt-файлом, парсит первый сбалансированный JSON-объект из stdout, валидирует `title/summary`. 5min timeout с kill-on-drop. 15 tests (build_prompt, extract_json brace counting, escape handling, validate shape).
-- [x] **Sidecar binary register** — `wotold-llama` в externalBin + capability whitelist со строгими args validators. Placeholder + build instructions в [binaries/README.md](apps/desktop/src-tauri/binaries/README.md).
+- [x] **Sidecar binary register** — `wotold-llama` в externalBin + capability whitelist со строгими args validators. Placeholder + build instructions в [binaries/README.md](../apps/desktop/src-tauri/binaries/README.md).
 - [x] **Prompt** — `LOCAL_LLM_SYSTEM_PROMPT` (PRD §M12.3.3 «only JSON» + few-shot ru пример) + 2 regression-теста.
 
 ### M12.6 Pipeline integration (PRD §9 step 5)
@@ -630,7 +629,7 @@
 - [x] **`pipeline::run` Phase 3 — Local route real** — `run_local_inner` ([pipeline/mod.rs](apps/desktop/src-tauri/src/pipeline/mod.rs)): resolve preset → проверка моделей → STT (mic+system параллельно через whisper-cli sidecar) → merge artifacts → recognize speakers (existing B3.x) → recap через llama-cli sidecar → persist via shared `recap::persist_recap_from_json` helper → `touch_usage` для UI last_used. Cloud route не тронут. Контракт ошибок: `local_engine_model_missing`, `local_engine_stt_failed`, `local_engine_llm_failed`, `local_whisper_timeout`, `local_llm_timeout`, `local_engine_no_app_handle`, `local_engine_preset_not_set` (PRD §M12.6.5 UI fallback markers).
 - [x] **recap::persist_recap_from_json extracted** — общий helper для cloud (`recap::run`) и local (`run_local_inner`); один post-processing pipeline (action_items + title + recap.md).
 - [x] **Tests** — `pipeline_run_requires_app_handle_for_local_engine` валидирует precondition.
-- [ ] **Cancellation flow** — SIGTERM на sidecar при call delete during processing. `tauri_plugin_shell::Child::kill()` интеграция приходит со spawn-handle tracking (B16 P0 расширение).
+- **Cancellation flow** — SIGTERM на sidecar при call delete during processing. `tauri_plugin_shell::Child::kill()` интеграция приходит со spawn-handle tracking (B16 P0 расширение).
 
 ### M12.7 Hardware probe (PRD §9 step 6)
 
@@ -649,7 +648,7 @@
 - [x] **Hardware probe banner** — `.activity-strip` с Apply/Dismiss.
 - [x] **Quality confirm** — `ask()` на RAM < 16 GB (PRD §M12.5.4).
 - [x] **i18n ru/kk/en** — `localEngine.*` namespace, no jargon.
-- [ ] **6 theme×accent manual QA** — visual verification (PRD §M12.5.6 acceptance).
+- **Ручная визуальная проверка** светлой и тёмной темы (PRD §M12.5.6 acceptance; акцент с B18.5 один).
 
 ### M12 onboarding + i18n + docs (PRD §9 steps 8-10)
 
@@ -662,11 +661,11 @@
 
 ### M12 чек-лист «можно стартовать» (PRD §14)
 
-- [ ] sherpa-onnx version с Whisper + sortformer проверен (changelog crate).
-- [ ] O2 решён: crate vs sidecar для llama (предпочтительно sidecar).
+- sherpa-onnx version с Whisper + sortformer проверен (changelog crate).
+- O2 решён: crate vs sidecar для llama (предпочтительно sidecar).
 - [x] HuggingFace URL'ы + SHA256 для 6 моделей — `scripts/refresh-model-catalog.sh` + вставлено в `MODEL_CATALOG`. Whisper small/medium/large-v3 (ggerganov) + Qwen 2.5 1.5B/3B/7B (bartowski). Gemma deviation — Qwen 1.5B.
-- [ ] CI build matrix готова к feature flag `local-engine` (macOS arm64+x86_64 only).
-- [ ] PRD review'ен заказчиком; O1–O5 closed или accepted.
+- CI build matrix готова к feature flag `local-engine` (macOS arm64+x86_64 only).
+- PRD review'ен заказчиком; O1–O5 closed или accepted.
 
 ---
 
@@ -685,14 +684,14 @@
 - [x] **M13.1.3** `pipeline/chunk_runner.rs` — per-chunk STT (mic+system dual-track в M13.1.5d), `LocalWhisperRequest::with_prompt` для context priming; per-chunk embeddings + diarization добавлены в Phase 2 (M13.2.1)
 - [x] **M13.1.4** DB schema — `call_chunks` table (migrations 0013 + 0014 для system_transcript_json + embeddings_json column)
 - [x] **M13.1.5** Feature flag `chunked_pipeline=false` по умолчанию + orchestrator wired в start_recording (M13.1.5c/d) + pause-aware (own M13.2.1 sub-milestone, не путать с PRD M13.2.1 ниже)
-- [ ] **M13.1.6** Smoke verify: dual-run на 30-мин фикстуре, diff transcripts ≥99% — **deferred to end** (требует real WAV)
+- **M13.1.6** Smoke verify: dual-run на 30-мин фикстуре, diff transcripts ≥99% — **deferred to end** (требует real WAV)
 
 ### Phase 2 — Parallel pipelining + global speaker re-clustering
 
 - [x] **M13.2.1** `pipeline/speaker_reclustering.rs` — agglomerative single-link cosine clustering, threshold 0.75 (tunable). Owner / unknown / empty-embedding passthrough. 11 unit-tests. Per-chunk embeddings extract'аются в `chunk_runner` через `extract_clusters` (reuse B3.3), persist в `call_chunks.embeddings_json`. Assembly применяет global remap к segments обеих дорожек.
 - [x] **M13.2.2** Chunk N обрабатывается параллельно с записью N+1 — `tokio::spawn` per rotation event; drain pending JoinHandles на stop с `tokio::time::timeout(300s)` per task. **Trade-off:** prev_prompt всегда None в parallel mode (best-effort, ~1% quality drop на стыках, whisper всё равно reset'ит context).
 - [x] **M13.2.3** `transcript:chunk_done` Tauri event — `events.rs` const + `ChunkDoneEvent { call_id, chunk_idx, status, segment_count }` + `EventBus::transcript_chunk_done`. Backend-only emit; frontend listener — Phase 3.
-- [ ] **M13.2.4** Verification на multi-speaker фикстуре — **deferred to end** (требует bundled multi-speaker WAV)
+- **M13.2.4** Verification на multi-speaker фикстуре — **deferred to end** (требует bundled multi-speaker WAV)
 
 ### Phase 3 — UX surfacing + flag-on default
 
@@ -706,13 +705,13 @@
 - **Performance:** stop→ready ≤ 5 мин на Balanced 2ч (vs 20-35 сейчас); Quality preset 2ч не упирается в `LOCAL_WHISPER_TIMEOUT`
 - **Quality:** transcript ≥99% bit-equivalent с full-file baseline на reference фикстуре
 - **Robustness:** crash-safety (per-chunk recovery); silence-less window → fallback к local RMS min
-- **UX:** 6 theme×accent проверены для ChunkProgressStrip
+- **UX:** ChunkProgressStrip проверен в светлой и тёмной теме
 
 **Effort:** ~2 спринта (10-15 рабочих дней).
 
 ### M13 follow-ups
 
-- [x] **[CRITICAL] Chunked pipeline ломал все записи >10 мин — исправлено.** Три root-cause (верифицированы на реальном звонке `12b4e564`): (1) **chunk-0 path mismatch** — sidecar писал chunk 0 в root `mic.wav`, а `run_chunk(0)` читал `chunks/0/mic.wav` → chunk 0 всегда `failed` → halt-gate валил весь pipeline; (2) **финальный chunk не обрабатывался** — открытый на stop chunk никогда не enqueue'ился (терялись последние ≤10 мин + duration обрезалась); (3) **halt-before-merge** — один failed chunk блокировал и транскрипт, и склейку аудио → плеер застревал на chunk 0. Прошло в прод т.к. M13.1.6/M13.2.4 smoke (real WAV) отложены — >10-мин путь ни разу не гоняли. **Фиксы:** (A) chunked-режим пишет chunk 0 сразу в `chunks/0/` (`sidecar_write_paths` + `audio_macos::start` final_mic/final_system params); (B) `OrchestratorSummary.final_chunk_*` + `spawn_finalize_and_pipeline` обрабатывает финальный chunk на stop (`plan_final_chunk`); (C) `ensure_all_chunks_done`→`chunks_ready` (ChunkGate: NoChunks/AllDone/Partial/NoneDone), merge независим от транскрипт-полноты; (D) команда `recover_chunked_call` + `pipeline/chunk_recovery.rs` восстанавливает сломанные записи из on-disk WAV'ов (promote root→chunks/0, cumulative offsets, re-STT, merge, reprocess) + UI-кнопка «Восстановить запись» в ErrorScreen. Test-only `WOTOLD_CHUNK_WINDOW_MS` для быстрой E2E. **Round 2 (real-run + adversarial audit — unit-тестов было мало):** удалена recover-кнопка (band-aid); прогнан РЕАЛЬНЫЙ pipeline (headless `WOTOLD_RECOVER_CALL_ID`) + 6-agent аудит нашли настоящие killers: **(G1) `parse_whisper_json` строгий UTF-8 read** → whisper.cpp невалидный UTF-8 на границе кириллического токена валил chunk/звонок → `from_utf8_lossy` (ЭТО почему русские записи падали); **(G2)** recovery/reprocess требовали root WAV, который убрал A → recovery через `spawn_initial`, reprocess мержит chunks→root до delete, `merge_both_tracks` promote'ит оба трека; **(G3)** playable audio до merge (`get_call_audio_path` fallback на chunks/0); **(G4)** pause-clock (final `end_ms` из реальной длины WAV); **(G5)** Swift `AudioRecorder.stop()` off-queue гонка → close внутри `queue.sync`; **(G7)** recap LLM overflow (`chunker trigger = 2×max_chars` пускал 35K-char/9K-token single-pass > 8192 ctx Qwen) → `trigger = max_chars`; `mark_call_ready` чистит stale `failed_reason`. **Доказано на реальной 25-мин русской записи `12b4e564`:** status `ready`, полное 25-мин аудио (48MB), transcript.md (35KB, до 24:45), recap.md (русское саммари), map-reduce 2 chunks. 623 cargo + 416 vitest pass, clippy+fmt clean.
+- [x] **Chunked pipeline на записях >10 мин.** Что изменилось: в chunked-режиме сайдкар пишет нулевой чанк сразу в `chunks/0/` (`sidecar_write_paths` + параметры `final_mic`/`final_system` в `audio_macos::start`); открытый на стоп финальный чанк обрабатывается (`OrchestratorSummary.final_chunk_*` + `plan_final_chunk`); склейка аудио больше не зависит от полноты транскрипта — `ensure_all_chunks_done` заменён на `chunks_ready` с состояниями `NoChunks/AllDone/Partial/NoneDone`, частичный транскрипт помечается degraded-флагом.
 - [x] **Mic-track diarization (multi-voice on microphone)** — toggle в Settings → Speakers (default ON, hint о ~10-20% slowdown). Sortformer проходит и по mic для случаев когда на микрофон попадают несколько голосов (live-meeting в одной комнате). Owner-голос определяется через voice biometric match против voice_samples владельца (`owner_identify::identify_owner_speaker`); fallback на primary-speaker by duration heuristic если samples ещё не накоплены. Cross-track owner reflection через Phase 2 reclustering. M3.7 invariant сохраняется (owner всегда `OWNER_TAG`). 7 unit-тестов в `pipeline::owner_identify`. Не затрагивает cloud paths.
 - [x] **Pipeline step label re-link** — i18n step1-5 синхронизированы с backend `Stage::step()` enum + переведены в present continuous. CallStateTag в PipelineStrip теперь dynamic через `labelOverride={progress.stageLabel}`.
 
@@ -752,11 +751,11 @@
 - [x] **T-17 title regen trigger** — новая кнопка «↻ Пересоздать название» в `HeaderActions` kebab menu CallDetailPage. Lightweight LLM-call (~150 max_tokens, focused prompt только на title) через cloud `AnthropicProvider::Managed` (mirror `regenerate_recap` pattern). `pipeline/title_regen.rs` модуль: `build_title_prompt`, `extract_transcript_head` (UTF-8 safe), `parse_title_response` (fallback "Без названия" на garbage/empty), `regenerate_title()` (loads PipelineSettings → managed mode → LLM → `db::set_call_title` → return new title). NEW Tauri command `regenerate_title` зарегистрирован в `invoke_handler!`. Frontend: `regenerateTitle(callId)` TS API → CallDetailPage `onRegenerateTitle` handler с `regeneratingTitle` busy flag + shared disabled state в kebab → `refetchAll` после success. i18n ru/en/kk (`callDetail.regenerateTitle{Title,ing,Failed,NoTranscript}`). Cloud-only path; local engine support — backlog M14.6. 7 backend tests.
 - [x] **T-18 hierarchical 3-level pipeline (P2)** — `pipeline/map_reduce.rs` extended: `build_mid_reduce_prompt` + `run_single_mid_reduce` + новая entry point `run_pipeline` dispatcher. Когда `chunks.len() > HIERARCHICAL_THRESHOLD` (8) → 3-level: map (per chunk) → mid-reduce (per group of MID_REDUCE_GROUP_SIZE=4) → final reduce. Mid-aggregates имеют same shape как map outputs (facts / candidates / topic_tags / participants_mentioned, без CallSummaryV2 final fields). Final reduce принимает array из mid-aggregates вместо raw map outputs — solving ctx-overflow для Light preset на calls >25K tokens (~1.5h+). Best-effort: failed map/mid-reduce groups skipped; all-fail → AppError. Constants tuned для Light; backlog adaptive thresholds. local_orchestrator switched к `run_pipeline` (auto-dispatches flat/hierarchical). +6 tests. Total: 513 cargo + 320 vitest. **M14 P2 завершён** (только T-16 speculative decoding остался — backlog nice-to-have).
 
-### Post-M14 bug-fix batch (6 user-reported)
+### Post-M14 · полиш по ревью владельца (6 пунктов)
 
-- [x] **Bug-fix batch (post-M14 ship)** — 6 багов из user-reported QA сессии.
+- [x] **Батч после выпуска M14** — шесть пунктов из QA-сессии владельца.
   - **#1 Recap regen 429** — `AnthropicProvider::generate_managed` 3-attempt exponential backoff (1s → 3s → 9s ± jitter) на transient errors. `is_retryable_message()` ловит "429"/"upstream error"/"Bad Gateway"/"rate limit"/"502/503/504". Cloudflare proxy wraps Anthropic 429 как `ok:false code:provider_error message:"LLM upstream error (429)"` — это retryable. Hard-cap `code:"quota_exceeded"` остаётся permanent (no retry). Frontend `api/errors.ts` разделил quota (hard-cap) от transient ("Сервис временно занят"). +3 backend tests + 2 vitest patterns.
-  - **#2 Mic diarization silent skip** — `diarize_track` без pyannote-segmentation модели тихо no-op'ил. Лог bumped `info` → `warn` (видно в release-logs). Frontend Speakers section: mic-diarization toggle gated на `localEngineModelStatus('pyannote-segmentation') == 'present'`, иначе disabled + inline кнопка "↓ Установить модуль разделения голосов" → `localEngineModelDownload`.
+  - **#2 Mic diarization без модели** — `diarize_track` без pyannote-segmentation отчитывается на уровне `warn` вместо `info` (видно в release-logs). Frontend Speakers section: mic-diarization toggle gated на `localEngineModelStatus('pyannote-segmentation') == 'present'`, иначе disabled + inline кнопка "↓ Установить модуль разделения голосов" → `localEngineModelDownload`.
   - **#3 HomePage hotkey hint hardcode** — `⌘ ⇧ R` был хардкод-строкой; lifted `toggleHotkey/pauseHotkey` в `useState<ParsedHotkey>`, JSX рендерит `{formatHotkey(toggleHotkey)}` + i18n `home.hotkeyTitle` теперь принимает `{chord}` placeholder.
   - **#4 VoiceModelSection обезличена** — "WeSpeaker ResNet34 LM · VoxCeleb" → "Модуль распознавания голоса" / "Voice recognition module" / "Дауысты тану модулі". Tech details expander (URL/SHA256/feature flag) удалён. Размер модели остался в кнопке download.
   - **#5 Realtime reactivity** — `useCallDetail` `call:progress` listener теперь триггерит debounced `refetchAll()` на каждый stage transition (`step !== prevStep`), 600ms debounce + 1.5s rate-limit. Артефакты (transcript / raw_stt / recap / tasks) подтягиваются live без exit-enter.

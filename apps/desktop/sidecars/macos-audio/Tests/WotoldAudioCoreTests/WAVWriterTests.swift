@@ -113,3 +113,69 @@ struct WAVWriterLimitTests {
         return buffer
     }
 }
+
+@Suite("WAVWriter — тишина в провале (TD-45)")
+struct WAVWriterSilenceTests {
+    private func tmpURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("wotold-silence-\(UUID().uuidString).wav")
+    }
+
+    @Test("длительность тишины считается по частоте и каналам")
+    func silenceLengthMatchesSampleRate() throws {
+        let url = tmpURL()
+        let w = try WAVWriter(url: url, sampleRate: 16_000, channels: 1)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let written = try w.writeSilence(seconds: 1.5)
+        // 16 кГц × 1 канал × 2 байта × 1.5 с
+        #expect(written == 48_000)
+        try w.close()
+
+        let size = try FileManager.default
+            .attributesOfItem(atPath: url.path)[.size] as? Int ?? 0
+        #expect(size == 44 + 48_000, "заголовок 44 байта + данные")
+    }
+
+    @Test("тишина — действительно нули, а не мусор из памяти")
+    func silenceIsActuallySilent() throws {
+        let url = tmpURL()
+        let w = try WAVWriter(url: url, sampleRate: 16_000, channels: 1)
+        defer { try? FileManager.default.removeItem(at: url) }
+        try w.writeSilence(seconds: 0.05)
+        try w.close()
+
+        let bytes = try Data(contentsOf: url).dropFirst(44)
+        #expect(!bytes.isEmpty)
+        #expect(bytes.allSatisfy { $0 == 0 })
+    }
+
+    @Test("нулевая и бессмысленная длительность ничего не пишут")
+    func nonPositiveDurationsAreNoOps() throws {
+        let url = tmpURL()
+        let w = try WAVWriter(url: url, sampleRate: 16_000, channels: 1)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(try w.writeSilence(seconds: 0) == 0)
+        #expect(try w.writeSilence(seconds: -3) == 0)
+        #expect(try w.writeSilence(seconds: .nan) == 0)
+        #expect(try w.writeSilence(seconds: .infinity) == 0)
+        try w.close()
+
+        let size = try FileManager.default
+            .attributesOfItem(atPath: url.path)[.size] as? Int ?? 0
+        #expect(size == 44, "только заголовок")
+    }
+
+    @Test("длинный провал пишется чанками и не врёт про объём")
+    func longGapIsWrittenInChunks() throws {
+        let url = tmpURL()
+        let w = try WAVWriter(url: url, sampleRate: 16_000, channels: 1)
+        defer { try? FileManager.default.removeItem(at: url) }
+        // 10 с — заведомо больше одного 16 KiB-чанка.
+        let written = try w.writeSilence(seconds: 10)
+        #expect(written == 320_000)
+        try w.close()
+    }
+}
+

@@ -54,12 +54,56 @@ export interface CallSpeaker {
   confirmed: number;
 }
 
+/** [B27] Пассаж индекса ассистента + bm25-ранг (меньше — релевантнее). */
+export interface Passage {
+  id: number;
+  call_id: string;
+  kind: string;
+  speaker: string | null;
+  start_ms: number | null;
+  end_ms: number | null;
+  text: string;
+  rank: number;
+}
+
 export class WotoldDb {
   private db: Database.Database;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath, { readonly: true, fileMustExist: true });
     this.db.pragma('foreign_keys = ON');
+  }
+
+  /** Есть ли в базе индекс ассистента (миграции 0019/0021). */
+  hasAssistantIndex(): boolean {
+    const row = this.db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'assistant_fts'`)
+      .get() as { name: string } | undefined;
+    return row !== undefined;
+  }
+
+  /**
+   * [B27] FTS5-поиск по индексу ассистента. Read-only, как и всё в этом
+   * сервисе: MCP только читает уже построенный приложением индекс.
+   *
+   * `matchExpr` обязан быть экранирован вызывающей стороной (`buildMatchExpr`),
+   * иначе пользовательский текст попадает в MATCH как синтаксис FTS5 —
+   * кавычки, `NEAR`, `*` и `:` меняли бы смысл запроса, а не искались.
+   */
+  searchPassages(opts: { matchExpr: string; limit: number; callId?: string }): Passage[] {
+    const limit = clampLimit(opts.limit);
+    return this.db
+      .prepare(
+        `SELECT p.id, p.call_id, p.kind, p.speaker, p.start_ms, p.end_ms, p.text,
+                bm25(assistant_fts) AS rank
+         FROM assistant_fts
+         JOIN assistant_passages p ON p.id = assistant_fts.rowid
+         WHERE assistant_fts MATCH ?
+           AND (? IS NULL OR p.call_id = ?)
+         ORDER BY rank ASC
+         LIMIT ?`,
+      )
+      .all(opts.matchExpr, opts.callId ?? null, opts.callId ?? null, limit) as Passage[];
   }
 
   close(): void {

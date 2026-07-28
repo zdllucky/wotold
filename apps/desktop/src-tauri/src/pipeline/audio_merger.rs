@@ -73,6 +73,11 @@ pub enum MergeError {
         got: WavSpec,
         path: PathBuf,
     },
+    /// Каталог звонка исчез, пока шла склейка (обычно — пользователь удалил
+    /// звонок). Создавать его заново нельзя: получился бы каталог с аудио без
+    /// строки в базе.
+    #[error("call dir gone: {0}")]
+    CallDirGone(PathBuf),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -236,10 +241,20 @@ pub fn merge_track(
     let spec = first_reader.spec();
     drop(first_reader);
 
-    // Подготовка writer'а. Создаём parent dir если ещё нет (на reprocess'ах
-    // редко, но safer).
+    // Подготовка writer'а. Каталог звонка обязан уже существовать — мы его не
+    // создаём.
+    //
+    // Почему не `create_dir_all`: склейка идёт в `spawn_blocking`, а его нельзя
+    // отменить — `JoinHandle::abort` роняет только внешнюю задачу, замыкание
+    // доживает на своём потоке. Если в этот момент звонок удалили, создание
+    // каталога воскрешало бы удалённое: каталог с аудио и без строки в базе
+    // (тот самый мусор, который потом подметает `orphan_reconcile`, TD-50).
+    // Каталог существует во всех легальных путях — запись, переобработка,
+    // восстановление и запрос аудио плеером идут по живому звонку.
     if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent)?;
+        if !parent.is_dir() {
+            return Err(MergeError::CallDirGone(parent.to_path_buf()));
+        }
     }
     // Temp-file pattern: пишем во временный файл, потом rename → атомарный
     // swap. Защищает от partial WAV при interrupted merge (next reprocess
@@ -699,5 +714,31 @@ mod tests {
             .unwrap();
         // Старое содержимое [99] заменено на [1, 2, 3, 4].
         assert_eq!(samples, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn merge_does_not_recreate_a_deleted_call_dir() {
+        // Склейка идёт в spawn_blocking, который нельзя отменить: если звонок
+        // удалили посреди неё, `create_dir_all` воскресил бы каталог с аудио и
+        // без строки в базе. Каталог мы не создаём — падаем с CallDirGone.
+        let tmp = tempdir().unwrap();
+        let chunks_dir = tmp.path().join("chunks");
+        write_stub_wav(
+            &chunks_dir.join("0").join("mic.wav"),
+            spec_16k_mono_i16(),
+            &[1, 2, 3, 4],
+        );
+        // Каталог звонка «удалён»: пишем в путь, родителя которого нет.
+        let output = tmp.path().join("gone").join("mic.wav");
+
+        let err = merge_track(&chunks_dir, &output, TrackKind::Mic).unwrap_err();
+        assert!(
+            matches!(err, MergeError::CallDirGone(_)),
+            "ожидали CallDirGone, получили {err:?}"
+        );
+        assert!(
+            !output.parent().unwrap().exists(),
+            "каталог не должен появиться"
+        );
     }
 }
