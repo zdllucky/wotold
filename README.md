@@ -26,7 +26,14 @@ Privacy documentation: [`docs/PRIVACY.md`](docs/PRIVACY.md).
 
 ## Install
 
-1. **Download** the latest `.dmg` from [Releases](https://github.com/zdllucky/wotold/releases). Requires **macOS 14.4+** — system-audio capture is gated on that version. No public release is published yet; until then, build from source (below).
+```bash
+brew tap zdllucky/wotold
+brew install --cask wotold
+```
+
+Or download the latest `.dmg` from [Releases](https://github.com/zdllucky/wotold/releases). Requires **macOS 14.4+** — system-audio capture is gated on that version.
+
+1. **Install** via Homebrew or by dragging Wotold from the DMG into Applications.
 2. **Open** the DMG and drag Wotold into Applications.
 3. **First launch.** The build is not notarized (deliberate MVP limitation, R6), so Gatekeeper will warn you. Go to System Settings → Privacy & Security → "Open anyway".
 4. **Onboarding.** Wotold asks for your name and role (so it knows who speaks on your track), plus Microphone and Screen Recording permissions. Wotold does **not** capture screenshots — ScreenCaptureKit is used only to obtain system audio.

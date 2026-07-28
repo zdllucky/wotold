@@ -26,7 +26,14 @@ Privacy-документация: [`docs/PRIVACY.md`](docs/PRIVACY.md).
 
 ## Для пользователя
 
-1. **Скачать** последний `.dmg` из [Releases](https://github.com/zdllucky/wotold/releases) — нужен macOS 14.4+ (на 14.0–14.3 не заработает захват системного звука). Публичных выпусков пока нет: до первого релиза собирай из исходников, см. ниже.
+```bash
+brew tap zdllucky/wotold
+brew install --cask wotold
+```
+
+Либо `.dmg` из [Releases](https://github.com/zdllucky/wotold/releases). Нужен macOS 14.4+ — на 14.0–14.3 не заработает захват системного звука.
+
+1. **Поставить** через Homebrew или перетащив Wotold из DMG в Applications.
 2. **Открыть** DMG → перетащить Wotold в Applications.
 3. **Первый запуск.** Gatekeeper выдаст предупреждение (сборка пока без нотаризации — см. R6 паспорта). Открой Системные Настройки → Конфиденциальность и Безопасность → «Открыть всё равно».
 4. **Onboarding.** Wotold попросит:
