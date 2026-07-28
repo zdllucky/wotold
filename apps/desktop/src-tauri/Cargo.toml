@@ -95,6 +95,11 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 [dev-dependencies]
 httpmock = "0.7"
 tempfile = "3"
+# Виртуальные часы для тестов с ожиданием (`#[tokio::test(start_paused)]`).
+# В feature-набор `full` не входит намеренно — он меняет поведение рантайма,
+# поэтому включается только в тестовом профиле. Правило 6 CLAUDE.md: тесты не
+# синхронизируются реальным временем.
+tokio = { version = "1", features = ["test-util"] }
 # [Phase 6] proptest — property-based для invariant'ов (cosine, rank, wav).
 proptest = "1.5"
 # [Phase 6] rstest — parameterized cases (collapse 4 retry-classification tests).

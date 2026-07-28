@@ -6,9 +6,11 @@
 //! `setup()`: восстановление раньше прогрева, прогрев раньше индексации не
 //! требуется — задачи независимы.
 
-use tauri::AppHandle;
+use std::time::Duration;
 
-use crate::{commands, db, state};
+use tauri::{AppHandle, Emitter};
+
+use crate::{commands, db, events, state, updater};
 
 /// [B16 audit P1] panic hook: silent-kill процессу не оставляет следов.
 /// Пишем backtrace в panic.log + дублируем в stderr. Поверх default hook —
@@ -54,6 +56,58 @@ pub(crate) fn spawn_startup_tasks(handle: &AppHandle) {
     spawn_llm_warmup(handle);
     #[cfg(target_os = "macos")]
     spawn_model_integrity_check(handle);
+    spawn_updater_poll(handle);
+}
+
+/// Первая проверка обновлений — не сразу: старт и так занят восстановлением,
+/// бэкфиллом индекса и прогревом модели.
+const UPDATE_FIRST_CHECK_DELAY: Duration = Duration::from_secs(30);
+/// Дальше — раз в шесть часов. Приложение живёт днями, а не минутами;
+/// чаще спрашивать GitHub незачем.
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+/// Как часто перепроверять занятость, когда обязательное обновление ждёт
+/// окончания записи.
+const UPDATE_IDLE_RETRY: Duration = Duration::from_secs(30);
+
+/// Периодическая проверка обновлений.
+///
+/// Раньше проверка жила в `useEffect` баннера: один раз за запуск и ошибка
+/// молча в консоль. Приложение для записи звонков открыто сутками — узнавать
+/// о новой версии только при следующем холодном старте недостаточно.
+///
+/// Обязательное обновление ставится само, но никогда не прерывает запись или
+/// обработку: `install_when_idle` ждёт простоя сколько потребуется.
+fn spawn_updater_poll(handle: &AppHandle) {
+    let app = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(UPDATE_FIRST_CHECK_DELAY).await;
+        loop {
+            match updater::check(&app).await {
+                Ok(Some(update)) => {
+                    let urgency = update.urgency;
+                    let version = update.version.clone();
+                    // Событие эмитим всегда: UI объясняет пользователю и
+                    // предстоящий перезапуск, и ожидание простоя.
+                    if let Err(e) = app.emit(events::UPDATER_AVAILABLE, update) {
+                        log::warn!("updater: не смог отправить событие: {e}");
+                    }
+                    if urgency == updater::UpdateUrgency::Mandatory {
+                        log::info!("updater: {version} обязательна, ставлю при первом простое");
+                        let host = updater::AppUpdateHost { app: &app };
+                        // При успехе не возвращается — процесс перезапускается.
+                        if let Err(e) = updater::install_when_idle(&host, UPDATE_IDLE_RETRY).await {
+                            log::warn!("updater: обязательное обновление не поставилось: {e}");
+                        }
+                    }
+                }
+                Ok(None) => log::debug!("updater: обновлений нет"),
+                // Сеть недоступна — это норма для локального приложения.
+                // Следующая попытка по расписанию, без агрессивных ретраев.
+                Err(e) => log::info!("updater: проверка не удалась: {e}"),
+            }
+            tokio::time::sleep(UPDATE_CHECK_INTERVAL).await;
+        }
+    });
 }
 
 /// [M13 fix / ops] Headless recovery: если env WOTOLD_RECOVER_CALL_ID

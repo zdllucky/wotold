@@ -72,6 +72,15 @@ pub const RECAP_BULK_DONE: &str = "recap:bulk_done";
 /// Фазы: `retrieving` → `generating`. Очередь LLM (queued) отдельно
 /// не эмитится — фронт выводит её из существующего `queue:state`.
 pub const ASSISTANT_STATUS: &str = "assistant:status";
+/// Найдено обновление. Payload — `updater::AvailableUpdate` с полем
+/// `urgency`. Эмитится фоновым поллером (`app_startup::spawn_updater_poll`),
+/// а не по запросу фронта: проверка живёт всё время работы приложения, а не
+/// один раз при монтировании компонента.
+///
+/// Обязательное обновление к моменту эмита уже поставлено в очередь на
+/// установку — событие для UI лишь объясняет, почему приложение сейчас
+/// перезапустится (или почему ждёт освобождения).
+pub const UPDATER_AVAILABLE: &str = "updater:available";
 
 // ──────────────────────────────────────────────────────────────
 // Payload types. Re-exported из event-bus, чтобы у frontend
