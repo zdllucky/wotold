@@ -5,9 +5,8 @@ description: Как поставить Wotold на macOS, что попроси�
 
 ## Требования
 
-- **macOS 14.4 или новее.** Захват системного звука использует Core Audio process tap, которого в более ранних версиях нет. Установщик пускает и на 14.0, но запись системной дорожки там не заработает.
+- **macOS 14.4 или новее, Apple Silicon.** Захват системного звука использует Core Audio process tap, которого в более ранних версиях нет. Intel-маки не поддерживаются: сайдкары распознавания и генерации собраны только под arm64.
 - **Свободное место** — от 2 до 7 ГБ под модели, в зависимости от пресета, плюс место под аудио записей.
-- Apple Silicon или Intel.
 
 Linux и Windows не поддерживаются: захват аудио и локальный движок оставлены за
 trait-заглушками (ограничения R4 и R9). Это принятое ограничение MVP, а не баг.
@@ -30,7 +29,7 @@ Homebrew ставит карантин, и при первом запуске с
 
 Последний `.dmg` со страницы [Releases](https://github.com/zdllucky/wotold/releases) — открыть
 и перетащить Wotold в Applications. Постоянная ссылка на свежую сборку:
-[Wotold-universal.dmg](https://github.com/zdllucky/wotold/releases/latest/download/Wotold-universal.dmg).
+[Wotold-arm64.dmg](https://github.com/zdllucky/wotold/releases/latest/download/Wotold-arm64.dmg).
 
 ## Первый запуск: предупреждение Gatekeeper
 

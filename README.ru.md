@@ -3,7 +3,7 @@
 **Русский** · [English](README.md)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2014.4%2B-lightgrey.svg)](https://zdllucky.github.io/wotold/download/)
+[![Platform](https://img.shields.io/badge/platform-macOS%2014.4%2B%20Apple%20Silicon-lightgrey.svg)](https://zdllucky.github.io/wotold/download/)
 [![CI](https://github.com/zdllucky/wotold/actions/workflows/ci.yml/badge.svg)](https://github.com/zdllucky/wotold/actions/workflows/ci.yml)
 
 Десктоп-утилита для записи звонков с транскрипцией, диаризацией и саммари — **полностью на твоём Mac, бесплатно, без сети**.
@@ -31,7 +31,7 @@ brew tap zdllucky/wotold
 brew install --cask wotold
 ```
 
-Либо `.dmg` из [Releases](https://github.com/zdllucky/wotold/releases). Нужен macOS 14.4+ — на 14.0–14.3 не заработает захват системного звука.
+Либо `.dmg` из [Releases](https://github.com/zdllucky/wotold/releases). Нужен macOS 14.4+ на Apple Silicon — на 14.0–14.3 не заработает захват системного звука, а сайдкары собраны только под arm64.
 
 1. **Поставить** через Homebrew или перетащив Wotold из DMG в Applications.
 2. **Открыть** DMG → перетащить Wotold в Applications.

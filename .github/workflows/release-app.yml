@@ -149,7 +149,7 @@ jobs:
           # [TD-02] toolchain задан явно: эта action берёт тулчейн из ИМЕНИ ref'а
           # (@stable), а после SHA-пина имени больше нет.
           toolchain: stable
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
@@ -182,8 +182,13 @@ jobs:
           # (Cargo.toml [features]) — страховка: если default когда-нибудь
           # переберут, релизный .dmg не должен молча уехать без
           # биометрического матчинга.
-          # [B16 audit P0] universal target — fat binary под intel + apple silicon.
-          args: --features voice-onnx --target universal-apple-darwin
+          # Только Apple Silicon. `universal-apple-darwin` тут стоял
+          # аспирационно и собраться не мог: во-первых, `ort` не публикует
+          # пребилтов ONNX Runtime под x86_64-apple-darwin; во-вторых — и это
+          # решающее — в `binaries/` лежат исключительно aarch64-сайдкары
+          # (llama, llama-server, whisper). Даже собравшись, fat-бинарь на
+          # Intel упал бы на первом распознавании.
+          args: --features voice-onnx --target aarch64-apple-darwin
           tagName: ${{ needs.resolve.outputs.tag }}
           releaseName: 'Wotold ${{ needs.resolve.outputs.tag }}'
           releaseBody: |
@@ -212,51 +217,23 @@ jobs:
           TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           set -euo pipefail
-          BUNDLE=apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg
+          BUNDLE=apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
           SRC=$(find "$BUNDLE" -maxdepth 1 -name '*.dmg' | head -1)
           if [ -z "$SRC" ]; then
             echo "::error::DMG не найден в $BUNDLE — сборка не дала артефакт"
             exit 1
           fi
-          cp "$SRC" /tmp/Wotold-universal.dmg
-          gh release upload "$TAG" /tmp/Wotold-universal.dmg --clobber
-          SHA=$(shasum -a 256 /tmp/Wotold-universal.dmg | cut -d' ' -f1)
+          cp "$SRC" /tmp/Wotold-arm64.dmg
+          gh release upload "$TAG" /tmp/Wotold-arm64.dmg --clobber
+          SHA=$(shasum -a 256 /tmp/Wotold-arm64.dmg | cut -d' ' -f1)
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
           echo "- DMG sha256: \`$SHA\`" >> "$GITHUB_STEP_SUMMARY"
 
-      # Homebrew-каск живёт в отдельном репозитории-тапе: его нужно
-      # обновлять на каждый релиз, иначе `brew upgrade` не увидит новую
-      # версию. GITHUB_TOKEN в чужой репозиторий не пишет — нужен PAT с
-      # доступом только к тапу.
-      - name: Update Homebrew tap
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          VERSION_SHA: ${{ steps.dmg.outputs.sha256 }}
-          TAG: ${{ needs.resolve.outputs.tag }}
-        run: |
-          set -euo pipefail
-          # Контекст `secrets` в `if:` недоступен — проверяем здесь. Без токена
-          # каск просто не обновляется: релиз это ронять не должно.
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::notice::HOMEBREW_TAP_TOKEN не задан — обновление каска пропущено"
-            exit 0
-          fi
-          VERSION="${TAG#v}"
-          git clone --depth 1 \
-            "https://x-access-token:${GH_TOKEN}@github.com/zdllucky/homebrew-wotold.git" /tmp/tap
-          mkdir -p /tmp/tap/Casks
-          sed -e "s/{{VERSION}}/${VERSION}/g" -e "s/{{SHA256}}/${VERSION_SHA}/g" \
-            .github/homebrew/wotold.rb.tmpl > /tmp/tap/Casks/wotold.rb
-          cd /tmp/tap
-          if git diff --quiet; then
-            echo "::notice::Каск уже актуален"
-            exit 0
-          fi
-          git config user.name 'Damir Zhalelov'
-          git config user.email '20101012+zdllucky@users.noreply.github.com'
-          git add Casks/wotold.rb
-          git commit -m "wotold ${VERSION}"
-          git push
+      # Обновление Homebrew-каска сюда НЕ входит намеренно. Толкать его
+      # отсюда в чужой репозиторий значило бы держать кросс-репозиторный PAT
+      # ради одной строки в .rb — лишний долгоживущий секрет в релизной джобе,
+      # которая и так носит ключ подписи. Тап забирает релиз сам, по
+      # публичному API: .github/workflows/sync-cask.yml в zdllucky/homebrew-wotold.
 
       # [TD-01] Ad-hoc подпись переехала в tauri.conf.json
       # (bundle.macOS.signingIdentity = "-"). Здесь раньше стоял отдельный шаг

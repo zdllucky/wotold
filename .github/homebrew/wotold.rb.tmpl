@@ -11,7 +11,7 @@ cask "wotold" do
 
   # Постоянное имя ассета — версионное имя от tauri-action ссылку «на
   # последний» построить не даёт.
-  url "https://github.com/zdllucky/wotold/releases/download/v#{version}/Wotold-universal.dmg",
+  url "https://github.com/zdllucky/wotold/releases/download/v#{version}/Wotold-arm64.dmg",
       verified: "github.com/zdllucky/wotold/"
   name "Wotold"
   desc "Local call recorder with transcription, speaker diarization and summaries"
@@ -21,6 +21,8 @@ cask "wotold" do
   # с 14.4. Установщик на 14.0-14.3 отработает, а запись системной дорожки
   # там не заведётся.
   depends_on macos: ">= :sonoma"
+  # Сайдкары (llama.cpp, whisper.cpp) собраны только под Apple Silicon.
+  depends_on arch: :arm64
 
   app "Wotold.app"
 

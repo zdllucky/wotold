@@ -3,7 +3,7 @@
 [English](README.md) · [**Русский**](README.ru.md)
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2014.4%2B-lightgrey.svg)](https://zdllucky.github.io/wotold/download/)
+[![Platform](https://img.shields.io/badge/platform-macOS%2014.4%2B%20Apple%20Silicon-lightgrey.svg)](https://zdllucky.github.io/wotold/download/)
 [![CI](https://github.com/zdllucky/wotold/actions/workflows/ci.yml/badge.svg)](https://github.com/zdllucky/wotold/actions/workflows/ci.yml)
 
 A desktop call recorder with transcription, speaker diarization and summaries — **running entirely on your Mac, free, offline**.
@@ -31,7 +31,7 @@ brew tap zdllucky/wotold
 brew install --cask wotold
 ```
 
-Or download the latest `.dmg` from [Releases](https://github.com/zdllucky/wotold/releases). Requires **macOS 14.4+** — system-audio capture is gated on that version.
+Or download the latest `.dmg` from [Releases](https://github.com/zdllucky/wotold/releases). Requires **macOS 14.4+ on Apple Silicon** — system-audio capture is gated on that version, and the bundled sidecars are arm64-only.
 
 1. **Install** via Homebrew or by dragging Wotold from the DMG into Applications.
 2. **Open** the DMG and drag Wotold into Applications.
