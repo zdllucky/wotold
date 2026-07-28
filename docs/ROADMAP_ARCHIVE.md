@@ -331,7 +331,7 @@
 - [x] Code-review HIGH: HomePage recent-row border ordering + consent modal `role=dialog` / `aria-modal` / `aria-labelledby`.
 - [x] Security-review HIGH: AccountSection `openExternal(authorizeUrl)` https-scheme guard (если прокси compromised — javascript:/file:/custom-scheme exploit заблокирован).
 - [x] A11y modal focus trap: new `useFocusTrap` hook + applied to consent (HomePage), Coachmarks, OnboardingPage. ESC + Tab cycling + scroll lock + focus restore.
-- [x] A11y CRITICAL: bumped `--signal` light #DC2626 → #BF1C1C (был 4.40:1, теперь ≈ 5.6:1 на --bg).
+- [x] A11y: `--signal` в светлой теме #DC2626 → #BF1C1C — контраст на `--bg` ≈ 5.6:1.
 - [x] A11y HIGH: bumped `--muted` #6B6C72 → #5E5F65 (для text-xs/small-caps безопасно).
 - [x] A11y HIGH: Tabs aria-controls / aria-labelledby pairs + id'd via useId().
 - [x] A11y HIGH: App nav убран orphan role=tab/aria-selected — заменён на aria-current="page" (правильный nav pattern).
@@ -340,7 +340,7 @@
 - [x] A11y MEDIUM/WARN: `prefers-reduced-motion` CSS — `.dot--pulse`, `.rec-btn`, `.conf-fill`; JS — `UsageBar` width transition через `useReducedMotion` hook.
 - [x] A11y WARN: ContactsPage name button hit area padding/margin для SC 2.5.8.
 - [x] `useFocusTrap` test suite (8 cases) — initial focus, ESC, Tab/Shift+Tab cycling, inactive, scroll-lock.
-- **Manual visual QA** — пройти руками 6 theme×accent комбинаций (light/dark × bordeaux/persian/ink) на всех экранах. Делается перед публичным релизом, не разработка.
+- **Manual visual QA** — ручная проверка светлой и тёмной темы на всех экранах ([TD-39]: пикер акцентов убран в B18.5, комбинаций две). Делается перед публичным релизом, не разработка.
 
 ## Wotold v2 Redesign (B18)
 
@@ -423,19 +423,19 @@
 >
 > **B18 a11y/cleanup follow-up** (из финального ревью; не блокеры — отложены отдельной задачей): (1) recording-state live-region объявление start/stop/pause для скринридеров (SC 4.1.3, + новые i18n-ключи); (2) тема-toggle IconBtn в Sidebar делит `aria-label` с Settings — нужен отдельный ключ; (3) toast dismiss-кнопка без per-toast контекста (SC 4.1.2); (4) capabilities least-privilege split (отдельный файл для `recording-widget`, чтобы он не имел доступа к `set_main_traffic_lights_hidden`/fullscreen main-окна); (5) ввести токен `--on-danger` (#fff) вместо raw `#fff` на danger/speaker-поверхностях (`var(--on-accent)` НЕ подходит — в dark тема near-black, сломает контраст); (6) проверить контраст `--wc-*` светофоров в dark-теме (SC 1.4.11); (7) dead i18n `home.*`/`calls.*` (остатки удалённых HomePage/CallsPage) — отдельная аккуратная зачистка с per-key верификацией.
 
-### B19 · UI bug-sweep (ревью юзера после v2)
+### B19 · UI-полиш после v2
 
-Полировка v2 по списку багов от юзера. Порядок строгий. Логика/i18n 1-в-1, design-gate (токены/wk/Icon).
+Батч правок интерфейса по ревью владельца: скролл и позиционирование оверлеев, календарные фильтры, реальные действия в kebab-меню, минимальный размер окна, разбор прерванных записей. Логика и i18n сохранены 1-в-1, design-gate (токены/wk/Icon).
 
-- [x] **B19.1** Call-detail overscroll-баунс («улетают границы») → `overscroll-behavior:none` на `.doc-scroll` (+ `.app-main` `contain`→`none`).
+- [x] **B19.1** Call-detail: `overscroll-behavior:none` на `.doc-scroll` (+ `.app-main` `contain`→`none`) — страница не отскакивает за границы.
 - [x] **B19.2** Week/Month: date-jump дропдаун (год ◀▶ + сетка месяцев) — портнуть `CalHeader` month-picker из прототипа `wk-inbox.jsx`, завязать `onPickMonth` в `InboxWeek/Month`.
 - [x] **B19.3** Фильтр периода «с … по …» — кастомный диапазон дат (`range{from,to}` facet + 2 date-инпута в Фильтр-дропдауне + `matchesFacets` + чип).
-- [x] **B19.4** Оверлеи/дропдауны/попапы вылетают за край окна — `useAnchoredPosition` (flip-up + clamp-x) в `Menu`/`Select`; `max-height`+scroll для модалок/палитры.
-- [x] **B19.5** Min-size окна 760×560 → **960×600** (тулбар обрезался).
-- [x] **B19.6** Прерванная запись <30с не автоудаляется — на старте reconcile орфан-`recording` по длине частичного WAV: <30с → delete+cleanup, ≥30с → 'failed' (восстановимо); `sweep_stale_calls` → только 'processing'. (Нормальный стоп <30с уже удаляется, B18.12.)
-- [x] **B19.7** Kebab в списке = заглушки → реальные Переработать (`reprocessCall`) / Экспорт (save-dialog + `exportCallMarkdown`) / Удалить (`ConfirmModal` + `deleteCall`) + тосты.
-- [x] **B19.8** Карточный вид — некрасивые отступы контейнера → `padding: var(--s5)`.
-- [x] **B19.9** Крошки звонка: сырой `←` в i18n → `<Icon name="chevronLeft">` (разделитель chevronRight уже по гайду).
+- [x] **B19.4** Позиционирование оверлеев: `useAnchoredPosition` (flip-up + clamp-x) в `Menu`/`Select`; `max-height`+scroll для модалок и палитры — всё остаётся в пределах окна.
+- [x] **B19.5** Минимальный размер окна 760×560 → **960×600** — тулбар помещается целиком.
+- [x] **B19.6** Разбор прерванных записей на старте: орфан-`recording` оценивается по длине частичного WAV — короче 30 с удаляется с очисткой, длиннее переводится в `failed` (восстановимо); `sweep_stale_calls` работает только по `processing`.
+- [x] **B19.7** Kebab в списке: реальные действия — Переработать (`reprocessCall`), Экспорт (save-dialog + `exportCallMarkdown`), Удалить (`ConfirmModal` + `deleteCall`) с тостами.
+- [x] **B19.8** Карточный вид: отступы контейнера приведены к `padding: var(--s5)`.
+- [x] **B19.9** Крошки звонка: `<Icon name="chevronLeft">` вместо символа `←` в строке локали.
 
 ### Контракты / backend (S2) — параллельно, по мере scope
 
@@ -648,7 +648,7 @@
 - [x] **Hardware probe banner** — `.activity-strip` с Apply/Dismiss.
 - [x] **Quality confirm** — `ask()` на RAM < 16 GB (PRD §M12.5.4).
 - [x] **i18n ru/kk/en** — `localEngine.*` namespace, no jargon.
-- **6 theme×accent manual QA** — visual verification (PRD §M12.5.6 acceptance).
+- **Ручная визуальная проверка** светлой и тёмной темы (PRD §M12.5.6 acceptance; акцент с B18.5 один).
 
 ### M12 onboarding + i18n + docs (PRD §9 steps 8-10)
 
@@ -705,13 +705,13 @@
 - **Performance:** stop→ready ≤ 5 мин на Balanced 2ч (vs 20-35 сейчас); Quality preset 2ч не упирается в `LOCAL_WHISPER_TIMEOUT`
 - **Quality:** transcript ≥99% bit-equivalent с full-file baseline на reference фикстуре
 - **Robustness:** crash-safety (per-chunk recovery); silence-less window → fallback к local RMS min
-- **UX:** 6 theme×accent проверены для ChunkProgressStrip
+- **UX:** ChunkProgressStrip проверен в светлой и тёмной теме
 
 **Effort:** ~2 спринта (10-15 рабочих дней).
 
 ### M13 follow-ups
 
-- [x] **[CRITICAL] Chunked pipeline ломал все записи >10 мин — исправлено.** Три root-cause (верифицированы на реальном звонке `12b4e564`): (1) **chunk-0 path mismatch** — sidecar писал chunk 0 в root `mic.wav`, а `run_chunk(0)` читал `chunks/0/mic.wav` → chunk 0 всегда `failed` → halt-gate валил весь pipeline; (2) **финальный chunk не обрабатывался** — открытый на stop chunk никогда не enqueue'ился (терялись последние ≤10 мин + duration обрезалась); (3) **halt-before-merge** — один failed chunk блокировал и транскрипт, и склейку аудио → плеер застревал на chunk 0. Прошло в прод т.к. M13.1.6/M13.2.4 smoke (real WAV) отложены — >10-мин путь ни разу не гоняли. **Фиксы:** (A) chunked-режим пишет chunk 0 сразу в `chunks/0/` (`sidecar_write_paths` + `audio_macos::start` final_mic/final_system params); (B) `OrchestratorSummary.final_chunk_*` + `spawn_finalize_and_pipeline` обрабатывает финальный chunk на stop (`plan_final_chunk`); (C) `ensure_all_chunks_done`→`chunks_ready` (ChunkGate: NoChunks/AllDone/Partial/NoneDone), merge независим от транскрипт-полноты; (D) команда `recover_chunked_call` + `pipeline/chunk_recovery.rs` восстанавливает сломанные записи из on-disk WAV'ов (promote root→chunks/0, cumulative offsets, re-STT, merge, reprocess) + UI-кнопка «Восстановить запись» в ErrorScreen. Test-only `WOTOLD_CHUNK_WINDOW_MS` для быстрой E2E. **Round 2 (real-run + adversarial audit — unit-тестов было мало):** удалена recover-кнопка (band-aid); прогнан РЕАЛЬНЫЙ pipeline (headless `WOTOLD_RECOVER_CALL_ID`) + 6-agent аудит нашли настоящие killers: **(G1) `parse_whisper_json` строгий UTF-8 read** → whisper.cpp невалидный UTF-8 на границе кириллического токена валил chunk/звонок → `from_utf8_lossy` (ЭТО почему русские записи падали); **(G2)** recovery/reprocess требовали root WAV, который убрал A → recovery через `spawn_initial`, reprocess мержит chunks→root до delete, `merge_both_tracks` promote'ит оба трека; **(G3)** playable audio до merge (`get_call_audio_path` fallback на chunks/0); **(G4)** pause-clock (final `end_ms` из реальной длины WAV); **(G5)** Swift `AudioRecorder.stop()` off-queue гонка → close внутри `queue.sync`; **(G7)** recap LLM overflow (`chunker trigger = 2×max_chars` пускал 35K-char/9K-token single-pass > 8192 ctx Qwen) → `trigger = max_chars`; `mark_call_ready` чистит stale `failed_reason`. **Доказано на реальной 25-мин русской записи `12b4e564`:** status `ready`, полное 25-мин аудио (48MB), transcript.md (35KB, до 24:45), recap.md (русское саммари), map-reduce 2 chunks. 623 cargo + 416 vitest pass, clippy+fmt clean.
+- [x] **Chunked pipeline на записях >10 мин.** Что изменилось: в chunked-режиме сайдкар пишет нулевой чанк сразу в `chunks/0/` (`sidecar_write_paths` + параметры `final_mic`/`final_system` в `audio_macos::start`); открытый на стоп финальный чанк обрабатывается (`OrchestratorSummary.final_chunk_*` + `plan_final_chunk`); склейка аудио больше не зависит от полноты транскрипта — `ensure_all_chunks_done` заменён на `chunks_ready` с состояниями `NoChunks/AllDone/Partial/NoneDone`, частичный транскрипт помечается degraded-флагом.
 - [x] **Mic-track diarization (multi-voice on microphone)** — toggle в Settings → Speakers (default ON, hint о ~10-20% slowdown). Sortformer проходит и по mic для случаев когда на микрофон попадают несколько голосов (live-meeting в одной комнате). Owner-голос определяется через voice biometric match против voice_samples владельца (`owner_identify::identify_owner_speaker`); fallback на primary-speaker by duration heuristic если samples ещё не накоплены. Cross-track owner reflection через Phase 2 reclustering. M3.7 invariant сохраняется (owner всегда `OWNER_TAG`). 7 unit-тестов в `pipeline::owner_identify`. Не затрагивает cloud paths.
 - [x] **Pipeline step label re-link** — i18n step1-5 синхронизированы с backend `Stage::step()` enum + переведены в present continuous. CallStateTag в PipelineStrip теперь dynamic через `labelOverride={progress.stageLabel}`.
 
@@ -751,11 +751,11 @@
 - [x] **T-17 title regen trigger** — новая кнопка «↻ Пересоздать название» в `HeaderActions` kebab menu CallDetailPage. Lightweight LLM-call (~150 max_tokens, focused prompt только на title) через cloud `AnthropicProvider::Managed` (mirror `regenerate_recap` pattern). `pipeline/title_regen.rs` модуль: `build_title_prompt`, `extract_transcript_head` (UTF-8 safe), `parse_title_response` (fallback "Без названия" на garbage/empty), `regenerate_title()` (loads PipelineSettings → managed mode → LLM → `db::set_call_title` → return new title). NEW Tauri command `regenerate_title` зарегистрирован в `invoke_handler!`. Frontend: `regenerateTitle(callId)` TS API → CallDetailPage `onRegenerateTitle` handler с `regeneratingTitle` busy flag + shared disabled state в kebab → `refetchAll` после success. i18n ru/en/kk (`callDetail.regenerateTitle{Title,ing,Failed,NoTranscript}`). Cloud-only path; local engine support — backlog M14.6. 7 backend tests.
 - [x] **T-18 hierarchical 3-level pipeline (P2)** — `pipeline/map_reduce.rs` extended: `build_mid_reduce_prompt` + `run_single_mid_reduce` + новая entry point `run_pipeline` dispatcher. Когда `chunks.len() > HIERARCHICAL_THRESHOLD` (8) → 3-level: map (per chunk) → mid-reduce (per group of MID_REDUCE_GROUP_SIZE=4) → final reduce. Mid-aggregates имеют same shape как map outputs (facts / candidates / topic_tags / participants_mentioned, без CallSummaryV2 final fields). Final reduce принимает array из mid-aggregates вместо raw map outputs — solving ctx-overflow для Light preset на calls >25K tokens (~1.5h+). Best-effort: failed map/mid-reduce groups skipped; all-fail → AppError. Constants tuned для Light; backlog adaptive thresholds. local_orchestrator switched к `run_pipeline` (auto-dispatches flat/hierarchical). +6 tests. Total: 513 cargo + 320 vitest. **M14 P2 завершён** (только T-16 speculative decoding остался — backlog nice-to-have).
 
-### Post-M14 bug-fix batch (6 user-reported)
+### Post-M14 · полиш по ревью владельца (6 пунктов)
 
-- [x] **Bug-fix batch (post-M14 ship)** — 6 багов из user-reported QA сессии.
+- [x] **Батч после выпуска M14** — шесть пунктов из QA-сессии владельца.
   - **#1 Recap regen 429** — `AnthropicProvider::generate_managed` 3-attempt exponential backoff (1s → 3s → 9s ± jitter) на transient errors. `is_retryable_message()` ловит "429"/"upstream error"/"Bad Gateway"/"rate limit"/"502/503/504". Cloudflare proxy wraps Anthropic 429 как `ok:false code:provider_error message:"LLM upstream error (429)"` — это retryable. Hard-cap `code:"quota_exceeded"` остаётся permanent (no retry). Frontend `api/errors.ts` разделил quota (hard-cap) от transient ("Сервис временно занят"). +3 backend tests + 2 vitest patterns.
-  - **#2 Mic diarization silent skip** — `diarize_track` без pyannote-segmentation модели тихо no-op'ил. Лог bumped `info` → `warn` (видно в release-logs). Frontend Speakers section: mic-diarization toggle gated на `localEngineModelStatus('pyannote-segmentation') == 'present'`, иначе disabled + inline кнопка "↓ Установить модуль разделения голосов" → `localEngineModelDownload`.
+  - **#2 Mic diarization без модели** — `diarize_track` без pyannote-segmentation отчитывается на уровне `warn` вместо `info` (видно в release-logs). Frontend Speakers section: mic-diarization toggle gated на `localEngineModelStatus('pyannote-segmentation') == 'present'`, иначе disabled + inline кнопка "↓ Установить модуль разделения голосов" → `localEngineModelDownload`.
   - **#3 HomePage hotkey hint hardcode** — `⌘ ⇧ R` был хардкод-строкой; lifted `toggleHotkey/pauseHotkey` в `useState<ParsedHotkey>`, JSX рендерит `{formatHotkey(toggleHotkey)}` + i18n `home.hotkeyTitle` теперь принимает `{chord}` placeholder.
   - **#4 VoiceModelSection обезличена** — "WeSpeaker ResNet34 LM · VoxCeleb" → "Модуль распознавания голоса" / "Voice recognition module" / "Дауысты тану модулі". Tech details expander (URL/SHA256/feature flag) удалён. Размер модели остался в кнопке download.
   - **#5 Realtime reactivity** — `useCallDetail` `call:progress` listener теперь триггерит debounced `refetchAll()` на каждый stage transition (`step !== prevStep`), 600ms debounce + 1.5s rate-limit. Артефакты (transcript / raw_stt / recap / tasks) подтягиваются live без exit-enter.
