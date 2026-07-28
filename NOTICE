@@ -1,0 +1,71 @@
+Wotold
+Copyright 2026 Damir Zhalelov
+
+This product includes software developed by the Wotold project.
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the
+full text.
+
+================================================================================
+Bundled third-party assets
+================================================================================
+
+Fonts shipped inside the application bundle and on the project website
+(apps/desktop/public/fonts/, 16 .woff2 subsets, ~148 KB total). Both families
+are self-hosted rather than loaded from a CDN, so that the application makes no
+network request at startup — see apps/desktop/src/styles/fonts.css.
+
+  Onest
+    SIL Open Font License 1.1
+    https://github.com/oleg-lab/onest
+
+  IBM Plex Mono
+    SIL Open Font License 1.1
+    Copyright 2017 IBM Corp.
+    https://github.com/IBM/plex
+
+Subsetting procedure and the full file inventory are documented in
+apps/desktop/public/fonts/README.md.
+
+================================================================================
+Models downloaded at runtime
+================================================================================
+
+Wotold does not bundle machine-learning models: they are downloaded on demand
+from Hugging Face on first use and stored in the user's application data
+directory (see restriction R10 in docs/ПАСПОРТ_ПРОЕКТА.md). They are therefore
+NOT distributed as part of this Work, and their licenses are not granted by the
+Apache License above. Each model carries its own upstream terms.
+
+The authoritative catalog — including download URL, SHA256, size, and a
+license_url for every entry — lives in:
+
+  apps/desktop/src-tauri/src/local_engine/model_catalog.rs
+
+Upstream sources currently referenced by that catalog:
+
+  Speech recognition      ggerganov/whisper.cpp (GGML Whisper builds)
+  Summarization / chat    bartowski/Qwen2.5-*-Instruct-GGUF
+  Diarization             csukuangfj/sherpa-onnx-pyannote-segmentation-3-0
+  Voice activity          ggml-org/whisper-vad (Silero VAD)
+  Embeddings              intfloat/multilingual-e5-small
+
+Users are responsible for reviewing the terms of any model they choose to
+download.
+
+================================================================================
+Vendored design prototype
+================================================================================
+
+docs/design/wotold-v2/_reference/ contains a frozen browser prototype of the
+Wotold v2 interface, authored for this project. It loads React and Babel from a
+CDN when opened directly from the filesystem; it is a design reference only and
+is not part of any shipped artifact.
+
+================================================================================
+Dependencies
+================================================================================
+
+Rust and JavaScript dependencies are declared in Cargo.toml / Cargo.lock and
+package.json / pnpm-lock.yaml. Their licenses are those stated by their
+respective authors and are not reproduced here.

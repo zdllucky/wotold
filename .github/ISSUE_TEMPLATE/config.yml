@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/zdllucky/wotold/discussions
+    about: Usage questions, ideas, and anything that is not yet a concrete bug or feature.
+  - name: Report a security vulnerability
+    url: https://github.com/zdllucky/wotold/security/advisories/new
+    about: Private advisory. Never report a vulnerability in a public issue.
+  - name: Accepted limitations (read before filing a bug)
+    url: https://github.com/zdllucky/wotold/blob/main/docs/%D0%9F%D0%90%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2_%D0%9F%D0%A0%D0%9E%D0%95%D0%9A%D0%A2%D0%90.md
+    about: Section 12 lists deliberate limitations (R2, R3, R4, R6, R9-R13) that are not bugs.

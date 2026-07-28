@@ -1,0 +1,103 @@
+name: Bug report
+description: Something in Wotold behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Before you file
+
+        - Check [section 12 of the spec](https://github.com/zdllucky/wotold/blob/main/docs/%D0%9F%D0%90%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2_%D0%9F%D0%A0%D0%9E%D0%95%D0%9A%D0%A2%D0%90.md) — R2, R3, R4, R6 and R9–R13 are deliberate limitations, not bugs.
+        - Found a **security** problem? Do not use this form. Open a [private advisory](https://github.com/zdllucky/wotold/security/advisories/new).
+
+        > ⚠️ **Never attach real call audio, transcripts, recaps or contact names.**
+        > They contain other people's conversations. Redact everything, or reproduce
+        > the problem with a synthetic recording.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy acknowledgement
+      options:
+        - label: I have not included real call audio, transcripts, or contact data in this report.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Wotold version
+      description: Shown in Settings. If you built from source, give the commit SHA.
+      placeholder: "0.1.3 or 10714a1"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and hardware
+      placeholder: "macOS 15.2, M1 Pro 16 GB"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: preset
+    attributes:
+      label: Model preset
+      description: Settings → Processing. Pick "not applicable" if the bug is unrelated to processing.
+      options:
+        - Light
+        - Balanced
+        - Quality
+        - Not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      options:
+        - Recording / audio capture
+        - Transcription (STT)
+        - Diarization / speaker identification
+        - Summary / recap
+        - Assistant (RAG chat)
+        - Contacts / voice samples
+        - MCP server
+        - Updater / installation
+        - UI, other
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a recording from the main screen
+        2. Stop after roughly 15 minutes
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        `~/Library/Logs/app.wotold.desktop/`. Paste only the relevant lines and
+        **strip any transcript content** before pasting. Rendered as a code block.
+      render: text
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Call length, language, number of speakers, whether it reproduces every time.

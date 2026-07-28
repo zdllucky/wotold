@@ -1,0 +1,78 @@
+name: Feature request
+description: Propose a change to what Wotold does.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Read this first
+
+        Wotold has an explicit spec, and part of it is a list of things the
+        project has **decided not to do**. Proposals that ask to undo one of
+        those need an argument against the original decision, not just a
+        restatement of the feature.
+
+        - [Section 12 of the spec](https://github.com/zdllucky/wotold/blob/main/docs/%D0%9F%D0%90%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2_%D0%9F%D0%A0%D0%9E%D0%95%D0%9A%D0%A2%D0%90.md) — accepted limitations R2, R3, R4, R6, R9–R13
+        - [`docs/ROADMAP.md`](https://github.com/zdllucky/wotold/blob/main/docs/ROADMAP.md) — what is already planned, and the backlog with verdicts
+
+        Frequently proposed, already decided:
+
+        | | Decision |
+        |---|---|
+        | Automatic contact assignment from voice | **No** (R2) — always requires explicit confirmation |
+        | Auto-detect that a call started | **No** (R3) — unreliable heuristic; manual button only |
+        | Windows / Linux support | **Not in the MVP** (R4, R9) — trait stubs exist |
+        | Apple notarization | **Deferred** (R6) |
+        | Bundling models into the installer | **No** (R10) — download on demand |
+        | Live realtime captions | **No** (R11) — local STT is offline-only |
+
+        Not sure whether your idea is in scope? Open a
+        [Discussion](https://github.com/zdllucky/wotold/discussions) instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you hitting?
+      description: Describe the situation, not the solution. What do you do today, and why is it bad?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Wotold to do?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the product?
+      options:
+        - Recording / audio capture
+        - Transcription and diarization
+        - Summary / recap
+        - Assistant (RAG chat)
+        - Contacts / voice samples
+        - MCP server
+        - Search and navigation
+        - Settings, updater, packaging
+        - Website or documentation
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints
+      options:
+        - label: I checked section 12 of the spec, and this does not ask to undo an accepted limitation — or it does, and I explain why below.
+          required: true
+        - label: This works without a network connection, or I explain below why an exception is justified.
+          required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including doing nothing, or solving it outside Wotold.
