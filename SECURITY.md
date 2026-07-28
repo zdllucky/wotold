@@ -38,11 +38,12 @@ maintenance branches.
 
 Updates are designed to be delivered through the Tauri updater and minisign-signed.
 
-**The signing key does not exist yet.** `apps/desktop/src-tauri/tauri.conf.json`
-contains a literal placeholder in place of the public key, so update verification
-fails closed and no update is ever installed. The manifest request still goes out
-on launch. Treat signed auto-update as not yet shipped: reports about signature
-bypass are premature until the key is generated.
+The signing keypair exists and the public key is committed in
+`apps/desktop/src-tauri/tauri.conf.json`. Signing is not yet active in CI: until
+the private key is configured as a repository secret, released builds carry no
+signature and update verification fails closed — the manifest request goes out on
+launch, but nothing installs. Signature-bypass reports are in scope only once a
+signed release has actually shipped.
 
 ## Scope
 

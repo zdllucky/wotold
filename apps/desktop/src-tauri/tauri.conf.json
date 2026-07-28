@@ -92,7 +92,7 @@
       "endpoints": [
         "https://github.com/zdllucky/wotold/releases/latest/download/latest.json"
       ],
-      "pubkey": "PLACEHOLDER_TAURI_PUBKEY_REPLACE_UNDER_ETAP_11",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc1N0IzMzA1NUE0REQ0RTIKUldUaTFFMWFCVE43ZFJIcjNTN1J5TmtlL1E4NWJFcVZVem44bFYvTmc0a21NT1ptME0vSk5GQVQK",
       "dialog": false,
       "windows": {
         "installMode": "passive"
