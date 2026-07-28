@@ -16,7 +16,7 @@
     "@astrojs/sitemap": "^3.7.0",
     "@astrojs/starlight": "^0.36.0",
     "astro": "^5.16.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
