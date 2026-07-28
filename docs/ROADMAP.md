@@ -204,7 +204,7 @@ MVP реализован и работает (этапы 1–12 паспорта
 - [ ] **LLM progress %** — parse llama-cli streaming (`print_timings` / `n_eval / n_predict`). Сейчас UI показывает только elapsed_sec.
 - [ ] **Cancel button во время recap regen** — `CancelToken` + propagation через `local_orchestrator::run_v2_pipeline` + `SidecarGuard::kill()`.
 - [ ] **Expected-duration hint** «~5 из 10 мин» — preset-dependent estimate из telemetry median.
-- [ ] **Periodic emit во время STT** (не только LLM) — generic `with_recap_progress_emitter` переиспользовать на `LocalWhisperProvider::transcribe`, новое событие `stt:progress`.
+- [x] **Periodic emit во время STT** — **Сделано:** эмиттер обобщён (`with_stt_progress_emitter`), новое событие `stt:progress` с тем же payload; UI показывает «Распознаём речь — N с» в панели обработки на шаге 2. Процентов у full-file STT по-прежнему нет (whisper отдаёт результат целиком) — счётчик отличает работу от зависания.
 
 ### E. UX / прочее
 

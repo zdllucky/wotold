@@ -161,6 +161,11 @@ export interface RecapProgressEvent {
 }
 export const RECAP_PROGRESS_EVENT = 'recap:progress';
 
+/** Тик распознавания речи (`stt:progress`). Payload тот же, что у рекапа.
+ *  Процентов у full-file STT нет — whisper отдаёт транскрипт целиком, поэтому
+ *  на длинной записи шаг «Распознаём речь» стоит на месте минутами. */
+export const STT_PROGRESS_EVENT = 'stt:progress';
+
 /** [F3] Усечённое превью промежуточного результата refine-шага —
  *  разворачивается в thinking-блоке RecapThinking. */
 export interface RecapStepPreview {
