@@ -38,9 +38,19 @@ interface ProcessingPanelProps {
   /** [Q] Звонок ждёт тяжёлый ресурс в очереди (другой звонок в работе).
    *  resource — id ресурса, position — позиция в FIFO (1-based). */
   queued?: { resource: 'stt' | 'diarization' | 'llm'; position: number };
+  /** Секунды с начала распознавания речи (`stt:progress`). Показываем только
+   *  на шаге 2: процентов у full-file STT нет, и без счётчика полоса стоит
+   *  неподвижно всё время работы whisper. */
+  sttElapsedSec?: number | null;
 }
 
-export function ProcessingPanel({ call, chunks, onRetryChunk, queued }: ProcessingPanelProps) {
+export function ProcessingPanel({
+  call,
+  chunks,
+  onRetryChunk,
+  queued,
+  sttElapsedSec,
+}: ProcessingPanelProps) {
   const { t } = useI18n();
 
   // Step может быть NULL до первого emit_progress — показываем step=1 (upload).
@@ -89,6 +99,20 @@ export function ProcessingPanel({ call, chunks, onRetryChunk, queued }: Processi
             resource: t(`queue.res.${queued.resource}`),
             pos: queued.position,
           })}
+        </p>
+      )}
+      {step === 2 && sttElapsedSec != null && (
+        <p
+          role="status"
+          className="muted"
+          style={{
+            fontFamily: 'var(--font)',
+            fontSize: 13,
+            marginTop: 10,
+            marginBottom: 0,
+          }}
+        >
+          {t('callDetail.sttElapsed', { sec: sttElapsedSec })}
         </p>
       )}
       <p

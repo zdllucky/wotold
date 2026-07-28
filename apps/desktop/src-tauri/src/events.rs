@@ -34,6 +34,11 @@ pub const TRANSCRIPT_CHUNK_DONE: &str = "transcript:chunk_done";
 /// `RecapProgressEvent` с `elapsed_sec`. UI рендерит «Пересоздаём… {sec}s».
 /// Frequency — 15s; нет percentage signals (llama-cli streaming не parsing'нем).
 pub const RECAP_PROGRESS: &str = "recap:progress";
+/// Periodic emit во время full-file STT. Payload — тот же
+/// `RecapProgressEvent`. Проценты взять неоткуда: whisper-cli отдаёт
+/// транскрипт целиком, поэтому на длинной записи шаг «Распознаём речь» стоит
+/// на одном месте минутами. Тикающий счётчик отличает работу от зависания.
+pub const STT_PROGRESS: &str = "stt:progress";
 /// [P5.2] Live duration update во время active recording. Fires на
 /// каждый sidecar `rotated` event (~раз в 10 мин). Payload —
 /// `RecordingDurationEvent { call_id, duration_sec }`. UI HomePage
@@ -241,6 +246,11 @@ impl<'a> EventBus<'a> {
         self.emit(RECAP_PROGRESS, e);
     }
 
+    /// Тик распознавания речи — `pipeline::recap_progress::with_stt_progress_emitter`.
+    pub fn stt_progress(&self, e: &RecapProgressEvent) {
+        self.emit(STT_PROGRESS, e);
+    }
+
     /// [F3] Пошаговый прогресс генерации рекапа (thinking-блок).
     pub fn recap_step(&self, e: &RecapStepEvent) {
         self.emit(RECAP_STEP, e);
@@ -341,6 +351,10 @@ mod tests {
             call_id: "c1".into(),
             elapsed_sec: 30,
         });
+        bus.stt_progress(&RecapProgressEvent {
+            call_id: "c1".into(),
+            elapsed_sec: 15,
+        });
         bus.recording_duration(&RecordingDurationEvent {
             call_id: "c1".into(),
             duration_sec: 600,
@@ -361,6 +375,7 @@ mod tests {
         assert_eq!(AUDIO_ROTATED, "audio:rotated");
         assert_eq!(TRANSCRIPT_CHUNK_DONE, "transcript:chunk_done");
         assert_eq!(RECAP_PROGRESS, "recap:progress");
+        assert_eq!(STT_PROGRESS, "stt:progress");
         assert_eq!(RECAP_STEP, "recap:step");
         assert_eq!(QUEUE_STATE, "queue:state");
         assert_eq!(RECORDING_DURATION, "recording:duration");

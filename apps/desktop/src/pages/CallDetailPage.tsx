@@ -72,6 +72,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
     micSrc,
     systemSrc,
     recapElapsedSec,
+    sttElapsedSec,
     setRecapElapsedSec,
     recapSteps,
     bgBusy,
@@ -427,6 +428,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
             call={call}
             chunks={chunks}
             queued={queuedInfo}
+            sttElapsedSec={sttElapsedSec}
             onRetryChunk={(idx) => {
               // [Tech-debt P0.2] retry_chunk fire-and-forget — status update
               // придёт через transcript:chunk_done event, ChunkProgressStrip

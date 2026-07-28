@@ -261,18 +261,25 @@ async fn transcribe_tracks(
                 &ctx.call_id,
                 Stage::Transcribe,
                 None,
-                async {
-                    let mic_fut = mic_stt.transcribe(&ctx.mic_path, opts.clone());
-                    let sys_fut = sys_stt.transcribe(&ctx.system_path, opts.clone());
-                    let (mic_r, sys_r) = tokio::join!(mic_fut, sys_fut);
-                    let mic = mic_r.map_err(|e| {
-                        AppError::Other(format!("local_engine_stt_failed (mic): {e}"))
-                    })?;
-                    let sys = sys_r.map_err(|e| {
-                        AppError::Other(format!("local_engine_stt_failed (system): {e}"))
-                    })?;
-                    Ok::<_, AppError>((mic, sys))
-                },
+                // Тикающий счётчик на время STT: whisper-cli отдаёт результат
+                // целиком, промежуточных процентов нет, и на часовой записи
+                // шаг «Распознаём речь» иначе стоит неподвижно минутами.
+                recap_progress::with_stt_progress_emitter(
+                    Some(app.clone()),
+                    ctx.call_id.clone(),
+                    async {
+                        let mic_fut = mic_stt.transcribe(&ctx.mic_path, opts.clone());
+                        let sys_fut = sys_stt.transcribe(&ctx.system_path, opts.clone());
+                        let (mic_r, sys_r) = tokio::join!(mic_fut, sys_fut);
+                        let mic = mic_r.map_err(|e| {
+                            AppError::Other(format!("local_engine_stt_failed (mic): {e}"))
+                        })?;
+                        let sys = sys_r.map_err(|e| {
+                            AppError::Other(format!("local_engine_stt_failed (system): {e}"))
+                        })?;
+                        Ok::<_, AppError>((mic, sys))
+                    },
+                ),
             )
             .await?;
 
