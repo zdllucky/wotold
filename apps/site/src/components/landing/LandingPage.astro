@@ -125,12 +125,15 @@ const doc = (slug: string) => `${base}${lang === 'ru' ? '' : lang + '/'}${slug}/
       <h2 class="lp-h2">{c.cta.title}</h2>
       <p class="lp-lead">{c.cta.lead}</p>
 
+      {/* Ведёт на страницу установки, а не прямо в Releases: публичных
+          выпусков пока нет, и кнопка «Скачать» с главной высаживала бы
+          человека на пустую страницу. */}
       <div class="lp-actions">
-        <a class="btn btn--primary" href="https://github.com/zdllucky/wotold/releases">
+        <a class="btn btn--primary" href={doc('download')}>
           <Icon name="download" size={15} />
           {c.cta.primary}
         </a>
-        <a class="btn btn--ghost" href={doc('download')}>
+        <a class="btn btn--ghost" href="https://github.com/zdllucky/wotold">
           {c.cta.secondary}
           <Icon name="arrowRight" size={15} />
         </a>

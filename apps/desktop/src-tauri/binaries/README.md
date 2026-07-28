@@ -13,9 +13,8 @@ each entry resolves to `<name>-<target-triple>` (e.g. `wotold-audio-aarch64-appl
   use `llama-completion` for batch-mode (`-f` prompt file, non-interactive).
   Both binaries share libllama.dylib runtime; the flag set
   (`--no-conversation`, `--simple-io`, `--no-display-prompt`, `--log-disable`,
-  `--grammar-file`) is identical. Placeholder stub is committed so `cargo build`
-  succeeds in CI without the heavyweight binary; replace with a real llama.cpp
-  build before release.
+  `--grammar-file`) is identical. A real Homebrew-provisioned llama.cpp build is committed here — see NOTICE for
+  the required MIT attribution.
 
 - `wotold-llama-server` — llama.cpp `llama-server` binary (B2). **Optional —
   используется только при включённой настройке «Держать модель активной»
@@ -30,8 +29,8 @@ each entry resolves to `<name>-<target-triple>` (e.g. `wotold-audio-aarch64-appl
   Local engine STT.** sherpa-onnx Whisper requires encoder/decoder ONNX pair,
   but our model catalog targets ggerganov .bin format (Whisper SHA256
   reachable through `scripts/refresh-model-catalog.sh`). Sidecar pattern keeps
-  catalog stable and matches the llama integration. Placeholder stub is
-  committed; replace before release.
+  catalog stable and matches the llama integration. A real Homebrew-provisioned whisper.cpp build is
+  committed here — see NOTICE for the required MIT attribution.
 
 ## Producing `wotold-llama` (release prep)
 

@@ -36,10 +36,13 @@ before publishing.
 Only the latest release receives fixes. The project is pre-1.0 and there are no
 maintenance branches.
 
-Updates are delivered through the Tauri updater and are minisign-signed. The
-public key lives in `apps/desktop/src-tauri/tauri.conf.json`; the private key
-never leaves the maintainer's control and is reachable only from the release
-build job.
+Updates are designed to be delivered through the Tauri updater and minisign-signed.
+
+**The signing key does not exist yet.** `apps/desktop/src-tauri/tauri.conf.json`
+contains a literal placeholder in place of the public key, so update verification
+fails closed and no update is ever installed. The manifest request still goes out
+on launch. Treat signed auto-update as not yet shipped: reports about signature
+bypass are premature until the key is generated.
 
 ## Scope
 
@@ -82,7 +85,9 @@ build job.
 ## Threat model in one paragraph
 
 Wotold is local-only. There is no server, no account, and no cloud storage — the
-cloud segment was removed in version 0.3. The single outbound network flow in the
-whole product is the one-time model download from `huggingface.co`. Any finding
-that shows call audio, transcripts, or embeddings leaving the device through any
-other path is by definition a high-severity report.
+cloud segment was removed in version 0.3. Two outbound network flows exist, and
+neither carries user data: the one-time model download (`huggingface.co`, plus
+`github.com` for the WeSpeaker embedder), and an anonymous version-manifest GET
+to `github.com` on every launch. Any finding that shows call audio, transcripts,
+or embeddings leaving the device through any path is by definition a
+high-severity report.

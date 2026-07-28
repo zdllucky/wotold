@@ -7,13 +7,58 @@ Licensed under the Apache License, Version 2.0. See the LICENSE file for the
 full text.
 
 ================================================================================
+Bundled third-party executables
+================================================================================
+
+The following compiled binaries are tracked in this repository under
+apps/desktop/src-tauri/binaries/ and are shipped inside the application bundle
+as Tauri sidecars (see bundle.externalBin in tauri.conf.json). They are builds
+of third-party MIT-licensed projects; the MIT license requires that this notice
+accompany the binaries wherever they are distributed.
+
+  wotold-llama-*         llama.cpp `llama-completion`
+  wotold-llama-server-*  llama.cpp `llama-server`
+                         https://github.com/ggml-org/llama.cpp
+
+  wotold-whisper-*       whisper.cpp `whisper-cli`
+                         https://github.com/ggml-org/whisper.cpp
+
+Both projects, and the ggml library they link against, are distributed under
+the MIT License:
+
+    MIT License
+
+    Copyright (c) 2023-2024 The ggml authors
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+wotold-audio-* is not third-party: it is this project's own Swift Core Audio
+sidecar, built from apps/desktop/sidecars/macos-audio/ and not tracked in git.
+
+================================================================================
 Bundled third-party assets
 ================================================================================
 
 Fonts shipped inside the application bundle and on the project website
 (apps/desktop/public/fonts/, 16 .woff2 subsets, ~148 KB total). Both families
-are self-hosted rather than loaded from a CDN, so that the application makes no
-network request at startup — see apps/desktop/src/styles/fonts.css.
+are self-hosted rather than loaded from a CDN, so that no font request leaves
+the device — see apps/desktop/src/styles/fonts.css.
 
   Onest
     SIL Open Font License 1.1
@@ -49,6 +94,11 @@ Upstream sources currently referenced by that catalog:
   Diarization             csukuangfj/sherpa-onnx-pyannote-segmentation-3-0
   Voice activity          ggml-org/whisper-vad (Silero VAD)
   Embeddings              intfloat/multilingual-e5-small
+
+One model is fetched outside that catalog and not from Hugging Face: the
+WeSpeaker speaker-embedding model, downloaded from the sherpa-onnx release
+assets at https://github.com/k2-fsa/sherpa-onnx (see
+apps/desktop/src-tauri/src/voice_model.rs).
 
 Users are responsible for reviewing the terms of any model they choose to
 download.

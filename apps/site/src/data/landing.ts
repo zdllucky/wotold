@@ -61,10 +61,10 @@ export const LANDING: Record<Lang, LandingCopy> = {
     hero: {
       eyebrow: 'macOS · локально · Apache-2.0',
       title: 'Расшифровка звонков, которая знает, кто говорил',
-      lead: 'Wotold записывает звонок, разделяет реплики по голосам, собирает саммари и отвечает на вопросы по всему архиву. Всё считается на твоём Mac: без серверов, без аккаунта, без подписки. Единственный сетевой вызов за всё время работы — разовое скачивание моделей.',
+      lead: 'Wotold записывает звонок, разделяет реплики по голосам, собирает саммари и отвечает на вопросы по всему архиву. Всё считается на твоём Mac: без серверов, без аккаунта, без подписки. Наружу уходят ровно два запроса, и ни один не несёт твоих данных: скачать модели и проверить, не вышла ли новая версия.',
       primary: 'Скачать для macOS',
       secondary: 'Как это работает',
-      note: 'macOS 14+. Сборка не нотаризована — при первом запуске нужно разрешить её в настройках безопасности.',
+      note: 'macOS 14.4+. Публичных выпусков пока нет — до первого релиза собирается из исходников. Сборка не нотаризована: при первом запуске её нужно разрешить в настройках безопасности.',
       mockupAlt:
         'Окно приложения: список реплик звонка, разделённых по спикерам, с таймкодами и чипами решений и задач.',
     },
@@ -118,7 +118,7 @@ export const LANDING: Record<Lang, LandingCopy> = {
       points: [
         'Аудио, расшифровки и рекапы лежат только в каталоге приложения на твоём диске.',
         'Нет аккаунтов, нет облачного хранения, нет телеметрии и аналитики.',
-        'Единственный исходящий запрос за всё время — скачивание моделей с HuggingFace при первом включении. Дальше приложение работает офлайн.',
+        'Наружу уходят два запроса, оба без твоих данных: скачивание моделей при первом включении и проверка новой версии при запуске. Обработка звонка сети не касается вовсе.',
         'Голосовые отпечатки — opt-in по каждому контакту. Удаление контакта удаляет и его семплы.',
         'Экран не записывается: системный звук берётся через ScreenCaptureKit, но кадры не сохраняются.',
       ],
@@ -126,9 +126,9 @@ export const LANDING: Record<Lang, LandingCopy> = {
     },
     cta: {
       title: 'Поставить и попробовать',
-      lead: 'Нужен Mac на macOS 14 или новее. Приложение бесплатное, регистрации нет.',
-      primary: 'Скачать .dmg',
-      secondary: 'Собрать из исходников',
+      lead: 'Нужен Mac на macOS 14.4 или новее. Приложение бесплатное, регистрации нет. Первый публичный выпуск ещё не опубликован — пока собирается из исходников.',
+      primary: 'Как собрать',
+      secondary: 'Открыть на GitHub',
       note: 'При первом запуске Wotold скачает модели — от 2 до 7 ГБ в зависимости от выбранного пресета.',
     },
     sponsor: {
@@ -163,10 +163,10 @@ export const LANDING: Record<Lang, LandingCopy> = {
     hero: {
       eyebrow: 'macOS · local · Apache-2.0',
       title: 'Call transcripts that know who was speaking',
-      lead: 'Wotold records the call, splits it by voice, writes the summary, and answers questions across your whole archive. All of it runs on your Mac: no servers, no account, no subscription. The single network request in the product’s lifetime is the one-time model download.',
+      lead: 'Wotold records the call, splits it by voice, writes the summary, and answers questions across your whole archive. All of it runs on your Mac: no servers, no account, no subscription. It makes exactly two network requests, neither carrying your data: fetching the models, and checking whether a newer version exists.',
       primary: 'Download for macOS',
       secondary: 'How it works',
-      note: 'macOS 14+. The build is not notarized — the first launch needs a manual approval in Security settings.',
+      note: 'macOS 14.4+. No public release yet — until the first one, build from source. The build is not notarized: the first launch needs a manual approval in Security settings.',
       mockupAlt:
         'Application window showing call turns split by speaker, with timestamps and chips for decisions and action items.',
     },
@@ -220,7 +220,7 @@ export const LANDING: Record<Lang, LandingCopy> = {
       points: [
         'Audio, transcripts and recaps live only in the application directory on your disk.',
         'No accounts, no cloud storage, no telemetry, no analytics.',
-        'The only outbound request ever made is the model download from HuggingFace on first use. After that the app works offline.',
+        'Two outbound requests, neither carrying your data: the model download on first use and a version check on launch. Processing a call touches the network at all.',
         'Voice fingerprints are opt-in per contact. Deleting a contact deletes their samples.',
         'The screen is never recorded: system audio comes through ScreenCaptureKit, but no frames are stored.',
       ],
@@ -228,9 +228,9 @@ export const LANDING: Record<Lang, LandingCopy> = {
     },
     cta: {
       title: 'Install and try it',
-      lead: 'Requires a Mac running macOS 14 or newer. Free, no sign-up.',
-      primary: 'Download the .dmg',
-      secondary: 'Build from source',
+      lead: 'Requires a Mac running macOS 14.4 or newer. Free, no sign-up. The first public release is not out yet — until then, build from source.',
+      primary: 'How to build',
+      secondary: 'Open on GitHub',
       note: 'On first launch Wotold downloads models — 2 to 7 GB depending on the preset you pick.',
     },
     sponsor: {
@@ -265,10 +265,10 @@ export const LANDING: Record<Lang, LandingCopy> = {
     hero: {
       eyebrow: 'macOS · жергілікті · Apache-2.0',
       title: 'Кім сөйлегенін білетін қоңырау транскрипциясы',
-      lead: 'Wotold қоңырауды жазады, репликаларды дауыс бойынша бөледі, түйіндеме жасайды және бүкіл архив бойынша сұрақтарға жауап береді. Бәрі сіздің Mac-ыңызда есептеледі: серверсіз, аккаунтсыз, жазылымсыз. Жұмыс кезіндегі жалғыз желілік сұрау — модельдерді бір рет жүктеу.',
+      lead: 'Wotold қоңырауды жазады, репликаларды дауыс бойынша бөледі, түйіндеме жасайды және бүкіл архив бойынша сұрақтарға жауап береді. Бәрі сіздің Mac-ыңызда есептеледі: серверсіз, аккаунтсыз, жазылымсыз. Сыртқа тек екі сұрау кетеді, екеуі де сіздің деректеріңізді тасымалдамайды: модельдерді жүктеу және жаңа нұсқаны тексеру.',
       primary: 'macOS үшін жүктеу',
       secondary: 'Қалай жұмыс істейді',
-      note: 'macOS 14+. Құрастырма нотаризацияланбаған — алғаш іске қосқанда қауіпсіздік баптауларынан рұқсат беру керек.',
+      note: 'macOS 14.4+. Әзірге жария шығарылым жоқ — алғашқысына дейін бастапқы кодтан құрастырылады. Құрастырма нотаризацияланбаған: алғаш іске қосқанда қауіпсіздік баптауларынан рұқсат беру керек.',
       mockupAlt:
         'Қосымша терезесі: сөйлеушілерге бөлінген қоңырау репликалары, уақыт белгілері мен шешімдер және тапсырмалар чиптері.',
     },
@@ -322,7 +322,7 @@ export const LANDING: Record<Lang, LandingCopy> = {
       points: [
         'Аудио, транскрипциялар мен түйіндемелер тек сіздің дискідегі қосымша каталогында жатады.',
         'Аккаунттар жоқ, бұлттық сақтау жоқ, телеметрия мен аналитика жоқ.',
-        'Жұмыс кезіндегі жалғыз шығыс сұрау — алғаш қосқанда HuggingFace-тен модельдерді жүктеу. Одан кейін қосымша офлайн жұмыс істейді.',
+        'Сыртқа екі сұрау кетеді, екеуі де деректеріңізсіз: алғаш қосқанда модельдерді жүктеу және іске қосқанда жаңа нұсқаны тексеру. Қоңырауды өңдеу желіге мүлде жүгінбейді.',
         'Дауыс іздері — әр контакт бойынша opt-in. Контактіні жою оның үлгілерін де жояды.',
         'Экран жазылмайды: жүйелік дыбыс ScreenCaptureKit арқылы алынады, бірақ кадрлар сақталмайды.',
       ],
@@ -330,9 +330,9 @@ export const LANDING: Record<Lang, LandingCopy> = {
     },
     cta: {
       title: 'Орнатып көру',
-      lead: 'macOS 14 немесе жаңарақ Mac қажет. Тегін, тіркелусіз.',
-      primary: '.dmg жүктеу',
-      secondary: 'Бастапқы кодтан құрастыру',
+      lead: 'macOS 14.4 немесе жаңарақ Mac қажет. Тегін, тіркелусіз. Алғашқы жария шығарылым әлі жоқ — оған дейін бастапқы кодтан құрастырылады.',
+      primary: 'Қалай құрастыру',
+      secondary: 'GitHub-та ашу',
       note: 'Алғаш іске қосқанда Wotold модельдерді жүктейді — таңдалған пресетке қарай 2-ден 7 ГБ-қа дейін.',
     },
     sponsor: {
