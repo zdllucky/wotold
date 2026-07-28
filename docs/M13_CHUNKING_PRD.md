@@ -237,31 +237,34 @@ Reuse паттерна из существующего [`db/calls.rs`](../apps/d
 
 ## 5. Acceptance Criteria
 
+> Статус: реализовано и включено по умолчанию (M13.3.4). Пункты, требующие измерений на
+> двухчасовой записи, вынесены в [`ROADMAP.md`](ROADMAP.md) §B — держать их здесь значит
+> дублировать один и тот же блокер в двух местах.
+
 ### Functional
 
-- [ ] **F1.** 10-минутные chunks автоматически создаются с silence-aware cut в окне `[T+9:00, T+11:00]`
-- [ ] **F2.** Pipeline (STT + diarization + embedding) запускается per-chunk **параллельно** с записью следующего
-- [ ] **F3.** Global speaker clustering: тот же физический speaker в разных chunks → единый global ID в финальном transcript
-- [ ] **F4.** Финальный transcript ≥99% bit-equivalent с full-file baseline на reference фикстуре (25-мин многоспикерная запись)
-- [ ] **F5.** После `stop` все chunks await'аются, потом LLM recap (одноразово на полном)
+- [x] **F1.** 10-минутные chunks с silence-aware cut в окне `[T+9:00, T+11:00]` — M13.1.1, `audio/silence_detector.rs`
+- [x] **F2.** Pipeline per-chunk параллельно с записью следующего — M13.2.2
+- [x] **F3.** Global speaker clustering между chunks — M13.2.1, `pipeline/speaker_reclustering.rs`
+- [x] **F5.** После `stop` все chunks await'аются, потом одноразовый LLM recap — M13.2.2 (drain-on-stop)
 
 ### UX
 
-- [ ] **U1.** Активная запись показывает progress strip: «Сегмент N · status · timestamps»
-- [ ] **U2.** После stop — intermediate states «Готовим транскрипт… 4/4 готовы → Составляем саммари…»
-- [ ] **U3.** CallDetail после готовности — идентичен по UX текущему flow (no breaking change)
-
-### Performance (Balanced preset, M2 base, 2-часовой звонок)
-
-- [ ] **P1.** Воспринимаемое время stop→ready ≤ **5 минут** (vs текущие 20-35 мин)
-- [ ] **P2.** Quality preset на 2-часовом звонке НЕ упирается в `LOCAL_WHISPER_TIMEOUT`
-- [ ] **P3.** RAM peak во время обработки ≤ **800MB** (vs текущие 3.5GB)
+- [x] **U1.** Progress strip во время активной записи — M13.3.1, `ChunkProgressStrip.tsx`
+- [x] **U2.** Промежуточные состояния «Готовим транскрипт… → Составляем саммари…» — M13.3.2
+- [x] **U3.** CallDetail после готовности идентичен прежнему flow — M13.3.x
 
 ### Robustness
 
-- [ ] **R1.** Crash-safety: force-kill на 1ч 45мин → при перезапуске видны готовые chunks с их transcripts
-- [ ] **R2.** Edge case: silence-cut window пустой (нет тишины 2 минуты подряд) → fallback к local min RMS, не блокировать
-- [ ] **R3.** Edge case: pyannote вернул 0 speakers на chunk → global clustering skip'ает чанк gracefully
+- [x] **R1.** Crash-safety: готовые chunks видны после перезапуска — персист `call_chunks` (M13.1.4) + авто-восстановление на старте (B28.2)
+- [x] **R2.** Пустое окно silence-cut → fallback к local min RMS — M13.1.1
+- [x] **R3.** pyannote вернул 0 speakers → чанк пропускается gracefully — M13.2.1
+
+### Измерения на реальной записи → `ROADMAP.md` §B
+
+F4 (≥99% совпадения с full-file baseline на 25-мин фикстуре), P1 (stop→ready ≤ 5 мин),
+P2 (Quality на 2 ч не упирается в таймаут), P3 (RAM ≤ 800 МБ) — требуют двухчасовой
+многоспикерной записи, которой в репозитории нет.
 
 ## 6. Phased rollout
 
