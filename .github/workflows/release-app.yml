@@ -217,7 +217,9 @@ jobs:
           TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           set -euo pipefail
-          BUNDLE=apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
+          # target/ лежит в КОРНЕ репозитория, а не рядом с манифестом:
+          # это Cargo-воркспейс, и артефакты у него общие.
+          BUNDLE=target/aarch64-apple-darwin/release/bundle/dmg
           SRC=$(find "$BUNDLE" -maxdepth 1 -name '*.dmg' | head -1)
           if [ -z "$SRC" ]; then
             echo "::error::DMG не найден в $BUNDLE — сборка не дала артефакт"
