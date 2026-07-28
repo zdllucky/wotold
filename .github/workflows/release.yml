@@ -130,3 +130,10 @@ jobs:
     with:
       tag: ${{ needs.tag.outputs.tag }}
     secrets: inherit
+    # Обязаны покрывать то, что объявляет release-app.yml: вызываемый workflow
+    # не может получить прав больше, чем дала вызывающая джоба, а на workflow
+    # уровне здесь стоит contents: read. Рассинхрон роняет запуск целиком,
+    # ещё до первой джобы.
+    permissions:
+      contents: write
+      pull-requests: write
