@@ -1,376 +1,568 @@
 /**
- * Тексты лендинга. Отделены от разметки, чтобы en/kk добавлялись правкой
- * одного файла, а не копированием секций (правило «i18n тотален» из CLAUDE.md
- * действует и на сайт).
+ * Копирайт лендинга — три локали, один типизированный файл («i18n тотален»).
  *
- * Фактура берётся из README и docs/ПАСПОРТ_ПРОЕКТА.md. Обещания здесь не
- * должны опережать код: если фича planned — она не описывается настоящим
- * временем.
+ * Источник текстов — копи-дек `site-i18n.js` из дизайн-хендоффа 2026-07-30
+ * (design_handoff_wotold_site). Тексты писались под нетехническую аудиторию
+ * и перенесены ДОСЛОВНО — «диаризация», «локально», «Apple Silicon» здесь
+ * отсутствуют намеренно, не «улучшать» обратно в технические формулировки.
+ * kk — черновик: вычитать носителем перед публикацией.
+ *
+ * Санкционированные отклонения от дека (перечислены в PR):
+ * - абсолютные URL уведомления о записи в HTML-строках заменены плейсхолдером
+ *   %LEGAL_CONSENT% — интерполируется base+locale-хелпером при рендере;
+ * - card.done хранится без ведущего «✓ » — глиф стал line-иконкой check
+ *   в разметке (канон: без emoji);
+ * - meta.* составлены из hero.* (в деке ключа meta нет);
+ * - инициалы аватаров карточки не хранятся: вычисляются из card.m1w[0] /
+ *   m2w[0] (в эталоне «В» был захардкожен и не переводился).
+ *
+ * HTML-несущие ключи (рендер через set:html): card.s1–s3 (<b>), card.ref (<u>),
+ * trust.consent (<a>), faq.items[].a (<a>).
  */
 
 export type Lang = 'ru' | 'en' | 'kk';
 
+export interface AskQa {
+  /** Вопрос в поле поиска (печатается посимвольно) */
+  q: string;
+  /** Ответ */
+  a: string;
+  /** Спикер и время цитаты */
+  w: string;
+  /** Цитата */
+  c: string;
+  /** Строка «откуда ответ» */
+  r: string;
+  /** Цвет спикера — строка var(--spN), токен, не hex */
+  col: string;
+  /** Инициал аватара */
+  ini: string;
+}
+
 export interface LandingCopy {
   meta: { title: string; description: string };
-  hero: {
-    eyebrow: string;
+  nav: { features: string; download: string; faq: string; docs: string };
+  hero: { title: string; lead: string; primary: string; secondary: string; note: string };
+  card: {
     title: string;
-    lead: string;
-    primary: string;
-    secondary: string;
-    note: string;
-    mockupAlt: string;
+    meta: string;
+    rec: string;
+    done: string;
+    you: string;
+    them: string;
+    cap0: string;
+    m1w: string;
+    m1t: string;
+    m1: string;
+    m2w: string;
+    m2t: string;
+    m2: string;
+    cap1: string;
+    s1: string;
+    s2: string;
+    s3: string;
+    cap2: string;
+    q: string;
+    a: string;
+    quote: string;
+    ref: string;
   };
-  features: { eyebrow: string; title: string; items: FeatureItem[] };
-  how: { eyebrow: string; title: string; lead: string; steps: Step[] };
-  privacy: { eyebrow: string; title: string; lead: string; points: string[]; link: string };
-  cta: { title: string; lead: string; primary: string; secondary: string; note: string };
-  /** Секция спонсорства снята с лендинга до выбора фискального хоста; тексты сохранены. */
-  sponsor: { title: string; lead: string; action: string };
-  help: { title: string; lead: string; action: string };
+  phases: [string, string, string, string];
+  floats: { f0: string; f1: string; f2: string; f3: string; fixed: string };
+  ask: { title: string; lead: string; button: string; disc: string; qa: AskQa[] };
+  trust: {
+    title: string;
+    c1t: string;
+    c1b: string;
+    c2t: string;
+    c2b: string;
+    c3t: string;
+    c3b: string;
+    consent: string;
+  };
+  dl: {
+    title: string;
+    macOs: string;
+    macD: string;
+    macBtn: string;
+    macReq: string;
+    gkT: string;
+    gkB: string;
+    brewT: string;
+    winTag: string;
+    winOs: string;
+    winD: string;
+    mobTag: string;
+    mobOs: string;
+    mobD: string;
+  };
+  faq: { title: string; items: { q: string; a: string }[] };
   footer: {
-    links: { label: string; href: string }[];
-    /** Правовой блок подвала: отдельная колонка, не вперемешку со ссылками на GitHub. */
+    tagline: string;
+    linksHeading: string;
     legalHeading: string;
     legal: { label: string; slug: string }[];
     license: string;
   };
 }
 
-/** Общие для всех локалей: слаг один, подпись переводится. */
+export const REPO = 'https://github.com/zdllucky/wotold';
+
+/** DMG «последний выпуск» — постоянная ссылка, сверена с docs/download.md */
+export const DMG_URL = `${REPO}/releases/latest/download/Wotold-arm64.dmg`;
+
+/** Ссылки колонки «Проект» — имена собственные, одинаковы во всех локалях */
+export const PROJECT_LINKS = [
+  { label: 'GitHub', href: REPO },
+  { label: 'Issues', href: `${REPO}/issues` },
+  { label: 'Discussions', href: `${REPO}/discussions` },
+  { label: 'Releases', href: `${REPO}/releases` },
+] as const;
+
 const LEGAL_SLUGS = ['legal/privacy', 'legal/consent', 'legal/terms', 'legal/license'] as const;
 
-export interface FeatureItem {
-  icon: 'users' | 'mic' | 'chat' | 'code' | 'cpu' | 'wifiOff';
-  title: string;
-  body: string;
-}
+/** Плейсхолдер внутри HTML-строк дека: заменяется на локальный URL consent. */
+export const LEGAL_CONSENT_TOKEN = '%LEGAL_CONSENT%';
 
-export interface Step {
-  title: string;
-  body: string;
-}
-
-const REPO = 'https://github.com/zdllucky/wotold';
+const legal = (labels: [string, string, string, string]) =>
+  LEGAL_SLUGS.map((slug, i) => ({ label: labels[i], slug }));
 
 export const LANDING: Record<Lang, LandingCopy> = {
   ru: {
     meta: {
-      title: 'Wotold — запись звонков с расшифровкой по спикерам, локально на Mac',
+      title: 'Wotold — записывает звонки и помнит, о чём договорились',
       description:
-        'Десктоп-утилита: запись звонка, транскрипция, диаризация, саммари и поиск по архиву — всё считается на устройстве, без сети и подписки.',
+        'Wotold готовит расшифровку и краткие итоги каждого рабочего звонка, а затем отвечает на вопросы по записям — даже месяц спустя.',
     },
+    nav: { features: 'Возможности', download: 'Скачать', faq: 'Вопросы', docs: 'Документация' },
     hero: {
-      eyebrow: 'macOS · локально · Apache-2.0',
-      title: 'Расшифровка звонков, которая знает, кто говорил',
-      lead: 'Wotold записывает звонок, разделяет реплики по голосам, собирает саммари и отвечает на вопросы по всему архиву. Всё считается на твоём Mac: без серверов, без аккаунта, без подписки. Наружу уходят ровно два запроса, и ни один не несёт твоих данных: скачать модели и проверить, не вышла ли новая версия.',
-      primary: 'Скачать для macOS',
+      title: 'Записывает звонки. Помнит, о чём договорились.',
+      lead: 'Wotold готовит расшифровку и краткие итоги каждого рабочего звонка, а затем отвечает на вопросы по записям — даже месяц спустя.',
+      primary: 'Скачать для Mac',
       secondary: 'Как это работает',
-      note: 'macOS 14.4+. Публичных выпусков пока нет — до первого релиза собирается из исходников. Сборка не нотаризована: при первом запуске её нужно разрешить в настройках безопасности.',
-      mockupAlt:
-        'Окно приложения: список реплик звонка, разделённых по спикерам, с таймкодами и чипами решений и задач.',
+      note: 'Бесплатно · без регистрации · записи хранятся только у вас',
     },
-    features: {
-      eyebrow: 'Что внутри',
-      title: 'Пять вещей, ради которых это писалось',
+    card: {
+      title: 'Звонок с подрядчиком',
+      meta: 'сегодня, 14:00',
+      rec: 'запись',
+      done: 'готово',
+      you: 'вы',
+      them: 'собеседники',
+      cap0: 'Запись идёт сама — вы просто разговариваете.',
+      m1w: 'Марина',
+      m1t: '14:02',
+      m1: 'Смету пришлю до пятницы, тогда и поставим её в договор.',
+      m2w: 'Вы',
+      m2t: '14:02',
+      m2: 'Хорошо, зафиксируем в протоколе.',
+      cap1: 'Расшифровка готова: видно, кто и что сказал.',
+      s1: '<b>Смета</b> — Марина пришлёт до пятницы',
+      s2: '<b>Договор</b> — подписание на следующей неделе',
+      s3: '<b>Начало работ</b> — со вторника',
+      cap2: 'Краткие итоги: что решили и кто за что отвечает.',
+      q: 'Кто обещал прислать смету?',
+      a: 'Марина — до пятницы',
+      quote: 'Смету пришлю до пятницы, тогда и поставим её в договор',
+      ref: 'звонок с подрядчиком · <u>открыть этот момент</u>',
+    },
+    phases: ['Запись', 'Расшифровка', 'Итоги', 'Ответ'],
+    floats: {
+      f0: 'Записываются обе стороны разговора',
+      f1: 'Wotold определяет, кто говорит',
+      f2: 'Итоги — через несколько минут после звонка',
+      f3: 'Ответ найден в записи трёхнедельной давности',
+      fixed: 'Записи хранятся только на вашем компьютере',
+    },
+    ask: {
+      title: 'Ответ найдётся даже месяц спустя',
+      lead: 'Wotold ищет по всем записанным звонкам и отвечает со ссылкой на момент записи, из которого взят ответ.',
+      button: 'Спросить',
+      disc: 'Это пример. Настоящие ответы Wotold ищет только в ваших записях — и прямо сообщает, если ответа в них нет.',
+      qa: [
+        {
+          q: 'Кто обещал прислать смету?',
+          a: 'Марина — до пятницы',
+          w: 'Марина · 14:02',
+          c: '«Смету пришлю до пятницы, тогда и поставим её в договор»',
+          r: 'звонок с подрядчиком, три недели назад · открыть этот момент',
+          col: 'var(--sp3)',
+          ini: 'М',
+        },
+        {
+          q: 'На какое число перенесли запуск?',
+          a: 'На 12 марта',
+          w: 'Игорь · 11:20',
+          c: '«Давайте финально: запуск двенадцатого, дальше не двигаем»',
+          r: 'планёрка по запуску, прошлый понедельник · открыть этот момент',
+          col: 'var(--sp5)',
+          ini: 'И',
+        },
+        {
+          q: 'Что просил поправить заказчик?',
+          a: 'Убрать вторую страницу из отчёта',
+          w: 'Сергей · 16:44',
+          c: '«Вторая страница лишняя, уберите её из финальной версии»',
+          r: 'звонок с заказчиком, вчера · открыть этот момент',
+          col: 'var(--sp2)',
+          ini: 'С',
+        },
+      ],
+    },
+    trust: {
+      title: 'Запись звонков — дело деликатное',
+      c1t: 'Данные остаются у вас',
+      c1b: 'У Wotold нет своих серверов. Записи и расшифровки хранятся на вашем компьютере и никуда не передаются.',
+      c2t: 'Запись включается только вручную',
+      c2b: 'Wotold никогда не начинает запись сам — только по вашей команде. И останавливается так же.',
+      c3t: 'Устройство программы открыто',
+      c3b: 'Wotold бесплатен и распространяется с открытым исходным кодом. Как программа обращается с данными, может проверить любой специалист.',
+      consent:
+        'Во многих странах запись разговора требует согласия всех участников. Перед первым рабочим звонком прочитайте <a href="%LEGAL_CONSENT%">короткое уведомление о записи</a>.',
+    },
+    dl: {
+      title: 'Скачать Wotold',
+      macOs: 'Для Mac',
+      macD: 'Скачайте образ, перетащите Wotold в «Программы» — и можно записывать первый звонок.',
+      macBtn: 'Скачать для Mac',
+      macReq:
+        'Подойдёт Mac с процессором Apple (2020 года и новее) и macOS 14.4 или новее. При первой настройке программа один раз скачает языковые модели — от 2 до 7 ГБ.',
+      gkT: 'Разрешение при первом запуске',
+      gkB: 'macOS предупреждает о программах, установленных не из App Store. Откройте «Системные настройки → Конфиденциальность и безопасность» и нажмите «Открыть всё равно» — это понадобится один раз.',
+      brewT: 'Установка через Homebrew',
+      winTag: 'пока нет',
+      winOs: 'Windows и Linux',
+      winD: 'Запись звука опирается на возможности macOS, поэтому версий для других систем пока нет. О появлении сообщим на этой странице.',
+      mobTag: 'в планах',
+      mobOs: 'iPhone и Android',
+      mobD: 'Планируем мобильное приложение, чтобы архив звонков был под рукой и в дороге. Анонс — на этой странице.',
+    },
+    faq: {
+      title: 'Частые вопросы',
       items: [
         {
-          icon: 'users',
-          title: 'Диаризация, а не стена текста',
-          body: 'Существующие инструменты расшифровывают звонок сплошным потоком без атрибуции — из-за этого рекапы и поиск бесполезны. Wotold разделяет реплики по голосам, и только после этого «кто что обещал» становится вопросом, на который есть ответ.',
+          q: 'Куда попадают записи?',
+          a: 'Только на ваш компьютер. У проекта нет серверной части, поэтому содержимому звонков физически некуда передаваться. Программа обращается к интернету дважды: чтобы скачать языковые модели при первой настройке и чтобы проверить наличие новой версии. Ваших данных в этих запросах нет.',
         },
         {
-          icon: 'mic',
-          title: 'Голосовые отпечатки',
-          body: 'Wotold подсказывает «возможно, это Иван» по голосу из адресной книги. Привязка к контакту — всегда твоё явное подтверждение: автоматически не присваивается никогда.',
+          q: 'Сколько стоит Wotold?',
+          a: 'Wotold бесплатен: без подписок и платных функций. Проект развивается открыто, исходный код опубликован на <a href="https://github.com/zdllucky/wotold">GitHub</a>.',
         },
         {
-          icon: 'chat',
-          title: 'Ассистент по всему архиву',
-          body: 'Локальный чат отвечает на вопросы по всей базе звонков — гибридный поиск по ключевым словам и смыслу, ответ генерирует модель на устройстве, с ссылками на конкретные фрагменты расшифровки.',
+          q: 'Законно ли записывать звонки?',
+          a: 'Зависит от страны: где-то достаточно согласия одного участника, где-то предупредить нужно всех. Wotold не уведомляет собеседников о записи — эта обязанность остаётся на вас. Прочитайте <a href="%LEGAL_CONSENT%">уведомление о записи</a> до первого рабочего звонка.',
         },
         {
-          icon: 'code',
-          title: 'MCP-сервер для Claude',
-          body: 'Локальный read-only сервер даёт Claude прямой доступ к расшифровкам: поиск, цитирование и Q&A без копипаста. Записывать он не умеет по устройству — только читать.',
+          q: 'Почему расшифровка появляется не сразу?',
+          a: 'Всю обработку выполняет ваш компьютер, а не удалённый сервер; обычно это занимает несколько минут после звонка. Длинные записи обрабатываются по частям, прогресс виден в карточке звонка. Взамен запись не покидает компьютер.',
         },
         {
-          icon: 'cpu',
-          title: 'Движок на устройстве',
-          body: 'whisper.cpp для распознавания, sherpa-onnx для диаризации, llama.cpp для саммари и ответов. Пресеты Light / Balanced / Quality — обмен качества на время и нагрев.',
+          q: 'Может ли Wotold перепутать говорящих?',
+          a: 'Может, поэтому программа не решает за вас: она предлагает вариант — «похоже, это Иван», — а закрепляете реплики вы. Исправление учитывается, и в следующий раз подсказка будет точнее.',
+        },
+        {
+          q: 'Почему только для Mac?',
+          a: 'Надёжная запись звука звонков построена на возможностях macOS. Версии для других систем появятся, только если их получится сделать такими же аккуратными.',
         },
       ],
-    },
-    how: {
-      eyebrow: 'Пайплайн',
-      title: 'От нажатия «Запись» до ответа на вопрос',
-      lead: 'Микрофон и системный звук пишутся раздельными дорожками — поэтому твою речь никогда не перепутать с чужой.',
-      steps: [
-        { title: 'Запись', body: 'Кнопка или ⌘⇧R. Две дорожки: микрофон и системный выход.' },
-        { title: 'Распознавание', body: 'whisper.cpp на устройстве. Длинные записи режутся на части.' },
-        { title: 'Диаризация', body: 'sherpa-onnx разделяет голоса и сопоставляет их с контактами.' },
-        { title: 'Саммари', body: 'Локальная модель собирает рекап, решения и задачи.' },
-        { title: 'Поиск', body: 'Всё уходит в индекс: ассистент, поиск и MCP работают по нему.' },
-      ],
-    },
-    privacy: {
-      eyebrow: 'Приватность',
-      title: 'Обещание, которое можно проверить по коду',
-      lead: 'Wotold не имеет серверной части: её не отключали ради приватности, её просто нет. Проверяется это не на слово — репозиторий открыт.',
-      points: [
-        'Аудио, расшифровки и рекапы лежат только в каталоге приложения на твоём диске.',
-        'Нет аккаунтов, нет облачного хранения, нет телеметрии и аналитики.',
-        'Наружу уходят два запроса, оба без твоих данных: скачивание моделей при первом включении и проверка новой версии при запуске. Обработка звонка сети не касается вовсе.',
-        'Голосовые отпечатки — opt-in по каждому контакту. Удаление контакта удаляет и его семплы.',
-        'Экран не записывается: системный звук берётся через ScreenCaptureKit, но кадры не сохраняются.',
-      ],
-      link: 'Полная политика конфиденциальности',
-    },
-    cta: {
-      title: 'Поставить и попробовать',
-      lead: 'Нужен Mac на macOS 14.4 или новее. Приложение бесплатное, регистрации нет. Первый публичный выпуск ещё не опубликован — пока собирается из исходников.',
-      primary: 'Как собрать',
-      secondary: 'Открыть на GitHub',
-      note: 'При первом запуске Wotold скачает модели — от 2 до 7 ГБ в зависимости от выбранного пресета.',
-    },
-    sponsor: {
-      title: 'Поддержать проект',
-      lead: 'Wotold пишет один человек, и у проекта нет ни подписки, ни платной версии. Если он экономит тебе время — спонсорство помогает продолжать.',
-      action: 'GitHub Sponsors',
-    },
-    help: {
-      title: 'Чем помочь',
-      lead: 'Wotold пишет один человек. Больше всего сейчас нужны не деньги, а подтверждённые баги, замеры на разном железе и размеченные записи для проверки качества диаризации.',
-      action: 'Как помочь',
     },
     footer: {
-      links: [
-        { label: 'GitHub', href: REPO },
-        { label: 'Issues', href: `${REPO}/issues` },
-        { label: 'Discussions', href: `${REPO}/discussions` },
-        { label: 'Releases', href: `${REPO}/releases` },
-      ],
+      tagline: 'Открытый проект: код, планы и обсуждения — на GitHub.',
+      linksHeading: 'Проект',
       legalHeading: 'Правовая информация',
-      legal: [
-        { label: 'Конфиденциальность', slug: LEGAL_SLUGS[0] },
-        { label: 'Уведомление о записи', slug: LEGAL_SLUGS[1] },
-        { label: 'Условия использования', slug: LEGAL_SLUGS[2] },
-        { label: 'Лицензия', slug: LEGAL_SLUGS[3] },
-      ],
+      legal: legal(['Конфиденциальность', 'Уведомление о записи', 'Условия использования', 'Лицензия']),
       license: 'Исходный код — под лицензией Apache 2.0.',
     },
   },
-
   en: {
     meta: {
-      title: 'Wotold — call transcripts that know who was speaking, locally on your Mac',
+      title: 'Wotold — records your calls and remembers what was agreed',
       description:
-        'Desktop app: record a call, transcribe it, split it by speaker, summarize, and search your archive — all computed on-device, no network, no subscription.',
+        'Wotold prepares a transcript and a short recap of every work call, then answers questions about your recordings — even a month later.',
     },
+    nav: { features: 'Features', download: 'Download', faq: 'FAQ', docs: 'Docs' },
     hero: {
-      eyebrow: 'macOS · local · Apache-2.0',
-      title: 'Call transcripts that know who was speaking',
-      lead: 'Wotold records the call, splits it by voice, writes the summary, and answers questions across your whole archive. All of it runs on your Mac: no servers, no account, no subscription. It makes exactly two network requests, neither carrying your data: fetching the models, and checking whether a newer version exists.',
-      primary: 'Download for macOS',
-      secondary: 'How it works',
-      note: 'macOS 14.4+. No public release yet — until the first one, build from source. The build is not notarized: the first launch needs a manual approval in Security settings.',
-      mockupAlt:
-        'Application window showing call turns split by speaker, with timestamps and chips for decisions and action items.',
+      title: 'Records your calls. Remembers what was agreed.',
+      lead: 'Wotold prepares a transcript and a short recap of every work call, then answers questions about your recordings — even a month later.',
+      primary: 'Download for Mac',
+      secondary: 'See how it works',
+      note: 'Free · no sign-up · recordings stay with you',
     },
-    features: {
-      eyebrow: 'What is inside',
-      title: 'Five things this was written for',
+    card: {
+      title: 'Call with the contractor',
+      meta: 'today, 2:00 pm',
+      rec: 'recording',
+      done: 'done',
+      you: 'you',
+      them: 'others',
+      cap0: 'Recording runs by itself — you just talk.',
+      m1w: 'Marina',
+      m1t: '2:02 pm',
+      m1: 'I’ll send the estimate by Friday, and we’ll put it into the contract.',
+      m2w: 'You',
+      m2t: '2:02 pm',
+      m2: 'Good — let’s note that in the minutes.',
+      cap1: 'The transcript is ready: you can see who said what.',
+      s1: '<b>Estimate</b> — Marina sends it by Friday',
+      s2: '<b>Contract</b> — signing next week',
+      s3: '<b>Work starts</b> — Tuesday',
+      cap2: 'A short recap: what was decided and who owns what.',
+      q: 'Who promised to send the estimate?',
+      a: 'Marina — by Friday',
+      quote: 'I’ll send the estimate by Friday, and we’ll put it into the contract',
+      ref: 'call with the contractor · <u>open this moment</u>',
+    },
+    phases: ['Recording', 'Transcript', 'Recap', 'Answer'],
+    floats: {
+      f0: 'Both sides of the call are recorded',
+      f1: 'Wotold tells the speakers apart',
+      f2: 'The recap is ready minutes after the call',
+      f3: 'Found in a recording from three weeks ago',
+      fixed: 'Recordings stay on your computer only',
+    },
+    ask: {
+      title: 'Answers turn up even a month later',
+      lead: 'Wotold searches every recorded call and answers with a link to the exact moment the answer comes from.',
+      button: 'Ask',
+      disc: 'This is a demo. Real answers come only from your own recordings — and Wotold says so plainly when they hold none.',
+      qa: [
+        {
+          q: 'Who promised to send the estimate?',
+          a: 'Marina — by Friday',
+          w: 'Marina · 2:02 pm',
+          c: '“I’ll send the estimate by Friday, and we’ll put it into the contract”',
+          r: 'call with the contractor, three weeks ago · open this moment',
+          col: 'var(--sp3)',
+          ini: 'M',
+        },
+        {
+          q: 'What date did the launch move to?',
+          a: 'March 12',
+          w: 'Igor · 11:20 am',
+          c: '“Let’s make it final: we launch on the twelfth, no more moving”',
+          r: 'launch planning call, last Monday · open this moment',
+          col: 'var(--sp5)',
+          ini: 'I',
+        },
+        {
+          q: 'What did the client ask to fix?',
+          a: 'Remove the second page from the report',
+          w: 'Sergey · 4:44 pm',
+          c: '“The second page is unnecessary — take it out of the final version”',
+          r: 'client call, yesterday · open this moment',
+          col: 'var(--sp2)',
+          ini: 'S',
+        },
+      ],
+    },
+    trust: {
+      title: 'Recording calls is a delicate matter',
+      c1t: 'Your data stays with you',
+      c1b: 'Wotold has no servers of its own. Recordings and transcripts live on your computer and are never sent anywhere.',
+      c2t: 'Recording starts only by hand',
+      c2b: 'Wotold never starts a recording on its own — only on your command. It stops the same way.',
+      c3t: 'The inner workings are open',
+      c3b: 'Wotold is free and open source. Anyone qualified can inspect exactly how it handles your data.',
+      consent:
+        'In many countries, recording a conversation requires everyone’s consent. Read the short <a href="%LEGAL_CONSENT%">recording notice</a> before your first work call.',
+    },
+    dl: {
+      title: 'Download Wotold',
+      macOs: 'For Mac',
+      macD: 'Download the image, drag Wotold into Applications — and you are ready to record your first call.',
+      macBtn: 'Download for Mac',
+      macReq:
+        'You’ll need a Mac with an Apple processor (2020 or newer) running macOS 14.4 or later. On first setup the app downloads language models once — 2 to 7 GB.',
+      gkT: 'Approval on first launch',
+      gkB: 'macOS warns about apps installed outside the App Store. Open System Settings → Privacy & Security and click “Open Anyway” — needed once.',
+      brewT: 'Install via Homebrew',
+      winTag: 'not yet',
+      winOs: 'Windows & Linux',
+      winD: 'Sound capture relies on macOS capabilities, so there are no versions for other systems yet. Any change will be announced on this page.',
+      mobTag: 'planned',
+      mobOs: 'iPhone & Android',
+      mobD: 'A mobile app is planned, so your call archive is at hand on the go. The announcement will appear on this page.',
+    },
+    faq: {
+      title: 'Frequently asked questions',
       items: [
         {
-          icon: 'users',
-          title: 'Diarization, not a wall of text',
-          body: 'Existing tools transcribe a call as one undifferentiated stream, which makes recaps and search useless — you cannot get "who promised what" out of it. Wotold splits turns by voice, and only then does that question have an answer.',
+          q: 'Where do the recordings go?',
+          a: 'Only onto your computer. The project has no server side, so there is physically nowhere for call content to be sent. The app reaches the internet twice: to download language models on first setup and to check for a new version. Neither request carries your data.',
         },
         {
-          icon: 'mic',
-          title: 'Voice fingerprints',
-          body: 'Wotold suggests "this might be Ivan" based on a voice from your address book. Binding a speaker to a contact is always your explicit confirmation — it never happens automatically.',
+          q: 'How much does Wotold cost?',
+          a: 'Wotold is free: no subscriptions, no paid tiers. The project is developed in the open — the source code is on <a href="https://github.com/zdllucky/wotold">GitHub</a>.',
         },
         {
-          icon: 'chat',
-          title: 'An assistant over the whole archive',
-          body: 'A local chat answers questions across every call you have — hybrid keyword and semantic retrieval, an on-device model generating the answer, with citations pointing at specific transcript fragments.',
+          q: 'Is it legal to record calls?',
+          a: 'It depends on the country: some require one party’s consent, others require everyone’s. Wotold does not notify the other side — that duty stays with you. Read the <a href="%LEGAL_CONSENT%">recording notice</a> before your first work call.',
         },
         {
-          icon: 'code',
-          title: 'MCP server for Claude',
-          body: 'A local read-only server gives Claude direct access to your transcripts: search, citation and Q&A without copy-paste. It has no write tools at all — by construction, not by policy.',
+          q: 'Why isn’t the transcript instant?',
+          a: 'All processing happens on your computer, not on a remote server; it usually takes a few minutes after the call. Long recordings are processed in parts, with progress visible on the call card. In return, the recording never leaves your machine.',
         },
         {
-          icon: 'cpu',
-          title: 'The engine runs on your machine',
-          body: 'whisper.cpp for recognition, sherpa-onnx for diarization, llama.cpp for summaries and answers. Light / Balanced / Quality presets trade quality against time and heat.',
+          q: 'Can Wotold mix up the speakers?',
+          a: 'It can — which is why it never decides for you: it suggests “this might be Ivan”, and you confirm. Corrections are remembered, so the next suggestion is more accurate.',
+        },
+        {
+          q: 'Why Mac only?',
+          a: 'Reliable call audio capture is built on macOS capabilities. Versions for other systems will appear only if they can be made just as solid.',
         },
       ],
-    },
-    how: {
-      eyebrow: 'Pipeline',
-      title: 'From pressing Record to getting an answer',
-      lead: 'Microphone and system audio are captured as separate tracks — which is why your own speech can never be confused with somebody else’s.',
-      steps: [
-        { title: 'Record', body: 'A button or ⌘⇧R. Two tracks: microphone and system output.' },
-        { title: 'Recognize', body: 'whisper.cpp on-device. Long recordings are split into chunks.' },
-        { title: 'Diarize', body: 'sherpa-onnx separates voices and matches them against contacts.' },
-        { title: 'Summarize', body: 'A local model produces the recap, decisions and action items.' },
-        { title: 'Index', body: 'Everything lands in the index that powers assistant, search and MCP.' },
-      ],
-    },
-    privacy: {
-      eyebrow: 'Privacy',
-      title: 'A promise you can verify by reading the code',
-      lead: 'Wotold has no backend. It was not switched off for privacy — it does not exist. You do not have to take that on faith: the repository is open.',
-      points: [
-        'Audio, transcripts and recaps live only in the application directory on your disk.',
-        'No accounts, no cloud storage, no telemetry, no analytics.',
-        'Two outbound requests, neither carrying your data: the model download on first use and a version check on launch. Processing a call touches the network at all.',
-        'Voice fingerprints are opt-in per contact. Deleting a contact deletes their samples.',
-        'The screen is never recorded: system audio comes through ScreenCaptureKit, but no frames are stored.',
-      ],
-      link: 'Full privacy policy',
-    },
-    cta: {
-      title: 'Install and try it',
-      lead: 'Requires a Mac running macOS 14.4 or newer. Free, no sign-up. The first public release is not out yet — until then, build from source.',
-      primary: 'How to build',
-      secondary: 'Open on GitHub',
-      note: 'On first launch Wotold downloads models — 2 to 7 GB depending on the preset you pick.',
-    },
-    sponsor: {
-      title: 'Support the project',
-      lead: 'Wotold is written by one person, and there is no subscription and no paid tier. If it saves you time, sponsorship is what keeps it going.',
-      action: 'GitHub Sponsors',
-    },
-    help: {
-      title: 'How to help',
-      lead: 'Wotold is written by one person. What helps most right now is not money: confirmed bug reports, measurements on hardware I do not have, and labelled recordings for checking diarization quality.',
-      action: 'Ways to help',
     },
     footer: {
-      links: [
-        { label: 'GitHub', href: REPO },
-        { label: 'Issues', href: `${REPO}/issues` },
-        { label: 'Discussions', href: `${REPO}/discussions` },
-        { label: 'Releases', href: `${REPO}/releases` },
-      ],
+      tagline: 'An open project: code, plans and discussions live on GitHub.',
+      linksHeading: 'Project',
       legalHeading: 'Legal',
-      legal: [
-        { label: 'Privacy policy', slug: LEGAL_SLUGS[0] },
-        { label: 'Recording notice', slug: LEGAL_SLUGS[1] },
-        { label: 'Terms of use', slug: LEGAL_SLUGS[2] },
-        { label: 'License', slug: LEGAL_SLUGS[3] },
-      ],
+      legal: legal(['Privacy policy', 'Recording notice', 'Terms of use', 'License']),
       license: 'Source code is licensed under Apache 2.0.',
     },
   },
-
   kk: {
     meta: {
-      title: 'Wotold — кім сөйлегенін білетін қоңырау транскрипциясы, Mac-та жергілікті',
+      title: 'Wotold — қоңырауларды жазады және не келісілгенін есте сақтайды',
       description:
-        'Десктоп қосымша: қоңырауды жазу, транскрипция, сөйлеушілерге бөлу, түйіндеме және архив бойынша іздеу — бәрі құрылғыда, желісіз және жазылымсыз.',
+        'Wotold әр жұмыс қоңырауының транскрипциясы мен қысқа қорытындысын дайындайды, содан кейін жазбалар бойынша сұрақтарға жауап береді — тіпті бір айдан кейін де.',
     },
+    nav: { features: 'Мүмкіндіктер', download: 'Жүктеу', faq: 'Сұрақтар', docs: 'Құжаттама' },
     hero: {
-      eyebrow: 'macOS · жергілікті · Apache-2.0',
-      title: 'Кім сөйлегенін білетін қоңырау транскрипциясы',
-      lead: 'Wotold қоңырауды жазады, репликаларды дауыс бойынша бөледі, түйіндеме жасайды және бүкіл архив бойынша сұрақтарға жауап береді. Бәрі сіздің Mac-ыңызда есептеледі: серверсіз, аккаунтсыз, жазылымсыз. Сыртқа тек екі сұрау кетеді, екеуі де сіздің деректеріңізді тасымалдамайды: модельдерді жүктеу және жаңа нұсқаны тексеру.',
-      primary: 'macOS үшін жүктеу',
+      title: 'Қоңырауларды жазады. Не келісілгенін есте сақтайды.',
+      lead: 'Wotold әр жұмыс қоңырауының транскрипциясы мен қысқа қорытындысын дайындайды, содан кейін жазбалар бойынша сұрақтарға жауап береді — тіпті бір айдан кейін де.',
+      primary: 'Mac үшін жүктеу',
       secondary: 'Қалай жұмыс істейді',
-      note: 'macOS 14.4+. Әзірге жария шығарылым жоқ — алғашқысына дейін бастапқы кодтан құрастырылады. Құрастырма нотаризацияланбаған: алғаш іске қосқанда қауіпсіздік баптауларынан рұқсат беру керек.',
-      mockupAlt:
-        'Қосымша терезесі: сөйлеушілерге бөлінген қоңырау репликалары, уақыт белгілері мен шешімдер және тапсырмалар чиптері.',
+      note: 'Тегін · тіркелусіз · жазбалар тек сізде сақталады',
     },
-    features: {
-      eyebrow: 'Ішінде не бар',
-      title: 'Бұл жоба жазылған бес себеп',
+    card: {
+      title: 'Мердігермен қоңырау',
+      meta: 'бүгін, 14:00',
+      rec: 'жазу',
+      done: 'дайын',
+      you: 'сіз',
+      them: 'әңгімелесушілер',
+      cap0: 'Жазу өздігінен жүреді — сіз жай сөйлесесіз.',
+      m1w: 'Марина',
+      m1t: '14:02',
+      m1: 'Сметаны жұмаға дейін жіберемін, содан кейін келісімшартқа енгіземіз.',
+      m2w: 'Сіз',
+      m2t: '14:02',
+      m2: 'Жақсы, хаттамаға тіркейміз.',
+      cap1: 'Транскрипция дайын: кім не айтқаны көрініп тұр.',
+      s1: '<b>Смета</b> — Марина жұмаға дейін жібереді',
+      s2: '<b>Келісімшарт</b> — келесі аптада қол қою',
+      s3: '<b>Жұмыс басы</b> — сейсенбіден',
+      cap2: 'Қысқа қорытынды: не шешілді және кім не істейді.',
+      q: 'Сметаны жіберуге кім уәде берді?',
+      a: 'Марина — жұмаға дейін',
+      quote: 'Сметаны жұмаға дейін жіберемін, содан кейін келісімшартқа енгіземіз',
+      ref: 'мердігермен қоңырау · <u>осы сәтті ашу</u>',
+    },
+    phases: ['Жазу', 'Транскрипция', 'Қорытынды', 'Жауап'],
+    floats: {
+      f0: 'Әңгіменің екі жағы да жазылады',
+      f1: 'Wotold кім сөйлеп тұрғанын анықтайды',
+      f2: 'Қорытынды — қоңыраудан кейін бірнеше минутта',
+      f3: 'Жауап үш апта бұрынғы жазбадан табылды',
+      fixed: 'Жазбалар тек сіздің компьютеріңізде сақталады',
+    },
+    ask: {
+      title: 'Жауап бір айдан кейін де табылады',
+      lead: 'Wotold барлық жазылған қоңыраулар бойынша іздейді және жауап алынған жазба сәтіне сілтеме береді.',
+      button: 'Сұрау',
+      disc: 'Бұл — мысал. Нақты жауаптарды Wotold тек сіздің жазбаларыңыздан іздейді, ал жауап болмаса — тікелей айтады.',
+      qa: [
+        {
+          q: 'Сметаны жіберуге кім уәде берді?',
+          a: 'Марина — жұмаға дейін',
+          w: 'Марина · 14:02',
+          c: '«Сметаны жұмаға дейін жіберемін, содан кейін келісімшартқа енгіземіз»',
+          r: 'мердігермен қоңырау, үш апта бұрын · осы сәтті ашу',
+          col: 'var(--sp3)',
+          ini: 'М',
+        },
+        {
+          q: 'Іске қосу қай күнге ауыстырылды?',
+          a: '12 наурызға',
+          w: 'Игорь · 11:20',
+          c: '«Соңғы шешім: іске қосу он екісінде, енді жылжытпаймыз»',
+          r: 'іске қосу жиналысы, өткен дүйсенбі · осы сәтті ашу',
+          col: 'var(--sp5)',
+          ini: 'И',
+        },
+        {
+          q: 'Тапсырыс беруші нені түзетуді сұрады?',
+          a: 'Есептен екінші бетті алып тастау',
+          w: 'Сергей · 16:44',
+          c: '«Екінші бет артық, соңғы нұсқадан алып тастаңыз»',
+          r: 'тапсырыс берушімен қоңырау, кеше · осы сәтті ашу',
+          col: 'var(--sp2)',
+          ini: 'С',
+        },
+      ],
+    },
+    trust: {
+      title: 'Қоңырауды жазу — нәзік мәселе',
+      c1t: 'Деректер сізде қалады',
+      c1b: 'Wotold-тың өз серверлері жоқ. Жазбалар мен транскрипциялар сіздің компьютеріңізде сақталады және еш жерге жіберілмейді.',
+      c2t: 'Жазу тек қолмен қосылады',
+      c2b: 'Wotold жазуды ешқашан өздігінен бастамайды — тек сіздің әміріңізбен. Тоқтауы да солай.',
+      c3t: 'Бағдарламаның құрылысы ашық',
+      c3b: 'Wotold тегін және ашық бастапқы кодпен таратылады. Деректермен қалай жұмыс істейтінін кез келген маман тексере алады.',
+      consent:
+        'Көптеген елдерде әңгімені жазу барлық қатысушының келісімін талап етеді. Алғашқы жұмыс қоңырауына дейін <a href="%LEGAL_CONSENT%">жазба туралы қысқа хабарламаны</a> оқыңыз.',
+    },
+    dl: {
+      title: 'Wotold жүктеу',
+      macOs: 'Mac үшін',
+      macD: 'Образды жүктеп, Wotold-ты «Программалар» қалтасына сүйреңіз — алғашқы қоңырауды жазуға болады.',
+      macBtn: 'Mac үшін жүктеу',
+      macReq:
+        'Apple процессоры бар Mac (2020 жыл және жаңарақ) және macOS 14.4+ қажет. Алғашқы баптауда бағдарлама тілдік модельдерді бір рет жүктейді — 2–7 ГБ.',
+      gkT: 'Алғашқы іске қосудағы рұқсат',
+      gkB: 'macOS App Store-дан тыс орнатылған бағдарламалар туралы ескертеді. «Жүйе баптаулары → Құпиялылық және қауіпсіздік» ашып, «Бәрібір ашу» басыңыз — бір рет қана қажет.',
+      brewT: 'Homebrew арқылы орнату',
+      winTag: 'әзірге жоқ',
+      winOs: 'Windows және Linux',
+      winD: 'Дыбыс жазу macOS мүмкіндіктеріне сүйенеді, сондықтан басқа жүйелерге нұсқалар әзірге жоқ. Өзгеріс болса — осы бетте хабарлаймыз.',
+      mobTag: 'жоспарда',
+      mobOs: 'iPhone және Android',
+      mobD: 'Қоңыраулар архиві жолда да қолжетімді болуы үшін мобильді қосымша жоспарлануда. Хабарландыру осы бетте шығады.',
+    },
+    faq: {
+      title: 'Жиі қойылатын сұрақтар',
       items: [
         {
-          icon: 'users',
-          title: 'Диаризация, мәтін қабырғасы емес',
-          body: 'Қолда бар құралдар қоңырауды тұтас ағынмен, авторлықсыз жазып береді — сондықтан түйіндеме де, іздеу де пайдасыз: «кім не уәде етті» деген сұраққа жауап шықпайды. Wotold репликаларды дауыс бойынша бөледі, тек содан кейін бұл сұрақтың жауабы пайда болады.',
+          q: 'Жазбалар қайда сақталады?',
+          a: 'Тек сіздің компьютеріңізде. Жобада сервер бөлігі жоқ, сондықтан қоңырау мазмұнының жіберілетін жері де жоқ. Бағдарлама интернетке екі рет қана жүгінеді: алғашқы баптауда модельдерді жүктеу және жаңа нұсқаны тексеру үшін. Бұл сұрауларда сіздің деректеріңіз жоқ.',
         },
         {
-          icon: 'mic',
-          title: 'Дауыс іздері',
-          body: 'Wotold мекенжай кітапшасындағы дауыс бойынша «бұл Иван болуы мүмкін» деп ұсынады. Контактіге байлау — әрқашан сіздің нақты растауыңыз, автоматты түрде ешқашан болмайды.',
+          q: 'Wotold қанша тұрады?',
+          a: 'Wotold тегін: жазылым да, ақылы функциялар да жоқ. Жоба ашық дамиды, бастапқы код <a href="https://github.com/zdllucky/wotold">GitHub-та</a> жарияланған.',
         },
         {
-          icon: 'chat',
-          title: 'Бүкіл архив бойынша көмекші',
-          body: 'Жергілікті чат барлық қоңыраулар базасы бойынша сұрақтарға жауап береді — кілт сөз бен мағына бойынша аралас іздеу, жауапты құрылғыдағы модель жасайды және транскрипцияның нақты үзінділеріне сілтеме береді.',
+          q: 'Қоңырауды жазу заңды ма?',
+          a: 'Елге байланысты: кейде бір қатысушының келісімі жеткілікті, кейде бәрін ескерту қажет. Wotold әңгімелесушілерге жазу туралы хабарламайды — бұл міндет сізде. Алғашқы жұмыс қоңырауына дейін <a href="%LEGAL_CONSENT%">жазба туралы хабарламаны</a> оқыңыз.',
         },
         {
-          icon: 'code',
-          title: 'Claude үшін MCP сервері',
-          body: 'Жергілікті read-only сервер Claude-қа транскрипцияларға тікелей қолжетімділік береді: іздеу, дәйексөз және Q&A көшіріп-қоюсыз. Жазу құралдары мүлде жоқ.',
+          q: 'Неге транскрипция бірден шықпайды?',
+          a: 'Барлық өңдеуді қашықтағы сервер емес, сіздің компьютеріңіз орындайды; әдетте бұл қоңыраудан кейін бірнеше минут алады. Ұзын жазбалар бөліктермен өңделеді, барысы қоңырау картасында көрінеді. Есесіне жазба компьютерден шықпайды.',
         },
         {
-          icon: 'cpu',
-          title: 'Қозғалтқыш құрылғыда',
-          body: 'Тану үшін whisper.cpp, диаризация үшін sherpa-onnx, түйіндеме мен жауаптар үшін llama.cpp. Light / Balanced / Quality пресеттері сапаны уақыт пен қызуға айырбастайды.',
+          q: 'Wotold сөйлеушілерді шатастыруы мүмкін бе?',
+          a: 'Мүмкін, сондықтан бағдарлама сіз үшін шешпейді: ол «бұл Иван болуы мүмкін» деп ұсынады, ал бекітетін — сіз. Түзету ескеріледі, келесі жолы ұсыныс дәлірек болады.',
+        },
+        {
+          q: 'Неге тек Mac үшін?',
+          a: 'Қоңырау дыбысын сенімді жазу macOS мүмкіндіктеріне құрылған. Басқа жүйелерге нұсқалар тек соншалықты мұқият жасалғанда ғана шығады.',
         },
       ],
-    },
-    how: {
-      eyebrow: 'Құбыр',
-      title: '«Жазу» түймесінен жауапқа дейін',
-      lead: 'Микрофон мен жүйелік дыбыс бөлек жолдармен жазылады — сондықтан сіздің сөзіңіз ешқашан бөтен дауыспен шатаспайды.',
-      steps: [
-        { title: 'Жазу', body: 'Түйме немесе ⌘⇧R. Екі жол: микрофон және жүйелік шығыс.' },
-        { title: 'Тану', body: 'Құрылғыдағы whisper.cpp. Ұзын жазбалар бөліктерге бөлінеді.' },
-        { title: 'Диаризация', body: 'sherpa-onnx дауыстарды бөліп, контактілермен салыстырады.' },
-        { title: 'Түйіндеме', body: 'Жергілікті модель түйіндеме, шешімдер мен тапсырмаларды жинайды.' },
-        { title: 'Индекс', body: 'Бәрі индекске түседі: көмекші, іздеу және MCP содан жұмыс істейді.' },
-      ],
-    },
-    privacy: {
-      eyebrow: 'Құпиялылық',
-      title: 'Кодпен тексеруге болатын уәде',
-      lead: 'Wotold-та сервер бөлігі жоқ: ол құпиялылық үшін өшірілген емес, ол мүлде жоқ. Мұны сөзге сеніп қабылдаудың қажеті жоқ — репозиторий ашық.',
-      points: [
-        'Аудио, транскрипциялар мен түйіндемелер тек сіздің дискідегі қосымша каталогында жатады.',
-        'Аккаунттар жоқ, бұлттық сақтау жоқ, телеметрия мен аналитика жоқ.',
-        'Сыртқа екі сұрау кетеді, екеуі де деректеріңізсіз: алғаш қосқанда модельдерді жүктеу және іске қосқанда жаңа нұсқаны тексеру. Қоңырауды өңдеу желіге мүлде жүгінбейді.',
-        'Дауыс іздері — әр контакт бойынша opt-in. Контактіні жою оның үлгілерін де жояды.',
-        'Экран жазылмайды: жүйелік дыбыс ScreenCaptureKit арқылы алынады, бірақ кадрлар сақталмайды.',
-      ],
-      link: 'Толық құпиялылық саясаты',
-    },
-    cta: {
-      title: 'Орнатып көру',
-      lead: 'macOS 14.4 немесе жаңарақ Mac қажет. Тегін, тіркелусіз. Алғашқы жария шығарылым әлі жоқ — оған дейін бастапқы кодтан құрастырылады.',
-      primary: 'Қалай құрастыру',
-      secondary: 'GitHub-та ашу',
-      note: 'Алғаш іске қосқанда Wotold модельдерді жүктейді — таңдалған пресетке қарай 2-ден 7 ГБ-қа дейін.',
-    },
-    sponsor: {
-      title: 'Жобаны қолдау',
-      lead: 'Wotold-ты бір адам жазады, жобада жазылым да, ақылы нұсқа да жоқ. Егер ол сіздің уақытыңызды үнемдесе — демеушілік жалғастыруға көмектеседі.',
-      action: 'GitHub Sponsors',
-    },
-    help: {
-      title: 'Қалай көмектесуге болады',
-      lead: 'Wotold-ты бір адам жазады. Қазір ақшадан гөрі басқа нәрсе қажет: расталған қателер, менде жоқ жабдықтағы өлшеулер және диаризация сапасын тексеруге арналған белгіленген жазбалар.',
-      action: 'Көмектесу жолдары',
     },
     footer: {
-      links: [
-        { label: 'GitHub', href: REPO },
-        { label: 'Issues', href: `${REPO}/issues` },
-        { label: 'Discussions', href: `${REPO}/discussions` },
-        { label: 'Releases', href: `${REPO}/releases` },
-      ],
+      tagline: 'Ашық жоба: код, жоспарлар мен талқылаулар — GitHub-та.',
+      linksHeading: 'Жоба',
       legalHeading: 'Құқықтық ақпарат',
-      legal: [
-        { label: 'Құпиялылық саясаты', slug: LEGAL_SLUGS[0] },
-        { label: 'Жазба туралы хабарлама', slug: LEGAL_SLUGS[1] },
-        { label: 'Пайдалану шарттары', slug: LEGAL_SLUGS[2] },
-        { label: 'Лицензия', slug: LEGAL_SLUGS[3] },
-      ],
+      legal: legal(['Құпиялылық', 'Жазба туралы хабарлама', 'Пайдалану шарттары', 'Лицензия']),
       license: 'Бастапқы код Apache 2.0 лицензиясымен таратылады.',
     },
   },

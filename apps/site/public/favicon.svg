@@ -1,0 +1,14 @@
+<!-- Марка Wotold (SPEC §8). Hex захардкожены намеренно: фавикон живёт вне
+     страницы и токенов темы не видит; тёмный вариант — через prefers-color-scheme. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 50">
+  <style>
+    .mk1 { fill: #1A1B23; }
+    .mk2 { fill: #9C9FAB; }
+    @media (prefers-color-scheme: dark) {
+      .mk1 { fill: #ECEDF1; }
+      .mk2 { fill: #5C5E68; }
+    }
+  </style>
+  <rect class="mk1" x="3" y="6" width="56" height="17" rx="8.5"/>
+  <rect class="mk2" x="13" y="27" width="56" height="17" rx="8.5"/>
+</svg>

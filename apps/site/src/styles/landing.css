@@ -1,0 +1,619 @@
+/* ─────────────────────────────────────────────────────────────
+   Wotold · landing.css — каркас лендинга (handoff 2026-07-30).
+
+   Порт эталона `Wotold - Лендинг.html` на токены канона: оболочка, шапка,
+   hero, trust, download, faq, подвал. Стили двух демо (живая карточка и
+   поиск) — в landing-demos.css: вместе файлы упирались в гейт 800 строк.
+   Оба подключает только Landing.astro — докам Starlight они не нужны.
+
+   Маппинг имён эталона → токены: --border2→--border-2, --borderS→
+   --border-strong, --text2/3→--text-2/3, --faint→--text-faint,
+   --accent-hov→--accent-hover. Сырых hex нет.
+
+   Брейкпоинты эталона: 1080 (колонка hero, скрытый CTA шапки) и 760
+   (скрытая нав, ужатые отступы).
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Оболочка ────────────────────────────────────────────────── */
+
+body.lp {
+  font-family: var(--font);
+  font-size: var(--t-15);
+  color: var(--text);
+  background: var(--bg);
+}
+
+.lp-wrap {
+  max-width: var(--site-max);
+  margin-inline: auto;
+  padding-inline: 32px;
+}
+
+/* Ритм секций — 84px сверху и снизу (SPEC §3.9); hero задаёт свой. */
+main > section {
+  padding-block: var(--s-section);
+}
+
+/* Якоря не ныряют под sticky-шапку (фикс бага эталона). */
+main > section[id] {
+  scroll-margin-top: calc(var(--header-h) + 12px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+.lp-sec-h {
+  text-align: center;
+  max-width: 640px;
+  margin: 0 auto 44px;
+}
+
+.lp-sec-h h2 {
+  font-size: var(--t-hero-sm);
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.lp-sec-h p {
+  margin: 12px 0 0;
+  font-size: 16.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+/* ── Шапка ───────────────────────────────────────────────────── */
+
+.lp-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--hdbg);
+  backdrop-filter: blur(var(--blur));
+  border-bottom: 1px solid var(--border);
+}
+
+.lp-hd {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 13px 32px;
+  max-width: var(--site-max);
+  margin-inline: auto;
+}
+
+.lp-wm {
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.lp-brand {
+  margin-right: auto;
+}
+
+.lp-topnav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.lp-topnav a {
+  font-size: var(--t-14);
+  color: var(--text-2);
+  text-decoration: none;
+}
+
+.lp-topnav a:hover {
+  color: var(--text);
+}
+
+.lp-topactions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* .seg в wk.css стилизует потомков-button. Переключатель языка — навигация,
+   то есть ссылки; повторяем то же правило, а не заводим второй вид.
+   Подпись — mono, активная локаль — акцентная пилюля (эталон). */
+.lp-topactions .seg a {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--r-pill);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+  text-decoration: none;
+  transition:
+    background var(--fast),
+    color var(--fast);
+}
+
+.lp-topactions .seg a:hover {
+  color: var(--text);
+}
+
+.lp-topactions .seg a[data-active='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Фокус-кольцо канона wk.css знает `.seg button`, а переключатель языка —
+   ссылки: без этого правила клавиатурный фокус получал бы браузерный
+   дефолт вместо системного кольца. */
+.lp-topactions .seg a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Кнопка темы — круглая, border-2 (эталон .thm). */
+.lp-topactions .iconbtn {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-2);
+  background: transparent;
+}
+
+/* Иконка показывает, куда переключишься, а не текущее состояние. */
+[data-theme='dark'] .lp-ico-dark,
+.lp-ico-light {
+  display: none;
+}
+
+[data-theme='dark'] .lp-ico-light {
+  display: block;
+}
+
+.lp-ico-dark {
+  display: block;
+}
+
+/* ── Кнопки лендинга — пилюли поверх wk .btn ─────────────────── */
+
+.lp-cta,
+.lp-ghost {
+  height: auto;
+  border-radius: var(--r-pill);
+}
+
+.lp-cta {
+  padding: 10px 20px;
+  font-size: var(--t-14);
+  font-weight: 500;
+}
+
+.lp-ctas .lp-cta {
+  padding: 14px 28px;
+  font-size: 15.5px;
+}
+
+.lp-ghost {
+  padding: 12px 22px;
+  font-size: var(--t-15);
+  color: var(--text-2);
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+}
+
+.lp-ghost:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* ── Hero ────────────────────────────────────────────────────── */
+
+.lp-hero {
+  display: grid;
+  grid-template-columns: 1fr 620px;
+  gap: 56px;
+  align-items: center;
+  padding-block: 56px 64px;
+  min-height: min(calc(100vh - var(--header-h)), 780px);
+}
+
+.lp-h1 {
+  font-size: var(--t-hero);
+  line-height: 1.06;
+  font-weight: var(--w-display);
+  letter-spacing: -0.03em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.lp-sub {
+  font-size: var(--t-lead);
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 20px 0 30px;
+  max-width: 26em;
+  text-wrap: pretty;
+}
+
+.lp-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.lp-fine {
+  display: block;
+  margin-top: 18px;
+  font-size: var(--t-13);
+  color: var(--text-3);
+}
+
+/* ── Доверие #trust ──────────────────────────────────────────── */
+
+.lp-trust {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.lp-tc {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 26px 26px 28px;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.lp-tc:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow);
+}
+
+.lp-ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--sunken);
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+}
+
+.lp-tc b {
+  display: block;
+  font-size: 15.5px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.lp-tc p {
+  margin: 0;
+  font-size: var(--t-14);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.lp-consent {
+  text-align: center;
+  margin: 26px auto 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+  max-width: 56em;
+}
+
+.lp-consent a,
+.lp-fa a {
+  color: var(--text-2);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.lp-consent a:hover,
+.lp-fa a:hover {
+  color: var(--text);
+}
+
+/* ── Загрузки #download ──────────────────────────────────────── */
+
+.lp-dl-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.lp-dlc {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 28px;
+}
+
+.lp-dlc-main {
+  box-shadow: var(--shadow-lg);
+}
+
+.lp-dlc-dim {
+  background: transparent;
+  border-style: dashed;
+}
+
+.lp-os {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: var(--t-16);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.lp-os svg {
+  flex: none;
+}
+
+.lp-d {
+  margin: 0 0 18px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.lp-req {
+  margin: 14px 0 16px;
+  font-size: var(--t-12);
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.lp-soon {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: var(--sunken);
+  border-radius: var(--r-pill);
+  padding: 4px 10px;
+  margin-bottom: 12px;
+}
+
+.lp-dlc details {
+  border-top: 1px solid var(--border);
+  padding: 10px 0;
+}
+
+.lp-dlc summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.lp-dlc summary::-webkit-details-marker {
+  display: none;
+}
+
+.lp-dlc summary::before {
+  content: '›';
+  font-size: var(--t-16);
+  color: var(--text-faint);
+  transition: transform 0.2s ease;
+}
+
+.lp-dlc details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.lp-dlc details p {
+  margin: 8px 0 4px;
+  font-size: var(--t-13);
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.lp-brew code {
+  display: block;
+  width: fit-content;
+  background: var(--sunken);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: var(--t-12);
+}
+
+/* ── FAQ ─────────────────────────────────────────────────────── */
+
+.lp-faq {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.lp-faq details {
+  border-bottom: 1px solid var(--border);
+}
+
+.lp-faq summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  padding: 18px 4px;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lp-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+/* «+» поворачивается в «×» (45°) — SPEC §3.7. */
+.lp-faq summary::after {
+  content: '+';
+  margin-left: auto;
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--text-faint);
+  transition: transform 0.25s ease;
+}
+
+.lp-faq details[open] summary::after {
+  transform: rotate(45deg);
+}
+
+.lp-fa {
+  padding: 0 4px 22px;
+  font-size: var(--t-15);
+  line-height: 1.6;
+  color: var(--text-2);
+  max-width: 44em;
+}
+
+/* ── Подвал ──────────────────────────────────────────────────── */
+
+.lp-footer {
+  border-top: 1px solid var(--border);
+  padding: 48px 0 56px;
+  margin-top: 40px;
+}
+
+.lp-ft {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 40px;
+}
+
+.lp-ft .lp-wm {
+  font-size: 18px;
+  gap: 10px;
+}
+
+.lp-tagline {
+  margin: 14px 0 6px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: 34em;
+}
+
+.lp-lic {
+  margin: 0;
+  font-size: var(--t-12);
+  color: var(--text-3);
+}
+
+.lp-ft h3 {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 0 0 14px;
+}
+
+.lp-ft ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 9px;
+}
+
+.lp-ft a {
+  font-size: var(--t-14);
+  color: var(--text-2);
+  text-decoration: none;
+}
+
+.lp-ft a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* ── Брейкпоинты каркаса ─────────────────────────────────────── */
+
+@media (max-width: 1080px) {
+  .lp-hd-cta {
+    display: none;
+  }
+
+  .lp-hero {
+    grid-template-columns: 1fr;
+    gap: 44px;
+    padding-block: 44px 56px;
+    min-height: 0;
+    text-align: center;
+  }
+
+  .lp-sub {
+    margin-inline: auto;
+  }
+
+  .lp-ctas {
+    justify-content: center;
+  }
+
+  .lp-trust,
+  .lp-dl-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lp-ft {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+}
+
+@media (max-width: 760px) {
+  .lp-wrap {
+    padding-inline: 20px;
+  }
+
+  .lp-hd {
+    padding: 11px 20px;
+    gap: 10px;
+  }
+
+  .lp-topnav {
+    display: none;
+  }
+
+  main > section {
+    padding-block: 60px;
+  }
+
+  .lp-h1 {
+    font-size: 34px;
+  }
+}
+
+/* ── Reduced motion (каркас) ─────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-tc,
+  .lp-faq summary::after,
+  .lp-dlc summary::before {
+    animation: none !important;
+    transition: none !important;
+  }
+}
