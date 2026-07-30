@@ -55,10 +55,6 @@ export const SETTINGS_KEYS = {
    *  (default — текущий v2 path с decisions/open_questions/evidence).
    *  '0' = OFF emergency-disable → legacy v1 markdown-only prompt. */
   SUMMARY_V2_ENABLED: 'summary_v2_enabled',
-  /** [P1.2] Labs «Force N speakers» override для sortformer's
-   *  `num_clusters`. Values: 'auto' (default) | '2' | '3' | '4'.
-   *  Backend clamp'ит к 1..=MAX_LOCAL_SPEAKERS; non-numeric → auto. */
-  MIC_DIARIZATION_NUM_SPEAKERS: 'mic_diarization_num_speakers',
 } as const;
 
 // [B21] Rust-owned ключи settings-таблицы, НАМЕРЕННО отсутствующие в этом
@@ -80,20 +76,7 @@ export const SETTINGS_DEFAULTS = {
   /** [M14 T-14] Summary v2 default ON. OFF — emergency disable, recap
    *  падает на legacy v1 markdown-only prompt. */
   SUMMARY_V2_ENABLED: true,
-  /** [P1.2] Force-N-speakers Labs override — default 'auto' (sortformer
-   *  auto-detect). Stored как string в DB; UI reads obvious values. */
-  MIC_DIARIZATION_NUM_SPEAKERS: 'auto' as MicDiarizationNumSpeakers,
 } as const;
-
-/** [P1.2] Labs override values для force-N-speakers. Whitelist enforced
- *  в LabsSection (`<select>` options). Backend clamp'ит к 1..=MAX_LOCAL_SPEAKERS=3
- *  (P14.3: пониженный cap от 4). Опция '4' удалена т.к. cap не пропустит. */
-export type MicDiarizationNumSpeakers = 'auto' | '2' | '3';
-export const MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS: MicDiarizationNumSpeakers[] = [
-  'auto',
-  '2',
-  '3',
-];
 
 /** [S1] Whitelist cooldown values 3/5/10/15 min. */
 export type CallDetectCooldown = '3' | '5' | '10' | '15';

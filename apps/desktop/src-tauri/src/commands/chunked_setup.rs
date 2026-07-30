@@ -17,7 +17,6 @@ use crate::{
     call_store::CallStore,
     db,
     local_engine::stt::{LocalWhisperProvider, TrackKind},
-    pipeline::settings::read_num_speakers_override,
     pipeline::{
         chunk_orchestrator::{self, ChunkOrchestratorConfig},
         chunk_runner::{self, ChunkRunInput},
@@ -56,7 +55,6 @@ pub(crate) struct ChunkProviders {
     pub mic: Arc<dyn TranscriptionProvider>,
     pub system: Arc<dyn TranscriptionProvider>,
     pub lang: String,
-    pub mic_diarization_num_speakers: Option<i32>,
 }
 
 /// [M13 fix] Построить `ChunkProviders` из active preset + settings.
@@ -94,16 +92,7 @@ pub(crate) async fn build_chunk_providers(
     let lang = db::get_setting(db, "stt_lang")
         .await?
         .unwrap_or_else(|| "auto".to_string());
-    // [TD-36] Аварийный ограничитель «сколько голосов» — единственная
-    // настройка диаризации, что осталась: сама диаризация теперь всегда включена.
-    let mic_diarization_num_speakers = read_num_speakers_override(db).await?;
-
-    Ok(ChunkProviders {
-        mic,
-        system,
-        lang,
-        mic_diarization_num_speakers,
-    })
+    Ok(ChunkProviders { mic, system, lang })
 }
 
 /// [M13 fix / test] Config для orchestrator. По умолчанию 10-мин chunks. Env
@@ -150,8 +139,6 @@ pub(crate) struct ChunkedSetup {
     mic_provider: Arc<dyn TranscriptionProvider>,
     system_provider: Arc<dyn TranscriptionProvider>,
     stt_lang: String,
-    /// [P1.2] Labs «Force N speakers» override. None = auto-detect.
-    mic_diarization_num_speakers: Option<i32>,
 }
 
 /// Прочитать settings + (если оба условия true) построить provider + channels.
@@ -198,7 +185,6 @@ pub(crate) async fn prepare_chunked_setup(
         mic: mic_provider,
         system: system_provider,
         lang: stt_lang,
-        mic_diarization_num_speakers,
     } = build_chunk_providers(&state.db, &state.app_data_dir, app, call_id).await?;
 
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(256);
@@ -219,7 +205,6 @@ pub(crate) async fn prepare_chunked_setup(
         mic_provider,
         system_provider,
         stt_lang,
-        mic_diarization_num_speakers,
     }))
 }
 
@@ -242,7 +227,6 @@ pub(crate) async fn spawn_orchestrator(
         mic_provider,
         system_provider,
         stt_lang,
-        mic_diarization_num_speakers,
     } = setup;
 
     let session_ref = state.recording.clone();
@@ -262,8 +246,6 @@ pub(crate) async fn spawn_orchestrator(
         // app_handle — для emit'а transcript:chunk_done event.
         state.app_data_dir.clone(),
         app.clone(),
-        // [P1.2] Labs «Force N speakers» override; None = auto.
-        mic_diarization_num_speakers,
     );
 
     let handle = tauri::async_runtime::spawn(async move {
@@ -336,7 +318,6 @@ fn make_enqueue_fn(
     lang: String,
     app_data_dir: std::path::PathBuf,
     app_handle: AppHandle,
-    mic_diarization_num_speakers: Option<i32>,
 ) -> impl Fn(u32, u64, u64, Option<String>) -> chunk_orchestrator::EnqueueFut + Send + Sync + 'static
 {
     move |chunk_idx, start_ms, end_ms, prev_prompt| {
@@ -348,7 +329,6 @@ fn make_enqueue_fn(
         let lang = lang.clone();
         let app_data_dir = app_data_dir.clone();
         let app_handle = app_handle.clone();
-        let mic_diarization_num_speakers = mic_diarization_num_speakers;
         Box::pin(async move {
             let mic_path = store.chunk_mic_path(&call_id, chunk_idx);
             let system_path = store.chunk_system_path(&call_id, chunk_idx);
@@ -374,7 +354,6 @@ fn make_enqueue_fn(
                 lang: lang.clone(),
                 app_data_dir: Some(app_data_dir.clone()),
                 app_handle: Some(app_handle.clone()),
-                mic_diarization_num_speakers,
             };
             let out = chunk_runner::run_chunk(
                 &pool,

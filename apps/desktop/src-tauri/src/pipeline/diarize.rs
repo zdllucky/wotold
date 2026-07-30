@@ -51,19 +51,9 @@ pub(crate) async fn diarize_system_track(
     app_data_dir: &Path,
     system_path: &Path,
     sys_t: DiarizedTranscript,
-    num_speakers: Option<i32>,
     call_id: &str,
 ) -> DiarizedTranscript {
-    diarize_track(
-        pool,
-        app_data_dir,
-        system_path,
-        sys_t,
-        "system",
-        num_speakers,
-        call_id,
-    )
-    .await
+    diarize_track(pool, app_data_dir, system_path, sys_t, "system", call_id).await
 }
 
 /// [M13 follow-up] Mirror `diarize_system_track` для mic-дорожки. Применяется
@@ -71,27 +61,15 @@ pub(crate) async fn diarize_system_track(
 /// присваивается здесь — local `speaker:N` tags сохраняются, owner
 /// identification идёт отдельным шагом ([`owner_identify`]).
 ///
-/// [P1.2] `num_speakers` — Labs «Force N speakers» override. `None` =
-/// auto-detect (sortformer default). Применяется идентично к mic и system.
 #[cfg(target_os = "macos")]
 pub(crate) async fn diarize_mic_track(
     pool: &SqlitePool,
     app_data_dir: &Path,
     mic_path: &Path,
     mic_t: DiarizedTranscript,
-    num_speakers: Option<i32>,
     call_id: &str,
 ) -> DiarizedTranscript {
-    diarize_track(
-        pool,
-        app_data_dir,
-        mic_path,
-        mic_t,
-        "mic",
-        num_speakers,
-        call_id,
-    )
-    .await
+    diarize_track(pool, app_data_dir, mic_path, mic_t, "mic", call_id).await
 }
 
 /// [M13 follow-up] Non-chunked path post-processing: после `diarize_mic_track`
@@ -172,7 +150,6 @@ async fn diarize_track(
     audio_path: &Path,
     transcript: DiarizedTranscript,
     track_kind: &'static str,
-    num_speakers: Option<i32>,
     call_id: &str,
 ) -> DiarizedTranscript {
     use crate::local_engine::{
@@ -218,14 +195,11 @@ async fn diarize_track(
     }
 
     // 3-5. Diarize + merge. Любая ошибка → fall back (degraded).
-    // [P1.2] `with_num_speakers` clamp'ит override к 1..=MAX_LOCAL_SPEAKERS;
-    // None = sherpa-onnx auto (default `-1`).
+    // Число кластеров определяет сам sherpa-onnx (`num_clusters: -1`): ручного
+    // переопределения больше нет — оно было костылём вокруг прежнего потолка
+    // в три спикера.
     // [Q] call_id → очередь диаризации (QueueMonitor видит чей звонок).
-    let diarizer =
-        SortformerDiarizer::with_num_speakers(seg_path, emb_path, num_speakers).with_call(call_id);
-    if let Some(n) = num_speakers {
-        log::info!("diarize_track[{track_kind}]: forcing num_clusters={n} (Labs override)");
-    }
+    let diarizer = SortformerDiarizer::new(seg_path, emb_path).with_call(call_id);
     let mut speaker_segments = match diarizer.diarize(audio_path).await {
         Ok(segs) => segs,
         Err(e) => {
@@ -237,7 +211,7 @@ async fn diarize_track(
 
     // [P14.3] Reassign overflow `speaker:unknown` segments к ближайшему
     // named-спикеру в окне ±2s. Снижает шум в ParticipantsRow когда
-    // sortformer вывел больше MAX_LOCAL_SPEAKERS (=3) кластеров.
+    // sortformer вывел больше `MAX_LOCAL_SPEAKERS` кластеров.
     let reassigned =
         crate::local_engine::diarization::reassign_unknown_to_neighbors(&mut speaker_segments, 2.0);
     if reassigned > 0 {
@@ -313,7 +287,6 @@ mod tests {
             tmp.path(),
             &tmp.path().join("system.wav"),
             one_segment_transcript(),
-            None,
             &call.id,
         )
         .await;
@@ -338,7 +311,6 @@ mod tests {
             tmp.path(),
             &tmp.path().join("mic.wav"),
             one_segment_transcript(),
-            None,
             &call.id,
         )
         .await;
@@ -366,7 +338,6 @@ mod tests {
                 tmp.path(),
                 &tmp.path().join("mic.wav"),
                 one_segment_transcript(),
-                None,
                 &call.id,
             )
             .await;

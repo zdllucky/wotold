@@ -8,8 +8,8 @@
 //! - Segmentation: pyannote-segmentation-3-0 (~6 MB, MODEL_CATALOG entry
 //!   `pyannote-segmentation`).
 //! - Embedding: WeSpeaker (каталожная запись `voice-embedder`, ~26 MB).
-//! - Clustering: `FastClusteringConfig` дефолт (k auto-detected).
-//! - Cap = 4 спикера (R12 / PRD §M12.2.5).
+//! - Clustering: `FastClusteringConfig`, число кластеров определяет sherpa.
+//! - Потолок числа спикеров — санитарный, см. `MAX_LOCAL_SPEAKERS`.
 //!
 //! Real wire-up за `#[cfg(feature = "voice-onnx")]` чтобы default build
 //! не тянул heavy ONNX runtime (~30 МБ static lib).
@@ -31,19 +31,27 @@ use serde::{Deserialize, Serialize};
 pub struct SpeakerSegment {
     pub start: f64,
     pub end: f64,
-    /// `speaker:N` где N — индекс кластера (0..4). Cap = 4 (PRD §M12.2.5).
+    /// `speaker:N`, где N — индекс кластера. Сверх `MAX_LOCAL_SPEAKERS` →
+    /// `SPEAKER_UNKNOWN`.
     pub speaker_tag: String,
 }
 
-/// Hard cap на число спикеров в local-режиме. Лишние объединяются в
-/// `speaker_unknown` (PRD §M12.2.5).
+/// Санитарный потолок числа спикеров. Индексы сверх него схлопываются в
+/// `speaker_unknown`.
 ///
-/// [P14.3] 4 → 3. Для типичного 2-3-speaker mic-звонка 4-й кластер почти
-/// всегда — фантомный шум sortformer'а на перекрытиях или фоне. Если
-/// реальные 4+ speakers нужны, user override через Labs «Force N speakers»
-/// (`mic_diarization_num_speakers` setting). `reassign_unknown_to_neighbors`
-/// в pipeline дополнительно сводит overflow segments к neighbor speakers.
-pub const MAX_LOCAL_SPEAKERS: usize = 3;
+/// Это не ограничение движка: sherpa-onnx верхней границы не имеет, а в
+/// авто-режиме сам решает, сколько кластеров выделить. Потолок держит разбег
+/// кластеризации в пределах осмысленного — за десятком различимых голосов в
+/// одном звонке пер-спикерная атрибуция всё равно превращается в шум.
+///
+/// [P14.3] Раньше здесь стояло 3 — «четвёртый кластер на микрофоне почти
+/// всегда фантом». Побочный эффект оказался хуже причины: реальные четвёртый
+/// и пятый собеседники не просто не показывались, а через
+/// `reassign_unknown_to_neighbors` молча приписывались тем, кто говорил рядом
+/// по времени. Фантомы тройка всё равно не предотвращала — только ограничивала
+/// их количество тремя. Настоящий рычаг против переразбиения — порог
+/// кластеризации в `FastClusteringConfig`, а не переименование постфактум.
+pub const MAX_LOCAL_SPEAKERS: usize = 10;
 
 /// Public tag для речи без определённого спикера.
 pub const SPEAKER_UNKNOWN: &str = "speaker:unknown";
@@ -62,7 +70,8 @@ pub enum DiarizerError {
 /// делают диаризацию сами, как часть STT). См. PRD §M12.2.1.
 #[async_trait]
 pub trait Diarizer: Send + Sync {
-    /// Прогнать диаризацию по WAV. Cap = 4 спикера, лишние → `SPEAKER_UNKNOWN`.
+    /// Прогнать диаризацию по WAV. Индексы сверх `MAX_LOCAL_SPEAKERS` →
+    /// `SPEAKER_UNKNOWN`.
     async fn diarize(&self, audio: &Path) -> Result<Vec<SpeakerSegment>, DiarizerError>;
 }
 
@@ -75,11 +84,6 @@ pub trait Diarizer: Send + Sync {
 pub struct SortformerDiarizer {
     segmentation_path: PathBuf,
     embedding_path: PathBuf,
-    /// [P1.2] Override для `FastClusteringConfig::num_clusters`. `None` =
-    /// auto-detect (sherpa-onnx default `-1`). `Some(N)` форсит ровно N
-    /// кластеров — для записей где user знает количество собеседников лучше
-    /// автоматики. Clamp 1..=MAX_LOCAL_SPEAKERS в `with_num_speakers`.
-    num_speakers: Option<i32>,
     /// [Q] call_id для QueueMonitor: чей звонок держит/ждёт диаризацию.
     queue_call_id: Option<String>,
 }
@@ -88,32 +92,9 @@ impl SortformerDiarizer {
     /// Конструктор требует оба пути. Pipeline resolves их из MODEL_CATALOG +
     /// `embeddings::voice_embedder_path` для WeSpeaker.
     pub fn new(segmentation_path: PathBuf, embedding_path: PathBuf) -> Self {
-        Self::with_num_speakers(segmentation_path, embedding_path, None)
-    }
-
-    /// [P1.2] Конструктор с явным `num_clusters` override. `n` clamp'ится к
-    /// `1..=MAX_LOCAL_SPEAKERS`. Out-of-range или `Some(0)` → `None`
-    /// (auto-detect fallback) + log::warn.
-    pub fn with_num_speakers(
-        segmentation_path: PathBuf,
-        embedding_path: PathBuf,
-        n: Option<i32>,
-    ) -> Self {
-        let num_speakers = match n {
-            Some(v) if (1..=MAX_LOCAL_SPEAKERS as i32).contains(&v) => Some(v),
-            Some(v) => {
-                log::warn!(
-                    "SortformerDiarizer: num_speakers={v} out of range 1..={}, falling back to auto",
-                    MAX_LOCAL_SPEAKERS
-                );
-                None
-            }
-            None => None,
-        };
         Self {
             segmentation_path,
             embedding_path,
-            num_speakers,
             queue_call_id: None,
         }
     }
@@ -133,13 +114,6 @@ impl SortformerDiarizer {
     #[allow(dead_code)]
     pub fn embedding_path(&self) -> &Path {
         &self.embedding_path
-    }
-
-    /// [P1.2] Активное значение num_clusters для FastClusteringConfig. Для
-    /// тестов + introspection.
-    #[allow(dead_code)]
-    pub fn num_speakers(&self) -> Option<i32> {
-        self.num_speakers
     }
 }
 
@@ -163,7 +137,7 @@ impl SortformerDiarizer {
     /// 1. Wave::read(audio) → samples f32 mono 16 kHz.
     /// 2. OfflineSpeakerDiarization::create(config) с paths к pyannote + WeSpeaker.
     /// 3. .process(samples) → result.sort_by_start_time().
-    /// 4. Cap = 4 + map в SpeakerSegment.
+    /// 4. Санитарный потолок + map в SpeakerSegment.
     async fn diarize_real(&self, audio: &Path) -> Result<Vec<SpeakerSegment>, DiarizerError> {
         use sherpa_onnx::{
             FastClusteringConfig, OfflineSpeakerDiarization, OfflineSpeakerDiarizationConfig,
@@ -197,7 +171,6 @@ impl SortformerDiarizer {
             .to_str()
             .ok_or_else(|| DiarizerError::Provider("non-utf8 embedding path".into()))?
             .to_string();
-        let num_clusters_override = self.num_speakers.unwrap_or(-1);
 
         // [Q] Очередь диаризации: CPU-bound ONNX, permit=1. Permit ПЕРЕЕЗЖАЕТ
         // внутрь blocking-closure: abort task'а НЕ прерывает spawn_blocking,
@@ -232,14 +205,14 @@ impl SortformerDiarizer {
             // [Bug-fix] Default threshold 0.5 (cosine distance) слишком высокий
             // для коротких mic-записей с похожими голосами — sortformer
             // сливает 2 спикеров в 1 кластер. 0.5 → 0.4 — более агрессивный
-            // split при сохранении устойчивости к шуму в одной паузе.
-            // num_clusters=-1 (auto) сохраняем — PRD §M12.2.5 cap=4 enforced
-            // через cap_speaker_tag.
-            // [P1.2] num_clusters_override (None → -1 = auto) даёт Labs
-            // toggle «Force N speakers» возможность форсить кластеризацию для
-            // записей где автоматика ошибается.
+            // split при сохранении устойчивости к шуму в одной паузе. Это и
+            // есть рычаг против переразбиения: число кластеров задаёт порог, а
+            // не ручное «форсировать N».
+            //
+            // `num_clusters: -1` — авто-режим sherpa. Санитарный потолок
+            // применяется после инференса, в `cap_speaker_tag`.
             config.clustering = FastClusteringConfig {
-                num_clusters: num_clusters_override,
+                num_clusters: -1,
                 threshold: 0.4,
             };
 
@@ -280,29 +253,6 @@ pub fn cap_speaker_tag(speaker_index: usize) -> String {
     } else {
         format!("speaker:{speaker_index}")
     }
-}
-
-/// Применить cap к произвольному вектору сегментов. Идемпотентно.
-pub fn apply_speaker_cap(segments: Vec<SpeakerSegment>) -> Vec<SpeakerSegment> {
-    segments
-        .into_iter()
-        .map(|s| {
-            // [Review L2] `unwrap_or_else` evaluates clone только когда
-            // parse_speaker_index вернул None — `unwrap_or` всегда клонировал
-            // даже на успешном parse.
-            let cap_tag = parse_speaker_index(&s.speaker_tag)
-                .map(cap_speaker_tag)
-                .unwrap_or_else(|| s.speaker_tag.clone());
-            SpeakerSegment {
-                speaker_tag: cap_tag,
-                ..s
-            }
-        })
-        .collect()
-}
-
-fn parse_speaker_index(tag: &str) -> Option<usize> {
-    tag.strip_prefix("speaker:")?.parse().ok()
 }
 
 /// [P14.3] Reassign `SPEAKER_UNKNOWN` сегменты к ближайшему по timestamp
@@ -376,56 +326,23 @@ pub fn reassign_unknown_to_neighbors(segments: &mut [SpeakerSegment], window_sec
 mod tests {
     use super::*;
 
+    /// Индексы до потолка остаются настоящими спикерами.
+    ///
+    /// Проверка идёт по конкретным номерам, а не по константе: смысл теста —
+    /// поймать возврат к прежней тройке, когда реальные четвёртый и пятый
+    /// собеседники молча приписывались тем, кто говорил рядом по времени.
     #[test]
-    fn cap_under_max_keeps_tag() {
-        // [P14.3] MAX_LOCAL_SPEAKERS=3 — indices 0..=2 keep their tag.
+    fn cap_keeps_tags_below_the_ceiling() {
         assert_eq!(cap_speaker_tag(0), "speaker:0");
         assert_eq!(cap_speaker_tag(2), "speaker:2");
+        assert_eq!(cap_speaker_tag(4), "speaker:4");
+        assert_eq!(cap_speaker_tag(9), "speaker:9");
     }
 
     #[test]
-    fn cap_at_or_above_max_maps_to_unknown() {
-        // [P14.3] MAX=3 → index 3 already overflow.
-        assert_eq!(cap_speaker_tag(3), SPEAKER_UNKNOWN);
-        assert_eq!(cap_speaker_tag(7), SPEAKER_UNKNOWN);
-    }
-
-    #[test]
-    fn apply_speaker_cap_maps_excess_to_unknown() {
-        let input = vec![
-            SpeakerSegment {
-                start: 0.0,
-                end: 1.0,
-                speaker_tag: "speaker:0".into(),
-            },
-            SpeakerSegment {
-                start: 1.0,
-                end: 2.0,
-                speaker_tag: "speaker:5".into(),
-            },
-            SpeakerSegment {
-                start: 2.0,
-                end: 3.0,
-                speaker_tag: "speaker:3".into(),
-            },
-        ];
-        let out = apply_speaker_cap(input);
-        // [P14.3] MAX=3 → speaker:3 теперь тоже overflow.
-        assert_eq!(out[0].speaker_tag, "speaker:0");
-        assert_eq!(out[1].speaker_tag, SPEAKER_UNKNOWN);
-        assert_eq!(out[2].speaker_tag, SPEAKER_UNKNOWN);
-    }
-
-    #[test]
-    fn apply_speaker_cap_preserves_non_indexed_tags() {
-        // Гарантия: уже cap'нутые / unknown сегменты не падают на parse.
-        let input = vec![SpeakerSegment {
-            start: 0.0,
-            end: 1.0,
-            speaker_tag: SPEAKER_UNKNOWN.into(),
-        }];
-        let out = apply_speaker_cap(input);
-        assert_eq!(out[0].speaker_tag, SPEAKER_UNKNOWN);
+    fn cap_at_or_above_the_ceiling_maps_to_unknown() {
+        assert_eq!(cap_speaker_tag(MAX_LOCAL_SPEAKERS), SPEAKER_UNKNOWN);
+        assert_eq!(cap_speaker_tag(42), SPEAKER_UNKNOWN);
     }
 
     #[test]
@@ -433,48 +350,6 @@ mod tests {
         let d = SortformerDiarizer::new("/tmp/seg.onnx".into(), "/tmp/emb.onnx".into());
         assert_eq!(d.segmentation_path(), Path::new("/tmp/seg.onnx"));
         assert_eq!(d.embedding_path(), Path::new("/tmp/emb.onnx"));
-    }
-
-    // [P1.2] Labs «Force N speakers» override — clamp 1..=MAX_LOCAL_SPEAKERS.
-
-    #[test]
-    fn with_num_speakers_none_keeps_auto() {
-        let d =
-            SortformerDiarizer::with_num_speakers("/tmp/s.onnx".into(), "/tmp/e.onnx".into(), None);
-        assert_eq!(d.num_speakers(), None);
-    }
-
-    #[test]
-    fn with_num_speakers_in_range_kept() {
-        for n in 1..=MAX_LOCAL_SPEAKERS as i32 {
-            let d = SortformerDiarizer::with_num_speakers(
-                "/tmp/s.onnx".into(),
-                "/tmp/e.onnx".into(),
-                Some(n),
-            );
-            assert_eq!(d.num_speakers(), Some(n), "n={n} must round-trip");
-        }
-    }
-
-    #[test]
-    fn with_num_speakers_out_of_range_falls_back_to_none() {
-        // Zero, negative, > MAX → None (auto fallback) с warn log.
-        for n in [0, -1, MAX_LOCAL_SPEAKERS as i32 + 1, 99] {
-            let d = SortformerDiarizer::with_num_speakers(
-                "/tmp/s.onnx".into(),
-                "/tmp/e.onnx".into(),
-                Some(n),
-            );
-            assert_eq!(d.num_speakers(), None, "n={n} must clamp to None");
-        }
-    }
-
-    #[test]
-    fn new_delegates_to_with_num_speakers_none() {
-        let d_new = SortformerDiarizer::new("/tmp/s.onnx".into(), "/tmp/e.onnx".into());
-        let d_alt =
-            SortformerDiarizer::with_num_speakers("/tmp/s.onnx".into(), "/tmp/e.onnx".into(), None);
-        assert_eq!(d_new.num_speakers(), d_alt.num_speakers());
     }
 
     // [P14.3] reassign_unknown_to_neighbors — overflow noise mitigation.

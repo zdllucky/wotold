@@ -450,8 +450,6 @@ export const en: TranslationStrings = {
     one: 'participant',
     few: 'participants',
     many: 'participants',
-    tooManyHint:
-      'If fewer in reality — Settings → Labs → "Force speaker count".',
   },
 
   scrubber: {
@@ -588,14 +586,6 @@ export const en: TranslationStrings = {
     summaryV2Label: 'New summary format',
     summaryV2Hint:
       'On by default. Turn off if you hit issues with call type, evidence quotes or decisions — recaps fall back to simple format.',
-    forceNumSpeakersLabel: 'Other participants (besides you)',
-    forceNumSpeakersHint:
-      'Your voice is always separate («Me»). This is how many OTHER people are on the remote side. Set the exact number if auto-splitting gets it wrong, then reprocess. Max 3.',
-    forceNumSpeakersOptions: {
-      auto: 'Auto (recommended)',
-      '2': '2 participants',
-      '3': '3 participants',
-    },
     wipeBtn: 'Delete all data',
     wipeBusy: 'Deleting…',
     wipeConfirmTitle: 'Full wipe',

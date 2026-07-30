@@ -61,10 +61,6 @@ pub struct ChunkRunInput {
     /// [M13.2.3] Tauri AppHandle для emit'а `transcript:chunk_done`. `None`
     /// в unit-тестах / headless — event silently no-op.
     pub app_handle: Option<AppHandle>,
-    /// [P1.2] Labs «Force N speakers» override для sortformer's `num_clusters`.
-    /// `None` = auto-detect. `Some(N)` clamp'ится к 1..=MAX_LOCAL_SPEAKERS в
-    /// `SortformerDiarizer::with_num_speakers`.
-    pub mic_diarization_num_speakers: Option<i32>,
 }
 
 /// Результат успешного `run_chunk`. `transcript_tail` идёт в `prev_prompt`
@@ -107,7 +103,6 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         lang,
         app_data_dir,
         app_handle,
-        mic_diarization_num_speakers,
     } = input;
     let bus = EventBus::new(app_handle.as_ref());
 
@@ -201,7 +196,6 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
                         dir,
                         &mic_path,
                         mic_transcript,
-                        mic_diarization_num_speakers,
                         &call_id,
                     )
                     .await
@@ -466,7 +460,6 @@ mod tests {
             // pipeline отдельно.
             app_data_dir: None,
             app_handle: None,
-            mic_diarization_num_speakers: None,
         }
     }
 
@@ -697,7 +690,6 @@ mod tests {
                 lang: "auto".into(),
                 app_data_dir: None,
                 app_handle: None,
-                mic_diarization_num_speakers: None,
             };
             run_chunk(&db_t.pool, &mic, &sys, inp).await.unwrap();
         }

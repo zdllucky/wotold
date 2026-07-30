@@ -365,20 +365,14 @@ async fn diarize_tracks(
     //    шага все system segments имеют `speaker:0` (TrackKind::System default
     //    в [`local_engine::stt`]). Sherpa-onnx pyannote segmentation + WeSpeaker
     //    embedding кластеризует фрагменты → каждый sys segment получает
-    //    `speaker:0..4` (cap=4). Diarization non-fatal: при отсутствии моделей
-    //    или voice-onnx feature off → fall back на оригинальный sys_t,
+    //    `speaker:N`. Diarization non-fatal: при отсутствии моделей или
+    //    voice-onnx feature off → fall back на оригинальный sys_t,
     //    система-трек остаётся single-bucket (degraded но рабочий).
-    // [P1.2 / TD-36] Force-N-speakers Labs override (read once, applied к mic +
-    // system). Разбор общий с обвязкой чанков: до этого здесь стоял свой
-    // `1..=4`, и «4 голоса» работали в одном пути записи и молча
-    // игнорировались в другом.
-    let num_speakers_override = super::settings::read_num_speakers_override(pool).await?;
     let sys_t = diarize_system_track(
         pool,
         &ctx.app_data_dir,
         &ctx.system_path,
         sys_t,
-        num_speakers_override,
         &ctx.call_id,
     )
     .await;
@@ -395,16 +389,9 @@ async fn diarize_tracks(
     //    Тумблер убран: диаризация микрофона теперь всегда включена. Риск
     //    P-fix7 (sortformer дробит единственный голос владельца) закрывает
     //    `relabel_owner_on_mic_full_file` — он собирает выбранный тег назад в
-    //    OWNER_TAG. Аварийный ограничитель остался в Labs: «сколько голосов».
-    let mic_diarized = diarize_mic_track(
-        pool,
-        &ctx.app_data_dir,
-        &ctx.mic_path,
-        mic_t,
-        num_speakers_override,
-        &ctx.call_id,
-    )
-    .await;
+    //    OWNER_TAG.
+    let mic_diarized =
+        diarize_mic_track(pool, &ctx.app_data_dir, &ctx.mic_path, mic_t, &ctx.call_id).await;
     let mic_t = relabel_owner_on_mic_full_file(
         pool,
         &ctx.app_data_dir,

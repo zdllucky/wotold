@@ -30,28 +30,6 @@ const SETTING_AUTO_BIND_THRESHOLD: &str = "auto_bind_threshold";
 /// decisions/open_questions/evidence). Emergency-disable.
 const SETTING_SUMMARY_V2_ENABLED: &str = "summary_v2_enabled";
 
-/// [P1.2 / TD-36] Labs-override «сколько голосов на дорожке». Ключ читали два
-/// места — обвязка чанков и локальный маршрут, — каждое со своим разбором и
-/// своим клэмпом: один брал `MAX_LOCAL_SPEAKERS` (=3), другой хардкодил
-/// `1..=4`. То есть настройка «4 голоса» молча работала в одном пути и
-/// игнорировалась в другом.
-pub const SETTING_MIC_DIARIZATION_NUM_SPEAKERS: &str = "mic_diarization_num_speakers";
-
-/// [TD-36] Единственный разбор `mic_diarization_num_speakers`.
-///
-/// Верхняя граница — `MAX_LOCAL_SPEAKERS` и только он: диаризатор всё равно
-/// схлопывает индексы сверх этого числа, так что принять «4» значило бы
-/// пообещать пользователю то, чего движок не делает. Мусор и ноль → `None`
-/// (авто-режим), а не ошибка: это Labs-тумблер, а не контракт.
-pub async fn read_num_speakers_override(pool: &SqlitePool) -> Result<Option<i32>, AppError> {
-    const MAX: i32 = crate::local_engine::diarization::MAX_LOCAL_SPEAKERS as i32;
-    Ok(db::get_setting(pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS)
-        .await?
-        .as_deref()
-        .and_then(|s| s.trim().parse::<i32>().ok())
-        .filter(|n| (1..=MAX).contains(n)))
-}
-
 /// [V7] Допустимый диапазон auto-bind threshold (UI ограничивает 90/95/98).
 /// При мусорных значениях из БД clamp'имся внутрь — защита от ручных правок.
 const AUTO_BIND_THRESHOLD_MIN: f64 = 0.80;
@@ -276,48 +254,5 @@ mod tests {
             auto_bind: None,
             summary_v2_enabled: true,
         }
-    }
-
-    // ============================================================
-    // [TD-36] Один разбор «сколько голосов» на оба пути записи
-    // ============================================================
-
-    async fn set(pool: &sqlx::SqlitePool, key: &str, val: &str) {
-        db::set_setting(pool, key, val).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn num_speakers_override_accepts_only_what_diarizer_can_do() {
-        let db = fresh_db().await;
-        // Верхняя граница — MAX_LOCAL_SPEAKERS (=3). Раньше локальный маршрут
-        // хардкодил 1..=4: настройка «4 голоса» работала в одном пути записи и
-        // молча игнорировалась в другом.
-        assert_eq!(read_num_speakers_override(&db.pool).await.unwrap(), None);
-
-        set(&db.pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS, "3").await;
-        assert_eq!(read_num_speakers_override(&db.pool).await.unwrap(), Some(3));
-
-        set(&db.pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS, "4").await;
-        assert_eq!(
-            read_num_speakers_override(&db.pool).await.unwrap(),
-            None,
-            "сверх возможностей диаризатора — авто, а не обещание"
-        );
-    }
-
-    #[tokio::test]
-    async fn num_speakers_override_treats_garbage_as_auto() {
-        let db = fresh_db().await;
-        for bad in ["0", "-1", "две", "", "  "] {
-            set(&db.pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS, bad).await;
-            assert_eq!(
-                read_num_speakers_override(&db.pool).await.unwrap(),
-                None,
-                "мусор {bad:?} — это авто-режим, а не ошибка: Labs-тумблер, не контракт"
-            );
-        }
-        // Пробелы вокруг числа настройка переживает.
-        set(&db.pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS, " 2 ").await;
-        assert_eq!(read_num_speakers_override(&db.pool).await.unwrap(), Some(2));
     }
 }
