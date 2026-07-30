@@ -762,14 +762,6 @@ const ruInternal = {
 
   // ── Local engine (M12) ──────────────────────────────────────────────────
   localEngine: {
-    engine: {
-      local: {
-        title: 'Локально на устройстве',
-        body: 'Без сети, без оплат, ваши данные не покидают Mac. Скачиваются модели один раз.',
-        quality: '●●○ качество',
-      },
-      active: 'активен',
-    },
     presetLabel: 'Сборка моделей',
     keepResidentLabel: 'Держать модель активной',
     keepResidentHint:
@@ -804,29 +796,16 @@ const ruInternal = {
     statusInstalled: 'установлено',
     statusDownloading: 'качаем…',
     statusAbsent: 'не установлено',
-    installedFootprint: 'Установлено: {size}',
-    storageTitle: 'Хранилище моделей',
-    storageLede:
-      'Что установлено локально. Удалите неиспользуемые модели чтобы освободить место. Wotold не удаляет модели сам.',
-    storageFootnote: 'Удаление не трогает уже обработанные звонки.',
-    colName: 'Модель',
-    colSize: 'Размер',
-    colLastUsed: 'Активно',
-    colState: 'Статус',
-    download: 'Скачать',
-    downloadAria: 'Скачать {name}',
-    delete: 'Удалить',
-    deleteAria: 'Удалить {name}',
-    statusActive: 'активна',
-    statusCorrupted: 'повреждена',
-    deleteActiveConfirmMsg:
-      'Модель {id} используется текущей сборкой. Удаление переключит сборку. Продолжить?',
+    storageUsed: 'Модели занимают {size}',
+    freeSpaceCta: 'Освободить {size}',
+    freeSpaceConfirmTitle: 'Освободить место',
+    freeSpaceConfirmBody:
+      'Удалить модели размеров, которые сейчас не используются, и освободить {size}? Скачать их можно будет снова. Уже обработанные звонки не изменятся.',
+    freeSpaceConfirm: 'Удалить',
+    freeSpaceDone: 'освободили {size}',
     qualityConfirmTitle: 'Quality на этом Mac',
     qualityConfirmMsg:
       'Quality рассчитан на 16+ ГБ оперативной памяти. На вашем Mac обработка может быть очень медленной. Всё равно использовать?',
-    deleteConfirmTitle: 'Удалить модель',
-    deleteConfirmMsg: 'Удалить {id} с диска? Скачать можно будет снова.',
-    verifyFailed: 'Контрольная сумма не совпала для {id} — файл повреждён, попробуйте снова.',
     hwBannerTitle: 'Рекомендация по железу',
     hwBannerBody:
       'У вас {cpu} · {ram} ГБ. Лучше всего подойдёт сборка {preset}.',
@@ -842,20 +821,7 @@ const ruInternal = {
       timeout: 'Не удалось определить железо. Выберите сборку вручную.',
     },
     // ── [M12-v1.1] Storage delete confirm modal ───────────────────────────
-    storageConfirm: {
-      title: 'Удалить активную модель?',
-      body: 'Текущая сборка переключится на «{fallback}». Модель можно скачать снова в любое время.',
-      confirm: 'Удалить',
-      cancel: 'Отмена',
-    },
     // ── [M12-v1.1] Rediscovery chip ───────────────────────────────────────
-    rediscovery: {
-      eyebrow: 'Локальный режим',
-      title: 'Обрабатывай звонки прямо на Mac',
-      body: 'Без облака, бесплатно навсегда. Скачивается один раз — потом работает офлайн.',
-      install: 'Попробовать локальный режим',
-      dismiss: 'Больше не показывать',
-    },
     // ── M12.7.3 Onboarding engine step ───────────────────────────────────
     // (вложено сюда так как онбординг строит ключи `onboarding.engine.*`,
     //  но они логически часть local-engine модуля)

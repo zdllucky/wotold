@@ -94,7 +94,7 @@ export function VoiceModelSection() {
 
   // [B21] Листенер вешается сразу на mount (не на флаг): listen() — async IPC,
   // гейт на `downloading` проигрывал гонку быстрым загрузкам и % не успевал
-  // отрисоваться. cancelled-guard (mirror LocalEngineSection [Review HIGH-2]):
+  // отрисоваться. cancelled-guard (тот же приём, что в pages/engine [Review HIGH-2]):
   // без него cleanup до резолва listen() оставлял listener-leak на всю сессию.
   useEffect(() => {
     let cancelled = false;

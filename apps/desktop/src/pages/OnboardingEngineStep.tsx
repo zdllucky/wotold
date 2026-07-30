@@ -76,7 +76,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
   }, []);
 
   useEffect(() => {
-    // См. LocalEngineSection.tsx — тот же cancelled-flag pattern против
+    // Тот же cancelled-flag приём против
     // listen() unlisten leak при fast unmount.
     let cancelled = false;
     let unProgress: UnlistenFn | undefined;

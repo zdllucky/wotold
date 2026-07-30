@@ -714,14 +714,6 @@ export const kk: TranslationStrings = {
   },
 
   localEngine: {
-    engine: {
-      local: {
-        title: 'Осы құрылғыда',
-        body: 'Желісіз, тегін, деректер Mac-та қалады. Модельдер бір рет жүктеледі.',
-        quality: '●●○ сапа',
-      },
-      active: 'белсенді',
-    },
     presetLabel: 'Модель жиынтығы',
     keepResidentLabel: 'Модельді белсенді ұстау',
     keepResidentHint:
@@ -754,29 +746,16 @@ export const kk: TranslationStrings = {
     statusInstalled: 'орнатылған',
     statusDownloading: 'жүктелуде…',
     statusAbsent: 'орнатылмаған',
-    installedFootprint: 'Орнатылған: {size}',
-    storageTitle: 'Модельдер сақтауы',
-    storageLede:
-      'Жергілікті орнатылғаны. Орынды босату үшін қолданбайтын модельдерді жойыңыз. Wotold модельдерді өзі жоймайды.',
-    storageFootnote: 'Жою өңделген қоңырауларға әсер етпейді.',
-    colName: 'Модель',
-    colSize: 'Көлемі',
-    colLastUsed: 'Қолданылды',
-    colState: 'Күй',
-    download: 'Жүктеу',
-    downloadAria: '{name} жүктеу',
-    delete: 'Жою',
-    deleteAria: '{name} жою',
-    statusActive: 'белсенді',
-    statusCorrupted: 'зақымдалған',
-    deleteActiveConfirmMsg:
-      '{id} модель қазіргі жиынтықпен қолданылуда. Жою жиынтықты ауыстырады. Жалғастыру керек пе?',
+    storageUsed: 'Модельдер {size} алады',
+    freeSpaceCta: '{size} босату',
+    freeSpaceConfirmTitle: 'Орын босату',
+    freeSpaceConfirmBody:
+      'Қазір қолданылмайтын өлшемдердің модельдерін жойып, {size} босату керек пе? Оларды қайта жүктеуге болады. Өңделген қоңыраулар өзгермейді.',
+    freeSpaceConfirm: 'Жою',
+    freeSpaceDone: '{size} босатылды',
     qualityConfirmTitle: 'Quality осы Mac-та',
     qualityConfirmMsg:
       'Quality 16+ ГБ-қа есептелген. Сіздің Mac-та өңдеу өте баяу болуы мүмкін. Сонда да қолдану керек пе?',
-    deleteConfirmTitle: 'Модельді жою',
-    deleteConfirmMsg: '{id} модельді жою керек пе? Кейін қайта жүктеуге болады.',
-    verifyFailed: '{id} үшін бақылау сомасы сәйкес келмеді — файл зақымдалған, қайта көріңіз.',
     hwBannerTitle: 'Аппараттық кеңес',
     hwBannerBody: 'Сізде {cpu} · {ram} ГБ. {preset} жиынтығы жақсы келеді.',
     hwBannerApply: 'Қолдану',
@@ -788,19 +767,6 @@ export const kk: TranslationStrings = {
     probeSkeleton: {
       measuring: 'Аппаратты тексеруде…',
       timeout: 'Аппаратты анықтау мүмкін болмады. Жиынтықты қолмен таңдаңыз.',
-    },
-    storageConfirm: {
-      title: 'Белсенді модельді жою?',
-      body: 'Ағымдағы жиынтық «{fallback}» жиынтығына ауысады. Модельді кез келген уақытта қайта жүктеуге болады.',
-      confirm: 'Жою',
-      cancel: 'Болдырмау',
-    },
-    rediscovery: {
-      eyebrow: 'Жергілікті режим',
-      title: 'Қоңырауларды Mac-та өңдеу',
-      body: 'Бұлтсыз, мәңгі тегін. Бір рет жүктеу — офлайн жұмыс.',
-      install: 'Жергілікті режимді қолдану',
-      dismiss: 'Енді көрсетпеу',
     },
   },
 

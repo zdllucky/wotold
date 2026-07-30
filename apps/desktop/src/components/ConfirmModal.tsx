@@ -1,6 +1,6 @@
 // [B18.5c] Reusable confirm dialog on uikit .overlay/.modal + focus-trap hook.
 //
-// Mirrors the ARIA/focus pattern of DeleteModelConfirm but uses the v2 uikit
+// Uses the v2 uikit
 // .overlay/.modal classes (NOT legacy .modal-backdrop/.index-card). No raw
 // colors — variants come from .btn--danger / .btn--primary.
 

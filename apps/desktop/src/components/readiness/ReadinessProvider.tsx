@@ -38,6 +38,8 @@ export interface ReadinessState {
   /** Идёт докачка. */
   downloading: boolean;
   aggregate: ReadinessAggregate | null;
+  /** id модулей, по которым прогресс уже шёл — то есть качающихся сейчас. */
+  downloadingIds: Set<string>;
   /** Запустить докачку недостающего. Идемпотентно, single-flight на бэкенде. */
   ensure: () => void;
   /** Текст последней ошибки докачки — баннер показывает «Повторить». */
@@ -48,6 +50,7 @@ const FALLBACK: ReadinessState = {
   readiness: null,
   downloading: false,
   aggregate: null,
+  downloadingIds: new Set(),
   ensure: () => {},
   lastError: null,
 };
@@ -191,9 +194,11 @@ export function ReadinessProvider({ children }: { children: ReactNode }) {
     };
   }, [readiness, doneByModel]);
 
+  const downloadingIds = useMemo(() => new Set(Object.keys(doneByModel)), [doneByModel]);
+
   const value = useMemo<ReadinessState>(
-    () => ({ readiness, downloading, aggregate, ensure, lastError }),
-    [readiness, downloading, aggregate, ensure, lastError],
+    () => ({ readiness, downloading, aggregate, downloadingIds, ensure, lastError }),
+    [readiness, downloading, aggregate, downloadingIds, ensure, lastError],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

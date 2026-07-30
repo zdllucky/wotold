@@ -1,6 +1,6 @@
 // [B21] Заголовок группы строк внутри settings-секции (канон GroupLabel
 // прототипа → .rrail-sec). Вынесен в ui, чтобы page-модули не импортировали
-// друг друга (SettingsPage ↔ LocalEngineSection circular-import guard).
+// друг друга (SettingsPage ↔ pages/engine circular-import guard).
 
 import type { ReactNode } from 'react';
 

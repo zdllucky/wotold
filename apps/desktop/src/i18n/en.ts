@@ -717,14 +717,6 @@ export const en: TranslationStrings = {
   },
 
   localEngine: {
-    engine: {
-      local: {
-        title: 'Locally on this device',
-        body: 'No network, no fees, your data stays on your Mac. Models download once.',
-        quality: '●●○ quality',
-      },
-      active: 'active',
-    },
     presetLabel: 'Model bundle',
     keepResidentLabel: 'Keep model warm',
     keepResidentHint:
@@ -757,29 +749,16 @@ export const en: TranslationStrings = {
     statusInstalled: 'installed',
     statusDownloading: 'downloading…',
     statusAbsent: 'not installed',
-    installedFootprint: 'Installed: {size}',
-    storageTitle: 'Model storage',
-    storageLede:
-      'What is installed locally. Delete unused models to reclaim space. Wotold never deletes models on its own.',
-    storageFootnote: 'Deleting does not affect already-processed calls.',
-    colName: 'Model',
-    colSize: 'Size',
-    colLastUsed: 'Used',
-    colState: 'State',
-    download: 'Download',
-    downloadAria: 'Download {name}',
-    delete: 'Delete',
-    deleteAria: 'Delete {name}',
-    statusActive: 'active',
-    statusCorrupted: 'corrupted',
-    deleteActiveConfirmMsg:
-      'Model {id} is used by the current bundle. Deleting will switch the bundle. Proceed?',
+    storageUsed: 'Models take up {size}',
+    freeSpaceCta: 'Free up {size}',
+    freeSpaceConfirmTitle: 'Free up space',
+    freeSpaceConfirmBody:
+      'Delete the models of sizes you are not using right now and free up {size}? You can download them again. Already processed calls stay as they are.',
+    freeSpaceConfirm: 'Delete',
+    freeSpaceDone: 'freed {size}',
     qualityConfirmTitle: 'Quality on this Mac',
     qualityConfirmMsg:
       'Quality is designed for 16+ GB RAM. On your Mac processing may be very slow. Use anyway?',
-    deleteConfirmTitle: 'Delete model',
-    deleteConfirmMsg: 'Delete {id} from disk? You can re-download later.',
-    verifyFailed: 'Checksum mismatch for {id} — file corrupted, try again.',
     hwBannerTitle: 'Hardware suggestion',
     hwBannerBody: 'You have {cpu} · {ram} GB. The {preset} bundle fits best.',
     hwBannerApply: 'Apply',
@@ -791,19 +770,6 @@ export const en: TranslationStrings = {
     probeSkeleton: {
       measuring: 'Checking hardware…',
       timeout: 'Could not detect hardware. Pick a bundle manually.',
-    },
-    storageConfirm: {
-      title: 'Delete active model?',
-      body: 'The current bundle will switch to "{fallback}". You can re-download the model at any time.',
-      confirm: 'Delete',
-      cancel: 'Cancel',
-    },
-    rediscovery: {
-      eyebrow: 'Local mode',
-      title: 'Process calls directly on your Mac',
-      body: 'No cloud, free forever. Download once, works offline.',
-      install: 'Try local mode',
-      dismiss: 'Don\'t show again',
     },
   },
 
