@@ -17,7 +17,7 @@ type Target = 'microphone' | 'screen_recording' | 'accessibility';
 interface Row {
   target: Target;
   pane: SystemPane;
-  /** [B32.4] Якорь из `SETTINGS_ENTRIES` — по нему палитра подсвечивает строку. */
+  /** [B34.4] Якорь из `SETTINGS_ENTRIES` — по нему палитра подсвечивает строку. */
   settingId: string;
   labelKey: 'permissions.rowMic' | 'permissions.rowScreen' | 'permissions.rowAccessibility';
   descKey:

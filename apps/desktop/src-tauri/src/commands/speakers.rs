@@ -38,6 +38,16 @@ pub async fn list_call_speakers_batch(
     crate::db::list_speakers_for_calls(&state.db, &call_ids).await
 }
 
+/// Собрана ли сборка с ONNX-эмбеддером (`voice-onnx`).
+///
+/// Скачать модуль можно всегда — он каталожный, — но подменить `StubEmbedder`
+/// на настоящий умеет только сборка с фичей. UI показывает честный бейдж
+/// вместо молчаливого «привязка не работает». Дефолтная сборка фичу включает.
+#[tauri::command]
+pub fn voice_embedder_feature_enabled() -> bool {
+    cfg!(feature = "voice-onnx")
+}
+
 /// R2 паспорта: финальная привязка спикер↔контакт ТОЛЬКО через явное действие
 /// пользователя. Используется UI confirmation flow.
 #[tauri::command]

@@ -16,6 +16,7 @@ pub mod contacts;
 pub mod local_engine;
 pub mod notify;
 pub mod orphan_reconcile;
+pub mod parked_resume;
 pub mod pipeline;
 pub mod recording;
 pub mod recovery;
@@ -24,7 +25,6 @@ pub mod share;
 #[cfg(target_os = "macos")]
 pub mod silence;
 pub mod speakers;
-pub mod voice_model;
 pub mod widget;
 
 // Re-exports чтобы `commands::list_calls` и т.д. продолжали резолвиться
@@ -39,6 +39,7 @@ pub use contacts::*;
 #[cfg(target_os = "macos")]
 pub use local_engine::*;
 pub use notify::*;
+pub use parked_resume::*;
 pub use pipeline::*;
 pub use recording::*;
 pub use recovery::*;
@@ -47,5 +48,4 @@ pub use share::*;
 #[cfg(target_os = "macos")]
 pub use silence::*;
 pub use speakers::*;
-pub use voice_model::*;
 pub use widget::*;

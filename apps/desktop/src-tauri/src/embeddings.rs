@@ -95,6 +95,28 @@ impl Embedder for StubEmbedder {
     }
 }
 
+/// Путь голосового эмбеддера (WeSpeaker) на диске.
+///
+/// Эмбеддер — запись каталога моделей, но каталог живёт под macOS (R9), а
+/// кластеризация собирается на всех платформах. На macOS делегируем каталогу,
+/// иначе повторяем раскладку — равенство закреплено тестом ниже.
+pub fn voice_embedder_path(app_data_dir: &Path) -> std::path::PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        crate::local_engine::models::model_path(
+            app_data_dir,
+            crate::local_engine::models::ModelId::VOICE_EMBEDDER.as_str(),
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        app_data_dir
+            .join("local_engine")
+            .join("models")
+            .join("voice-embedder.bin")
+    }
+}
+
 /// [B3.6 scaffold] Попытаться загрузить production ONNX embedder из `model_path`.
 /// Возвращает None если:
 ///   - фича `voice-onnx` выключена при сборке (default — нет тяжёлых ONNX-deps)
@@ -108,7 +130,7 @@ impl Embedder for StubEmbedder {
 ///
 /// 1. Cargo feature `voice-onnx` подтягивает `ort` (ONNX Runtime) + `ndarray`.
 /// 2. WeSpeaker ResNet34 / ECAPA-TDNN ONNX (~14-30MB, Apache-2.0) кладётся
-///    в `$APP_DATA/models/embedder.onnx`. Bundle vs runtime download — отдельное
+///    в каталог моделей (`voice-embedder`). Bundle vs runtime download — отдельное
 ///    решение (M3.6 паспорта, R6: notarization влияет на bundle size policy).
 /// 3. Kaldi-style fbank preprocessing: 80-dim mel, 25ms window, 10ms hop,
 ///    cepstral mean normalization per-utterance. Без точной репликации
@@ -255,6 +277,16 @@ mod tests {
         // ожидаемое поведение pre-B3.7. Pipeline fallback'ит на StubEmbedder.
         let missing = std::path::PathBuf::from("/nonexistent/path/embedder.onnx");
         assert!(try_load_onnx_embedder(&missing).is_none());
+    }
+
+    #[test]
+    fn voice_embedder_path_points_at_catalog_layout() {
+        let p = voice_embedder_path(Path::new("/data"));
+        assert_eq!(
+            p,
+            Path::new("/data/local_engine/models/voice-embedder.bin"),
+            "путь эмбеддера должен совпадать с раскладкой каталога моделей"
+        );
     }
 
     #[test]

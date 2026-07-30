@@ -40,7 +40,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
 import { AppearanceSection } from './AppearanceSection';
 import { LabsSection } from './LabsSection';
-import { LocalEngineSection } from './LocalEngineSection';
+import { EngineSection } from './engine/EngineSection';
 import { PermissionsSection } from './PermissionsSection';
 import { AboutSection } from './AboutSection';
 import { VoiceModelSection } from './VoiceModelSection';
@@ -55,7 +55,7 @@ import {
 // [B22] «Обслуживание» (bulk recap) удалено по фидбеку юзера — Rust-команды
 // regenerate_empty_recaps/cancel_bulk_recap остаются без UI-потребителя.
 //
-// [B32.4] `SectionId` и `SECTION_ICONS` переехали в `settingsIndex` — их видит
+// [B34.4] `SectionId` и `SECTION_ICONS` переехали в `settingsIndex` — их видит
 // палитра ⌘K, чтобы предлагать разделы и отдельные настройки.
 interface SectionMeta {
   id: SectionId;
@@ -67,7 +67,7 @@ interface SectionMeta {
 const HIGHLIGHT_MS = 1600;
 
 interface SettingsPageProps {
-  /** [B32.4] Куда вести из палитры: раздел и (опционально) строка. */
+  /** [B34.4] Куда вести из палитры: раздел и (опционально) строка. */
   target?: SettingsTarget | null;
 }
 
@@ -168,7 +168,7 @@ export function SettingsPage({ target }: SettingsPageProps = {}) {
     return () => clearTimeout(t);
   }, [savedTick]);
 
-  // [B32.4] Переход из палитры: открыть раздел и подсветить строку.
+  // [B34.4] Переход из палитры: открыть раздел и подсветить строку.
   useEffect(() => {
     if (!target) return;
     setSection(target.section);
@@ -244,7 +244,7 @@ export function SettingsPage({ target }: SettingsPageProps = {}) {
     // spans edge-to-edge and the 2-pane body fills below.
     <div className="main page-bleed">
       {/* [B18.9] Breadcrumb view-head per prototype: Настройки › {section} + saved. */}
-      {/* [B32.1] data-tauri-drag-region="deep" — как в ViewHead. Здесь шапка
+      {/* [B34.1] data-tauri-drag-region="deep" — как в ViewHead. Здесь шапка
           собрана вручную (breadcrumb вместо иконки с заголовком), и атрибут
           забыли: окно за верх Настроек не таскалось, а со свёрнутым рейлом эта
           шапка ещё и `position: fixed` во всю ширину — мёртвой становилась вся
@@ -340,7 +340,7 @@ export function SettingsPage({ target }: SettingsPageProps = {}) {
 
           <SectionShell label={activeMeta.label}>
             {section === 'appearance' && <AppearanceSection />}
-            {section === 'processing' && <LocalEngineSection />}
+            {section === 'processing' && <EngineSection />}
             {section === 'permissions' && <PermissionsSection />}
             {section === 'recording' && (
               <RecordingSection
@@ -544,7 +544,7 @@ function RecordingSection({
         </SettingRow>
       )}
 
-      {/* [T3/R14] Тишина в идущей записи: подсказка и авто-стоп с подрезкой. */}
+      {/* [T3/R15] Тишина в идущей записи: подсказка и авто-стоп с подрезкой. */}
       <GroupLabel>{t('settings.groupSilence')}</GroupLabel>
       <SettingRow
         settingId="silence-prompt"

@@ -1,4 +1,4 @@
-// [T7/R14] In-app баннер «в записи тишина — остановить?».
+// [T7/R15] In-app баннер «в записи тишина — остановить?».
 //
 // Поднимается на backend-событие `recording:silence_prompt` (см.
 // `audio/silence_watch` + `commands/silence.rs`). Параллельно уходит нативное

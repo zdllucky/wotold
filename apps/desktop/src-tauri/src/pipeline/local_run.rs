@@ -72,50 +72,23 @@ async fn prepare_local_run(
     ctx: &PipelineCtx,
     app: &AppHandle,
 ) -> Result<LocalModels, AppError> {
-    use crate::local_engine::{
-        models::{self, ModelStatus},
-        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
-    };
+    use crate::local_engine::readiness;
 
-    // 1. Резолвим preset → model ids. Без preset (юзер прошёл onboarding но
-    //    выбрал Cloud, потом откатился) — fail с явным reason.
-    let preset_str = db::get_setting(pool, SETTING_ACTIVE_PRESET).await?;
-    let preset = preset_str
-        .as_deref()
-        .and_then(LocalEnginePreset::from_str)
-        .ok_or_else(|| {
-            AppError::Other(
-                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings → Движок"
-                    .into(),
-            )
-        })?;
+    // 1-2. Единый гейт: размер движка выбран и все обязательные модули на
+    //      диске и не помечены как подменённые. Звонок, попавший сюда до
+    //      докачки, паркуется с маркером `local_engine_not_ready` — UI
+    //      предложит скачать, и после докачки звонок поднимется сам.
+    //
+    //      [perf] Внутри — сверка размеров, не SHA: ежепрогонное хеширование
+    //      whisper+LLM (~1.5-6GB) держало UI на «Сохраняем аудио» десятки
+    //      секунд. Подмену файла того же размера ловит стартовая проверка
+    //      целостности, её вердикт гейт учитывает (W5).
+    readiness::assert_ready(pool, &ctx.app_data_dir).await?;
+    let preset = readiness::active_preset(pool)
+        .await?
+        .ok_or_else(|| AppError::Other("local_engine_preset_not_set".into()))?;
     let whisper_id = preset.whisper_model_id();
     let llm_id = preset.llm_model_id();
-
-    // 2. Проверяем что обе модели на диске (exact-size против каталога).
-    //    [perf] Полный SHA — только на download-пути (M12.4); ежепрогонное
-    //    хеширование whisper+LLM (~1.5-6GB) держало UI на «Сохраняем аудио»
-    //    десятки секунд при каждом звонке/reprocess.
-    for id in [whisper_id, llm_id] {
-        // [security-scan W5] Быстрый путь сверяет только размер. Если фоновая
-        // проверка на старте уже поймала несовпадение SHA — не отдаём такой
-        // файл нативному парсеру GGUF/ONNX: подменённая модель это исполнение
-        // чужих данных в C++, а не просто «плохое качество саммари».
-        if crate::local_engine::model_integrity::is_known_tampered(pool, id.as_str()).await? {
-            return Err(AppError::Other(format!(
-                "local_engine_model_tampered: файл модели {} не прошёл проверку SHA256 — \
-                 перекачайте её в Настройках → Движок",
-                id.as_str()
-            )));
-        }
-        let status = models::check_status_fast(&ctx.app_data_dir, id.as_str()).await?;
-        if !matches!(status, ModelStatus::Present { .. }) {
-            return Err(AppError::Other(format!(
-                "local_engine_model_missing: модель {} не установлена, скачайте в Settings → Движок",
-                id.as_str()
-            )));
-        }
-    }
 
     // 3. Stage Upload — pseudo-step (audio verify + sidecar model load занимают
     //    1-2 сек, UI не получает per-byte progress).
@@ -194,7 +167,7 @@ async fn transcribe_tracks(
         .ok();
     }
 
-    // [T6/R14] Подрезка тихого хвоста у авто-остановленной записи. Место
+    // [T6/R15] Подрезка тихого хвоста у авто-остановленной записи. Место
     // выбрано так, чтобы один рез накрыл оба пути: корневые WAV уже собраны
     // из чанков (выше), а транскрипт ещё не выбран (ниже). Идемпотентно —
     // повторный прогон видит уже короткий файл, — поэтому переживает
@@ -405,63 +378,41 @@ async fn diarize_tracks(
     //    шага все system segments имеют `speaker:0` (TrackKind::System default
     //    в [`local_engine::stt`]). Sherpa-onnx pyannote segmentation + WeSpeaker
     //    embedding кластеризует фрагменты → каждый sys segment получает
-    //    `speaker:0..4` (cap=4). Diarization non-fatal: при отсутствии моделей
-    //    или voice-onnx feature off → fall back на оригинальный sys_t,
+    //    `speaker:N`. Diarization non-fatal: при отсутствии моделей или
+    //    voice-onnx feature off → fall back на оригинальный sys_t,
     //    система-трек остаётся single-bucket (degraded но рабочий).
-    // [P1.2 / TD-36] Force-N-speakers Labs override (read once, applied к mic +
-    // system). Разбор общий с обвязкой чанков: до этого здесь стоял свой
-    // `1..=4`, и «4 голоса» работали в одном пути записи и молча
-    // игнорировались в другом.
-    let num_speakers_override = super::settings::read_num_speakers_override(pool).await?;
     let sys_t = diarize_system_track(
+        pool,
         &ctx.app_data_dir,
         &ctx.system_path,
         sys_t,
-        num_speakers_override,
         &ctx.call_id,
     )
     .await;
 
-    // 4.6. [M13 follow-up] Опциональный multi-voice на mic-дорожке. Default ON
-    //    через `MIC_DIARIZATION_ENABLED`. Без этого вся mic уходила в OWNER_TAG
-    //    через assemble_transcript (force_owner_track в local_engine::merge).
-    //    С включенной настройкой sortformer выдаёт `speaker:N` tags, потом
+    // 4.6. [M13 follow-up] Multi-voice на mic-дорожке. Без этого вся mic уходит
+    //    в OWNER_TAG через assemble_transcript (force_owner_track в
+    //    local_engine::merge). Sortformer выдаёт `speaker:N` tags, потом
     //    owner_identify::identify_owner_speaker переименовывает один из них
     //    в OWNER_TAG. На non-chunked пути embeddings собираем здесь же через
     //    extract_clusters; cross-track reflection (owner отражается в system)
-    //    не обрабатывается без global reclustering — это limitation
-    //    non-chunked path, acceptable т.к. чанкед = default.
-    // [P-fix7] mic-диаризация по умолчанию ВЫКЛ. Mic = микрофон владельца =
-    // один человек (M2.4); sortformer на нём овершутит, дробя единственный
-    // голос owner'а в speaker:unknown/N → owner размазан по «СПИКЕР ?».
-    // Opt-in только для нескольких людей у одного микрофона (Labs).
-    let mic_on = matches!(
-        db::get_setting(pool, "mic_diarization_enabled")
-            .await?
-            .as_deref(),
-        Some("1") | Some("true")
-    );
-    let mic_diarization = mic_on;
-    let mic_t = if mic_diarization {
-        let mic_diarized = diarize_mic_track(
-            &ctx.app_data_dir,
-            &ctx.mic_path,
-            mic_t,
-            num_speakers_override,
-            &ctx.call_id,
-        )
-        .await;
-        relabel_owner_on_mic_full_file(
-            pool,
-            &ctx.app_data_dir,
-            &ctx.mic_path,
-            &ctx.system_path,
-            mic_diarized,
-        )
-        .await
-    } else {
-        mic_t
-    };
+    //    не обрабатывается без global reclustering — limitation non-chunked
+    //    пути, приемлемая, потому что чанкед — дефолт.
+    //
+    //    Тумблер убран: диаризация микрофона теперь всегда включена. Риск
+    //    P-fix7 (sortformer дробит единственный голос владельца) закрывает
+    //    `relabel_owner_on_mic_full_file` — он собирает выбранный тег назад в
+    //    OWNER_TAG.
+    let mic_diarized =
+        diarize_mic_track(pool, &ctx.app_data_dir, &ctx.mic_path, mic_t, &ctx.call_id).await;
+    let mic_t = relabel_owner_on_mic_full_file(
+        pool,
+        &ctx.app_data_dir,
+        &ctx.mic_path,
+        &ctx.system_path,
+        mic_diarized,
+    )
+    .await;
     Ok((mic_t, sys_t, lang_detected))
 }
 
@@ -583,7 +534,6 @@ async fn run_recap(
                 pool,
                 &ctx.app_data_dir,
                 app,
-                s,
                 Some(&ctx.call_id),
             )
             .await?;
@@ -695,7 +645,7 @@ async fn audio_byte_total(mic: &Path, sys: &Path) -> Option<i64> {
 /// [TD-37] Записать оговорку о качестве обработки. Ошибка записи не роняет
 /// звонок: это диагностика на пути, который уже деградировал, и падать из-за
 /// неё было бы хуже самой деградации.
-/// [T6/R14] Обрезать корневые дорожки по точке реза, записанной авто-стопом.
+/// [T6/R15] Обрезать корневые дорожки по точке реза, записанной авто-стопом.
 /// Возвращает точку — её же получает сборка транскрипта, чтобы выбросить
 /// сегменты с тихого хвоста (whisper прогнал их ещё во время записи).
 ///

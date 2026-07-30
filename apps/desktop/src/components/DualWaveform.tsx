@@ -1,5 +1,5 @@
 // [B17 V3.0] Stereo-split waveform — визуально одна дорожка под капотом two
-// channels. Top half (центр → вверх) — mic в --ink. Bottom half (центр →
+// channels. Top half (центр → вверх) — mic в --text. Bottom half (центр →
 // вниз) — system в --accent. Single x-axis timeline синхронизирован между
 // каналами (оба пришли из одного `audio:level` event с тем же timestamp).
 //
@@ -97,7 +97,7 @@ function render(
   // literal colors). Если css не доступен — v2 fallback дефолты (graphite).
   const inkColor = css?.getPropertyValue('--text')?.trim() || FALLBACK_INK;
   const accentColor = css?.getPropertyValue('--accent')?.trim() || FALLBACK_ACCENT;
-  // [TD-30] Фолбэк был '#ECEAE3' — тёплый тон старой Atelier-гаммы, которого
+  // [TD-30] Фолбэк был '#ECEAE3' — тёплый тон прежней гаммы, которого
   // в v2-палитре нет вовсе, и в тёмной теме он давал светлую линию на тёмном
   // фоне. Берём значение --border из tokens.css (светлая тема); соседние
   // фолбэки --text/--accent синхронизированы так же.

@@ -102,9 +102,17 @@ export const en: TranslationStrings = {
       human: 'The local model did not respond within 10 minutes.',
       hint: 'Try the “Light” preset — it is faster. Settings → Local engine.',
     },
+    notReady: {
+      human: 'Some software is missing for processing.',
+      hint: 'Hit “Download” — the call is processed on its own once the modules land.',
+    },
+    modelTampered: {
+      human: 'A module file failed its integrity check.',
+      hint: 'Hit “Download” — the damaged file gets replaced.',
+    },
     modelMissing: {
       human: 'The local model is not installed.',
-      hint: 'Download it in Settings → Local engine.',
+      hint: 'Download it in Settings → Processing.',
     },
     presetNotSet: {
       human: 'No local engine preset selected.',
@@ -443,8 +451,6 @@ export const en: TranslationStrings = {
     one: 'participant',
     few: 'participants',
     many: 'participants',
-    tooManyHint:
-      'If fewer in reality — Settings → Labs → "Force speaker count".',
   },
 
   scrubber: {
@@ -543,13 +549,6 @@ export const en: TranslationStrings = {
     speakersAutoBindLabel: 'Auto-bind speakers to contacts',
     speakersAutoBindHint:
       'Only when confident — can be undone right in the call.',
-    speakersMicDiarizationLabel: 'Detect multiple voices on microphone',
-    speakersMicDiarizationHint:
-      'Useful for live meetings in one room when other participants also speak into your mic. Slows processing by ~10–20%. The device owner is auto-identified via voice samples (or by primary speaker time if none yet).',
-    micDiarizationModelMissing:
-      'Voice splitting needs an extra module (~6 MB). Without it Wotold cannot split voices even when the toggle is on.',
-    micDiarizationInstall: '↓ Install voice splitting module',
-    micDiarizationInstalling: 'Installing module…',
     fieldTheme: 'Theme',
     fieldLanguage: 'Interface language',
     themeLight: 'Light',
@@ -586,7 +585,7 @@ export const en: TranslationStrings = {
       'Only active during recording. Default ⌘⇧P.',
     callDetectHint: '“Record?” notification when a call is detected. Off by default for privacy.',
     callDetectCooldownOption: '{n} min',
-    // [T3/R14] Silence inside an active recording.
+    // [T3/R15] Silence inside an active recording.
     silencePromptHint:
       'After 15 minutes of silence Wotold asks whether to stop the recording.',
     silenceAutoStopHint:
@@ -598,17 +597,6 @@ export const en: TranslationStrings = {
     summaryV2Label: 'New summary format',
     summaryV2Hint:
       'On by default. Turn off if you hit issues with call type, evidence quotes or decisions — recaps fall back to simple format.',
-    speculativeDecodingLabel: 'Speed up generation (draft model)',
-    speculativeDecodingHint:
-      'Uses a small 0.5B draft model in parallel with 7B Quality. 2-3× speedup. Requires Quality preset and ~380MB extra model download.',
-    forceNumSpeakersLabel: 'Other participants (besides you)',
-    forceNumSpeakersHint:
-      'Your voice is always separate («Me»). This is how many OTHER people are on the remote side. Set the exact number if auto-splitting gets it wrong, then reprocess. Max 3.',
-    forceNumSpeakersOptions: {
-      auto: 'Auto (recommended)',
-      '2': '2 participants',
-      '3': '3 participants',
-    },
     wipeBtn: 'Delete all data',
     wipeBusy: 'Deleting…',
     wipeConfirmTitle: 'Full wipe',
@@ -709,45 +697,14 @@ export const en: TranslationStrings = {
 
   voiceModel: {
     featureOff:
-      '⚠ The voice-onnx feature is not enabled in this build. You can download the model, but the pipeline will not use it — biometric matching stays off. In a production build (`--features voice-onnx`) downloading enables matching automatically.',
-    modelName: 'Voice recognition module',
-    statusValid: 'installed',
-    statusMissing: 'none',
-    statusCorrupted: 'corrupted',
-    statusDownloading: 'downloading',
-    descValid:
-      'Model ready. Wotold will suggest who is speaking based on voice match against confirmed contacts (threshold 50%). Final confirmation is always yours (passport R2).',
-    descCorrupted: 'File corrupted or version changed. Delete and download again.',
-    descMissing:
-      'Biometric matching is off. Download the model so Wotold can suggest who is speaking. Size ~25 MB, downloads once in the background.',
-    btnDownload: '↓ Download {size}',
-    btnRedownload: '↻ Re-download',
-    btnDownloading: 'Downloading…',
-    btnDelete: 'Delete',
-    mb: '{n} MB',
-    verifyFailed:
-      'SHA256 mismatch — file corrupted or model version changed. Try again.',
+      '⚠ This build was made without voice-onnx: voices are not compared, so binding speakers to contacts will not work. Regular builds have the feature on.',
   },
 
   localEngine: {
-    engine: {
-      local: {
-        title: 'Locally on this device',
-        body: 'No network, no fees, your data stays on your Mac. Models download once.',
-        quality: '●●○ quality',
-      },
-      active: 'active',
-    },
     presetLabel: 'Model bundle',
     keepResidentLabel: 'Keep model warm',
     keepResidentHint:
       'The local model stays in RAM for the whole session — generation is faster (no reload per call) but it holds ~2–5 GB of RAM. Off by default.',
-    semanticLabel: 'Assistant semantic search',
-    semanticHint:
-      'The assistant finds fragments by meaning, not just word overlap (synonyms, paraphrases, other languages). The ~130 MB search module downloads automatically.',
-    semanticActive: 'active',
-    semanticDownloading: 'downloading · {pct}%',
-    semanticWaiting: 'waiting for model',
     preset: {
       light: 'Light',
       balanced: 'Balanced',
@@ -759,6 +716,7 @@ export const en: TranslationStrings = {
       quality: 'accuracy ~97% · slow',
     },
     presetRecommend: 'Recommended',
+    presetLockedWhileDownloading: 'The size stays put while downloads run — wait them out.',
     modelLabel: {
       whisperSmall: 'Speech module · S',
       whisperMedium: 'Speech module · M',
@@ -776,29 +734,16 @@ export const en: TranslationStrings = {
     statusInstalled: 'installed',
     statusDownloading: 'downloading…',
     statusAbsent: 'not installed',
-    installedFootprint: 'Installed: {size}',
-    storageTitle: 'Model storage',
-    storageLede:
-      'What is installed locally. Delete unused models to reclaim space. Wotold never deletes models on its own.',
-    storageFootnote: 'Deleting does not affect already-processed calls.',
-    colName: 'Model',
-    colSize: 'Size',
-    colLastUsed: 'Used',
-    colState: 'State',
-    download: 'Download',
-    downloadAria: 'Download {name}',
-    delete: 'Delete',
-    deleteAria: 'Delete {name}',
-    statusActive: 'active',
-    statusCorrupted: 'corrupted',
-    deleteActiveConfirmMsg:
-      'Model {id} is used by the current bundle. Deleting will switch the bundle. Proceed?',
+    storageUsed: 'Models take up {size}',
+    freeSpaceCta: 'Free up {size}',
+    freeSpaceConfirmTitle: 'Free up space',
+    freeSpaceConfirmBody:
+      'Delete the models of sizes you are not using right now and free up {size}? You can download them again. Already processed calls stay as they are.',
+    freeSpaceConfirm: 'Delete',
+    freeSpaceDone: 'freed {size}',
     qualityConfirmTitle: 'Quality on this Mac',
     qualityConfirmMsg:
       'Quality is designed for 16+ GB RAM. On your Mac processing may be very slow. Use anyway?',
-    deleteConfirmTitle: 'Delete model',
-    deleteConfirmMsg: 'Delete {id} from disk? You can re-download later.',
-    verifyFailed: 'Checksum mismatch for {id} — file corrupted, try again.',
     hwBannerTitle: 'Hardware suggestion',
     hwBannerBody: 'You have {cpu} · {ram} GB. The {preset} bundle fits best.',
     hwBannerApply: 'Apply',
@@ -810,19 +755,6 @@ export const en: TranslationStrings = {
     probeSkeleton: {
       measuring: 'Checking hardware…',
       timeout: 'Could not detect hardware. Pick a bundle manually.',
-    },
-    storageConfirm: {
-      title: 'Delete active model?',
-      body: 'The current bundle will switch to "{fallback}". You can re-download the model at any time.',
-      confirm: 'Delete',
-      cancel: 'Cancel',
-    },
-    rediscovery: {
-      eyebrow: 'Local mode',
-      title: 'Process calls directly on your Mac',
-      body: 'No cloud, free forever. Download once, works offline.',
-      install: 'Try local mode',
-      dismiss: 'Don\'t show again',
     },
   },
 
@@ -864,9 +796,8 @@ export const en: TranslationStrings = {
       downloadCta: 'Download and continue (~{size} GB)',
       chooseAnotherCta: 'Pick a different preset',
       collapsePickerCta: 'Hide presets',
-      downloadingLabel: 'Downloading {id}',
-      cancelDownloadCta: 'Cancel and continue with cloud',
-      verifyFailed: 'Checksum mismatch for {id}. Try again.',
+      downloadingLabel: 'Downloading modules',
+      continueInBackgroundCta: 'Collapse — it keeps downloading',
       recommendedTag: 'REC',
       feat: {
         light: {
@@ -935,7 +866,7 @@ export const en: TranslationStrings = {
       'Wotold detected an active microphone. Start a recording now?',
     suggestStart: 'Start recording',
     suggestDismiss: 'Dismiss',
-    // [T7/R14] SilencePrompt — silence inside an active recording.
+    // [T7/R15] SilencePrompt — silence inside an active recording.
     silenceTitle: 'Silence in the recording',
     silenceBody: '{min} min of silence so far. Stop the recording?',
     silenceBodyWithStop: '{min} min of silence so far. It will stop on its own in {left} min.',
@@ -946,6 +877,20 @@ export const en: TranslationStrings = {
   },
 
   // [Q] Heavy-resource queue monitor (QueueMonitor + queued line).
+  readiness: {
+    eyebrow: 'Local processing',
+    missing: 'Some software is missing to process calls — {size}.',
+    download: 'Download',
+    downloading: 'Downloading modules… {pct}%',
+    downloadingAria: 'Module download progress',
+    retry: 'Retry',
+    verifyFailed: 'A module file failed its integrity check — try again.',
+    choosePreset: 'Pick an engine size first — it decides what gets downloaded.',
+    openSettings: 'Open settings',
+    callParked: 'This call is waiting: software is missing. It processes on its own once the modules land.',
+    callParkedDownload: 'Download',
+    queueWaiting: 'The queue is waiting for modules to download',
+  },
   queue: {
     monitor: 'Processing queues',
     res: {

@@ -52,7 +52,7 @@ pub mod chunk_orchestrator;
 // full-file STT когда chunks_completed > 0.
 pub mod chunk_assembly;
 
-// [T6/R14] Отсечка транскрипта по точке реза тихого хвоста — вторая половина
+// [T6/R15] Отсечка транскрипта по точке реза тихого хвоста — вторая половина
 // подрезки (первая, файловая, в `audio::wav_trim`). Без неё рез бессмыслен:
 // тихие чанки прошли whisper ещё во время записи.
 pub mod transcript_cutoff;
@@ -173,7 +173,7 @@ pub struct PipelineCtx {
     pub call_dir: PathBuf,
     pub mic_path: PathBuf,
     pub system_path: PathBuf,
-    /// [B3.6] Корень app-данных для поиска `models/embedder.onnx`. Cluster pipeline
+    /// [B3.6] Корень app-данных для поиска модели `voice-embedder`. Cluster pipeline
     /// fallback'ит на StubEmbedder если модель отсутствует или ONNX feature off.
     pub app_data_dir: PathBuf,
 }
@@ -690,7 +690,7 @@ pub(super) async fn run_auto_bind(
 /// и пропускаются (recap всё равно сгенерируется).
 ///
 /// [B3.6] Embedder выбирается dispatcher'ом — реальный OnnxEmbedder если
-/// модель найдена в `app_data_dir/models/embedder.onnx` и фича `voice-onnx`
+/// модель найдена по `embeddings::voice_embedder_path` и фича `voice-onnx`
 /// включена, иначе StubEmbedder (no-op → пустые clusters).
 ///
 /// [Phase 3 R9] После persist'а cluster'а вызываем

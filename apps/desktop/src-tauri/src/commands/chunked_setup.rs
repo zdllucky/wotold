@@ -16,11 +16,7 @@ use crate::{
     call_id::CallId,
     call_store::CallStore,
     db,
-    local_engine::{
-        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
-        stt::{LocalWhisperProvider, TrackKind},
-    },
-    pipeline::settings::{mic_diarization_enabled, read_num_speakers_override},
+    local_engine::stt::{LocalWhisperProvider, TrackKind},
     pipeline::{
         chunk_orchestrator::{self, ChunkOrchestratorConfig},
         chunk_runner::{self, ChunkRunInput},
@@ -59,8 +55,6 @@ pub(crate) struct ChunkProviders {
     pub mic: Arc<dyn TranscriptionProvider>,
     pub system: Arc<dyn TranscriptionProvider>,
     pub lang: String,
-    pub mic_diarization: bool,
-    pub mic_diarization_num_speakers: Option<i32>,
 }
 
 /// [M13 fix] Построить `ChunkProviders` из active preset + settings.
@@ -74,15 +68,13 @@ pub(crate) async fn build_chunk_providers(
     // [Q] call_id → STT-очередь (QueueMonitor видит чей звонок у whisper'а).
     call_id: &CallId,
 ) -> Result<ChunkProviders, AppError> {
-    let preset = db::get_setting(db, SETTING_ACTIVE_PRESET)
+    // Тот же гейт, что и у пайплайна: маршруты retry/recovery должны отказывать
+    // с тем же маркером, что и обычный прогон, иначе на одну причину у
+    // пользователя два разных текста.
+    crate::local_engine::readiness::assert_ready(db, app_data_dir).await?;
+    let preset = crate::local_engine::readiness::active_preset(db)
         .await?
-        .as_deref()
-        .and_then(LocalEnginePreset::from_str)
-        .ok_or_else(|| {
-            AppError::Other(
-                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings".into(),
-            )
-        })?;
+        .ok_or_else(|| AppError::Other("local_engine_preset_not_set".into()))?;
     let whisper_id = preset.whisper_model_id();
     // TrackKind влияет на дефолтные speaker tags ("owner" для mic, "speaker:0"
     // для system) — их потом переcassign'ает cluster pipeline.
@@ -100,19 +92,7 @@ pub(crate) async fn build_chunk_providers(
     let lang = db::get_setting(db, "stt_lang")
         .await?
         .unwrap_or_else(|| "auto".to_string());
-    // [P-fix7] Mic diarization — Default OFF (mic = микрофон владельца, M2.4).
-    // [TD-36] Обе настройки читаются общим типизированным путём — клэмп и
-    // разбор живут в одном месте с локальным маршрутом.
-    let mic_diarization = mic_diarization_enabled(db).await?;
-    let mic_diarization_num_speakers = read_num_speakers_override(db).await?;
-
-    Ok(ChunkProviders {
-        mic,
-        system,
-        lang,
-        mic_diarization,
-        mic_diarization_num_speakers,
-    })
+    Ok(ChunkProviders { mic, system, lang })
 }
 
 /// [M13 fix / test] Config для orchestrator. По умолчанию 10-мин chunks. Env
@@ -159,10 +139,6 @@ pub(crate) struct ChunkedSetup {
     mic_provider: Arc<dyn TranscriptionProvider>,
     system_provider: Arc<dyn TranscriptionProvider>,
     stt_lang: String,
-    /// [M13 follow-up] Sortformer на mic для multi-voice. Default ON.
-    mic_diarization: bool,
-    /// [P1.2] Labs «Force N speakers» override. None = auto-detect.
-    mic_diarization_num_speakers: Option<i32>,
 }
 
 /// Прочитать settings + (если оба условия true) построить provider + channels.
@@ -188,13 +164,27 @@ pub(crate) async fn prepare_chunked_setup(
         return Ok(None);
     }
 
+    // Движок не готов — пишем полными файлами, а не чанками. Запись важнее
+    // конвейера: раньше каждый чанк отдельно падал на sidecar'е (падение
+    // mic-чанка фатально), и пользователь получал звонок, у которого сломана
+    // и запись, и обработка. Теперь звонок просто паркуется на стопе и сам
+    // поднимется после докачки.
+    if !crate::local_engine::readiness::compute(&state.db, &state.app_data_dir)
+        .await?
+        .ready
+    {
+        log::warn!(
+            "chunked pipeline отключён на этот звонок: движку не хватает модулей — \
+             пишем полными файлами, обработка стартует после докачки"
+        );
+        return Ok(None);
+    }
+
     // Build LocalWhisperProvider mirror'ом логики pipeline::run.
     let ChunkProviders {
         mic: mic_provider,
         system: system_provider,
         lang: stt_lang,
-        mic_diarization,
-        mic_diarization_num_speakers,
     } = build_chunk_providers(&state.db, &state.app_data_dir, app, call_id).await?;
 
     let (rms_tx, rms_rx) = mpsc::channel::<(u64, f32)>(256);
@@ -215,8 +205,6 @@ pub(crate) async fn prepare_chunked_setup(
         mic_provider,
         system_provider,
         stt_lang,
-        mic_diarization,
-        mic_diarization_num_speakers,
     }))
 }
 
@@ -239,8 +227,6 @@ pub(crate) async fn spawn_orchestrator(
         mic_provider,
         system_provider,
         stt_lang,
-        mic_diarization,
-        mic_diarization_num_speakers,
     } = setup;
 
     let session_ref = state.recording.clone();
@@ -260,10 +246,6 @@ pub(crate) async fn spawn_orchestrator(
         // app_handle — для emit'а transcript:chunk_done event.
         state.app_data_dir.clone(),
         app.clone(),
-        // [M13 follow-up] Sortformer на mic-дорожке per-chunk.
-        mic_diarization,
-        // [P1.2] Labs «Force N speakers» override; None = auto.
-        mic_diarization_num_speakers,
     );
 
     let handle = tauri::async_runtime::spawn(async move {
@@ -336,8 +318,6 @@ fn make_enqueue_fn(
     lang: String,
     app_data_dir: std::path::PathBuf,
     app_handle: AppHandle,
-    mic_diarization: bool,
-    mic_diarization_num_speakers: Option<i32>,
 ) -> impl Fn(u32, u64, u64, Option<String>) -> chunk_orchestrator::EnqueueFut + Send + Sync + 'static
 {
     move |chunk_idx, start_ms, end_ms, prev_prompt| {
@@ -349,8 +329,6 @@ fn make_enqueue_fn(
         let lang = lang.clone();
         let app_data_dir = app_data_dir.clone();
         let app_handle = app_handle.clone();
-        let mic_diarization = mic_diarization;
-        let mic_diarization_num_speakers = mic_diarization_num_speakers;
         Box::pin(async move {
             let mic_path = store.chunk_mic_path(&call_id, chunk_idx);
             let system_path = store.chunk_system_path(&call_id, chunk_idx);
@@ -376,8 +354,6 @@ fn make_enqueue_fn(
                 lang: lang.clone(),
                 app_data_dir: Some(app_data_dir.clone()),
                 app_handle: Some(app_handle.clone()),
-                mic_diarization,
-                mic_diarization_num_speakers,
             };
             let out = chunk_runner::run_chunk(
                 &pool,

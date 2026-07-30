@@ -29,44 +29,6 @@ const SETTING_AUTO_BIND_THRESHOLD: &str = "auto_bind_threshold";
 /// generation на legacy v1 markdown-only prompt (минимальный JSON, без
 /// decisions/open_questions/evidence). Emergency-disable.
 const SETTING_SUMMARY_V2_ENABLED: &str = "summary_v2_enabled";
-/// [M14 T-16 P2] Speculative decoding opt-in. Default OFF. Активируется
-/// только когда preset=Quality + draft model (0.5B) на диске.
-const SETTING_SUMMARY_SPECULATIVE_DECODING: &str = "summary_speculative_decoding";
-
-/// [P1.2 / TD-36] Labs-override «сколько голосов на дорожке». Ключ читали два
-/// места — обвязка чанков и локальный маршрут, — каждое со своим разбором и
-/// своим клэмпом: один брал `MAX_LOCAL_SPEAKERS` (=3), другой хардкодил
-/// `1..=4`. То есть настройка «4 голоса» молча работала в одном пути и
-/// игнорировалась в другом.
-pub const SETTING_MIC_DIARIZATION_NUM_SPEAKERS: &str = "mic_diarization_num_speakers";
-/// [P-fix7] Диаризация микрофонной дорожки. Default OFF: mic — микрофон
-/// владельца (M2.4), делить его на голоса нужно редко.
-pub const SETTING_MIC_DIARIZATION: &str = "mic_diarization_enabled";
-
-/// [TD-36] Единственный разбор `mic_diarization_num_speakers`.
-///
-/// Верхняя граница — `MAX_LOCAL_SPEAKERS` и только он: диаризатор всё равно
-/// схлопывает индексы сверх этого числа, так что принять «4» значило бы
-/// пообещать пользователю то, чего движок не делает. Мусор и ноль → `None`
-/// (авто-режим), а не ошибка: это Labs-тумблер, а не контракт.
-pub async fn read_num_speakers_override(pool: &SqlitePool) -> Result<Option<i32>, AppError> {
-    const MAX: i32 = crate::local_engine::diarization::MAX_LOCAL_SPEAKERS as i32;
-    Ok(db::get_setting(pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS)
-        .await?
-        .as_deref()
-        .and_then(|s| s.trim().parse::<i32>().ok())
-        .filter(|n| (1..=MAX).contains(n)))
-}
-
-/// [P-fix7] Включена ли диаризация микрофонной дорожки. Только явные `1`/`true`.
-pub async fn mic_diarization_enabled(pool: &SqlitePool) -> Result<bool, AppError> {
-    Ok(matches!(
-        db::get_setting(pool, SETTING_MIC_DIARIZATION)
-            .await?
-            .as_deref(),
-        Some("1") | Some("true")
-    ))
-}
 
 /// [V7] Допустимый диапазон auto-bind threshold (UI ограничивает 90/95/98).
 /// При мусорных значениях из БД clamp'имся внутрь — защита от ручных правок.
@@ -90,10 +52,6 @@ pub struct PipelineSettings {
     /// [M14 T-14] Summary v2 feature flag. true = use v2 prompt (T-02 path).
     /// false = legacy v1 markdown-only prompt (emergency disable). Default true.
     pub summary_v2_enabled: bool,
-    /// [M14 T-16 P2] Opt-in speculative decoding с 0.5B draft model для
-    /// 7B Quality preset. Default false. Активация:
-    /// `summary_speculative_decoding=true && preset=Quality && 0.5B файл exists`.
-    pub summary_speculative_decoding: bool,
 }
 
 impl PipelineSettings {
@@ -129,16 +87,11 @@ impl PipelineSettings {
         // [M14 T-14] Default '1' = ON. OFF только при явном '0'.
         let summary_v2_enabled = read_setting(pool, SETTING_SUMMARY_V2_ENABLED, "1").await? != "0";
 
-        // [M14 T-16 P2] Default '0' = OFF (opt-in Labs flag).
-        let summary_speculative_decoding =
-            read_setting(pool, SETTING_SUMMARY_SPECULATIVE_DECODING, "0").await? == "1";
-
         Ok(Self {
             stt_lang,
             preferred_language,
             auto_bind,
             summary_v2_enabled,
-            summary_speculative_decoding,
         })
     }
 
@@ -197,26 +150,6 @@ mod tests {
             .unwrap();
         let s = PipelineSettings::load(&db.pool).await.unwrap();
         assert!(s.summary_v2_enabled, "explicit '1' keeps flag ON");
-    }
-
-    #[tokio::test]
-    async fn summary_speculative_decoding_default_off() {
-        let db = fresh_db().await;
-        let s = PipelineSettings::load(&db.pool).await.unwrap();
-        assert!(
-            !s.summary_speculative_decoding,
-            "speculative decoding OFF by default (T-16 opt-in Labs)"
-        );
-    }
-
-    #[tokio::test]
-    async fn summary_speculative_decoding_explicit_on() {
-        let db = fresh_db().await;
-        db::set_setting(&db.pool, SETTING_SUMMARY_SPECULATIVE_DECODING, "1")
-            .await
-            .unwrap();
-        let s = PipelineSettings::load(&db.pool).await.unwrap();
-        assert!(s.summary_speculative_decoding, "explicit '1' enables flag");
     }
 
     #[tokio::test]
@@ -320,67 +253,6 @@ mod tests {
             preferred_language: lang.into(),
             auto_bind: None,
             summary_v2_enabled: true,
-            summary_speculative_decoding: false,
-        }
-    }
-
-    // ============================================================
-    // [TD-36] Один разбор «сколько голосов» на оба пути записи
-    // ============================================================
-
-    async fn set(pool: &sqlx::SqlitePool, key: &str, val: &str) {
-        db::set_setting(pool, key, val).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn num_speakers_override_accepts_only_what_diarizer_can_do() {
-        let db = fresh_db().await;
-        // Верхняя граница — MAX_LOCAL_SPEAKERS (=3). Раньше локальный маршрут
-        // хардкодил 1..=4: настройка «4 голоса» работала в одном пути записи и
-        // молча игнорировалась в другом.
-        assert_eq!(read_num_speakers_override(&db.pool).await.unwrap(), None);
-
-        set(&db.pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS, "3").await;
-        assert_eq!(read_num_speakers_override(&db.pool).await.unwrap(), Some(3));
-
-        set(&db.pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS, "4").await;
-        assert_eq!(
-            read_num_speakers_override(&db.pool).await.unwrap(),
-            None,
-            "сверх возможностей диаризатора — авто, а не обещание"
-        );
-    }
-
-    #[tokio::test]
-    async fn num_speakers_override_treats_garbage_as_auto() {
-        let db = fresh_db().await;
-        for bad in ["0", "-1", "две", "", "  "] {
-            set(&db.pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS, bad).await;
-            assert_eq!(
-                read_num_speakers_override(&db.pool).await.unwrap(),
-                None,
-                "мусор {bad:?} — это авто-режим, а не ошибка: Labs-тумблер, не контракт"
-            );
-        }
-        // Пробелы вокруг числа настройка переживает.
-        set(&db.pool, SETTING_MIC_DIARIZATION_NUM_SPEAKERS, " 2 ").await;
-        assert_eq!(read_num_speakers_override(&db.pool).await.unwrap(), Some(2));
-    }
-
-    #[tokio::test]
-    async fn mic_diarization_is_off_unless_explicitly_on() {
-        let db = fresh_db().await;
-        assert!(!mic_diarization_enabled(&db.pool).await.unwrap());
-        for on in ["1", "true"] {
-            set(&db.pool, SETTING_MIC_DIARIZATION, on).await;
-            assert!(mic_diarization_enabled(&db.pool).await.unwrap());
-        }
-        for off in ["0", "false", "yes", ""] {
-            set(&db.pool, SETTING_MIC_DIARIZATION, off).await;
-            assert!(
-                !mic_diarization_enabled(&db.pool).await.unwrap(),
-                "{off:?} не должно включать диаризацию микрофона"
-            );
         }
     }
 }

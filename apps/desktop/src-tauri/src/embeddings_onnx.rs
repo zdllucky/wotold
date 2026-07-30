@@ -31,7 +31,7 @@
 //! # Runtime download (B3.7c)
 //!
 //! Модель НЕ bundled — runtime download через https + SHA256 check на первой
-//! записи. Кэш в `$APP_DATA/models/embedder.onnx`. UI: «Скачиваем модель
+//! записи. Кэш в каталоге моделей (`voice-embedder`). UI: «Скачиваем модель
 //! распознавания голоса (25MB)...» splash.
 
 use std::path::Path;

@@ -92,7 +92,7 @@ process.stdin.on('end', () => {
     findings.push(
       `[design-gate] Legacy токены: ${[...new Set(legacyMatches)].slice(0, 5).join(', ')}\n` +
         `[design-gate] → канон Wotold v2 (uikit): --bg, --text, --accent, --danger, --border, --text-3 и т.д.\n` +
-        `[design-gate] Atelier-имена (--ink/--line/--signal/...) удалены в B18.6 — мигрируй на uikit-токены.\n` +
+        `[design-gate] Имена прошлого поколения (--ink/--line/--signal/...) удалены в B18.6 — мигрируй на uikit-токены.\n` +
         `[design-gate] см. docs/design/wotold-v2/ + styles/tokens.css.`,
     );
   }

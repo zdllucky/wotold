@@ -1,4 +1,4 @@
-// [B17] Atelier v2 — .field + .field-label + .input/.input--box per wotold.css.
+// [B17] .field + .field-label + .input/.input--box.
 // Boxed-вариант (.input--box) — для multi-row settings форм; bare (.input)
 // — для одиночных editorial-инпутов (search / hero).
 

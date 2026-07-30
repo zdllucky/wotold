@@ -9,7 +9,7 @@ import { settingDomId } from '../pages/settingsIndex';
 
 interface SettingRowProps {
   label: ReactNode;
-  /** [B32.4] Якорь из `SETTINGS_ENTRIES` — по нему палитра ⌘K прокручивает к
+  /** [B34.4] Якорь из `SETTINGS_ENTRIES` — по нему палитра ⌘K прокручивает к
    *  строке и подсвечивает её. Без него строка просто не ищется по имени. */
   settingId?: string;
   hint?: ReactNode;

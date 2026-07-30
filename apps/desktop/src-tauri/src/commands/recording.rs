@@ -203,7 +203,7 @@ pub async fn stop_recording(
     stop_recording_inner(&app, &state, None).await
 }
 
-/// [T5/R14] Общее тело стопа для ручной команды и авто-стопа по тишине.
+/// [T5/R15] Общее тело стопа для ручной команды и авто-стопа по тишине.
 ///
 /// `trim_at_ms = None` — ручной стоп: поведение прежнее, аудио не трогаем
 /// (решение владельца — резать только авто-остановленное).
@@ -513,8 +513,6 @@ async fn process_final_chunk(
         lang: providers.lang.clone(),
         app_data_dir: Some(app_data_dir.to_path_buf()),
         app_handle: Some(app.clone()),
-        mic_diarization: providers.mic_diarization,
-        mic_diarization_num_speakers: providers.mic_diarization_num_speakers,
     };
     let out = chunk_runner::run_chunk(db, providers.mic.as_ref(), providers.system.as_ref(), input)
         .await?;

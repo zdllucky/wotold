@@ -110,8 +110,6 @@ pub(crate) async fn spawn_recover_chunked(
                     lang: providers.lang.clone(),
                     app_data_dir: Some(app_data_dir.clone()),
                     app_handle: Some(app_bg.clone()),
-                    mic_diarization: providers.mic_diarization,
-                    mic_diarization_num_speakers: providers.mic_diarization_num_speakers,
                 };
                 chunk_runner::run_chunk(
                     &db_bg,

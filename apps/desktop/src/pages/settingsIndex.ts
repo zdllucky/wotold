@@ -1,4 +1,4 @@
-// [B32.4] Реестр разделов и строк настроек — общий для страницы и палитры ⌘K.
+// [B34.4] Реестр разделов и строк настроек — общий для страницы и палитры ⌘K.
 //
 // До этого `SectionId` и `SECTION_ICONS` были приватными внутри SettingsPage, и
 // палитра умела только «открыть Настройки» целиком. Чтобы искать «где включить
@@ -79,9 +79,7 @@ export const SETTINGS_ENTRIES: SettingsEntry[] = [
   { id: 'theme', section: 'appearance', labelKey: 'settings.fieldTheme' },
   { id: 'ui-language', section: 'appearance', labelKey: 'settings.fieldLanguage' },
 
-  { id: 'engine-preset', section: 'processing', labelKey: 'localEngine.presetLabel' },
   { id: 'keep-resident', section: 'processing', labelKey: 'localEngine.keepResidentLabel' },
-  { id: 'semantic-search', section: 'processing', labelKey: 'localEngine.semanticLabel' },
 
   { id: 'perm-mic', section: 'permissions', labelKey: 'permissions.rowMic' },
   { id: 'perm-screen', section: 'permissions', labelKey: 'permissions.rowScreen' },
@@ -98,11 +96,8 @@ export const SETTINGS_ENTRIES: SettingsEntry[] = [
 
   { id: 'auto-bind', section: 'speakers', labelKey: 'settings.speakersAutoBindLabel' },
   { id: 'auto-bind-threshold', section: 'speakers', labelKey: 'settings.autoBindThresholdLabel' },
-  { id: 'mic-diarization', section: 'speakers', labelKey: 'settings.speakersMicDiarizationLabel' },
 
   { id: 'summary-v2', section: 'labs', labelKey: 'settings.summaryV2Label' },
-  { id: 'speculative-decoding', section: 'labs', labelKey: 'settings.speculativeDecodingLabel' },
-  { id: 'force-num-speakers', section: 'labs', labelKey: 'settings.forceNumSpeakersLabel' },
 
   { id: 'wipe-all-data', section: 'privacy', labelKey: 'settings.wipeBtn' },
 

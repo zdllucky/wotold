@@ -1,11 +1,12 @@
-// [M14 T-14 + T-16 P2] LabsSection vitest — load defaults, toggle persist for
-// summary_v2 (default ON) и speculative decoding (default OFF).
+// [M14 T-14] LabsSection vitest — дефолт и запись тумблера summary_v2.
 //
-// [B18.5b] Wotold v2: checkboxes → role=switch buttons (aria-checked),
-// native <select> → custom Select (combobox trigger + listbox options).
+// Тумблеры ускорения генерации и «число собеседников» удалены вместе с их
+// настройками: черновая модель обязательна, а число кластеров определяет
+// диаризатор — прежний потолок в три спикера снят.
+//
+// [B18.5b] Wotold v2: checkbox → role=switch button (aria-checked).
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -30,22 +31,22 @@ describe('LabsSection', () => {
   });
   afterEach(() => cleanup());
 
-  test('renders summary v2 ON by default + speculative OFF by default', async () => {
+  test('в разделе остался ровно один тумблер', async () => {
     mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'get_setting') return null; // missing → defaults apply
+      if (cmd === 'get_setting') return null; // нет значения → дефолты
       return null;
     });
     render(<LabsSection />);
     await flush();
     const switches = screen.getAllByRole('switch');
-    expect(switches).toHaveLength(2);
-    const summaryV2 = switches[0]!;
-    const speculative = switches[1]!;
-    await waitFor(() => expect(summaryV2).toHaveAttribute('aria-checked', 'true'));
-    expect(speculative).toHaveAttribute('aria-checked', 'false');
+    expect(switches).toHaveLength(1);
+    await waitFor(() => expect(switches[0]!).toHaveAttribute('aria-checked', 'true'));
+    // Селектора «сколько собеседников» больше нет — число кластеров
+    // определяет диаризатор.
+    expect(screen.queryByRole('combobox')).toBeNull();
   });
 
-  test('renders summary v2 OFF when setting is "0"', async () => {
+  test('summary v2 выключен, когда в настройке "0"', async () => {
     mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
       if (cmd === 'get_setting') {
         const a = args as { key: string };
@@ -60,17 +61,11 @@ describe('LabsSection', () => {
     await waitFor(() => expect(summaryV2).toHaveAttribute('aria-checked', 'false'));
   });
 
-  test('summary v2 toggle click persists via set_setting', async () => {
+  test('клик по тумблеру пишет настройку', async () => {
     mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
       if (cmd === 'get_setting') {
         const a = args as { key: string };
         if (a.key === 'summary_v2_enabled') return '1';
-        return null;
-      }
-      if (cmd === 'set_setting') {
-        const a = args as { key: string; value: string };
-        expect(a.key).toBe('summary_v2_enabled');
-        expect(a.value).toBe('0');
         return null;
       }
       return null;
@@ -85,84 +80,6 @@ describe('LabsSection', () => {
     expect(mockInvoke).toHaveBeenCalledWith('set_setting', {
       key: 'summary_v2_enabled',
       value: '0',
-    });
-  });
-
-  test('force-N-speakers defaults to auto when no setting', async () => {
-    mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'get_setting') return null;
-      return null;
-    });
-    render(<LabsSection />);
-    await flush();
-    // Trigger shows the selected option's label.
-    await waitFor(() =>
-      expect(screen.getByRole('combobox')).toHaveTextContent('Авто (рекомендовано)'),
-    );
-  });
-
-  test('force-N-speakers reads "3" из DB и render"ит', async () => {
-    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
-      if (cmd === 'get_setting') {
-        const a = args as { key: string };
-        if (a.key === 'mic_diarization_num_speakers') return '3';
-        return null;
-      }
-      return null;
-    });
-    render(<LabsSection />);
-    await flush();
-    await waitFor(() =>
-      expect(screen.getByRole('combobox')).toHaveTextContent('3 собеседника'),
-    );
-  });
-
-  test('force-N-speakers change persists via set_setting', async () => {
-    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
-      if (cmd === 'get_setting') return null;
-      if (cmd === 'set_setting') {
-        const a = args as { key: string; value: string };
-        if (a.key === 'mic_diarization_num_speakers') {
-          expect(a.value).toBe('2');
-        }
-        return null;
-      }
-      return null;
-    });
-    render(<LabsSection />);
-    await flush();
-    // Open the custom Select, pick the "2 собеседника" option (index 1).
-    await userEvent.click(screen.getByRole('combobox'));
-    const opts = screen.getAllByRole('option');
-    fireEvent.mouseDown(opts[1]!);
-    expect(mockInvoke).toHaveBeenCalledWith('set_setting', {
-      key: 'mic_diarization_num_speakers',
-      value: '2',
-    });
-  });
-
-  test('speculative decoding toggle persists "1" when enabled', async () => {
-    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
-      if (cmd === 'get_setting') return null;
-      if (cmd === 'set_setting') {
-        const a = args as { key: string; value: string };
-        if (a.key === 'summary_speculative_decoding') {
-          expect(a.value).toBe('1');
-        }
-        return null;
-      }
-      return null;
-    });
-    render(<LabsSection />);
-    await flush();
-    const speculative = screen.getAllByRole('switch')[1]!;
-    await waitFor(() => expect(speculative).toHaveAttribute('aria-checked', 'false'));
-    await act(async () => {
-      speculative.click();
-    });
-    expect(mockInvoke).toHaveBeenCalledWith('set_setting', {
-      key: 'summary_speculative_decoding',
-      value: '1',
     });
   });
 });

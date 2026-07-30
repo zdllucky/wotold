@@ -1,6 +1,6 @@
 //! [M12.4] Model Catalog & Manager — runtime download + SHA256 verify + preset.
 //!
-//! Расширение паттерна B3.7c ([crate::voice_model]) на 6 моделей: Whisper
+//! Единственная качалка моделей приложения. Изначально — 6 моделей: Whisper
 //! small/medium/large-v3 для STT + Qwen 2.5 1.5B / 3B / 7B GGUF для LLM.
 //! См. PRD v0.2 §M12.4 + §11 O1.
 //!

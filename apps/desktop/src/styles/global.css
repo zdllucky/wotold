@@ -317,7 +317,7 @@ button:disabled,
 
 /* Responsive — Tauri minimum window 760×560. Narrow desktop / split-pane
  * — сужаем main padding и сворачиваем 4-col grids. */
-/* [B32.3] Медиазапросы `.app-main` переехали в wk.css: базовое правило жило в
+/* [B34.3] Медиазапросы `.app-main` переехали в wk.css: базовое правило жило в
  * components.css, а тот импортируется позже global.css — при равной
  * специфичности база перебивала эти переопределения, и они были мертвы. */
 @media (max-width: 640px) {

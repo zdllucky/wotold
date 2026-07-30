@@ -23,6 +23,8 @@ import { Sidebar, MiniRail, type RailView } from './components/AppSidebar';
 import { ToastProvider, useToast, WindowControls } from './ui';
 import { CommandPalette } from './components/CommandPalette';
 import { UpdateBanner } from './components/UpdateBanner';
+import { ReadinessBanner } from './components/readiness/ReadinessBanner';
+import { ReadinessProvider } from './components/readiness/ReadinessProvider';
 import { useFocusTrap } from './hooks/useFocusTrap';
 import { useQueueState } from './hooks/useQueueState';
 import { I18nProvider, useI18n } from './i18n';
@@ -92,7 +94,7 @@ function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [railW, setRailW] = useState<number>(readSavedRailW);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  // [B32.4] Куда вести из палитры внутри Настроек. Роутера в приложении нет —
+  // [B34.4] Куда вести из палитры внутри Настроек. Роутера в приложении нет —
   // вид держит useState, поэтому цель едет тем же способом, отдельным состоянием.
   const [settingsTarget, setSettingsTarget] = useState<SettingsTarget | null>(null);
   // [window] Раскрыт ли кастомный светофор (hover верхнего-левого угла).
@@ -682,6 +684,11 @@ function AppShell() {
         />
       )}
 
+      {/* Баннер «не хватает софта» — вне <main>, потому что состояние
+          приложения, а не содержимое экрана: он обязан быть виден с любой
+          страницы, включая открытый звонок. */}
+      <ReadinessBanner onOpenSettings={() => onNav('settings')} />
+
       <Coachmarks />
     </div>
   );
@@ -698,7 +705,11 @@ export function App() {
             floating widget window share one source of truth. */}
         <RecordingProvider>
           <ToastProvider>
-            <AppShell />
+            {/* Готовность движка — одно состояние на приложение: баннер,
+                страница звонка и монитор очередей читают один снимок. */}
+            <ReadinessProvider>
+              <AppShell />
+            </ReadinessProvider>
           </ToastProvider>
         </RecordingProvider>
       </ThemeProvider>

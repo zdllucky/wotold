@@ -83,7 +83,7 @@ a { color: inherit; text-decoration: none; }
 .rw-grip:active { cursor: grabbing; }
 .main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; }
 
-/* [B32.3] Колонка контента справа от рейла. Жила в components.css — там она
+/* [B34.3] Колонка контента справа от рейла. Жила в components.css — там она
    перебивала собственные медиазапросы из global.css (равная специфичность,
    более поздний импорт), поэтому переехала сюда, к остальной раскладке. */
 .app-main {
@@ -109,7 +109,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--bg);
 }
 
-/* [B32.3] Вылет страницы за паддинг `.app-main`: шапка идёт от края до края,
+/* [B34.3] Вылет страницы за паддинг `.app-main`: шапка идёт от края до края,
    тело занимает вьюпорт целиком. Заменяет шесть инлайновых копий
    `margin: -34px -44px; height: 100vh`, которые расходились с паддингом на
    узком окне. */
@@ -460,7 +460,7 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .setting-row[data-align="top"] { align-items: flex-start; }
 .setting-row[data-last="true"] { border-bottom: none; }
 .setting-row[data-disabled="true"] { opacity: 0.55; }
-/* [B32.4] Подсветка строки после перехода из палитры ⌘K: пришли по поиску —
+/* [B34.4] Подсветка строки после перехода из палитры ⌘K: пришли по поиску —
    надо понять, куда именно попали. Отрицательные поля возвращают строке ту же
    геометрию, чтобы соседи не дёргались, а подсветка снимается через ~1.6с. */
 .setting-row[data-flash="true"] {

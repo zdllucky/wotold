@@ -92,3 +92,48 @@ export interface ModelProgressEvent {
 
 /** Pipeline-step расширение для local-engine. См. PRD §M12.6.3. */
 export type LocalPipelineStep = 'upload' | 'stt' | 'speakers' | 'merge' | 'recap';
+
+/** Почему модуль не годен: файла нет / битый / не прошёл проверку SHA256. */
+export type MissingModelState = 'absent' | 'corrupted' | 'tampered';
+
+/**
+ * Недостающий обязательный модуль.
+ *
+ * Без человекочитаемого названия намеренно: подписи живут в
+ * `utils/modelLabel.ts`, чтобы бренды моделей не протекали в интерфейс.
+ */
+export interface MissingModel {
+  id: string;
+  bytes_total: number;
+  state: MissingModelState;
+}
+
+/**
+ * Снимок готовности локального движка — payload события `readiness:changed`
+ * и ответ команды `local_engine_readiness`.
+ *
+ * Список обязательных модулей один и строгий: не хватает любого — обработка
+ * стоит целиком, звонки паркуются и поднимаются сами после докачки.
+ * `preset: null` — размер движка ещё не выбран, качать нечего до выбора.
+ */
+export interface LocalEngineReadiness {
+  ready: boolean;
+  preset: LocalEnginePreset | null;
+  missing: MissingModel[];
+  missing_bytes_total: number;
+}
+
+/**
+ * Размеры одного варианта движка — источник подписей «Скачать (~N ГБ)».
+ *
+ * Считается по каталогу моделей на бэкенде. UI своих констант не держит: в
+ * онбординге жили захардкоженные 1.2 / 2.4 / 5.5 ГБ, занижавшие все три
+ * размера (базовые модули в них не входили вовсе).
+ */
+export interface PresetSizeSpec extends PresetSpec {
+  /** Модели самого размера (whisper + LLM). */
+  preset_bytes: number;
+  /** Обязательные базовые модули — одни и те же для всех размеров. */
+  base_bytes: number;
+  total_bytes: number;
+}

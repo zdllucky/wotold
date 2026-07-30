@@ -49,7 +49,7 @@ pub struct AppState {
     /// `take()` — sender дропается, orchestrator корректно exit'ит на
     /// `stop_rx` arm.
     pub orchestrator_stop_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
-    /// [T2/R14] Ручки наблюдателя тишины активной записи. `None` — запись не
+    /// [T2/R15] Ручки наблюдателя тишины активной записи. `None` — запись не
     /// идёт либо обе настройки тишины выключены. В отличие от оркестратора
     /// наблюдатель работает и при выключенном chunked-режиме: тишину надо
     /// ловить всегда.
@@ -71,6 +71,12 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         .app_data_dir()
         .map_err(|e| AppError::Init(format!("app_data_dir: {e}")))?;
     tokio::fs::create_dir_all(&app_data_dir).await?;
+
+    // Голосовой эмбеддер переехал в каталог моделей — забираем файл со старого
+    // пути до первого обращения к нему (иначе апгрейд выглядит как «модуль
+    // пропал» и требует повторные 26 MB). Дешёвая проверка двух путей.
+    #[cfg(target_os = "macos")]
+    crate::local_engine::model_migrate::migrate_legacy_voice_embedder(&app_data_dir);
 
     let pool = db::init(&app_data_dir).await?;
     let owner = db::ensure_owner_contact(&pool).await?;

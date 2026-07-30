@@ -50,7 +50,7 @@ export function CallTypeBadge({ callType, confidence }: CallTypeBadgeProps) {
   );
 }
 
-/// Color mapping (Atelier v2 dot variants):
+/// Color mapping (варианты .dot):
 /// - Sales (discovery, demo) → accent (бизнес-критично)
 /// - Internal team (standup, product_sync, status_update) → muted
 /// - Research (customer_interview) → accent-soft

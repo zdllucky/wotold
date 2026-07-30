@@ -1,5 +1,9 @@
-// Tests for useTheme.tsx — ThemeProvider context, theme/accent persistence,
+// Tests for useTheme.tsx — ThemeProvider context, theme persistence,
 // applyToRoot behavior, and useTheme hook.
+//
+// Выбор акцента удалён вместе с наследием прошлого поколения: пикер сняли
+// в B18.5, а
+// атрибут data-accent писался в никуда — в токенах нет ни одного блока под него.
 
 import { cleanup, render, renderHook, screen, act } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -9,7 +13,7 @@ vi.mock('../api/settings', () => ({
   getSetting: vi.fn(),
   setSetting: vi.fn(),
   // [B21] useTheme читает реестр-ключи вместо локальных литералов.
-  SETTINGS_KEYS: { UI_THEME: 'ui.theme', UI_ACCENT: 'ui.accent' },
+  SETTINGS_KEYS: { UI_THEME: 'ui.theme' },
 }));
 
 import { getSetting, setSetting } from '../api/settings';
@@ -23,16 +27,14 @@ afterEach(() => {
   vi.clearAllMocks();
   // Reset html attributes
   document.documentElement.removeAttribute('data-theme');
-  document.documentElement.removeAttribute('data-accent');
 });
 
 // ─── ThemeProvider boot ──────────────────────────────────────────────────────
 
 describe('ThemeProvider — boot', () => {
-  test('loads theme and accent from settings on mount', async () => {
+  test('loads theme from settings on mount', async () => {
     mockGetSetting.mockImplementation((key: string) => {
       if (key === 'ui.theme') return Promise.resolve('dark');
-      if (key === 'ui.accent') return Promise.resolve('persian');
       return Promise.resolve(null);
     });
     mockSetSetting.mockResolvedValue(undefined);
@@ -52,7 +54,6 @@ describe('ThemeProvider — boot', () => {
     });
 
     expect(result.theme).toBe('dark');
-    expect(result.accent).toBe('persian');
   });
 
   test('falls back to defaults when settings return null', async () => {
@@ -74,8 +75,8 @@ describe('ThemeProvider — boot', () => {
     });
 
     expect(result.theme).toBe('system');
-    // [B18.0] Wotold v2 = моно-графит: дефолтный акцент 'ink' (был 'bordeaux').
-    expect(result.accent).toBe('ink');
+    // Атрибута акцента на корне быть не должно — механика удалена.
+    expect(document.documentElement.getAttribute('data-accent')).toBeNull();
   });
 
   test('[B18.0] pins data-density="cozy" on root', async () => {
@@ -108,10 +109,12 @@ describe('ThemeProvider — boot', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
-  test('applies data-accent attribute to document root on boot', async () => {
+  test('сохранённый акцент больше ни на что не влияет', async () => {
+    // Регрессия против возврата мёртвой механики: значение в базе может
+    // остаться у старых пользователей, но на корень оно попадать не должно.
     mockGetSetting.mockImplementation((key: string) => {
       if (key === 'ui.theme') return Promise.resolve('light');
-      if (key === 'ui.accent') return Promise.resolve('ink');
+      if (key === 'ui.accent') return Promise.resolve('bordeaux');
       return Promise.resolve(null);
     });
     mockSetSetting.mockResolvedValue(undefined);
@@ -120,7 +123,8 @@ describe('ThemeProvider — boot', () => {
       render(<ThemeProvider><div /></ThemeProvider>);
     });
 
-    expect(document.documentElement.getAttribute('data-accent')).toBe('ink');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(document.documentElement.getAttribute('data-accent')).toBeNull();
   });
 
   test('recovers gracefully when getSetting rejects', async () => {
@@ -189,37 +193,6 @@ describe('useTheme — setTheme', () => {
     });
 
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
-  });
-});
-
-// ─── setAccent ───────────────────────────────────────────────────────────────
-
-describe('useTheme — setAccent', () => {
-  test('setAccent updates accent and persists', async () => {
-    mockGetSetting.mockResolvedValue(null);
-    mockSetSetting.mockResolvedValue(undefined);
-
-    let result!: ReturnType<typeof useTheme>;
-    function Inner() {
-      result = useTheme();
-      return null;
-    }
-
-    await act(async () => {
-      render(
-        <ThemeProvider>
-          <Inner />
-        </ThemeProvider>,
-      );
-    });
-
-    await act(async () => {
-      result.setAccent('ink');
-    });
-
-    expect(result.accent).toBe('ink');
-    expect(document.documentElement.getAttribute('data-accent')).toBe('ink');
-    expect(mockSetSetting).toHaveBeenCalledWith('ui.accent', 'ink');
   });
 });
 

@@ -52,17 +52,6 @@ export function getAssistantFragmentText(
   return invoke<string>('assistant_get_fragment_text', { messageId, fragmentIndex });
 }
 
-/** [B25] Тумблер «Семантический поиск» (default on). */
-export function getAssistantSemanticSearch(): Promise<boolean> {
-  return invoke<boolean>('assistant_get_semantic_search');
-}
-
-/** [B25] Переключить семантический поиск. Включение фоново докачивает
- * модель эмбеддера (прогресс — model:progress) и запускает backfill. */
-export function setAssistantSemanticSearch(enabled: boolean): Promise<void> {
-  return invoke<void>('assistant_set_semantic_search', { enabled });
-}
-
 /** [B27.6] Нативный share-пикер macOS у прямоугольника кнопки (CSS px). */
 export function shareText(
   text: string,

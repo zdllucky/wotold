@@ -99,6 +99,25 @@ pub async fn is_known_tampered(pool: &SqlitePool, id: &str) -> Result<bool, AppE
     Ok(db::get_setting(pool, &verified_key(id)).await?.as_deref() == Some("FAILED"))
 }
 
+/// Снять метку провала после успешной перекачки файла.
+///
+/// Без этого модель, однажды забракованная проверкой, оставалась
+/// «подменённой» до следующего старта приложения: файл уже заменён, а гейт
+/// готовности продолжал его отвергать, и баннер «не хватает софта» не гас.
+/// Отпечаток берётся у нового файла — если он не читается, метку просто
+/// удаляем, и проверка пересчитает её на следующем старте.
+pub async fn mark_reverified(pool: &SqlitePool, app_data_dir: &Path, id: &str) {
+    let key = verified_key(id);
+    let value = file_fingerprint(&model_path(app_data_dir, id)).await;
+    let write = match value {
+        Some(fp) => db::set_setting(pool, &key, &fp).await,
+        None => db::set_setting(pool, &key, "").await,
+    };
+    if let Err(e) = write {
+        log::warn!("model_integrity: отметку {id} не обновили после перекачки: {e}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,6 +153,35 @@ mod tests {
         .await
         .unwrap();
         assert!(!is_known_tampered(&db.pool, "whisper-medium").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn reverify_clears_the_failed_marker_after_a_redownload() {
+        // Регрессия: успешная перекачка не снимала метку провала, и гейт
+        // готовности отвергал уже заменённый файл до следующего старта.
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        db::set_setting(
+            &db.pool,
+            "local_engine.model_verified.pyannote-segmentation",
+            "FAILED",
+        )
+        .await
+        .unwrap();
+        assert!(is_known_tampered(&db.pool, "pyannote-segmentation")
+            .await
+            .unwrap());
+
+        let path = model_path(tmp.path(), "pyannote-segmentation");
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&path, b"fresh").await.unwrap();
+        mark_reverified(&db.pool, tmp.path(), "pyannote-segmentation").await;
+
+        assert!(!is_known_tampered(&db.pool, "pyannote-segmentation")
+            .await
+            .unwrap());
     }
 
     #[tokio::test]

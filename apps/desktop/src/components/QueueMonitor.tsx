@@ -12,6 +12,11 @@ import { useI18n } from '../i18n';
 import type { Call } from '../api/recording';
 import type { QueueResourceId, QueueResourceState, QueueState } from '../api/queue';
 import { Dropdown, IconBtn } from '../ui';
+import {
+  isMissingModules,
+  needsPresetChoice,
+  useReadiness,
+} from './readiness/ReadinessProvider';
 
 interface QueueMonitorProps {
   queue: QueueState | null;
@@ -40,6 +45,7 @@ function dedupWaiting(
 
 export function QueueMonitor({ queue, calls, iconSize = 16 }: QueueMonitorProps) {
   const { t } = useI18n();
+  const readiness = useReadiness();
 
   const titleFor = (callId: string | null): string => {
     if (callId == null) return t('queue.systemTask');
@@ -63,6 +69,7 @@ export function QueueMonitor({ queue, calls, iconSize = 16 }: QueueMonitorProps)
       queue?.resources.find((r) => r.id === id) ?? { id, busy: null, waiting: [] },
   );
   const anyActive = resources.some((r) => r.busy != null || r.waiting.length > 0);
+  const notReady = isMissingModules(readiness) || needsPresetChoice(readiness);
 
   return (
     <Dropdown
@@ -95,6 +102,18 @@ export function QueueMonitor({ queue, calls, iconSize = 16 }: QueueMonitorProps)
       )}
     >
       <div role="list" aria-label={t('queue.monitor')} style={{ padding: '2px 0' }}>
+        {/* Очередь стоит целиком, пока не хватает обязательных модулей. Без
+            этой строки монитор показывал бы «СВОБОДЕН» — правду про ресурсы и
+            ложь про то, обработается ли звонок. */}
+        {notReady && (
+          <p
+            className="u-faint"
+            role="status"
+            style={{ padding: '4px 10px 8px', fontSize: 11.5, margin: 0 }}
+          >
+            {t('readiness.queueWaiting')}
+          </p>
+        )}
         {resources.map((r) => {
           const waiting = dedupWaiting(r.waiting);
           return (

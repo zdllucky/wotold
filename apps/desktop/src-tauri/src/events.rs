@@ -50,15 +50,13 @@ pub const RECORDING_DURATION: &str = "recording:duration";
 /// `RecordingProvider` мирror гарантированно in sync. Payload пустой —
 /// слушатели делают `getRecordingState()` для свежего snapshot'а.
 pub const RECORDING_STATE: &str = "recording:state";
-/// [T2/R14] В идущей записи столько-то минут тишины — предложить остановить.
+/// [T2/R15] В идущей записи столько-то минут тишины — предложить остановить.
 /// Payload — `RecordingSilencePromptEvent`. Фронт поднимает in-app баннер и
 /// нативное уведомление (строки из i18n, не из Rust).
 pub const RECORDING_SILENCE_PROMPT: &str = "recording:silence_prompt";
-/// [T5/R14] Запись остановлена самим приложением по тишине, тихий хвост
+/// [T5/R15] Запись остановлена самим приложением по тишине, тихий хвост
 /// подрезан. Payload — `RecordingAutoStoppedEvent`.
 pub const RECORDING_AUTO_STOPPED: &str = "recording:auto_stopped";
-pub const VOICE_MODEL_PROGRESS: &str = "voice-model:progress";
-pub const VOICE_MODEL_DONE: &str = "voice-model:done";
 /// [Q] Снапшот состояния очередей тяжёлых ресурсов (stt/diarization/llm) —
 /// эмитится на каждый transition (enqueue/acquire/release). Payload —
 /// `resource_queue::QueueStateEvent` (generic emit — без цикла events↔pipeline).
@@ -75,6 +73,11 @@ pub const RECAP_STEP: &str = "recap:step";
 pub const RECAP_BULK_PROGRESS: &str = "recap:bulk_progress";
 /// [Bulk recap] Финал массового регена. Payload — `{ regenerated, failed, cancelled }`.
 pub const RECAP_BULK_DONE: &str = "recap:bulk_done";
+/// Снимок готовности локального движка — какие обязательные модули ещё не
+/// скачаны. Payload — `local_engine::readiness::LocalEngineReadiness`.
+/// Эмитится на старте, при смене размера движка и по завершении скачивания;
+/// баннер внизу окна живёт на этом событии.
+pub const READINESS_CHANGED: &str = "readiness:changed";
 /// [M15.7] Фазы ответа ассистента. Payload — `AssistantStatusEvent`.
 /// Фазы: `retrieving` → `generating`. Очередь LLM (queued) отдельно
 /// не эмитится — фронт выводит её из существующего `queue:state`.
@@ -159,7 +162,7 @@ pub struct RecordingDurationEvent {
     pub duration_sec: i64,
 }
 
-/// [T2/R14] Тишина в идущей записи перешагнула порог подсказки.
+/// [T2/R15] Тишина в идущей записи перешагнула порог подсказки.
 /// `auto_stop_in_ms` — сколько осталось до авто-стопа, если юзер промолчит;
 /// `None` = настройка `never`, стопа не будет.
 #[derive(Debug, Clone, Serialize)]
@@ -169,7 +172,7 @@ pub struct RecordingSilencePromptEvent {
     pub auto_stop_in_ms: Option<u64>,
 }
 
-/// [T5/R14] Запись остановлена по тишине. `trimmed_ms` — сколько тихого хвоста
+/// [T5/R15] Запись остановлена по тишине. `trimmed_ms` — сколько тихого хвоста
 /// отрезано (0 если резать было нечего).
 #[derive(Debug, Clone, Serialize)]
 pub struct RecordingAutoStoppedEvent {
@@ -321,15 +324,6 @@ impl<'a> EventBus<'a> {
         self.emit(AUDIO_ROTATED, payload);
     }
 
-    /// Generic'ом по той же причине (voice_model держит DoneEvent enum приватно).
-    pub fn voice_model_progress<T: Serialize + Clone>(&self, payload: &T) {
-        self.emit(VOICE_MODEL_PROGRESS, payload);
-    }
-
-    pub fn voice_model_done<T: Serialize + Clone>(&self, payload: &T) {
-        self.emit(VOICE_MODEL_DONE, payload);
-    }
-
     pub fn recap_bulk_progress<T: Serialize + Clone>(&self, payload: &T) {
         self.emit(RECAP_BULK_PROGRESS, payload);
     }
@@ -344,14 +338,20 @@ impl<'a> EventBus<'a> {
         self.emit(RECORDING_STATE, &());
     }
 
-    /// [T2/R14] Тишина перешагнула порог подсказки.
+    /// [T2/R15] Тишина перешагнула порог подсказки.
     pub fn recording_silence_prompt(&self, e: &RecordingSilencePromptEvent) {
         self.emit(RECORDING_SILENCE_PROMPT, e);
     }
 
-    /// [T5/R14] Запись остановлена по тишине, хвост подрезан.
+    /// [T5/R15] Запись остановлена по тишине, хвост подрезан.
     pub fn recording_auto_stopped(&self, e: &RecordingAutoStoppedEvent) {
         self.emit(RECORDING_AUTO_STOPPED, e);
+    }
+
+    /// Снимок готовности движка. Generic'ом — чтобы не заводить цикл
+    /// events ↔ local_engine.
+    pub fn readiness_changed<T: Serialize + Clone>(&self, payload: &T) {
+        self.emit(READINESS_CHANGED, payload);
     }
 }
 
@@ -436,8 +436,7 @@ mod tests {
         assert_eq!(RECORDING_SILENCE_PROMPT, "recording:silence_prompt");
         assert_eq!(RECORDING_AUTO_STOPPED, "recording:auto_stopped");
         assert_eq!(RECORDING_DURATION, "recording:duration");
-        assert_eq!(VOICE_MODEL_PROGRESS, "voice-model:progress");
-        assert_eq!(VOICE_MODEL_DONE, "voice-model:done");
         assert_eq!(ASSISTANT_STATUS, "assistant:status");
+        assert_eq!(READINESS_CHANGED, "readiness:changed");
     }
 }

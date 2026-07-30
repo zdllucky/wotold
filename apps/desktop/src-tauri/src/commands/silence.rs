@@ -1,4 +1,4 @@
-//! [T2/T3/R14] Обвязка наблюдателя тишины: настройки, спавн задачи, авто-стоп.
+//! [T2/T3/R15] Обвязка наблюдателя тишины: настройки, спавн задачи, авто-стоп.
 //!
 //! Решающее ядро и петля живут в [`crate::audio::silence_watch`] — здесь только
 //! то, что знает про БД, `AppState` и Tauri: прочитать настройки, поднять
@@ -24,7 +24,7 @@ use crate::{
 /// выключают, отсутствие ключа = ON (новый юзер получает подсказку).
 pub const SETTING_SILENCE_PROMPT: &str = "recording.silence_prompt";
 /// [T3] Порог авто-стопа в минутах: `30` | `60` | `120` | `never`.
-/// Отсутствие ключа = дефолт 30 (R14).
+/// Отсутствие ключа = дефолт 30 (R15).
 pub const SETTING_SILENCE_AUTO_STOP: &str = "recording.silence_auto_stop";
 
 /// Дефолт авто-стопа в минутах — держать в синхроне с `SETTINGS_DEFAULTS`
@@ -78,7 +78,7 @@ pub(crate) async fn load_silence_config(
     })
 }
 
-/// `None` — `never` (полный opt-out, R14). Мусор и пустая строка → дефолт.
+/// `None` — `never` (полный opt-out, R15). Мусор и пустая строка → дефолт.
 fn parse_auto_stop_min(raw: Option<&str>) -> Option<u64> {
     match raw {
         None => Some(DEFAULT_AUTO_STOP_MIN),
@@ -243,7 +243,7 @@ async fn auto_stop(app: AppHandle, trim_at_ms: u64, silent_for_ms: u64) {
     // снимка на старте записи. Иначе `never`, выставленный уже во время
     // звонка — ровно то, что делает человек, увидев подсказку о тишине, —
     // не спасал бы текущую запись: она всё равно остановилась бы по порогу,
-    // прочитанному полчаса назад. R14 обещает полный opt-out, и обещание
+    // прочитанному полчаса назад. R15 обещает полный opt-out, и обещание
     // должно работать в тот момент, когда его дали.
     match load_silence_config(&state.db).await {
         Ok(cfg) if cfg.auto_stop_after_ms.is_none() => {

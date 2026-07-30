@@ -62,28 +62,13 @@ impl LocalEnginePreset {
         }
     }
 
-    /// Оба model id'а для preset'а. Удобно для cleanup и status-aggregation
-    /// в UI («установить Balanced — скачать обе модели»). Wire-up в M12.5
-    /// Settings UI (Design Gate'нутая секция picker'а preset'ов).
-    ///
-    /// Не включает pyannote-segmentation — она shared across presets и
-    /// optional (degraded mode без неё). См. `shared_model_ids`.
-    #[allow(dead_code)]
+    /// Модели, зависящие от размера движка. Общие для всех размеров модули
+    /// живут в [`super::readiness::base_model_ids`], а полный обязательный
+    /// список собирает `readiness::required_ids` — он же единственный
+    /// источник истины для UI (раньше эта раскладка была продублирована в
+    /// настройках и онбординге и молча расходилась).
     pub fn required_model_ids(&self) -> [ModelId; 2] {
         [self.whisper_model_id(), self.llm_model_id()]
-    }
-
-    /// [M12-D5] Модели общие для всех presets — pyannote segmentation для
-    /// multi-speaker диаризации + [M15.9] пара файлов текст-эмбеддера
-    /// ассистента. Все optional: без pyannote system track single-bucket,
-    /// без эмбеддера retrieval ассистента деградирует до чистого BM25.
-    #[allow(dead_code)]
-    pub fn shared_model_ids() -> [ModelId; 3] {
-        [
-            ModelId::PYANNOTE_SEGMENTATION,
-            ModelId::E5_SMALL_QINT8,
-            ModelId::E5_TOKENIZER,
-        ]
     }
 
     /// [P5.1] Human-friendly engine label для `calls.summary_engine` field.

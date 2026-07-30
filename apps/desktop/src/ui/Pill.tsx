@@ -1,4 +1,4 @@
-// [B17] Atelier v2 — pill чуть больше badge. Тот же подход через inline style + token vars.
+// [B17] Pill чуть больше badge. Тот же подход через inline style + token vars.
 
 import type { CSSProperties, HTMLAttributes, ReactNode } from 'react';
 

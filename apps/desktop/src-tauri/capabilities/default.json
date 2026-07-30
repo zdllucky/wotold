@@ -82,7 +82,9 @@
             "-ctv",
             { "validator": "^(q8_0|q4_0|f16)$" },
             "--parallel",
-            { "validator": "^[0-9]+$" }
+            { "validator": "^[0-9]+$" },
+            "--model-draft",
+            { "validator": "^[A-Za-z0-9._/ \\-]+$" }
           ]
         },
         {

@@ -48,10 +48,6 @@ mod secrets;
 mod services;
 mod state;
 mod updater;
-// [B3.7c] Voice embedder model — runtime download + SHA256 verify. Всегда
-// компилируется (download independent от sherpa-onnx); реально использует
-// модель только voice-onnx build через embeddings_onnx::OnnxEmbedder.
-mod voice_model;
 
 pub use error::AppError;
 
@@ -181,6 +177,7 @@ pub fn run() {
             commands::list_call_speakers_batch,
             commands::confirm_call_speaker,
             commands::unbind_call_speaker,
+            commands::voice_embedder_feature_enabled,
             commands::list_voice_samples,
             commands::delete_voice_sample,
             commands::get_voice_sample_audio,
@@ -206,16 +203,10 @@ pub fn run() {
             commands::assistant_delete_chat,
             #[cfg(target_os = "macos")]
             commands::assistant_ask,
-            commands::assistant_get_semantic_search,
-            commands::assistant_set_semantic_search,
             commands::assistant_get_fragment_text,
             commands::share_text,
             commands::get_call_audio_path,
             commands::export_call_markdown,
-            commands::voice_model_status,
-            commands::voice_model_download,
-            commands::voice_model_delete,
-            commands::voice_model_info,
             commands::show_recording_widget,
             commands::hide_recording_widget,
             commands::restore_main_window,
@@ -227,12 +218,22 @@ pub fn run() {
             commands::is_call_detect_enabled,
             // [T7] Нативное уведомление со строками из i18n фронтенда.
             commands::show_notification,
-            // [T7/R14] «Продолжить» из подсказки о тишине.
+            // [T7/R15] «Продолжить» из подсказки о тишине.
             #[cfg(target_os = "macos")]
             commands::snooze_silence_watch,
             // [M12.4] Local engine model catalog + preset (macOS only — R9).
             #[cfg(target_os = "macos")]
             commands::local_engine_list_catalog,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_readiness,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_ensure_required,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_reclaimable_bytes,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_free_space,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_preset_specs,
             #[cfg(target_os = "macos")]
             commands::local_engine_model_status,
             #[cfg(target_os = "macos")]
