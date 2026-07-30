@@ -93,7 +93,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSharingService", "NSView", "NSWindow", "NSResponder", "NSGraphics", "NSApplication", "NSImage"] }
 
 [dev-dependencies]
-httpmock = "0.7"
+httpmock = "0.8"
 tempfile = "3"
 # Виртуальные часы для тестов с ожиданием (`#[tokio::test(start_paused)]`).
 # В feature-набор `full` не входит намеренно — он меняет поведение рантайма,
