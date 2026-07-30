@@ -14,7 +14,6 @@ import { humanError } from '../api/errors';
 import { type AvailableUpdate, applyUpdate, checkForUpdate } from '../api/updater';
 import { useI18n } from '../i18n';
 import { Button } from '../ui/Button';
-import { GroupLabel } from '../ui/GroupLabel';
 import { Icon } from '../ui/Icon';
 import { SettingRow } from '../ui/SettingRow';
 
@@ -81,8 +80,9 @@ export function AboutSection() {
 
   return (
     <>
-      <GroupLabel>{t('update.sectionAbout')}</GroupLabel>
-
+      {/* Шапки секции здесь нет намеренно: название раздела уже стоит в
+          хлебной крошке и в aria-label секции, а остальные разделы настроек
+          её и не имели — эта одна выбивалась. */}
       <SettingRow label={t('update.version')} hint={t('update.versionHint')}>
         <span className="mono u-faint">{version ?? '—'}</span>
       </SettingRow>

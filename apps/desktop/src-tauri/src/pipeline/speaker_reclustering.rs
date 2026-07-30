@@ -14,7 +14,7 @@
 //! - `pipeline::merge::OWNER_TAG` ("owner") никогда не сливается с другими
 //!   speakers (M3.7 hard rule — mic-дорожка = owner детерминированно).
 //! - `local_engine::diarization::SPEAKER_UNKNOWN` ("speaker:unknown") —
-//!   overflow при > `MAX_LOCAL_SPEAKERS=4`, не сливается ни с чем.
+//!   overflow сверх `MAX_LOCAL_SPEAKERS`, не сливается ни с чем.
 //! - Empty embeddings vector → точка skip'ается, identity mapping для неё.
 //! - Output global tags нумеруются детерминированно: `speaker:0`, `speaker:1`,
 //!   ... в порядке первого появления в input (stable across runs).

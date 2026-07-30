@@ -39,7 +39,7 @@ pub use calls::{
     ensure_call_speakers_present, fail_recording, fail_recording_with_reason, finish_recording,
     get_call, insert_recording, insert_speaker_suggestions, list_call_speakers, list_calls,
     list_calls_page, list_degraded_flags, list_interrupted_failed_calls, list_orphan_recording_ids,
-    list_ready_call_ids, list_speakers_for_calls, mark_call_ready, pause_call,
+    list_parked_calls, list_ready_call_ids, list_speakers_for_calls, mark_call_ready, pause_call,
     prune_call_speakers_not_in, resume_call, set_call_meta, set_call_progress,
     set_call_speaker_cluster, set_call_speaker_suggestion, set_call_title, set_recap_failed_reason,
     set_recap_failure, set_summary_metadata, sweep_stale_calls, unbind_call_speaker,

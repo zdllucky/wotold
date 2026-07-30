@@ -1,4 +1,4 @@
-// [B17 V3.7] Custom Select per Atelier v2 — заменяет native <select>.
+// [B17 V3.7] Custom Select — заменяет native <select>.
 //
 // Trigger выглядит как .input--box. Dropdown — floating panel над/под
 // trigger, paper bg + line border + shadow-2. Selected опция — accent

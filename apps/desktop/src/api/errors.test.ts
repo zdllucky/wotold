@@ -33,6 +33,22 @@ describe('humanError', () => {
       humanError('local_engine_model_missing: модель qwen25-3b не установлена', t),
     ).toMatch(/не установлена/i);
   });
+  // Припаркованный звонок: текст обещает автоматическую обработку после
+  // докачки, а не ручную установку — иначе пользователь пойдёт искать кнопку,
+  // которую нажимать не нужно.
+  test('local_engine_not_ready → не хватает софта + обработается сам', () => {
+    const msg = 'local_engine_not_ready: не хватает модулей: silero-vad-v5, voice-embedder';
+    expect(humanError(msg, t)).toMatch(/не хватает софта/i);
+    expect(humanError(msg, t)).toMatch(/скачать/i);
+  });
+  test('local_engine_not_ready НЕ перехватывается generic model_missing', () => {
+    const out = humanError('local_engine_not_ready: не хватает модулей: whisper-small', t);
+    expect(out).not.toMatch(/локальная модель не установлена/i);
+  });
+  test('local_engine_model_tampered → про целостность, а не про отсутствие', () => {
+    const out = humanError('local_engine_model_tampered: файл whisper-small', t);
+    expect(out).toMatch(/целостност/i);
+  });
   test('local_engine_preset_not_set → понятный текст', () => {
     expect(
       humanError('local_engine_preset_not_set: выберите Light/Balanced/Quality', t),

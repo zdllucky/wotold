@@ -17,7 +17,7 @@ type Size = 'sm' | 'md' | 'lg';
 interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
   variant?: Variant;
   size?: Size;
-  /** Legacy — Atelier v2 buttons всегда radius-sm; флаг игнорируется. */
+  /** Legacy — кнопки всегда radius-sm; флаг игнорируется. */
   pill?: boolean;
   block?: boolean;
   busy?: boolean;

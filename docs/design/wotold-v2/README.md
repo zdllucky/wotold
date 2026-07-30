@@ -1,7 +1,7 @@
-# Wotold v2 — дизайн (поколение поверх Atelier v2)
+# Wotold v2 — дизайн
 
-> Канонический источник UI с B18. При расхождении с Atelier v2 (`../atelier-v2/`) —
-> **побеждает Wotold v2**. Atelier v2 — legacy, остаётся для истории до конца миграции.
+> Канонический и единственный источник UI с B18. Предыдущее поколение вытеснено
+> целиком: ни его файлов, ни его токенов в репозитории не осталось.
 > Паспорт (W6) по-прежнему выше дизайна при конфликте с R1–R13.
 
 ## Источник истины
@@ -35,21 +35,22 @@
 - Акцент: `--accent --accent-hover --accent-press --accent-soft --accent-line --accent-text --on-accent`.
 - Семантика: `--danger* --ok* --warn* --info-soft`. Speaker: `--sp1..5`.
 - Шкалы: `--t-11..28`, `--s1..9`, `--r-xs..pill`, `--fast/base/slow + --ease`.
-- `--signal` (красный) старого набора → `--danger`; **только запись и деструктив**.
+- Красный — `--danger`; **только запись и деструктив**.
 
-Atelier-имена (`--ink --line --signal --space-* --font-serif …`) **удалены** вместе с
-shim'ом `legacy-tokens.css` в B18.6. Встретил такой токен — это мёртвый код, а не легаси-мост.
+Токены прошлого поколения (`--ink --line --signal --space-* --font-serif …`) удалены
+вместе с shim'ом в B18.6. Встретил такой токен — это мёртвый код, а не легаси-мост.
 
 ## Слои CSS
 
 1. [`styles/tokens.css`](../../../apps/desktop/src/styles/tokens.css) — токены (§1 uikit), light + dark.
 2. [`styles/wk.css`](../../../apps/desktop/src/styles/wk.css) — примитивы uikit (§2–5): `.btn`, `.iconbtn`, `.input`, `.tabs`, `.trow`, `.turn`, …
-3. [`styles/components.css`](../../../apps/desktop/src/styles/components.css) — app-специфичные классы (transcript / pipeline / rec-float / banners / modal-frame и пр.), порт Atelier, token-clean.
+3. [`styles/components.css`](../../../apps/desktop/src/styles/components.css) — app-специфичные классы (transcript / pipeline / rec-float / banners / modal-frame и пр.), token-clean.
 
 React-обёртки над классами — `src/ui/*`; иконки — `src/ui/Icon.tsx`.
 
 ## Статус миграции
 
-Миграция Atelier→v2 **завершена** (B18.0 foundation → B18.6 cleanup, shim удалён).
+Миграция на v2 **завершена** (B18.0 foundation → B18.6 cleanup, shim удалён;
+файлы прошлого поколения удалены из репозитория, история — в архиве роадмапа).
 Последующие батчи полиша (B20–B30) — в [`ROADMAP_ARCHIVE.md`](../../ROADMAP_ARCHIVE.md);
 живые остатки — [`ROADMAP.md`](../../ROADMAP.md) §«B18 · остатки».

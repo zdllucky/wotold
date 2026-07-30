@@ -15,13 +15,13 @@ pub mod contacts;
 #[cfg(target_os = "macos")]
 pub mod local_engine;
 pub mod orphan_reconcile;
+pub mod parked_resume;
 pub mod pipeline;
 pub mod recording;
 pub mod recovery;
 pub mod settings;
 pub mod share;
 pub mod speakers;
-pub mod voice_model;
 pub mod widget;
 
 // Re-exports чтобы `commands::list_calls` и т.д. продолжали резолвиться
@@ -35,11 +35,11 @@ pub use chunk_retry::*;
 pub use contacts::*;
 #[cfg(target_os = "macos")]
 pub use local_engine::*;
+pub use parked_resume::*;
 pub use pipeline::*;
 pub use recording::*;
 pub use recovery::*;
 pub use settings::*;
 pub use share::*;
 pub use speakers::*;
-pub use voice_model::*;
 pub use widget::*;

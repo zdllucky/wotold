@@ -99,6 +99,50 @@ fn kill_stale_server(app_data_dir: &Path) {
 #[cfg(not(unix))]
 fn kill_stale_server(_app_data_dir: &Path) {}
 
+/// Аргументы запуска сервера. Вынесены чистой функцией, чтобы список можно было
+/// проверить тестом — спавн сайдкара юнитом не покрыть (нужен `AppHandle`).
+///
+/// # Про `capabilities/default.json`
+///
+/// Список аргументов там — граница для **webview**, не для нас: валидация
+/// scope живёт в JS-команде `plugin:shell|execute`, а `Shell::sidecar()` из
+/// Rust идёт мимо неё. Поэтому переменная длина (черновая модель опциональна)
+/// нашему спавну ничего не ломает, но пара `--model-draft` в allowlist всё
+/// равно нужна: без неё скомпрометированный webview не смог бы поднять сервер
+/// в той же конфигурации, что и мы, и список перестал бы описывать реальность.
+fn build_server_args<'a>(
+    model: &'a str,
+    port: &'a str,
+    ctx: &'a str,
+    draft: Option<&'a str>,
+) -> Vec<&'a str> {
+    let mut args = vec![
+        "-m",
+        model,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        port,
+        "--ctx-size",
+        ctx,
+        "-ngl",
+        "99",
+        "-fa",
+        "on",
+        "-ctk",
+        "q8_0",
+        "-ctv",
+        "q8_0",
+        "--parallel",
+        "1",
+    ];
+    if let Some(d) = draft {
+        args.push("--model-draft");
+        args.push(d);
+    }
+    args
+}
+
 impl LlamaServer {
     pub fn url(&self) -> &str {
         &self.url
@@ -138,6 +182,26 @@ impl LlamaServer {
         let api_key = generate_api_key();
         let ctx_str = CTX_SIZE.to_string();
 
+        // Спекулятивное декодирование: черновая модель предлагает токены,
+        // целевая их подтверждает пачкой. Резидентный сервер этого аргумента
+        // не получал вовсе — он был только у one-shot `llama-cli`, поэтому с
+        // включённым «держать модель активной» ускоритель был пустышкой.
+        let draft_path =
+            super::models::model_path(app_data_dir, super::models::ModelId::QWEN25_0_5B.as_str());
+        let draft_str = draft_path.to_string_lossy().to_string();
+        let args = build_server_args(
+            &model_str,
+            &port_str,
+            &ctx_str,
+            draft_path.exists().then_some(draft_str.as_str()),
+        );
+        if !draft_path.exists() {
+            log::warn!(
+                "llama-server: черновой модели нет ({}) — работаем без ускорения",
+                draft_path.display()
+            );
+        }
+
         let sidecar = app
             .shell()
             .sidecar(SERVER_SIDECAR)
@@ -145,26 +209,7 @@ impl LlamaServer {
             .env("DYLD_FALLBACK_LIBRARY_PATH", "/opt/homebrew/lib")
             // [TD-08] Ключ через env, не через args — см. `generate_api_key`.
             .env("LLAMA_API_KEY", &api_key)
-            .args([
-                "-m",
-                &model_str,
-                "--host",
-                "127.0.0.1",
-                "--port",
-                &port_str,
-                "--ctx-size",
-                &ctx_str,
-                "-ngl",
-                "99",
-                "-fa",
-                "on",
-                "-ctk",
-                "q8_0",
-                "-ctv",
-                "q8_0",
-                "--parallel",
-                "1",
-            ]);
+            .args(&args);
         let (mut rx, child) = sidecar
             .spawn()
             .map_err(|e| AppError::Other(format!("llama-server spawn: {e}")))?;
@@ -328,5 +373,30 @@ mod tests {
             ports.iter().all(|&p| p != 47331),
             "порт не должен быть прежней константой"
         );
+    }
+
+    /// Резидентный сервер обязан получать черновую модель. Раньше аргумент был
+    /// только у one-shot `llama-cli`, поэтому с включённым «держать модель
+    /// активной» ускорение генерации не работало вообще.
+    #[test]
+    fn server_args_carry_the_draft_model_when_it_is_on_disk() {
+        let args = build_server_args("/m/target.bin", "1234", "8192", Some("/m/draft.bin"));
+        let pos = args
+            .iter()
+            .position(|a| *a == "--model-draft")
+            .expect("аргумент черновой модели обязан быть в списке");
+        assert_eq!(args.get(pos + 1), Some(&"/m/draft.bin"));
+        // Пара уходит в конец — тем же порядком, что перечислен в
+        // `capabilities/default.json`, чтобы список там описывал реальность.
+        assert_eq!(args[args.len() - 2], "--model-draft");
+    }
+
+    #[test]
+    fn server_args_omit_the_draft_model_when_it_is_absent() {
+        let args = build_server_args("/m/target.bin", "1234", "8192", None);
+        assert!(!args.contains(&"--model-draft"));
+        assert_eq!(args[0], "-m");
+        assert_eq!(args[1], "/m/target.bin");
+        assert_eq!(args[args.len() - 2], "--parallel");
     }
 }

@@ -58,8 +58,6 @@ pub async fn retry_chunk(
         mic: mic_provider,
         system: system_provider,
         lang: stt_lang,
-        mic_diarization,
-        mic_diarization_num_speakers,
     } = build_chunk_providers(&state.db, &state.app_data_dir, &app, &parsed_id).await?;
 
     // 4. FSM gate failed → pending. После этого chunk_runner внутри сделает
@@ -97,8 +95,6 @@ pub async fn retry_chunk(
             lang: stt_lang,
             app_data_dir: Some(app_data_dir),
             app_handle: Some(app_for_task),
-            mic_diarization,
-            mic_diarization_num_speakers,
         };
         match chunk_runner::run_chunk(
             &pool,

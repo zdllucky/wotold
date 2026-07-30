@@ -54,22 +54,13 @@ pub struct ChunkRunInput {
     pub prev_prompt: Option<String>,
     /// 'auto' или BCP47. Передаётся в provider.
     pub lang: String,
-    /// [M13.2.1] App-data root — нужен resolve `models/embedder.onnx` для
+    /// [M13.2.1] App-data root — нужен resolve модели `voice-embedder` для
     /// WeSpeaker. `None` в unit-тестах → embedder = StubEmbedder
     /// → empty embeddings_json в DB (degraded ok).
     pub app_data_dir: Option<PathBuf>,
     /// [M13.2.3] Tauri AppHandle для emit'а `transcript:chunk_done`. `None`
     /// в unit-тестах / headless — event silently no-op.
     pub app_handle: Option<AppHandle>,
-    /// [M13 follow-up] Прогнать sortformer и по mic-дорожке для multi-voice
-    /// записей. Default true. Owner-tagging НЕ применяется здесь — local
-    /// `speaker:N` tags остаются, finalize'ится в chunk_assembly через
-    /// `owner_identify::identify_owner_speaker`.
-    pub mic_diarization: bool,
-    /// [P1.2] Labs «Force N speakers» override для sortformer's `num_clusters`.
-    /// `None` = auto-detect. `Some(N)` clamp'ится к 1..=MAX_LOCAL_SPEAKERS в
-    /// `SortformerDiarizer::with_num_speakers`.
-    pub mic_diarization_num_speakers: Option<i32>,
 }
 
 /// Результат успешного `run_chunk`. `transcript_tail` идёт в `prev_prompt`
@@ -112,8 +103,6 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         lang,
         app_data_dir,
         app_handle,
-        mic_diarization,
-        mic_diarization_num_speakers,
     } = input;
     let bus = EventBus::new(app_handle.as_ref());
 
@@ -191,22 +180,22 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         }
     };
 
-    // [M13 follow-up] Если включена mic_diarization + есть app_data_dir →
-    // прогоняем mic через sortformer. Получаем speaker:N tags вместо
+    // [M13 follow-up] Прогоняем mic через sortformer: speaker:N tags вместо
     // STT-default'ного «owner»-эквивалента. Owner identification (M3.7
     // invariant) идёт после Phase 2 reclustering в chunk_assembly.
-    // Degraded path: на macOS не-сборках или без моделей возвращается
-    // mic_transcript без изменений → caller force_owner_track.
-    let mic_transcript = if mic_diarization {
+    // Degraded path: без app_data_dir (unit-тесты), на не-macOS сборках или без
+    // моделей возвращается mic_transcript без изменений → caller
+    // force_owner_track.
+    let mic_transcript = {
         #[cfg(target_os = "macos")]
         {
             match app_data_dir.as_deref() {
                 Some(dir) => {
                     crate::pipeline::diarize_mic_track(
+                        pool,
                         dir,
                         &mic_path,
                         mic_transcript,
-                        mic_diarization_num_speakers,
                         &call_id,
                     )
                     .await
@@ -218,8 +207,6 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
         {
             mic_transcript
         }
-    } else {
-        mic_transcript
     };
 
     // 3. Serialize → DB persist.
@@ -473,10 +460,6 @@ mod tests {
             // pipeline отдельно.
             app_data_dir: None,
             app_handle: None,
-            // [M13 follow-up] Off в unit-тестах — sortformer требует
-            // app_data_dir + macOS sidecar.
-            mic_diarization: false,
-            mic_diarization_num_speakers: None,
         }
     }
 
@@ -707,8 +690,6 @@ mod tests {
                 lang: "auto".into(),
                 app_data_dir: None,
                 app_handle: None,
-                mic_diarization: false,
-                mic_diarization_num_speakers: None,
             };
             run_chunk(&db_t.pool, &mic, &sys, inp).await.unwrap();
         }

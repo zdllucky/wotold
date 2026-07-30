@@ -18,10 +18,8 @@ export const SETTINGS_KEYS = {
   STT_LANG: 'stt_lang',
   /** [B16] Coachmarks показаны хотя бы раз — '1' = не показывать снова. */
   COACHMARKS_SEEN: 'coachmarks_seen',
-  /** [B17] Atelier theme — 'light' | 'dark' | 'system'. */
+  /** Тема интерфейса — 'light' | 'dark' | 'system'. */
   UI_THEME: 'ui.theme',
-  /** [B17] Atelier accent — 'bordeaux' | 'persian' | 'ink'. */
-  UI_ACCENT: 'ui.accent',
   /** UI locale — 'ru' | 'kk' | 'en'. Пусто = auto-detect from system. */
   UI_LOCALE: 'ui_locale',
   /** [V7] Auto-bind speaker когда suggestion_score >= AUTO_BIND_THRESHOLD/100.
@@ -48,29 +46,13 @@ export const SETTINGS_KEYS = {
    *  Если пусто — fallback на top-right primary monitor. */
   RECORDING_WIDGET_X: 'recording.widget.x',
   RECORDING_WIDGET_Y: 'recording.widget.y',
-  /** [M12-v1.1] Permanent dismiss редискавери-чипа: '1' = не показывать. */
-  LOCAL_ENGINE_INVITE_DISMISSED: 'local_engine_invite_dismissed',
   /** [M13.1.5] Feature flag для chunked pipelined transcription. '1' = ON.
    *  Default OFF — Phase 1 behind-flag rollout (см. M13_CHUNKING_PRD.md §6). */
   CHUNKED_PIPELINE: 'recording.chunked_pipeline',
-  /** [M13 follow-up, P-fix7] Прогнать sortformer и по mic-дорожке, чтобы
-   *  поймать гостевые голоса записанные через тот же микрофон. Owner-голос
-   *  определяется через voice biometric match против voice_samples
-   *  владельца (fallback: primary-speaker heuristic). Default OFF —
-   *  backend включает только на явное '1'/'true'. */
-  MIC_DIARIZATION_ENABLED: 'mic_diarization_enabled',
   /** [M14 T-14] Feature flag для v2 cloud_universal prompt. '1' = ON
    *  (default — текущий v2 path с decisions/open_questions/evidence).
    *  '0' = OFF emergency-disable → legacy v1 markdown-only prompt. */
   SUMMARY_V2_ENABLED: 'summary_v2_enabled',
-  /** [M14 T-16 P2] Opt-in speculative decoding с 0.5B draft model для
-   *  Quality (7B) preset. '1' = ON. Default OFF. Активация требует
-   *  preset=Quality + downloaded 0.5B draft model. */
-  SUMMARY_SPECULATIVE_DECODING: 'summary_speculative_decoding',
-  /** [P1.2] Labs «Force N speakers» override для sortformer's
-   *  `num_clusters`. Values: 'auto' (default) | '2' | '3' | '4'.
-   *  Backend clamp'ит к 1..=MAX_LOCAL_SPEAKERS; non-numeric → auto. */
-  MIC_DIARIZATION_NUM_SPEAKERS: 'mic_diarization_num_speakers',
 } as const;
 
 // [B21] Rust-owned ключи settings-таблицы, НАМЕРЕННО отсутствующие в этом
@@ -89,30 +71,10 @@ export const SETTINGS_DEFAULTS = {
   /** [S1] Call-detect default OFF (R3 deviation opt-in). */
   CALL_DETECT_ENABLED: false,
   CALL_DETECT_COOLDOWN_MIN: '5' as CallDetectCooldown,
-  /** [P-fix7, B21] Mic diarization — default OFF (истина = backend
-   *  `matches!(Some("1")|Some("true"))` в recording.rs / pipeline/mod.rs:
-   *  missing = OFF). Mic = микрофон владельца = один человек (M2.4);
-   *  sortformer овершутит и дробит голос owner'а в «СПИКЕР ?». Opt-in. */
-  MIC_DIARIZATION_ENABLED: false,
   /** [M14 T-14] Summary v2 default ON. OFF — emergency disable, recap
    *  падает на legacy v1 markdown-only prompt. */
   SUMMARY_V2_ENABLED: true,
-  /** [M14 T-16 P2] Speculative decoding default OFF (Labs opt-in). */
-  SUMMARY_SPECULATIVE_DECODING: false,
-  /** [P1.2] Force-N-speakers Labs override — default 'auto' (sortformer
-   *  auto-detect). Stored как string в DB; UI reads obvious values. */
-  MIC_DIARIZATION_NUM_SPEAKERS: 'auto' as MicDiarizationNumSpeakers,
 } as const;
-
-/** [P1.2] Labs override values для force-N-speakers. Whitelist enforced
- *  в LabsSection (`<select>` options). Backend clamp'ит к 1..=MAX_LOCAL_SPEAKERS=3
- *  (P14.3: пониженный cap от 4). Опция '4' удалена т.к. cap не пропустит. */
-export type MicDiarizationNumSpeakers = 'auto' | '2' | '3';
-export const MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS: MicDiarizationNumSpeakers[] = [
-  'auto',
-  '2',
-  '3',
-];
 
 /** [S1] Whitelist cooldown values 3/5/10/15 min. */
 export type CallDetectCooldown = '3' | '5' | '10' | '15';

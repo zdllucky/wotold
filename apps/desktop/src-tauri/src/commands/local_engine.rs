@@ -24,6 +24,8 @@ use crate::{
         hw_probe::{self, HwReport},
         models::{self, ModelKind, ModelStatus, MODEL_CATALOG},
         preset::{LocalEnginePreset, PresetSpec, SETTING_ACTIVE_PRESET},
+        provisioning::{self, PresetSizeSpec},
+        readiness::{self, LocalEngineReadiness},
     },
     state::AppState,
     AppError,
@@ -114,6 +116,56 @@ pub async fn local_engine_storage_list(
     Ok(rows)
 }
 
+/// Готовность движка: выбран ли размер и каких обязательных модулей не хватает.
+/// Баннер внизу окна тянет снимок при монтировании, дальше живёт на событии
+/// `readiness:changed`.
+#[tauri::command]
+pub async fn local_engine_readiness(
+    state: State<'_, AppState>,
+) -> Result<LocalEngineReadiness, AppError> {
+    readiness::compute(&state.db, &state.app_data_dir).await
+}
+
+/// Докачать всё, чего не хватает движку. Один вход вместо перебора моделей на
+/// фронте: список обязательного знает бэкенд. Single-flight внутри — второй
+/// клик по «Скачать» не поднимает вторую очередь.
+///
+/// Сеть только по явному действию пользователя: приложение локальное, и
+/// разовое скачивание моделей — единственный сетевой поток.
+#[tauri::command]
+pub async fn local_engine_ensure_required(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), AppError> {
+    provisioning::ensure_required(&state.db, &state.app_data_dir, &app).await
+}
+
+/// Сколько байт освободит удаление моделей неактивных размеров. Для подписи
+/// кнопки — сама кнопка зовёт `local_engine_free_space`.
+#[tauri::command]
+pub async fn local_engine_reclaimable_bytes(state: State<'_, AppState>) -> Result<u64, AppError> {
+    provisioning::reclaimable_bytes(&state.db, &state.app_data_dir).await
+}
+
+/// Удалить модели неактивных размеров, вернуть освобождённые байты.
+/// Авто-удаления при смене размера нет намеренно (R12-bis) — только явное
+/// действие пользователя.
+#[tauri::command]
+pub async fn local_engine_free_space(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<u64, AppError> {
+    provisioning::free_space(&state.db, &state.app_data_dir, &app).await
+}
+
+/// Размеры всех трёх вариантов движка — считаются по каталогу. UI больше не
+/// держит своих констант: захардкоженные 1.2 / 2.4 / 5.5 ГБ в онбординге не
+/// совпадали с реальностью даже без базовых модулей.
+#[tauri::command]
+pub fn local_engine_preset_specs() -> Vec<PresetSizeSpec> {
+    provisioning::preset_specs()
+}
+
 #[tauri::command]
 pub async fn local_engine_model_download(
     state: State<'_, AppState>,
@@ -121,15 +173,21 @@ pub async fn local_engine_model_download(
     id: String,
 ) -> Result<(), AppError> {
     models::download(&state.app_data_dir, &id, Some(&app)).await?;
+    // Поштучная перекачка тоже может сделать движок готовым — тогда
+    // припаркованные звонки обязаны подняться, а не ждать перезапуска.
+    readiness::recompute_and_resume(&app).await;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn local_engine_model_delete(
     state: State<'_, AppState>,
+    app: AppHandle,
     id: String,
 ) -> Result<(), AppError> {
-    models::delete(&state.app_data_dir, &id).await
+    models::delete(&state.app_data_dir, &id).await?;
+    readiness::recompute_and_emit(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -146,11 +204,17 @@ pub async fn local_engine_get_active_preset(
 #[tauri::command]
 pub async fn local_engine_set_active_preset(
     state: State<'_, AppState>,
+    app: AppHandle,
     preset: String,
 ) -> Result<PresetSpec, AppError> {
     let parsed = LocalEnginePreset::from_str(&preset)
         .ok_or_else(|| AppError::Other(format!("unknown preset: {preset}")))?;
     crate::db::set_setting(&state.db, SETTING_ACTIVE_PRESET, parsed.as_str()).await?;
+    // Смена размера меняет обязательный список — пересчитываем сразу, иначе
+    // баннер узнает о нехватке только после следующего действия. Возврат к
+    // прежнему размеру, модели которого уже на диске, делает движок готовым:
+    // это тоже повод поднять припаркованные звонки.
+    readiness::recompute_and_resume(&app).await;
     Ok(PresetSpec::from(parsed))
 }
 
@@ -249,14 +313,12 @@ pub async fn local_engine_eval_recap(
     let call = crate::db::get_call(&state.db, &call_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("call {call_id}")))?;
-    let s = crate::pipeline::settings::PipelineSettings::load(&state.db).await?;
     let (provider, _preset) =
         // [Q/TD-36] call_id → LLM-очередь; метка внутри общего билдера.
         crate::pipeline::build_local_llm_provider(
             &state.db,
             &state.app_data_dir,
             &app,
-            &s,
             Some(&call_id),
         )
         .await?;

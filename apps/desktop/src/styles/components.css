@@ -1,6 +1,6 @@
 /* [B18.6b] App component classes — Wotold v2 (uikit) token-clean.
  *
- * Ported from the legacy Atelier `wotold.css` (now deleted): only the
+ * Ported from the legacy `wotold.css` (now deleted): only the
  * still-used component classes that have no equivalent in `wk.css`
  * (transcript, pipeline strips, stat-tags, rec-float, banners, toaster,
  * modal frame, text helpers). All design tokens
@@ -229,7 +229,8 @@
   letter-spacing: 0.02em;
 }
 /* [B23-fix] Канонизирован под v2 .input (13px, r-sm): прежние 14px/r-xs/
-   letter-spacing были Atelier-легаси и выбивались из уровня Select/Input. */
+   letter-spacing достались от прошлого поколения и выбивались из уровня
+   Select/Input. */
 .input--box {
   border: 1px solid var(--border-strong);
   border-radius: var(--r-sm);
@@ -284,7 +285,6 @@
 /* [B18.7a] .modal-backdrop / .index-card removed — all modals migrated to the
    v2 .overlay/.modal idiom (wk.css). */
 .dot--accent  { background: var(--accent); }
-.dot--signal  { background: var(--danger); }
 .dot--success { background: var(--ok); }
 .dot--warning { background: var(--warn); }
 .dot--muted   { background: var(--text-faint); }

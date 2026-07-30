@@ -30,4 +30,4 @@ The skill output is a structured alignment block. No code is written by this com
 - `docs/design/wotold-v2/assistant.md` + `_reference-assistant/` — assistant surfaces (M15/B24)
 - `apps/desktop/src/styles/{tokens,wk,components}.css` — the live implementation
 
-`docs/design/atelier-v2/` is the superseded generation — history only, do not use it as a reference.
+The superseded design generation has been deleted from the repo — if you find its tokens or files referenced anywhere, that reference is stale.

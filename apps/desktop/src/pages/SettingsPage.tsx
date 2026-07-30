@@ -39,7 +39,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
 import { AppearanceSection } from './AppearanceSection';
 import { LabsSection } from './LabsSection';
-import { LocalEngineSection } from './LocalEngineSection';
+import { EngineSection } from './engine/EngineSection';
 import { PermissionsSection } from './PermissionsSection';
 import { AboutSection } from './AboutSection';
 import { VoiceModelSection } from './VoiceModelSection';
@@ -295,7 +295,7 @@ export function SettingsPage() {
 
           <SectionShell label={activeMeta.label}>
             {section === 'appearance' && <AppearanceSection />}
-            {section === 'processing' && <LocalEngineSection />}
+            {section === 'processing' && <EngineSection />}
             {section === 'permissions' && <PermissionsSection />}
             {section === 'recording' && (
               <RecordingSection

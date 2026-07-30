@@ -57,6 +57,12 @@ impl ModelId {
     /// [M15.9] tokenizer.json (XLM-R fast tokenizer) того же HF-репо — второй
     /// обязательный файл эмбеддера.
     pub const E5_TOKENIZER: ModelId = ModelId("e5-small-tokenizer");
+    /// WeSpeaker ResNet34-LM — голосовой эмбеддер для диаризации и кластеров
+    /// спикеров. До этой записи жил в отдельной качалке `voice_model.rs`
+    /// (свои события, свой путь `models/embedder.onnx`, без per-id мьютекса и
+    /// с SHA по сетевому потоку). Перенесён в каталог целиком: прогресс теперь
+    /// идёт по `model:progress`, файловая миграция — в `model_migrate.rs`.
+    pub const VOICE_EMBEDDER: ModelId = ModelId("voice-embedder");
 
     pub fn as_str(&self) -> &'static str {
         self.0
@@ -76,11 +82,12 @@ pub struct ModelEntry {
     pub license_url: &'static str,
 }
 
-/// Каталог — 4 STT + 4 LLM + 1 diarization + 2 embedding файла. SHA256 +
+/// Каталог — 4 STT + 4 LLM + 2 diarization + 2 embedding файла. SHA256 +
 /// size_bytes получены через `scripts/refresh-model-catalog.sh` (PRD §14
-/// pre-flight) на 2026-05-22 (e5-записи — спайк M15.9, 2026-07-22).
+/// pre-flight) на 2026-05-22 (e5-записи — спайк M15.9, 2026-07-22;
+/// voice-embedder — GitHub-релиз sherpa-onnx, content-length снят HEAD'ом).
 /// При замене файла на HF — bump version в скрипте + регенерировать.
-pub const MODEL_CATALOG: [ModelEntry; 11] = [
+pub const MODEL_CATALOG: [ModelEntry; 12] = [
     ModelEntry {
         id: ModelId::WHISPER_SMALL,
         kind: ModelKind::Stt,
@@ -195,6 +202,20 @@ pub const MODEL_CATALOG: [ModelEntry; 11] = [
         size_bytes: 17_082_730,
         license_url: "https://huggingface.co/intfloat/multilingual-e5-small",
     },
+    // WeSpeaker ResNet34-LM. Единственная запись каталога не с HuggingFace, а
+    // с GitHub-релиза k2-fsa/sherpa-onnx (тег с опечаткой апстрима,
+    // `speaker-recongition-models` — так у них). SHA256 из `checksum.txt`
+    // релиза, size_bytes — content-length того же URL: `check_status_fast`
+    // сверяет размер побайтно, и прежний «грубый hint» здесь не годился бы.
+    ModelEntry {
+        id: ModelId::VOICE_EMBEDDER,
+        kind: ModelKind::Diarization,
+        display_name: "WeSpeaker ResNet34-LM",
+        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx",
+        sha256: "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012",
+        size_bytes: 26_530_550,
+        license_url: "https://github.com/k2-fsa/sherpa-onnx",
+    },
 ];
 
 /// Найти запись каталога по id. `None` если id неизвестен — caller обязан
@@ -224,8 +245,8 @@ mod tests {
         );
         assert_eq!(
             count(ModelKind::Diarization),
-            1,
-            "expected 1 diarization model (pyannote)"
+            2,
+            "expected 2 diarization models (pyannote segmentation + WeSpeaker embedder)"
         );
         // [M15.9] Текст-эмбеддер ассистента: onnx-модель + tokenizer.json.
         assert_eq!(

@@ -281,7 +281,7 @@ function RowGroup({ title, emptyHint, count, onAdd, children }: RowGroupProps) {
           marginBottom: 8,
         }}
       >
-        {/* [B23-fix] .field-label вместо Atelier .small-caps — единый шрифт
+        {/* [B23-fix] .field-label вместо .small-caps — единый шрифт
             с лейблами остальных полей формы. */}
         <span className="field-label" style={{ marginBottom: 0 }}>
           {title}

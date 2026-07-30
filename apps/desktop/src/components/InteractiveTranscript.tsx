@@ -143,8 +143,8 @@ function parseRawStt(json: string): RawStt | null {
 
 const OWNER_TAG = 'owner';
 
-// [B17] Atelier v2 speaker palette — cobalt/emerald/rust/indigo/teal из tokens.css
-// (см. --sp-1..--sp-5). Owner всегда sp-1 (cobalt), остальные — циклом по hash.
+// [B17] Палитра спикеров — cobalt/emerald/rust/indigo/teal из tokens.css
+// (см. --sp1..--sp5). Owner всегда sp1 (cobalt), остальные — циклом по hash.
 function hashTag(tag: string): number {
   let h = 0;
   for (let i = 0; i < tag.length; i++) {

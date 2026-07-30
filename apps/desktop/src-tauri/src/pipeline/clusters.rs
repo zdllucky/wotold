@@ -53,7 +53,7 @@ pub async fn load_and_extract_clusters(
     app_data_dir: &Path,
     log_tag: &str,
 ) -> Result<ClusterMap, AppError> {
-    let model_path = app_data_dir.join("models").join("embedder.onnx");
+    let model_path = crate::embeddings::voice_embedder_path(app_data_dir);
     let log_tag = log_tag.to_string();
     tokio::task::spawn_blocking(move || {
         let embedder: Box<dyn Embedder> =

@@ -1,4 +1,5 @@
-// [B17] Recap dossier tab per docs/design/atelier-v2/_reference/atelier-2.jsx §6.
+// [B17] Вкладка досье рекапа. Прототип, по которому её рисовали, удалён
+// вместе с прошлым поколением дизайна; актуальный канон — docs/design/wotold-v2/.
 // Two-column grid: main column (resume + key points + tasks) + 280px sidebar
 // (metadata + participants + Экспорт в MD).
 

@@ -14,7 +14,7 @@ describe('Button', () => {
     expect(screen.getByRole('button')).toHaveAttribute('type', 'button');
   });
 
-  // [B17] Atelier v2 — variant/size mapped to .btn--primary / .btn--lg.
+  // [B17] variant/size mapped to .btn--primary / .btn--lg.
   // wk.css sizes via [data-size]; 'md' default omits the attr.
   test('applies variant class + data-size', () => {
     render(
@@ -27,7 +27,7 @@ describe('Button', () => {
     expect(btn.getAttribute('data-size')).toBe('lg');
   });
 
-  // [B17] `pill` prop is a legacy no-op — Atelier buttons всегда radius-sm.
+  // [B17] `pill` prop is a legacy no-op — кнопки всегда radius-sm.
   // Сохраняем data-busy assertion.
   test('busy sets data-busy', () => {
     render(

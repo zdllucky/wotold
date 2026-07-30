@@ -50,8 +50,6 @@ pub const RECORDING_DURATION: &str = "recording:duration";
 /// `RecordingProvider` мирror гарантированно in sync. Payload пустой —
 /// слушатели делают `getRecordingState()` для свежего snapshot'а.
 pub const RECORDING_STATE: &str = "recording:state";
-pub const VOICE_MODEL_PROGRESS: &str = "voice-model:progress";
-pub const VOICE_MODEL_DONE: &str = "voice-model:done";
 /// [Q] Снапшот состояния очередей тяжёлых ресурсов (stt/diarization/llm) —
 /// эмитится на каждый transition (enqueue/acquire/release). Payload —
 /// `resource_queue::QueueStateEvent` (generic emit — без цикла events↔pipeline).
@@ -68,6 +66,11 @@ pub const RECAP_STEP: &str = "recap:step";
 pub const RECAP_BULK_PROGRESS: &str = "recap:bulk_progress";
 /// [Bulk recap] Финал массового регена. Payload — `{ regenerated, failed, cancelled }`.
 pub const RECAP_BULK_DONE: &str = "recap:bulk_done";
+/// Снимок готовности локального движка — какие обязательные модули ещё не
+/// скачаны. Payload — `local_engine::readiness::LocalEngineReadiness`.
+/// Эмитится на старте, при смене размера движка и по завершении скачивания;
+/// баннер внизу окна живёт на этом событии.
+pub const READINESS_CHANGED: &str = "readiness:changed";
 /// [M15.7] Фазы ответа ассистента. Payload — `AssistantStatusEvent`.
 /// Фазы: `retrieving` → `generating`. Очередь LLM (queued) отдельно
 /// не эмитится — фронт выводит её из существующего `queue:state`.
@@ -295,15 +298,6 @@ impl<'a> EventBus<'a> {
         self.emit(AUDIO_ROTATED, payload);
     }
 
-    /// Generic'ом по той же причине (voice_model держит DoneEvent enum приватно).
-    pub fn voice_model_progress<T: Serialize + Clone>(&self, payload: &T) {
-        self.emit(VOICE_MODEL_PROGRESS, payload);
-    }
-
-    pub fn voice_model_done<T: Serialize + Clone>(&self, payload: &T) {
-        self.emit(VOICE_MODEL_DONE, payload);
-    }
-
     pub fn recap_bulk_progress<T: Serialize + Clone>(&self, payload: &T) {
         self.emit(RECAP_BULK_PROGRESS, payload);
     }
@@ -316,6 +310,12 @@ impl<'a> EventBus<'a> {
     /// Слушатели зовут `getRecordingState` чтобы pull fresh snapshot.
     pub fn recording_state_changed(&self) {
         self.emit(RECORDING_STATE, &());
+    }
+
+    /// Снимок готовности движка. Generic'ом — чтобы не заводить цикл
+    /// events ↔ local_engine.
+    pub fn readiness_changed<T: Serialize + Clone>(&self, payload: &T) {
+        self.emit(READINESS_CHANGED, payload);
     }
 }
 
@@ -388,8 +388,7 @@ mod tests {
         assert_eq!(RECAP_STEP, "recap:step");
         assert_eq!(QUEUE_STATE, "queue:state");
         assert_eq!(RECORDING_DURATION, "recording:duration");
-        assert_eq!(VOICE_MODEL_PROGRESS, "voice-model:progress");
-        assert_eq!(VOICE_MODEL_DONE, "voice-model:done");
         assert_eq!(ASSISTANT_STATUS, "assistant:status");
+        assert_eq!(READINESS_CHANGED, "readiness:changed");
     }
 }

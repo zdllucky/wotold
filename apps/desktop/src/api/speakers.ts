@@ -54,3 +54,10 @@ export function confirmCallSpeaker(
 export function unbindCallSpeaker(callSpeakerId: string): Promise<void> {
   return invoke<void>('unbind_call_speaker', { callSpeakerId });
 }
+
+/** Собрана ли сборка с ONNX-эмбеддером (`voice-onnx`). Дефолтная — да; в
+ *  сборке без фичи модуль скачивается, но матчинг остаётся заглушкой, и UI
+ *  обязан сказать это прямо, а не молчать. */
+export function voiceEmbedderFeatureEnabled(): Promise<boolean> {
+  return invoke<boolean>('voice_embedder_feature_enabled');
+}
