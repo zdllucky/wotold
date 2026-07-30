@@ -55,6 +55,14 @@ pub mod wav_chunker;
 // сегмента в RMS-buffer для chunked transcription. Без platform deps.
 pub mod silence_detector;
 
+// [T4] Подрезка тихого хвоста WAV на авто-стопе. Platform deps нет (hound).
+pub mod wav_trim;
+
+// [T1/T2] Silence watch — решение «в записи тишина»: подсказать стоп и
+// остановить самим с подрезкой хвоста (R14). Ядро чистое, обёртка на
+// каналах; platform deps нет, поэтому тесты бегут на любой платформе.
+pub mod silence_watch;
+
 #[cfg(target_os = "windows")]
 pub mod windows;
 

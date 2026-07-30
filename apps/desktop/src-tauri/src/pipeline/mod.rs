@@ -52,6 +52,11 @@ pub mod chunk_orchestrator;
 // full-file STT когда chunks_completed > 0.
 pub mod chunk_assembly;
 
+// [T6/R14] Отсечка транскрипта по точке реза тихого хвоста — вторая половина
+// подрезки (первая, файловая, в `audio::wav_trim`). Без неё рез бессмыслен:
+// тихие чанки прошли whisper ещё во время записи.
+pub mod transcript_cutoff;
+
 // [Tech-debt P0.1] Конкатенация per-chunk WAV файлов в root mic.wav/system.wav.
 // Без этого AudioScrubber играет только первый chunk вместо полной записи.
 pub mod audio_merger;

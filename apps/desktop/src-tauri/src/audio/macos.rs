@@ -41,6 +41,29 @@ pub struct OrchestratorChannels {
     pub rotate_tx: Sender<Value>,
 }
 
+/// [T2] Кому диспатчер фан-аутит sidecar-события помимо webview. Собран в один
+/// struct, потому что потребителей стало двое, а `elapsed`/`max(mic,system)`
+/// считаются один раз на сэмпл — раздельные аргументы разъезжались бы.
+///
+/// `silence_tx` отдельный канал, а не шина оркестратора: наблюдатель тишины
+/// обязан работать и при выключенном chunked-режиме (`prepare_chunked_setup`
+/// возвращает `None` без preset'а), а рвать чужой буфер своими сэмплами нельзя.
+#[derive(Debug, Clone, Default)]
+pub struct DispatcherFanout {
+    /// [M13.1.5b] Каналы chunk_orchestrator. `None` — chunked выключен.
+    pub orchestrator: Option<OrchestratorChannels>,
+    /// [T2] `(timestamp_ms_от_started_at, max(mic, system))` для silence_watch.
+    pub silence_tx: Option<Sender<(u64, f32)>>,
+}
+
+impl DispatcherFanout {
+    /// Есть ли хоть один потребитель RMS — если нет, не считаем elapsed
+    /// на каждом сэмпле (10 Hz на всю запись).
+    fn wants_rms(&self) -> bool {
+        self.orchestrator.is_some() || self.silence_tx.is_some()
+    }
+}
+
 /// Активная сессия записи macOS-аудио. Хранит дескриптор sidecar-процесса +
 /// terminal_rx (oneshot из background dispatcher task), который завершится с
 /// `stopped` либо `error` Value.
@@ -91,7 +114,7 @@ pub async fn start(
     system_path: PathBuf,
     final_mic_path: PathBuf,
     final_system_path: PathBuf,
-    orchestrator: Option<OrchestratorChannels>,
+    fanout: DispatcherFanout,
 ) -> Result<RecordingSession, AppError> {
     if let Some(parent) = mic_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -141,14 +164,7 @@ pub async fn start(
             // (DateTime<Utc> is Copy).
             let started_for_dispatcher = started_at;
             let dispatcher = tokio::spawn(async move {
-                run_dispatcher(
-                    rx,
-                    app_clone,
-                    terminal_tx,
-                    orchestrator,
-                    started_for_dispatcher,
-                )
-                .await;
+                run_dispatcher(rx, app_clone, terminal_tx, fanout, started_for_dispatcher).await;
             });
 
             Ok(RecordingSession {
@@ -329,7 +345,7 @@ async fn run_dispatcher(
     mut rx: Receiver<CommandEvent>,
     app: AppHandle,
     terminal_tx: oneshot::Sender<Value>,
-    orchestrator: Option<OrchestratorChannels>,
+    fanout: DispatcherFanout,
     started_at: chrono::DateTime<chrono::Utc>,
 ) {
     let mut terminal_tx = Some(terminal_tx);
@@ -350,14 +366,22 @@ async fn run_dispatcher(
                                 as f32,
                         };
                         EventBus::new(Some(&app)).audio_level(&payload);
-                        // [M13.1.5b] Fan-out к chunk_orchestrator, если активен.
-                        if let Some(channels) = orchestrator.as_ref() {
+                        // [M13.1.5b/T2] Fan-out RMS: chunk_orchestrator (если
+                        // chunked активен) + silence_watch (если хоть одна из
+                        // настроек тишины включена). elapsed/combined считаются
+                        // один раз — 10 Hz на всю длину записи.
+                        if fanout.wants_rms() {
                             let elapsed =
                                 (chrono::Utc::now() - started_at).num_milliseconds().max(0) as u64;
                             let combined = payload.mic.max(payload.system);
-                            // try_send — если orchestrator буфер полный или умер,
-                            // дропаем sample, не блокируем dispatcher.
-                            let _ = channels.rms_tx.try_send((elapsed, combined));
+                            // try_send — если буфер потребителя полный или он
+                            // умер, дропаем sample, не блокируем dispatcher.
+                            if let Some(channels) = fanout.orchestrator.as_ref() {
+                                let _ = channels.rms_tx.try_send((elapsed, combined));
+                            }
+                            if let Some(silence_tx) = fanout.silence_tx.as_ref() {
+                                let _ = silence_tx.try_send((elapsed, combined));
+                            }
                         }
                     }
                     EventClass::Rotated => {
@@ -366,7 +390,7 @@ async fn run_dispatcher(
                         // (frontend или Rust-side listener) enqueue'ил pipeline
                         // job на закрытый chunk файл.
                         EventBus::new(Some(&app)).audio_rotated(&json);
-                        if let Some(channels) = orchestrator.as_ref() {
+                        if let Some(channels) = fanout.orchestrator.as_ref() {
                             // rotate event редкий (раз в 10мин), full send OK.
                             let _ = channels.rotate_tx.send(json.clone()).await;
                         }

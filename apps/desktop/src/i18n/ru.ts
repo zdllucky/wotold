@@ -272,6 +272,7 @@ const ruInternal = {
       language_repin_failed: 'Часть текста распознана не тем языком',
       mic_track_gap_padded: 'Микрофон пропадал — пробел заполнен тишиной',
       system_track_gap_padded: 'Системный звук пропадал — пробел заполнен тишиной',
+      auto_stopped_on_silence: 'Запись остановлена автоматически после тишины',
     },
     notFound: 'Звонок не найден.',
     tabRecap: 'Саммари',
@@ -607,6 +608,9 @@ const ruInternal = {
     groupAutoDetect: 'Авто-определение',
     callDetectRowLabel: 'Предлагать запись',
     callDetectCooldownRowLabel: 'Не предлагать снова',
+    groupSilence: 'Тишина в записи',
+    silencePromptRowLabel: 'Предлагать остановить',
+    silenceAutoStopRowLabel: 'Останавливать автоматически',
     wipeRowHint: 'Записи, контакты, образцы голоса, сессия и ключи. Необратимо.',
     wipeDoneChip: 'удалено',
     hotkeyToggleHint: 'Esc — отмена. Системные комбинации (⌘W, ⌘C…) недоступны.',
@@ -616,6 +620,13 @@ const ruInternal = {
     // [S1] Auto-detect (R3 deviation, opt-in).
     callDetectHint: 'Уведомление «Записать?» при обнаружении звонка. По умолчанию выключено для приватности.',
     callDetectCooldownOption: '{n} мин',
+    // [T3/R14] Тишина в идущей записи.
+    silencePromptHint:
+      'Через 15 минут тишины Wotold спросит, не пора ли остановить запись.',
+    silenceAutoStopHint:
+      'Если тишина затянулась — остановить запись и отрезать тихий хвост, чтобы он не попал в расшифровку.',
+    silenceAutoStopOption: 'Через {n} мин',
+    silenceAutoStopNever: 'Никогда',
     voiceLede:
       'Wotold может предлагать кто говорит на основе совпадения голоса — но только после скачивания биометрической модели (25 МБ, опционально). Финальное подтверждение всегда за тобой (R2 паспорта).',
     // [M14 T-14] Labs section — experimental flags.
@@ -986,6 +997,14 @@ const ruInternal = {
       'Wotold заметил активный микрофон. Начать запись прямо сейчас?',
     suggestStart: 'Начать запись',
     suggestDismiss: 'Скрыть',
+    // [T7/R14] SilencePrompt — тишина в идущей записи.
+    silenceTitle: 'В записи тишина',
+    silenceBody: 'Тишина уже {min} мин. Остановить запись?',
+    silenceBodyWithStop: 'Тишина уже {min} мин. Через {left} мин запись остановится сама.',
+    silenceStop: 'Остановить запись',
+    silenceContinue: 'Продолжить',
+    silenceStoppedTitle: 'Запись остановлена',
+    silenceStoppedBody: 'После {min} мин тишины. Тихий хвост отрезан.',
   },
 
   // ── [V6.1] Async pipeline states (CallStateTag, PipelineStrip etc) ──────

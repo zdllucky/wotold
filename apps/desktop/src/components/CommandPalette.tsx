@@ -12,6 +12,13 @@ import { bcp47, useI18n } from '../i18n';
 import { getAssistantIndexStats } from '../api/assistant';
 import type { Call } from '../api/recording';
 import type { RailView } from './AppSidebar';
+import {
+  SECTION_ICONS,
+  SECTION_LABEL_KEYS,
+  SECTION_ORDER,
+  SETTINGS_ENTRIES,
+  type SettingsTarget,
+} from '../pages/settingsIndex';
 
 interface CommandPaletteProps {
   onClose: () => void;
@@ -20,17 +27,32 @@ interface CommandPaletteProps {
   onRecord: () => void;
   /** [B24.6] Fallback «Спросить ассистента»: новый глобальный чат с запросом. */
   onAsk?: (question: string) => void;
+  /** [B32.4] Открыть раздел настроек и (опционально) подсветить строку. */
+  onOpenSettings?: (target: SettingsTarget) => void;
   recent: Call[];
 }
 
 interface FlatItem {
   key: string;
-  kind: 'action' | 'call';
+  kind: 'action' | 'call' | 'setting';
   icon: IconName;
   label: string;
   kbd?: string;
   meta?: string;
+  /** [B32.4] Дополнительные слова для поиска — подпись у пункта одна, а искать
+   *  его хочется и по имени родителя («настройки», «внешний вид»). */
+  keywords?: string[];
   run: () => void;
+}
+
+/** [B32.4] Сколько строк настроек показываем — как звонки ограничены восемью.
+ *  Без потолка запрос «нас» вытеснил бы из списка всё остальное. */
+const SETTINGS_LIMIT = 6;
+
+function matches(it: FlatItem, ql: string): boolean {
+  if (!ql) return true;
+  if (it.label.toLowerCase().includes(ql)) return true;
+  return (it.keywords ?? []).some((k) => k.toLowerCase().includes(ql));
 }
 
 function shortDate(iso: string, locale: string): string {
@@ -52,6 +74,7 @@ export function CommandPalette({
   onOpenCall,
   onRecord,
   onAsk,
+  onOpenSettings,
   recent,
 }: CommandPaletteProps) {
   const { t, locale } = useI18n();
@@ -88,9 +111,39 @@ export function CommandPalette({
     [t, onRecord, onNav],
   );
 
-  const filteredActions = useMemo(
-    () => actions.filter((a) => a.label.toLowerCase().includes(ql)),
-    [actions, ql],
+  const filteredActions = useMemo(() => actions.filter((a) => matches(a, ql)), [actions, ql]);
+
+  // [B32.4] Разделы настроек и отдельные строки. Раньше палитра умела только
+  // «открыть Настройки» целиком, и найти, где живёт конкретный тумблер, было
+  // нечем — приходилось перебирать восемь вкладок руками.
+  const settingsItems = useMemo<FlatItem[]>(() => {
+    if (!onOpenSettings) return [];
+    const parent = t('nav.settings');
+    const sections: FlatItem[] = SECTION_ORDER.map((id) => ({
+      key: `s:${id}`,
+      kind: 'setting' as const,
+      icon: SECTION_ICONS[id],
+      label: t(SECTION_LABEL_KEYS[id]),
+      keywords: [parent],
+      run: () => onOpenSettings({ section: id }),
+    }));
+    const rows: FlatItem[] = SETTINGS_ENTRIES.map((e) => ({
+      key: `s:${e.section}:${e.id}`,
+      kind: 'setting' as const,
+      icon: SECTION_ICONS[e.section],
+      label: t(e.labelKey),
+      meta: t(SECTION_LABEL_KEYS[e.section]),
+      keywords: [parent, t(SECTION_LABEL_KEYS[e.section])],
+      run: () => onOpenSettings({ section: e.section, highlight: e.id }),
+    }));
+    return [...sections, ...rows];
+  }, [onOpenSettings, t]);
+
+  const filteredSettings = useMemo(
+    // Пустой запрос не вываливает три десятка настроек в стартовый список:
+    // палитра открывается как список действий, а не как оглавление настроек.
+    () => (ql ? settingsItems.filter((it) => matches(it, ql)).slice(0, SETTINGS_LIMIT) : []),
+    [settingsItems, ql],
   );
 
   const filteredCalls = useMemo<FlatItem[]>(() => {
@@ -109,7 +162,14 @@ export function CommandPalette({
 
   // [B24.6] ⌘K-fallback (SPEC §5): ни команд, ни звонков → «Спросить ассистента».
   const askFallback = useMemo<FlatItem | null>(() => {
-    if (!onAsk || !ql || filteredActions.length > 0 || filteredCalls.length > 0) return null;
+    if (
+      !onAsk ||
+      !ql ||
+      filteredActions.length > 0 ||
+      filteredSettings.length > 0 ||
+      filteredCalls.length > 0
+    )
+      return null;
     const question = q.trim();
     return {
       key: 'ask:fallback',
@@ -119,11 +179,16 @@ export function CommandPalette({
       kbd: '↵',
       run: () => onAsk(question),
     };
-  }, [onAsk, ql, q, filteredActions.length, filteredCalls.length, t]);
+  }, [onAsk, ql, q, filteredActions.length, filteredSettings.length, filteredCalls.length, t]);
 
   const flat = useMemo(
-    () => [...filteredActions, ...filteredCalls, ...(askFallback ? [askFallback] : [])],
-    [filteredActions, filteredCalls, askFallback],
+    () => [
+      ...filteredActions,
+      ...filteredSettings,
+      ...filteredCalls,
+      ...(askFallback ? [askFallback] : []),
+    ],
+    [filteredActions, filteredSettings, filteredCalls, askFallback],
   );
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -198,6 +263,33 @@ export function CommandPalette({
                     <Kbd>{it.kbd}</Kbd>
                   </span>
                 )}
+              </button>
+            );
+          })}
+
+          {filteredSettings.length > 0 && (
+            <div className="menu-label">{t('nav.settings')}</div>
+          )}
+          {filteredSettings.map((it) => {
+            const idx = flat.findIndex((f) => f.key === it.key);
+            return (
+              <button
+                key={it.key}
+                type="button"
+                className="menu-item"
+                id={`palette-opt-${idx}`}
+                role="option"
+                aria-selected={idx === sel}
+                tabIndex={-1}
+                data-active={idx === sel ? 'true' : undefined}
+                onMouseMove={() => setSel(idx)}
+                onClick={() => it.run()}
+              >
+                <span className="mi-ico">
+                  <Icon name={it.icon} size={16} />
+                </span>
+                {it.label}
+                {it.meta && <span className="mi-end u-faint">{it.meta}</span>}
               </button>
             );
           })}

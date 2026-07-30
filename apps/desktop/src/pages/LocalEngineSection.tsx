@@ -62,6 +62,7 @@ import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
 import { modelLabel } from '../utils/modelLabel';
 import { voiceEmbedderRow, VOICE_EMBEDDER_ROW_ID } from '../utils/voiceStorageRow';
+import { settingDomId } from './settingsIndex';
 
 const PRESETS: LocalEnginePreset[] = ['light', 'balanced', 'quality'];
 
@@ -507,6 +508,7 @@ export function LocalEngineSection() {
 
       {!hwLoading && (
         <SettingRow
+          settingId="keep-resident"
           label={t('localEngine.keepResidentLabel')}
           hint={t('localEngine.keepResidentHint')}
           align="top"
@@ -532,6 +534,7 @@ export function LocalEngineSection() {
           модели (скачивается %/активен) из общих statuses/progresses. */}
       {!hwLoading && (
         <SettingRow
+          settingId="semantic-search"
           label={t('localEngine.semanticLabel')}
           hint={t('localEngine.semanticHint')}
           align="top"
@@ -569,7 +572,9 @@ export function LocalEngineSection() {
       )}
 
       {!hwLoading && (
-        <div>
+        // [B32.4] Якорь для палитры: пресет — не `SettingRow`, а группа
+        // радиокнопок, поэтому id вешается на её обёртку.
+        <div id={settingDomId('engine-preset')}>
           <GroupLabel>{t('localEngine.presetLabel')}</GroupLabel>
           <div
             role="radiogroup"

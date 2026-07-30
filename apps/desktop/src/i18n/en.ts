@@ -264,6 +264,7 @@ export const en: TranslationStrings = {
       language_repin_failed: 'Some text was recognised in the wrong language',
       mic_track_gap_padded: 'The microphone dropped out — the gap was padded with silence',
       system_track_gap_padded: 'System audio dropped out — the gap was padded with silence',
+      auto_stopped_on_silence: 'Recording stopped automatically after silence',
     },
     notFound: 'Call not found.',
     tabRecap: 'Recap',
@@ -574,6 +575,9 @@ export const en: TranslationStrings = {
     groupAutoDetect: 'Auto-detection',
     callDetectRowLabel: 'Suggest recording',
     callDetectCooldownRowLabel: 'Do not suggest again',
+    groupSilence: 'Silence during recording',
+    silencePromptRowLabel: 'Offer to stop',
+    silenceAutoStopRowLabel: 'Stop automatically',
     wipeRowHint: 'Recordings, contacts, voice samples, session and keys. Irreversible.',
     wipeDoneChip: 'wiped',
     hotkeyToggleHint: 'Esc cancels. System shortcuts (⌘W, ⌘C…) are unavailable.',
@@ -582,6 +586,13 @@ export const en: TranslationStrings = {
       'Only active during recording. Default ⌘⇧P.',
     callDetectHint: '“Record?” notification when a call is detected. Off by default for privacy.',
     callDetectCooldownOption: '{n} min',
+    // [T3/R14] Silence inside an active recording.
+    silencePromptHint:
+      'After 15 minutes of silence Wotold asks whether to stop the recording.',
+    silenceAutoStopHint:
+      'If the silence drags on, stop the recording and trim the silent tail so it never reaches the transcript.',
+    silenceAutoStopOption: 'After {n} min',
+    silenceAutoStopNever: 'Never',
     voiceLede:
       'Wotold can suggest who is speaking based on voice match — but only after downloading the biometric model (25 MB, optional). Final confirmation is always yours (passport R2).',
     summaryV2Label: 'New summary format',
@@ -924,6 +935,14 @@ export const en: TranslationStrings = {
       'Wotold detected an active microphone. Start a recording now?',
     suggestStart: 'Start recording',
     suggestDismiss: 'Dismiss',
+    // [T7/R14] SilencePrompt — silence inside an active recording.
+    silenceTitle: 'Silence in the recording',
+    silenceBody: '{min} min of silence so far. Stop the recording?',
+    silenceBodyWithStop: '{min} min of silence so far. It will stop on its own in {left} min.',
+    silenceStop: 'Stop recording',
+    silenceContinue: 'Keep recording',
+    silenceStoppedTitle: 'Recording stopped',
+    silenceStoppedBody: 'After {min} min of silence. The silent tail was trimmed.',
   },
 
   // [Q] Heavy-resource queue monitor (QueueMonitor + queued line).

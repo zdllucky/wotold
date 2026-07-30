@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::{
+    audio::silence_watch::SilenceWatchHandles,
     audio::{call_detect::CallDetectHandle, macos::RecordingSession},
     call_store::CallStore,
     db,
@@ -48,6 +49,11 @@ pub struct AppState {
     /// `take()` — sender дропается, orchestrator корректно exit'ит на
     /// `stop_rx` arm.
     pub orchestrator_stop_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    /// [T2/R14] Ручки наблюдателя тишины активной записи. `None` — запись не
+    /// идёт либо обе настройки тишины выключены. В отличие от оркестратора
+    /// наблюдатель работает и при выключенном chunked-режиме: тишину надо
+    /// ловить всегда.
+    pub silence_watch: Arc<Mutex<Option<SilenceWatchHandles>>>,
     /// [Bulk recap] Cancel-флаг для массового пересоздания пустых рекапов.
     /// `regenerate_empty_recaps` проверяет его между звонками; `cancel_bulk_recap`
     /// взводит. Sequential по природе (local LLM semaphore=1).
@@ -109,6 +115,7 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         orchestrator: Arc::new(Mutex::new(None)),
         orchestrator_pause_tx: Arc::new(Mutex::new(None)),
         orchestrator_stop_tx: Arc::new(Mutex::new(None)),
+        silence_watch: Arc::new(Mutex::new(None)),
         bulk_recap_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         #[cfg(target_os = "macos")]
         llm_server: Arc::new(Mutex::new(None)),

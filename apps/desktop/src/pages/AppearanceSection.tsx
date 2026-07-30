@@ -18,7 +18,7 @@ export function AppearanceSection() {
 
   return (
     <div>
-      <SettingRow label={t('settings.fieldTheme')}>
+      <SettingRow settingId="theme" label={t('settings.fieldTheme')}>
         <Segmented<Theme>
           options={themeOptions}
           value={theme}
@@ -26,7 +26,7 @@ export function AppearanceSection() {
           ariaLabel={t('settings.fieldTheme')}
         />
       </SettingRow>
-      <SettingRow label={t('settings.fieldLanguage')} last>
+      <SettingRow settingId="ui-language" label={t('settings.fieldLanguage')} last>
         <Select<Locale>
           value={locale}
           options={SUPPORTED_LOCALES.map((l) => ({

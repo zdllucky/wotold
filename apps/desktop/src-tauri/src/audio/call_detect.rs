@@ -21,7 +21,6 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::Mutex;
@@ -247,23 +246,13 @@ async fn maybe_emit(app: &AppHandle, bundle_id: &str, app_name: &str, reason: &s
     if let Err(e) = app.emit(RECORDING_SUGGESTED_EVENT, &payload) {
         log::warn!("emit {RECORDING_SUGGESTED_EVENT} failed: {e}");
     }
-    // [S4] Native macOS notification — поднимется баннером даже если окно
-    // приложения свернуто / в фоне. Tauri 2 action buttons на macOS пока
-    // не поддерживаются — поэтому notification сама по себе кликабельна и
-    // фронт-листенер на `recording:suggested` ловит её для in-app banner
-    // когда окно активно. Reopen окна по клику делается через `tauri-plugin-
-    // single-instance` deep-link, который мы прокидываем из notification
-    // body link'ом (см. ниже).
-    let body = format!("{app_name}: открыли микрофон. Открой Wotold чтобы начать запись.");
-    if let Err(e) = app
-        .notification()
-        .builder()
-        .title("Wotold — обнаружен звонок")
-        .body(body)
-        .show()
-    {
-        log::warn!("call-detect notification failed: {e}");
-    }
+    // [S4/T7] Нативный баннер поднимает фронт через `show_notification`:
+    // строки обязаны идти через `t()` и три локали (правило 4), а здесь они
+    // были русскими литералами — казах и англичанин видели русский текст.
+    // Webview остаётся живым при свёрнутом окне (close-to-tray прячет, а не
+    // закрывает), так что баннер доезжает и в фоне. Tauri 2 не поддерживает
+    // action-кнопки в уведомлениях на macOS, поэтому действие даёт in-app
+    // баннер на том же событии.
     true
 }
 

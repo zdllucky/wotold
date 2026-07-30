@@ -262,6 +262,7 @@ export const kk: TranslationStrings = {
       language_repin_failed: 'Мәтіннің бір бөлігі басқа тілде танылды',
       mic_track_gap_padded: 'Микрофон үзілді — бос орын тыныштықпен толтырылды',
       system_track_gap_padded: 'Жүйелік дыбыс үзілді — бос орын тыныштықпен толтырылды',
+      auto_stopped_on_silence: 'Жазба тыныштықтан кейін автоматты тоқтатылды',
     },
     notFound: 'Қоңырау табылмады.',
     tabRecap: 'Қорытынды',
@@ -572,6 +573,9 @@ export const kk: TranslationStrings = {
     groupAutoDetect: 'Авто-анықтау',
     callDetectRowLabel: 'Жазбаны ұсыну',
     callDetectCooldownRowLabel: 'Қайта ұсынбау',
+    groupSilence: 'Жазбадағы тыныштық',
+    silencePromptRowLabel: 'Тоқтатуды ұсыну',
+    silenceAutoStopRowLabel: 'Өзі тоқтатсын',
     wipeRowHint: 'Жазбалар, контактілер, дауыс үлгілері, сессия және кілттер. Қайтарылмайды.',
     wipeDoneChip: 'жойылды',
     hotkeyToggleHint: 'Esc — болдырмау. Жүйелік комбинациялар (⌘W, ⌘C…) қолжетімсіз.',
@@ -579,6 +583,13 @@ export const kk: TranslationStrings = {
     hotkeyPauseHint: 'Тек белсенді жазу кезінде жұмыс істейді. Әдепкі — ⌘⇧P.',
     callDetectHint: 'Қоңырау анықталғанда «Жазу керек пе?» хабарламасы. Құпиялылық үшін әдепкіде өшірулі.',
     callDetectCooldownOption: '{n} мин',
+    // [T3/R14] Белсенді жазбадағы тыныштық.
+    silencePromptHint:
+      '15 минут тыныштықтан кейін Wotold жазбаны тоқтату керек пе деп сұрайды.',
+    silenceAutoStopHint:
+      'Тыныштық ұзаққа созылса — жазбаны тоқтатып, тыныш соңын қиып тастау, ол мәтінге түспес үшін.',
+    silenceAutoStopOption: '{n} мин кейін',
+    silenceAutoStopNever: 'Ешқашан',
     voiceLede:
       'Wotold дауысты сәйкестендіру арқылы кім сөйлеп жатқанын ұсынуы мүмкін — бірақ биометриялық модельді жүктегеннен кейін ғана (25 МБ, қосымша). Соңғы растау сізде (паспорттың R2).',
     summaryV2Label: 'Қорытындының жаңа форматы',
@@ -921,6 +932,14 @@ export const kk: TranslationStrings = {
       'Wotold микрофонның белсенді екенін көрді. Қазір жазуды бастайық па?',
     suggestStart: 'Жазуды бастау',
     suggestDismiss: 'Жасыру',
+    // [T7/R14] SilencePrompt — белсенді жазбадағы тыныштық.
+    silenceTitle: 'Жазбада тыныштық',
+    silenceBody: 'Тыныштық {min} мин болды. Жазбаны тоқтатамыз ба?',
+    silenceBodyWithStop: 'Тыныштық {min} мин болды. {left} мин кейін жазба өзі тоқтайды.',
+    silenceStop: 'Жазбаны тоқтату',
+    silenceContinue: 'Жалғастыру',
+    silenceStoppedTitle: 'Жазба тоқтатылды',
+    silenceStoppedBody: '{min} мин тыныштықтан кейін. Тыныш соңы қиылды.',
   },
 
   // [Q] Ауыр ресурстар кезегінің мониторы (QueueMonitor + queued жолы).

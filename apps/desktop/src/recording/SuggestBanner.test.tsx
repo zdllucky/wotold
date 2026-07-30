@@ -37,6 +37,9 @@ import { SuggestBanner } from './SuggestBanner';
 
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
+// [T7] Старт идёт через consent-гейт App.onStart, а не через rec.start().
+let onStart: ReturnType<typeof vi.fn>;
+
 async function flush() {
   await act(async () => {
     await Promise.resolve();
@@ -51,6 +54,7 @@ beforeEach(() => {
     return Promise.resolve(null);
   });
   for (const k of Object.keys(listeners)) delete listeners[k];
+  onStart = vi.fn(async () => {});
 });
 
 afterEach(() => {
@@ -62,7 +66,7 @@ describe('SuggestBanner', () => {
     const { container } = render(
       <I18nProvider>
         <RecordingProvider>
-          <SuggestBanner />
+          <SuggestBanner onStart={onStart} />
         </RecordingProvider>
       </I18nProvider>,
     );
@@ -74,7 +78,7 @@ describe('SuggestBanner', () => {
     render(
       <I18nProvider>
         <RecordingProvider>
-          <SuggestBanner />
+          <SuggestBanner onStart={onStart} />
         </RecordingProvider>
       </I18nProvider>,
     );
@@ -102,7 +106,7 @@ describe('SuggestBanner', () => {
     render(
       <I18nProvider>
         <RecordingProvider>
-          <SuggestBanner />
+          <SuggestBanner onStart={onStart} />
         </RecordingProvider>
       </I18nProvider>,
     );
@@ -124,5 +128,35 @@ describe('SuggestBanner', () => {
     fireEvent.click(dismiss);
     await flush();
     expect(document.querySelector('.suggest-banner')).toBeNull();
+  });
+
+  // [T7] Регрессия: до фикса баннер звал `rec.start()` напрямую и был
+  // единственным путём старта в обход модала согласия (App.tsx onStart).
+  test('start goes through the consent gate, not straight to rec.start', async () => {
+    render(
+      <I18nProvider>
+        <RecordingProvider>
+          <SuggestBanner onStart={onStart} />
+        </RecordingProvider>
+      </I18nProvider>,
+    );
+    await flush();
+
+    await act(async () => {
+      listeners['recording:suggested']?.({
+        payload: {
+          bundle_id: 'us.zoom.xos',
+          app_name: 'Zoom',
+          reason: 'mic_busy_whitelisted_frontmost',
+        },
+      });
+    });
+    await flush();
+
+    fireEvent.click(screen.getByText('Начать запись'));
+    await flush();
+
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).not.toHaveBeenCalledWith('start_recording');
   });
 });

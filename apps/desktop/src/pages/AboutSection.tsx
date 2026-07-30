@@ -83,11 +83,11 @@ export function AboutSection() {
     <>
       <GroupLabel>{t('update.sectionAbout')}</GroupLabel>
 
-      <SettingRow label={t('update.version')} hint={t('update.versionHint')}>
+      <SettingRow settingId="app-version" label={t('update.version')} hint={t('update.versionHint')}>
         <span className="mono u-faint">{version ?? '—'}</span>
       </SettingRow>
 
-      <SettingRow label={t('update.check')} hint={statusHint} align="top">
+      <SettingRow settingId="check-update" label={t('update.check')} hint={statusHint} align="top">
         {state.kind === 'available' ? (
           <Button
             variant="primary"
@@ -117,7 +117,7 @@ export function AboutSection() {
         </p>
       )}
 
-      <SettingRow label={t('update.changelog')} hint={t('update.changelogHint')} last>
+      <SettingRow settingId="changelog" label={t('update.changelog')} hint={t('update.changelogHint')} last>
         <a className="btn btn--ghost" href={RELEASES_URL} target="_blank" rel="noreferrer">
           <Icon name="external" size={14} />
         </a>

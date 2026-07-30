@@ -13,6 +13,7 @@ import { ContactsPage } from './pages/ContactsPage';
 import { DesignSystemPage } from './pages/DesignSystemPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { SettingsPage } from './pages/SettingsPage';
+import type { SettingsTarget } from './pages/settingsIndex';
 import { getSetting, setSetting, SETTINGS_KEYS } from './api/settings';
 import { getActivePipelineCount } from './api/calls';
 import { countCalls, listCallsPage, type Call } from './api/recording';
@@ -26,6 +27,7 @@ import { useFocusTrap } from './hooks/useFocusTrap';
 import { useQueueState } from './hooks/useQueueState';
 import { I18nProvider, useI18n } from './i18n';
 import { RecordingProvider, useRecording } from './recording/RecordingContext';
+import { SilencePrompt } from './recording/SilencePrompt';
 import { SuggestBanner } from './recording/SuggestBanner';
 import { ThemeProvider } from './theme/useTheme';
 import {
@@ -90,6 +92,9 @@ function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [railW, setRailW] = useState<number>(readSavedRailW);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // [B32.4] Куда вести из палитры внутри Настроек. Роутера в приложении нет —
+  // вид держит useState, поэтому цель едет тем же способом, отдельным состоянием.
+  const [settingsTarget, setSettingsTarget] = useState<SettingsTarget | null>(null);
   // [window] Раскрыт ли кастомный светофор (hover верхнего-левого угла).
   const [chromeOpen, setChromeOpen] = useState(false);
   // [window] Нативный fullscreen — прячем кастомный светофор, возвращаем нативные.
@@ -550,7 +555,8 @@ function AppShell() {
               ? t('recording.announcePaused')
               : t('recording.announceIdle')}
         </p>
-        <SuggestBanner />
+        <SuggestBanner onStart={onStart} />
+        <SilencePrompt onStop={onStop} />
         <UpdateBanner />
         {localError && (
           <p
@@ -597,7 +603,7 @@ function AppShell() {
           />
         )}
         {view === 'contacts' && <ContactsPage onOpenCall={onOpenCall} />}
-        {view === 'settings' && <SettingsPage />}
+        {view === 'settings' && <SettingsPage target={settingsTarget} />}
         {view === 'ds' && IS_DEV && <DesignSystemPage />}
       </main>
 
@@ -662,6 +668,14 @@ function AppShell() {
           }}
           onAsk={(q) => {
             onAskAssistant(q);
+            setPaletteOpen(false);
+          }}
+          onOpenSettings={(target) => {
+            // Новый объект на каждый переход: попав дважды подряд в одну и ту
+            // же строку, юзер должен увидеть подсветку оба раза, а по ссылочно
+            // равной цели эффект в SettingsPage не перезапустится.
+            setSettingsTarget({ ...target });
+            onNav('settings');
             setPaletteOpen(false);
           }}
           recent={recent}

@@ -147,10 +147,10 @@ export function AssistantPage({
     // [B24.7] Shared shell (канон Inbox/Contacts, B18.9-fix): bleed мимо
     // паддинга .app-main 34/44 + fill вьюпорта — .view-head флашится к краям,
     // .as-layout получает всю высоту, composer-dock прижат к низу.
-    <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
+    <div className="main page-bleed">
       <ViewHead icon="chat" title={t('assistant.title')}>
         {/* [B30.4] Порядок: раздел → поиск → титул чата; статчип убран. */}
-        <div style={{ flex: '0 1 300px', minWidth: 120, marginLeft: 'var(--s2)' }}>
+        <div style={{ flex: '0 0 var(--search-w)', minWidth: 0, marginLeft: 'var(--s2)' }}>
           <label className="input" style={{ height: 32 }}>
             <Icon name="search" size={14} className="iico" />
             <input

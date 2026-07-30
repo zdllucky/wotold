@@ -346,6 +346,7 @@ export function VoiceModelSection() {
           модель не скачана: без эмбеддингов матчинга нет. */}
       <div style={{ marginTop: 8 }}>
         <SettingRow
+          settingId="auto-bind"
           label={t('settings.speakersAutoBindLabel')}
           hint={t('settings.speakersAutoBindHint')}
           align="top"
@@ -360,6 +361,7 @@ export function VoiceModelSection() {
         </SettingRow>
         {autoBindEnabled && valid && (
           <SettingRow
+            settingId="auto-bind-threshold"
             label={t('settings.autoBindThresholdLabel')}
             hint={t('settings.autoBindThresholdHint')}
             align="top"
@@ -375,6 +377,7 @@ export function VoiceModelSection() {
           </SettingRow>
         )}
         <SettingRow
+          settingId="mic-diarization"
           label={t('settings.speakersMicDiarizationLabel')}
           hint={
             pyannoteReady ? (

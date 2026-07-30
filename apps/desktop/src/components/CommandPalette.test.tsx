@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import type { Call } from '../api/recording';
+import { SETTINGS_ENTRIES } from '../pages/settingsIndex';
 import { CommandPalette } from './CommandPalette';
 
 // useI18n falls back to ru (navigator pinned in test/setup) without a provider.
@@ -96,5 +97,63 @@ describe('CommandPalette', () => {
     fireEvent.change(input, { target: { value: 'полный промах' } });
     expect(screen.queryByText('Спросить ассистента')).toBeNull();
     expect(screen.getByText('Ничего не найдено')).toBeTruthy();
+  });
+
+  // ── [B32.4] Настройки в глобальном поиске. Раньше палитра умела только
+  //    «открыть Настройки» целиком, и где живёт конкретный тумблер — было
+  //    нечем узнать.
+
+  test('section name opens that settings tab, and lists what is inside it', () => {
+    const onOpenSettings = vi.fn();
+    setup({ onOpenSettings });
+    const input = document.querySelector('.palette-input input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'внешний' } });
+
+    // Имя раздела находит и сам раздел, и его строки — у них раздел стоит
+    // в мете. Первым идёт раздел: он и открывает вкладку целиком.
+    const hits = screen.getAllByText('Внешний вид');
+    expect(hits.length).toBeGreaterThan(1);
+    fireEvent.click(hits[0]!);
+    expect(onOpenSettings).toHaveBeenCalledWith({ section: 'appearance' });
+  });
+
+  test('a concrete setting carries both the section and the anchor', () => {
+    const onOpenSettings = vi.fn();
+    setup({ onOpenSettings });
+    const input = document.querySelector('.palette-input input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'останавливать' } });
+
+    fireEvent.click(screen.getByText('Останавливать автоматически'));
+    expect(onOpenSettings).toHaveBeenCalledWith({
+      section: 'recording',
+      highlight: 'silence-auto-stop',
+    });
+  });
+
+  test('settings results are capped so they cannot flood the list', () => {
+    // «настройки» — ключевое слово у КАЖДОГО пункта настроек; без потолка
+    // запрос выбросил бы из выдачи и команды, и звонки.
+    const onOpenSettings = vi.fn();
+    setup({ onOpenSettings });
+    const input = document.querySelector('.palette-input input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'настройки' } });
+
+    const items = document.querySelectorAll('.menu-item');
+    expect(SETTINGS_ENTRIES.length).toBeGreaterThan(6);
+    // 6 настроек + само действие «Настройки» из группы команд.
+    expect(items.length).toBeLessThanOrEqual(7);
+  });
+
+  test('an empty query does not list settings at all', () => {
+    // Палитра открывается списком действий, а не оглавлением настроек.
+    setup({ onOpenSettings: vi.fn() });
+    expect(screen.queryByText('Внешний вид')).toBeNull();
+  });
+
+  test('without the handler nothing settings-related is offered', () => {
+    setup();
+    const input = document.querySelector('.palette-input input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'внешний' } });
+    expect(screen.queryByText('Внешний вид')).toBeNull();
   });
 });

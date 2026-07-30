@@ -43,6 +43,13 @@ export const SETTINGS_KEYS = {
   /** [S1] Cooldown в минутах — не предлагать снова для того же app
    *  в течение N минут после dismiss или start. Default '5'. */
   CALL_DETECT_COOLDOWN_MIN: 'call_detect.cooldown_min',
+  /** [T3/R14] Подсказка «в записи тишина — остановить?» через 15 минут
+   *  тишины. Порог фиксирован, настройкой регулируется только сам факт
+   *  подсказки. '1' = on. Default ON. */
+  SILENCE_PROMPT: 'recording.silence_prompt',
+  /** [T3/R14] Через сколько минут тишины остановить запись самим и подрезать
+   *  тихий хвост: '30' | '60' | '120' | 'never'. Default '30'. */
+  SILENCE_AUTO_STOP: 'recording.silence_auto_stop',
   /** [S7] Last logical X/Y position floating recording widget (RecFloat).
    *  Сохраняется при window Moved event, читается при show_recording_widget.
    *  Если пусто — fallback на top-right primary monitor. */
@@ -89,6 +96,13 @@ export const SETTINGS_DEFAULTS = {
   /** [S1] Call-detect default OFF (R3 deviation opt-in). */
   CALL_DETECT_ENABLED: false,
   CALL_DETECT_COOLDOWN_MIN: '5' as CallDetectCooldown,
+  /** [T3/R14] Подсказка о тишине — default ON (истина в Rust: выключают
+   *  только явные '0'/'false', отсутствие ключа = ON). */
+  SILENCE_PROMPT: true,
+  /** [T3/R14] Авто-стоп по тишине — default 30 минут. 'never' = полный
+   *  opt-out; держать в синхроне с `DEFAULT_AUTO_STOP_MIN` в
+   *  `commands/silence.rs`. */
+  SILENCE_AUTO_STOP: '30' as SilenceAutoStop,
   /** [P-fix7, B21] Mic diarization — default OFF (истина = backend
    *  `matches!(Some("1")|Some("true"))` в recording.rs / pipeline/mod.rs:
    *  missing = OFF). Mic = микрофон владельца = один человек (M2.4);
@@ -117,6 +131,12 @@ export const MIC_DIARIZATION_NUM_SPEAKERS_OPTIONS: MicDiarizationNumSpeakers[] =
 /** [S1] Whitelist cooldown values 3/5/10/15 min. */
 export type CallDetectCooldown = '3' | '5' | '10' | '15';
 export const CALL_DETECT_COOLDOWNS: CallDetectCooldown[] = ['3', '5', '10', '15'];
+
+/** [T3/R14] Порог авто-стопа по тишине. `'never'` — полный opt-out (R14).
+ *  Whitelist повторён в Rust (`ALLOWED_AUTO_STOP_MIN` в `commands/silence.rs`):
+ *  значение приходит из БД, и бэкенд не верит ему на слово. */
+export type SilenceAutoStop = '30' | '60' | '120' | 'never';
+export const SILENCE_AUTO_STOPS: SilenceAutoStop[] = ['30', '60', '120', 'never'];
 
 /** [V7] Whitelisted threshold values. '90' / '95' / '98' — три уровня риска.
  *  String union because Select<V extends string> generic constraint. */

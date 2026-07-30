@@ -34,6 +34,7 @@ interface ToggleRowProps {
 function ToggleRow({ label, hint, checked, onToggle, last }: ToggleRowProps) {
   return (
     <SettingRow
+      settingId="summary-v2"
       label={label}
       hint={hint}
       align="top"
@@ -133,6 +134,7 @@ export function LabsSection() {
 
       {/* [P1.2] Force-N-speakers Labs override. Whitelist 4 options → Select. */}
       <SettingRow
+        settingId="force-num-speakers"
         label={t('settings.forceNumSpeakersLabel')}
         hint={t('settings.forceNumSpeakersHint')}
         align="top"

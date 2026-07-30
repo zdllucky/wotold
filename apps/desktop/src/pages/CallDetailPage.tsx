@@ -258,7 +258,7 @@ export function CallDetailPage({ callId, onBack, onOpenCall, onAskGlobal }: Call
     // (Звонки › <title> + kebab), then the existing two-column body below.
     // `.main` gives the flex column + relative positioning; negative margins
     // pull the bar full-bleed across the padded `.app-main` scroll viewport.
-    <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
+    <div className="main page-bleed">
       <div className="view-head" data-tauri-drag-region="deep">
         {/* Back to inbox — plain text button, no border/bg (prototype CallView). */}
         <button
@@ -729,6 +729,7 @@ const DEGRADED_LABELS = {
   language_repin_failed: 'callDetail.degraded.language_repin_failed',
   mic_track_gap_padded: 'callDetail.degraded.mic_track_gap_padded',
   system_track_gap_padded: 'callDetail.degraded.system_track_gap_padded',
+  auto_stopped_on_silence: 'callDetail.degraded.auto_stopped_on_silence',
 } as const;
 
 function degradedTitle(flags: string[], t: TFn): string {

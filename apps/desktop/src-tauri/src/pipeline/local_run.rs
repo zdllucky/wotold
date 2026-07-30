@@ -194,6 +194,13 @@ async fn transcribe_tracks(
         .ok();
     }
 
+    // [T6/R14] Подрезка тихого хвоста у авто-остановленной записи. Место
+    // выбрано так, чтобы один рез накрыл оба пути: корневые WAV уже собраны
+    // из чанков (выше), а транскрипт ещё не выбран (ниже). Идемпотентно —
+    // повторный прогон видит уже короткий файл, — поэтому переживает
+    // reprocess и пере-STT при смене языка.
+    let silence_cutoff_ms = trim_silence_tail(pool, ctx).await;
+
     // Halt только если КАЖДЫЙ chunk провален (нечего собирать). Partial —
     // предупреждаем и строим транскрипт из done-подмножества.
     match &gate {
@@ -223,108 +230,114 @@ async fn transcribe_tracks(
     // full-file STT и собираем mic/sys из DB. Cloud engine сюда не доходит
     // (run_inner ветка), для local engine с chunked OFF в `call_chunks`
     // ничего нет → assembly возвращает None → fall back на full-file STT.
-    let (mic_t, sys_t) = match chunk_assembly::load_chunked_transcripts(pool, &ctx.call_id).await? {
-        Some(tracks) => {
-            log::info!(
-                "call {}: using chunked transcripts (skip full-file STT)",
-                ctx.call_id
-            );
-            // Audio уже merged выше (независимо от транскрипт-полноты).
-            // UI ожидает progress на Stage::Transcribe — эмитим 100%
-            // мгновенно чтобы прогресс-бар не висел.
-            let step = Stage::Transcribe.step();
-            emit_progress(pool, Some(app), &ctx.call_id, step, 100, None, None).await;
-            tracks
-        }
-        None => {
-            let mic_stt = LocalWhisperProvider::for_preset(
-                &ctx.app_data_dir,
-                whisper_id,
-                TrackKind::MicOwner,
-            )
-            .with_call(ctx.call_id.clone())
-            .with_app(app.clone())
-            .await;
-            let sys_stt =
-                LocalWhisperProvider::for_preset(&ctx.app_data_dir, whisper_id, TrackKind::System)
-                    .with_call(ctx.call_id.clone())
-                    .with_app(app.clone())
-                    .await;
-            let opts = TranscriptionOpts {
-                lang: s.stt_lang.clone(),
-                diarization: true,
-                prompt: None,
-            };
-            let (mut mic, mut sys) = run_stage(
-                pool,
-                Some(app),
-                &ctx.call_id,
-                Stage::Transcribe,
-                None,
-                // Тикающий счётчик на время STT: whisper-cli отдаёт результат
-                // целиком, промежуточных процентов нет, и на часовой записи
-                // шаг «Распознаём речь» иначе стоит неподвижно минутами.
-                recap_progress::with_stt_progress_emitter(
-                    Some(app.clone()),
-                    ctx.call_id.clone(),
-                    async {
-                        let mic_fut = mic_stt.transcribe(&ctx.mic_path, opts.clone());
-                        let sys_fut = sys_stt.transcribe(&ctx.system_path, opts.clone());
-                        let (mic_r, sys_r) = tokio::join!(mic_fut, sys_fut);
-                        let mic = mic_r.map_err(|e| {
-                            AppError::Other(format!("local_engine_stt_failed (mic): {e}"))
-                        })?;
-                        let sys = sys_r.map_err(|e| {
-                            AppError::Other(format!("local_engine_stt_failed (system): {e}"))
-                        })?;
-                        Ok::<_, AppError>((mic, sys))
-                    },
-                ),
-            )
-            .await?;
-
-            // [P-fix4] Auto-режим: пин языка звонка на ОБА трека. STT детектит
-            // язык на каждом треке независимо; тихий старт mic (владелец слушает)
-            // → mis-detect «en» → русская речь уходит в [FOREIGN]. Звонок
-            // одноязычный — определяем язык по треку с речью (system как якорь:
-            // собеседник обычно говорит чётко с начала) и перезапускаем трек,
-            // чей детект отличается. explicit stt_lang сюда не попадает.
-            // [P-fix4] Auto-режим: пин языка звонка на ОБА трека. STT детектит
-            // язык на каждом треке независимо; тихий старт mic (владелец слушает)
-            // → mis-detect «en» → русская речь уходит в [FOREIGN]. Звонок
-            // одноязычный — определяем язык по треку с речью (system как якорь:
-            // собеседник обычно говорит чётко с начала) и перезапускаем трек,
-            // чей детект отличается. explicit stt_lang сюда не попадает.
-            if s.stt_lang == "auto" {
-                if let Some(call_lang) = call_language(&mic, &sys) {
-                    // [TD-35] Обе дорожки пере-расшифровываются одним хелпером:
-                    // раньше это были две почти дословные копии, и Err-ветку
-                    // TD-15 в них приходилось чинить дважды.
-                    mic = repin_track_language(
-                        pool,
-                        ctx,
-                        &mic_stt,
-                        &ctx.mic_path,
-                        mic,
-                        &call_lang,
-                        "mic",
-                    )
-                    .await;
-                    sys = repin_track_language(
-                        pool,
-                        ctx,
-                        &sys_stt,
-                        &ctx.system_path,
-                        sys,
-                        &call_lang,
-                        "system",
-                    )
-                    .await;
-                }
+    let (mic_t, sys_t) =
+        match chunk_assembly::load_chunked_transcripts(pool, &ctx.call_id, silence_cutoff_ms)
+            .await?
+        {
+            Some(tracks) => {
+                log::info!(
+                    "call {}: using chunked transcripts (skip full-file STT)",
+                    ctx.call_id
+                );
+                // Audio уже merged выше (независимо от транскрипт-полноты).
+                // UI ожидает progress на Stage::Transcribe — эмитим 100%
+                // мгновенно чтобы прогресс-бар не висел.
+                let step = Stage::Transcribe.step();
+                emit_progress(pool, Some(app), &ctx.call_id, step, 100, None, None).await;
+                tracks
             }
-            (mic, sys)
-        }
-    };
+            None => {
+                let mic_stt = LocalWhisperProvider::for_preset(
+                    &ctx.app_data_dir,
+                    whisper_id,
+                    TrackKind::MicOwner,
+                )
+                .with_call(ctx.call_id.clone())
+                .with_app(app.clone())
+                .await;
+                let sys_stt = LocalWhisperProvider::for_preset(
+                    &ctx.app_data_dir,
+                    whisper_id,
+                    TrackKind::System,
+                )
+                .with_call(ctx.call_id.clone())
+                .with_app(app.clone())
+                .await;
+                let opts = TranscriptionOpts {
+                    lang: s.stt_lang.clone(),
+                    diarization: true,
+                    prompt: None,
+                };
+                let (mut mic, mut sys) = run_stage(
+                    pool,
+                    Some(app),
+                    &ctx.call_id,
+                    Stage::Transcribe,
+                    None,
+                    // Тикающий счётчик на время STT: whisper-cli отдаёт результат
+                    // целиком, промежуточных процентов нет, и на часовой записи
+                    // шаг «Распознаём речь» иначе стоит неподвижно минутами.
+                    recap_progress::with_stt_progress_emitter(
+                        Some(app.clone()),
+                        ctx.call_id.clone(),
+                        async {
+                            let mic_fut = mic_stt.transcribe(&ctx.mic_path, opts.clone());
+                            let sys_fut = sys_stt.transcribe(&ctx.system_path, opts.clone());
+                            let (mic_r, sys_r) = tokio::join!(mic_fut, sys_fut);
+                            let mic = mic_r.map_err(|e| {
+                                AppError::Other(format!("local_engine_stt_failed (mic): {e}"))
+                            })?;
+                            let sys = sys_r.map_err(|e| {
+                                AppError::Other(format!("local_engine_stt_failed (system): {e}"))
+                            })?;
+                            Ok::<_, AppError>((mic, sys))
+                        },
+                    ),
+                )
+                .await?;
+
+                // [P-fix4] Auto-режим: пин языка звонка на ОБА трека. STT детектит
+                // язык на каждом треке независимо; тихий старт mic (владелец слушает)
+                // → mis-detect «en» → русская речь уходит в [FOREIGN]. Звонок
+                // одноязычный — определяем язык по треку с речью (system как якорь:
+                // собеседник обычно говорит чётко с начала) и перезапускаем трек,
+                // чей детект отличается. explicit stt_lang сюда не попадает.
+                // [P-fix4] Auto-режим: пин языка звонка на ОБА трека. STT детектит
+                // язык на каждом треке независимо; тихий старт mic (владелец слушает)
+                // → mis-detect «en» → русская речь уходит в [FOREIGN]. Звонок
+                // одноязычный — определяем язык по треку с речью (system как якорь:
+                // собеседник обычно говорит чётко с начала) и перезапускаем трек,
+                // чей детект отличается. explicit stt_lang сюда не попадает.
+                if s.stt_lang == "auto" {
+                    if let Some(call_lang) = call_language(&mic, &sys) {
+                        // [TD-35] Обе дорожки пере-расшифровываются одним хелпером:
+                        // раньше это были две почти дословные копии, и Err-ветку
+                        // TD-15 в них приходилось чинить дважды.
+                        mic = repin_track_language(
+                            pool,
+                            ctx,
+                            &mic_stt,
+                            &ctx.mic_path,
+                            mic,
+                            &call_lang,
+                            "mic",
+                        )
+                        .await;
+                        sys = repin_track_language(
+                            pool,
+                            ctx,
+                            &sys_stt,
+                            &ctx.system_path,
+                            sys,
+                            &call_lang,
+                            "system",
+                        )
+                        .await;
+                    }
+                }
+                (mic, sys)
+            }
+        };
     Ok((mic_t, sys_t))
 }
 
@@ -682,6 +695,88 @@ async fn audio_byte_total(mic: &Path, sys: &Path) -> Option<i64> {
 /// [TD-37] Записать оговорку о качестве обработки. Ошибка записи не роняет
 /// звонок: это диагностика на пути, который уже деградировал, и падать из-за
 /// неё было бы хуже самой деградации.
+/// [T6/R14] Обрезать корневые дорожки по точке реза, записанной авто-стопом.
+/// Возвращает точку — её же получает сборка транскрипта, чтобы выбросить
+/// сегменты с тихого хвоста (whisper прогнал их ещё во время записи).
+///
+/// `None` — резать нечего: запись остановлена руками либо колонки нет.
+///
+/// Ошибки подрезки не фатальны: аудио и транскрипт остаются полными, просто с
+/// тихим хвостом. Ронять из-за диагностической правки готовый звонок было бы
+/// хуже самой проблемы — но точку возвращаем в любом случае, чтобы транскрипт
+/// подрезался даже при неудаче с файлами.
+#[cfg(target_os = "macos")]
+async fn trim_silence_tail(pool: &SqlitePool, ctx: &PipelineCtx) -> Option<u64> {
+    let cutoff = match db::get_silence_trim_ms(pool, &ctx.call_id).await {
+        Ok(v) => v?,
+        Err(e) => {
+            log::warn!(
+                "silence trim: чтение точки реза для {} упало: {e}",
+                ctx.call_id
+            );
+            return None;
+        }
+    };
+
+    // [T6 review] У точки реза и у дорожки РАЗНЫЕ шкалы времени, и путать их
+    // нельзя. `silence_trim_ms` — wall-clock от начала записи, паузы включены
+    // (RMS-таймстемпы считаются как `now - started_at`). WAV же на паузе не
+    // растёт: сайдкар дропает кадры. После часовой паузы точка реза уезжает за
+    // конец файла, `trim_wav_tail` видит «резать нечего» и молча ничего не
+    // делает — хвост остаётся, а чип обещает, что его убрали.
+    //
+    // Длина в шкале дорожки уже посчитана на стопе: `calls.duration_sec` =
+    // (точка реза − паузы). Её и берём для файлов, оставляя wall-clock точку
+    // для транскрипта — его чанки размечены той же wall-clock шкалой.
+    let audio_keep_ms = match db::get_call(pool, &ctx.call_id).await {
+        Ok(Some(call)) => call
+            .duration_sec
+            .map(|sec| (sec.max(0) as u64).saturating_mul(1_000))
+            .unwrap_or(cutoff),
+        Ok(None) | Err(_) => cutoff,
+    };
+
+    let mic = ctx.mic_path.clone();
+    let system = ctx.system_path.clone();
+    // Правило 5: hound синхронен, а на двухчасовой дорожке это секунды CPU —
+    // на tokio-воркере такой I/O держал бы поток.
+    let joined = tokio::task::spawn_blocking(move || {
+        (
+            crate::audio::wav_trim::trim_wav_tail(&mic, audio_keep_ms),
+            crate::audio::wav_trim::trim_wav_tail(&system, audio_keep_ms),
+        )
+    })
+    .await;
+
+    match joined {
+        Ok((mic_r, sys_r)) => {
+            for (track, result) in [("mic", mic_r), ("system", sys_r)] {
+                match result {
+                    Ok(Some(report)) => log::info!(
+                        "silence trim: {} {track} {}ms → {}ms",
+                        ctx.call_id,
+                        report.before_ms,
+                        report.after_ms
+                    ),
+                    Ok(None) => log::debug!("silence trim: {} {track} резать нечего", ctx.call_id),
+                    Err(e) => log::warn!("silence trim: {} {track} не подрезан: {e}", ctx.call_id),
+                }
+            }
+        }
+        Err(e) => log::warn!(
+            "silence trim: задача подрезки для {} упала: {e}",
+            ctx.call_id
+        ),
+    }
+
+    // Правило 3: запись остановлена не пользователем и аудио изменено — это
+    // обязано быть видно в шапке звонка, а не только в логе. Флаг ставится
+    // здесь, а не на стопе, потому что reprocess чистит флаги и должен
+    // проставить его заново.
+    mark_degraded(pool, &ctx.call_id, DegradedFlag::AutoStoppedOnSilence).await;
+    Some(cutoff)
+}
+
 async fn mark_degraded(pool: &SqlitePool, call_id: &str, flag: DegradedFlag) {
     if let Err(e) = db::add_degraded_flag(pool, call_id, flag).await {
         log::warn!(
