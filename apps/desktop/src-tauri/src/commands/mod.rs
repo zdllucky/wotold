@@ -21,7 +21,6 @@ pub mod recovery;
 pub mod settings;
 pub mod share;
 pub mod speakers;
-pub mod voice_model;
 pub mod widget;
 
 // Re-exports чтобы `commands::list_calls` и т.д. продолжали резолвиться
@@ -41,5 +40,4 @@ pub use recovery::*;
 pub use settings::*;
 pub use share::*;
 pub use speakers::*;
-pub use voice_model::*;
 pub use widget::*;

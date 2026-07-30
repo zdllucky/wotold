@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   HwReport,
   LocalEnginePreset,
+  LocalModelKind,
   ModelStatus,
   PresetSpec,
 } from '@wotold/contracts';
@@ -13,7 +14,7 @@ import type {
 /** Запись каталога (без url/sha256 — те приватны для backend). */
 export interface LocalEngineCatalogEntry {
   id: string;
-  kind: 'stt' | 'llm' | 'diarization';
+  kind: LocalModelKind;
   display_name: string;
   size_bytes: number;
   license_url: string;

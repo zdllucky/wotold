@@ -66,6 +66,12 @@ pub async fn init(app: AppHandle) -> Result<AppState, AppError> {
         .map_err(|e| AppError::Init(format!("app_data_dir: {e}")))?;
     tokio::fs::create_dir_all(&app_data_dir).await?;
 
+    // Голосовой эмбеддер переехал в каталог моделей — забираем файл со старого
+    // пути до первого обращения к нему (иначе апгрейд выглядит как «модуль
+    // пропал» и требует повторные 26 MB). Дешёвая проверка двух путей.
+    #[cfg(target_os = "macos")]
+    crate::local_engine::model_migrate::migrate_legacy_voice_embedder(&app_data_dir);
+
     let pool = db::init(&app_data_dir).await?;
     let owner = db::ensure_owner_contact(&pool).await?;
     log::info!("owner contact: {}", owner.id);

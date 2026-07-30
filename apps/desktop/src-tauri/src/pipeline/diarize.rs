@@ -21,7 +21,7 @@ use crate::providers::transcription::DiarizedTranscript;
 /// Шаги:
 ///
 /// - Проверка наличия pyannote-segmentation на диске (MODEL_CATALOG).
-/// - Проверка наличия WeSpeaker (B3.7c, `voice_model.rs`).
+/// - Проверка наличия WeSpeaker (каталожная запись `voice-embedder`).
 /// - Spawn `SortformerDiarizer` + `.diarize(system_path)`.
 /// - Apply `merge::merge_word_with_speaker` на sys_t.segments.
 /// - Вернуть обновлённый sys_t.
@@ -168,9 +168,13 @@ async fn diarize_track(
         return transcript;
     }
 
-    // 2. WeSpeaker embedding (B3.7c) — отдельный путь от model catalog.
-    let emb_path = crate::voice_model::model_path(app_data_dir);
-    if !emb_path.exists() {
+    // 2. WeSpeaker embedding — такая же каталожная запись, как pyannote выше.
+    let emb_path = models::model_path(app_data_dir, ModelId::VOICE_EMBEDDER.as_str());
+    let emb_present = matches!(
+        models::check_status_fast(app_data_dir, ModelId::VOICE_EMBEDDER.as_str()).await,
+        Ok(ModelStatus::Present { .. })
+    );
+    if !emb_present {
         log::warn!(
             "diarize_track[{track_kind}]: WeSpeaker embedder ({}) отсутствует — fall back",
             emb_path.display()

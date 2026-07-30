@@ -6,27 +6,22 @@
 // backend'ом, UI не было), несколько голосов на микрофоне (при отсутствии
 // pyannote — кнопка установки модуля с реальным прогрессом model:progress).
 //
-// Слушает `voice-model:progress`/`voice-model:done` (WeSpeaker) и
-// `model:progress`/`model:done` (pyannote) — логика download/delete 1-в-1.
+// Голосовой эмбеддер стал каталожной моделью (`voice-embedder`): и он, и
+// pyannote качаются одной командой и рапортуют одними событиями
+// `model:progress`/`model:done`. До этого у эмбеддера была своя качалка со
+// своими `voice-model:*`, и таблица моделей в «Обработке» слушала не тот
+// канал — кнопка скачивания выглядела мёртвой, хотя файл качался.
 
 import { useCallback, useEffect, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import {
-  voiceModelDelete,
-  voiceModelDownload,
-  voiceModelInfo,
-  voiceModelStatus,
-  type VoiceModelDoneStatus,
-  type VoiceModelInfo,
-  type VoiceModelProgress,
-  type VoiceModelStatus,
-} from '../api/voiceModel';
-import {
+  localEngineModelDelete,
   localEngineModelDownload,
   localEngineModelStatus,
 } from '../api/local-engine';
-import type { ModelStatus } from '@wotold/contracts';
+import { voiceEmbedderFeatureEnabled } from '../api/speakers';
+import type { ModelProgressEvent, ModelStatus } from '@wotold/contracts';
 import {
   AUTO_BIND_THRESHOLDS,
   getSetting,
@@ -41,16 +36,25 @@ import { Button, Chip, Icon, IconBtn, Progress, Select, SettingRow, Skeleton, Sw
 
 type TFn = ReturnType<typeof useI18n>['t'];
 
+const EMBEDDER_ID = 'voice-embedder';
+const PYANNOTE_ID = 'pyannote-segmentation';
+
+/** Статус загрузки модели из `model:done` (union по `status`). */
+type ModelDoneEvent =
+  | { id: string; status: 'ok' | 'already_present' }
+  | { id: string; status: 'verify_failed'; expected: string; got: string }
+  | { id: string; status: 'io_error'; message: string };
+
 function formatMB(bytes: number, t: TFn): string {
   return t('voiceModel.mb', { n: (bytes / (1024 * 1024)).toFixed(1) });
 }
 
 export function VoiceModelSection() {
   const { t } = useI18n();
-  const [status, setStatus] = useState<VoiceModelStatus | null>(null);
-  const [info, setInfo] = useState<VoiceModelInfo | null>(null);
+  const [status, setStatus] = useState<ModelStatus | null>(null);
+  const [featureEnabled, setFeatureEnabled] = useState<boolean | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const [progress, setProgress] = useState<VoiceModelProgress | null>(null);
+  const [progress, setProgress] = useState<ModelProgressEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [autoBindEnabled, setAutoBindEnabled] = useState<boolean>(
@@ -70,13 +74,26 @@ export function VoiceModelSection() {
 
   const refreshPyannote = useCallback(async () => {
     try {
-      const s = await localEngineModelStatus('pyannote-segmentation');
-      setPyannoteStatus(s);
+      setPyannoteStatus(await localEngineModelStatus(PYANNOTE_ID));
     } catch {
       // local-engine catalog не доступен — не критично, скрываем UI блок.
       setPyannoteStatus(null);
     }
   }, []);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [s, feature] = await Promise.all([
+        localEngineModelStatus(EMBEDDER_ID),
+        voiceEmbedderFeatureEnabled(),
+      ]);
+      setStatus(s);
+      setFeatureEnabled(feature);
+      setError(null);
+    } catch (e) {
+      setError(humanError(e, t));
+    }
+  }, [t]);
 
   useEffect(() => {
     void (async () => {
@@ -98,30 +115,60 @@ export function VoiceModelSection() {
     })();
   }, [refreshPyannote]);
 
-  // [B21] Реальный прогресс установки pyannote. Листенер вешается сразу на
-  // mount (не на флаг): listen() — async IPC, гейт на pyannoteDownloading
-  // проигрывал гонку быстрым загрузкам (~6МБ) и % не успевал отрисоваться.
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  // Один листенер на оба модуля. [B21] Вешается сразу на mount (не на флаг):
+  // listen() — async IPC, гейт на *Downloading проигрывал гонку быстрым
+  // загрузкам (~6МБ) и % не успевал отрисоваться. cancelled-guard (mirror
+  // LocalEngineSection [Review HIGH-2]): без него cleanup до резолва listen()
+  // оставлял listener-leak на всю сессию.
   useEffect(() => {
     let cancelled = false;
-    let un: UnlistenFn | undefined;
+    let unProgress: UnlistenFn | undefined;
+    let unDone: UnlistenFn | undefined;
     (async () => {
-      un = await listen<{ id: string; pct: number }>('model:progress', (e) => {
-        if (e.payload.id === 'pyannote-segmentation') setPyannotePct(e.payload.pct);
+      unProgress = await listen<ModelProgressEvent>('model:progress', (e) => {
+        if (e.payload.id === EMBEDDER_ID) setProgress(e.payload);
+        if (e.payload.id === PYANNOTE_ID) setPyannotePct(e.payload.pct);
       });
-      if (cancelled) un();
+      if (cancelled) {
+        unProgress();
+        return;
+      }
+      unDone = await listen<ModelDoneEvent>('model:done', (e) => {
+        const payload = e.payload;
+        if (payload.id === PYANNOTE_ID) {
+          setPyannotePct(null);
+          void refreshPyannote();
+          return;
+        }
+        if (payload.id !== EMBEDDER_ID) return;
+        setDownloading(false);
+        setProgress(null);
+        if (payload.status === 'verify_failed') {
+          setError(t('voiceModel.verifyFailed'));
+        } else if (payload.status === 'io_error') {
+          setError(payload.message);
+        }
+        void refresh();
+      });
+      if (cancelled) unDone();
     })();
     return () => {
       cancelled = true;
-      un?.();
+      unProgress?.();
+      unDone?.();
     };
-  }, []);
+  }, [refresh, refreshPyannote, t]);
 
   const handleInstallPyannote = async () => {
     if (pyannoteDownloading) return;
     setPyannoteDownloading(true);
     setPyannotePct(0);
     try {
-      await localEngineModelDownload('pyannote-segmentation');
+      await localEngineModelDownload(PYANNOTE_ID);
       await refreshPyannote();
     } catch (e) {
       setError(humanError(e, t));
@@ -160,66 +207,22 @@ export function VoiceModelSection() {
     }
   };
 
-  const refresh = useCallback(async () => {
-    try {
-      const [s, i] = await Promise.all([voiceModelStatus(), voiceModelInfo()]);
-      setStatus(s);
-      setInfo(i);
-      setError(null);
-    } catch (e) {
-      setError(humanError(e, t));
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  // Subscribe to backend progress events (WeSpeaker).
-  // [B21] cancelled-guard (mirror LocalEngineSection [Review HIGH-2]): без
-  // него cleanup до резолва listen() оставлял listener-leak на всю сессию.
-  useEffect(() => {
-    let cancelled = false;
-    let unProgress: UnlistenFn | undefined;
-    let unDone: UnlistenFn | undefined;
-    (async () => {
-      unProgress = await listen<VoiceModelProgress>('voice-model:progress', (e) => {
-        setProgress(e.payload);
-      });
-      if (cancelled) {
-        unProgress();
-        return;
-      }
-      unDone = await listen<VoiceModelDoneStatus>('voice-model:done', (e) => {
-        setDownloading(false);
-        setProgress(null);
-        const payload = e.payload;
-        if (payload.status === 'verify_failed') {
-          setError(t('voiceModel.verifyFailed'));
-        } else if (payload.status === 'io_error') {
-          setError(payload.message);
-        }
-        void refresh();
-      });
-      if (cancelled) unDone();
-    })();
-    return () => {
-      cancelled = true;
-      unProgress?.();
-      unDone?.();
-    };
-  }, [refresh, t]);
+  const sizeBytes = status?.bytes_total ?? 0;
 
   const handleDownload = async () => {
     setDownloading(true);
     setError(null);
-    setProgress({ downloaded: 0, total: info?.size_hint ?? 0, percent: 0 });
+    setProgress({ id: EMBEDDER_ID, pct: 0, bytes_done: 0, bytes_total: sizeBytes });
     try {
-      await voiceModelDownload();
+      await localEngineModelDownload(EMBEDDER_ID);
     } catch (e) {
       setError(humanError(e, t));
+    } finally {
+      // `model:done` тоже гасит флаг, но команда может отказать до старта
+      // закачки — тогда события не будет вовсе.
       setDownloading(false);
       setProgress(null);
+      await refresh();
     }
   };
 
@@ -227,7 +230,7 @@ export function VoiceModelSection() {
     setDeleting(true);
     setError(null);
     try {
-      await voiceModelDelete();
+      await localEngineModelDelete(EMBEDDER_ID);
       await refresh();
     } catch (e) {
       setError(humanError(e, t));
@@ -236,7 +239,7 @@ export function VoiceModelSection() {
     }
   };
 
-  if (!status || !info) {
+  if (!status || featureEnabled === null) {
     return (
       <div aria-busy="true" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Skeleton width="60%" height="0.85em" />
@@ -246,11 +249,11 @@ export function VoiceModelSection() {
     );
   }
 
-  const valid = status.status === 'valid';
+  const valid = status.state === 'present';
 
   return (
     <div>
-      {!info.feature_enabled && (
+      {!featureEnabled && (
         <div
           className="panel"
           role="status"
@@ -289,10 +292,10 @@ export function VoiceModelSection() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 13.5 }}>{t('voiceModel.modelName')}</div>
           <div className="u-faint" style={{ fontSize: 11.5 }}>
-            {formatMB(info.size_hint, t)} ·{' '}
+            {formatMB(sizeBytes, t)} ·{' '}
             {valid
               ? t('voiceModel.descValid')
-              : status.status === 'corrupted'
+              : status.state === 'corrupted'
                 ? t('voiceModel.descCorrupted')
                 : t('voiceModel.descMissing')}
           </div>
@@ -305,9 +308,9 @@ export function VoiceModelSection() {
             leading={<Icon name="download" size={14} />}
             onClick={() => void handleDownload()}
           >
-            {status.status === 'corrupted'
+            {status.state === 'corrupted'
               ? t('voiceModel.btnRedownload')
-              : t('voiceModel.btnDownload', { size: formatMB(info.size_hint, t) })}
+              : t('voiceModel.btnDownload', { size: formatMB(sizeBytes, t) })}
           </Button>
         )}
         {valid && !downloading && (
@@ -323,7 +326,7 @@ export function VoiceModelSection() {
 
       {downloading && progress && (
         <div style={{ marginTop: 10 }}>
-          <Progress value={progress.percent} ariaLabel={t('voiceModel.btnDownloading')} />
+          <Progress value={progress.pct} ariaLabel={t('voiceModel.btnDownloading')} />
           <div
             className="mono"
             style={{
@@ -335,9 +338,9 @@ export function VoiceModelSection() {
             }}
           >
             <span>
-              {formatMB(progress.downloaded, t)} / {formatMB(progress.total, t)}
+              {formatMB(progress.bytes_done, t)} / {formatMB(progress.bytes_total, t)}
             </span>
-            <span>{progress.percent.toFixed(0)}%</span>
+            <span>{progress.pct.toFixed(0)}%</span>
           </div>
         </div>
       )}
@@ -418,24 +421,23 @@ export function VoiceModelSection() {
 
 type ChipVariant = 'ok' | 'line' | 'warn' | 'accent';
 
-// [B18.5b] Voice-model state → Chip. valid=ok, missing=line,
+// [B18.5b] Статус модели → Chip. present=ok, absent=line,
 // corrupted=warn, downloading=accent.
 function StatusChip({
   status,
   downloading,
 }: {
-  status: VoiceModelStatus;
+  status: ModelStatus;
   downloading: boolean;
 }) {
   const { t } = useI18n();
   const meta: Record<string, { variant: ChipVariant; text: string }> = {
-    valid: { variant: 'ok', text: t('voiceModel.statusValid') },
-    missing: { variant: 'line', text: t('voiceModel.statusMissing') },
+    present: { variant: 'ok', text: t('voiceModel.statusValid') },
+    absent: { variant: 'line', text: t('voiceModel.statusMissing') },
     corrupted: { variant: 'warn', text: t('voiceModel.statusCorrupted') },
     downloading: { variant: 'accent', text: t('voiceModel.statusDownloading') },
   };
-  const key = downloading ? 'downloading' : status.status;
-  const m = meta[key] ?? meta.missing!;
+  const m = meta[downloading ? 'downloading' : status.state] ?? meta.absent!;
   return (
     <Chip tone={m.variant} size="sm">
       {m.text}

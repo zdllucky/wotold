@@ -7,7 +7,7 @@
 //! Реализация — sherpa-onnx `OfflineSpeakerDiarization`:
 //! - Segmentation: pyannote-segmentation-3-0 (~6 MB, MODEL_CATALOG entry
 //!   `pyannote-segmentation`).
-//! - Embedding: WeSpeaker (`voice_model.rs`, ~26 MB, B3.7c reuse).
+//! - Embedding: WeSpeaker (каталожная запись `voice-embedder`, ~26 MB).
 //! - Clustering: `FastClusteringConfig` дефолт (k auto-detected).
 //! - Cap = 4 спикера (R12 / PRD §M12.2.5).
 //!
@@ -86,7 +86,7 @@ pub struct SortformerDiarizer {
 
 impl SortformerDiarizer {
     /// Конструктор требует оба пути. Pipeline resolves их из MODEL_CATALOG +
-    /// `voice_model::model_path` для WeSpeaker.
+    /// `embeddings::voice_embedder_path` для WeSpeaker.
     pub fn new(segmentation_path: PathBuf, embedding_path: PathBuf) -> Self {
         Self::with_num_speakers(segmentation_path, embedding_path, None)
     }

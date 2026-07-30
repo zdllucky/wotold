@@ -164,7 +164,7 @@ impl CallStore {
         Ok(dir)
     }
 
-    /// Корневой `app_data_dir` (для legacy callsite'ов — `voice_model::*`).
+    /// Корневой `app_data_dir` (для callsite'ов, резолвящих модели сами).
     pub fn app_data_dir(&self) -> &Path {
         &self.app_data_dir
     }

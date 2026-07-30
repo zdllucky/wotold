@@ -52,16 +52,9 @@ import {
   type LocalEngineStorageRow,
 } from '../api/local-engine';
 import { getAssistantSemanticSearch, setAssistantSemanticSearch } from '../api/assistant';
-import {
-  voiceModelDelete,
-  voiceModelDownload,
-  voiceModelInfo,
-  voiceModelStatus,
-} from '../api/voiceModel';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
 import { modelLabel } from '../utils/modelLabel';
-import { voiceEmbedderRow, VOICE_EMBEDDER_ROW_ID } from '../utils/voiceStorageRow';
 
 const PRESETS: LocalEnginePreset[] = ['light', 'balanced', 'quality'];
 
@@ -90,23 +83,14 @@ interface ModelProgress {
   bytesTotal: number;
 }
 
-function formatGB(bytes: number): string {
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-}
-
 /**
- * [B21.6] Строка голосового эмбеддера для таблицы хранилища. Он не в
- * MODEL_CATALOG, поэтому статус читается своей командой. Ошибка чтения —
- * строки просто нет: банер на всю секцию из-за необязательной модели вреднее,
- * чем её отсутствие в списке (та же логика, что у `storageList().catch`).
+ * Размер файла модели. Гигабайты только когда их правда больше одного:
+ * мелкие модули (VAD 0.9 MB, pyannote 6 MB, эмбеддер 26 MB) в таблице все
+ * показывались как «0.0 GB» и выглядели пустыми строками.
  */
-async function loadVoiceStorageRow(): Promise<LocalEngineStorageRow | null> {
-  try {
-    const [status, info] = await Promise.all([voiceModelStatus(), voiceModelInfo()]);
-    return voiceEmbedderRow(status, info.size_hint);
-  } catch {
-    return null;
-  }
+function formatGB(bytes: number): string {
+  if (bytes < 1024 ** 3) return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
 /** Compact ISO → «5 мин», «вчера», «12 мая» формат. См. _atelier-2.jsx паттерн. */
@@ -174,7 +158,7 @@ export function LocalEngineSection() {
   const refreshAll = useCallback(async () => {
     setHwLoading(true);
     try {
-      const [p, c, h, rows, resident, semantic, voice] = await Promise.all([
+      const [p, c, h, rows, resident, semantic] = await Promise.all([
         localEngineGetActivePreset(),
         localEngineListCatalog(),
         localEngineHwProbe(false),
@@ -182,12 +166,11 @@ export function LocalEngineSection() {
         localEngineGetKeepResident().catch(() => false),
         // [B25] Тумблер семантического поиска; ошибка → default on.
         getAssistantSemanticSearch().catch(() => true),
-        loadVoiceStorageRow(),
       ]);
       setPreset(p);
       setCatalog(c);
       setHw(h);
-      setStorageRows(voice ? [...rows, voice] : rows);
+      setStorageRows(rows);
       setKeepResident(resident);
       setSemanticSearch(semantic);
       await refreshStatuses(c.map((m) => m.id));
@@ -205,8 +188,7 @@ export function LocalEngineSection() {
 
   const refreshStorage = useCallback(async () => {
     try {
-      const [rows, voice] = await Promise.all([localEngineStorageList(), loadVoiceStorageRow()]);
-      setStorageRows(voice ? [...rows, voice] : rows);
+      setStorageRows(await localEngineStorageList());
     } catch (e) {
       setError(humanError(e, t));
     }
@@ -300,21 +282,13 @@ export function LocalEngineSection() {
   const onDownload = useCallback(
     async (id: string) => {
       try {
-        if (id === VOICE_EMBEDDER_ROW_ID) {
-          // [B21.6] Эмбеддера нет в каталоге: свои команды и свои события
-          // (`voice-model:*`), поэтому `model:done` строку не обновит —
-          // перечитываем хранилище сами, когда команда вернулась.
-          await voiceModelDownload();
-          await refreshStorage();
-          return;
-        }
         await localEngineModelDownload(id);
         // refresh после done event.
       } catch (e) {
         setError(humanError(e, t));
       }
     },
-    [refreshStorage],
+    [t],
   );
 
   /**
@@ -347,8 +321,7 @@ export function LocalEngineSection() {
       });
       if (!ok) return;
       try {
-        // [B21.6] Тот же маршрут, что и у скачивания: у эмбеддера своя команда.
-        await (id === VOICE_EMBEDDER_ROW_ID ? voiceModelDelete() : localEngineModelDelete(id));
+        await localEngineModelDelete(id);
         after();
       } catch (e) {
         setError(humanError(e, t));
@@ -715,8 +688,7 @@ export function LocalEngineSection() {
                         onClick={() =>
                           void onDeleteFromStorage(row.id, row.is_active, () => {
                             void refreshStorage();
-                            // Статус эмбеддера не читается каталожной командой.
-                            if (row.id !== VOICE_EMBEDDER_ROW_ID) void refreshStatuses([row.id]);
+                            void refreshStatuses([row.id]);
                           })
                         }
                       />

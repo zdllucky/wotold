@@ -5,7 +5,9 @@
 //! # Состав
 //!
 //! - [`models`] — каталог моделей + per-model download / status / delete +
-//!   preset switching. Расширение паттерна B3.7c ([crate::voice_model]).
+//!   preset switching. Единственная качалка моделей в приложении: голосовой
+//!   эмбеддер (WeSpeaker) переехал сюда из отдельного `voice_model.rs`,
+//!   переезд файла на диске — [`model_migrate`].
 //! - `stt` *(TODO M12.1)* — `LocalWhisperProvider` через sherpa-onnx Whisper.
 //! - `diarization` *(TODO M12.2)* — `Diarizer` trait через sherpa-onnx sortformer.
 //! - `llm` *(TODO M12.3)* — `LocalLlamaProvider` через llama.cpp sidecar.
@@ -37,6 +39,7 @@ pub mod llm_server;
 pub mod merge;
 pub mod model_catalog;
 pub mod model_integrity;
+pub mod model_migrate;
 pub mod models;
 pub mod preset;
 pub mod sidecar;

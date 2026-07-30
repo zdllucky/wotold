@@ -54,7 +54,7 @@ pub struct ChunkRunInput {
     pub prev_prompt: Option<String>,
     /// 'auto' или BCP47. Передаётся в provider.
     pub lang: String,
-    /// [M13.2.1] App-data root — нужен resolve `models/embedder.onnx` для
+    /// [M13.2.1] App-data root — нужен resolve модели `voice-embedder` для
     /// WeSpeaker. `None` в unit-тестах → embedder = StubEmbedder
     /// → empty embeddings_json в DB (degraded ok).
     pub app_data_dir: Option<PathBuf>,

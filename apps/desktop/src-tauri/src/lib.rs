@@ -48,10 +48,6 @@ mod secrets;
 mod services;
 mod state;
 mod updater;
-// [B3.7c] Voice embedder model — runtime download + SHA256 verify. Всегда
-// компилируется (download independent от sherpa-onnx); реально использует
-// модель только voice-onnx build через embeddings_onnx::OnnxEmbedder.
-mod voice_model;
 
 pub use error::AppError;
 
@@ -181,6 +177,7 @@ pub fn run() {
             commands::list_call_speakers_batch,
             commands::confirm_call_speaker,
             commands::unbind_call_speaker,
+            commands::voice_embedder_feature_enabled,
             commands::list_voice_samples,
             commands::delete_voice_sample,
             commands::get_voice_sample_audio,
@@ -212,10 +209,6 @@ pub fn run() {
             commands::share_text,
             commands::get_call_audio_path,
             commands::export_call_markdown,
-            commands::voice_model_status,
-            commands::voice_model_download,
-            commands::voice_model_delete,
-            commands::voice_model_info,
             commands::show_recording_widget,
             commands::hide_recording_widget,
             commands::restore_main_window,
