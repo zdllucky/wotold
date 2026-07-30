@@ -383,47 +383,36 @@ async fn diarize_tracks(
     )
     .await;
 
-    // 4.6. [M13 follow-up] Опциональный multi-voice на mic-дорожке. Default ON
-    //    через `MIC_DIARIZATION_ENABLED`. Без этого вся mic уходила в OWNER_TAG
-    //    через assemble_transcript (force_owner_track в local_engine::merge).
-    //    С включенной настройкой sortformer выдаёт `speaker:N` tags, потом
+    // 4.6. [M13 follow-up] Multi-voice на mic-дорожке. Без этого вся mic уходит
+    //    в OWNER_TAG через assemble_transcript (force_owner_track в
+    //    local_engine::merge). Sortformer выдаёт `speaker:N` tags, потом
     //    owner_identify::identify_owner_speaker переименовывает один из них
     //    в OWNER_TAG. На non-chunked пути embeddings собираем здесь же через
     //    extract_clusters; cross-track reflection (owner отражается в system)
-    //    не обрабатывается без global reclustering — это limitation
-    //    non-chunked path, acceptable т.к. чанкед = default.
-    // [P-fix7] mic-диаризация по умолчанию ВЫКЛ. Mic = микрофон владельца =
-    // один человек (M2.4); sortformer на нём овершутит, дробя единственный
-    // голос owner'а в speaker:unknown/N → owner размазан по «СПИКЕР ?».
-    // Opt-in только для нескольких людей у одного микрофона (Labs).
-    let mic_on = matches!(
-        db::get_setting(pool, "mic_diarization_enabled")
-            .await?
-            .as_deref(),
-        Some("1") | Some("true")
-    );
-    let mic_diarization = mic_on;
-    let mic_t = if mic_diarization {
-        let mic_diarized = diarize_mic_track(
-            pool,
-            &ctx.app_data_dir,
-            &ctx.mic_path,
-            mic_t,
-            num_speakers_override,
-            &ctx.call_id,
-        )
-        .await;
-        relabel_owner_on_mic_full_file(
-            pool,
-            &ctx.app_data_dir,
-            &ctx.mic_path,
-            &ctx.system_path,
-            mic_diarized,
-        )
-        .await
-    } else {
-        mic_t
-    };
+    //    не обрабатывается без global reclustering — limitation non-chunked
+    //    пути, приемлемая, потому что чанкед — дефолт.
+    //
+    //    Тумблер убран: диаризация микрофона теперь всегда включена. Риск
+    //    P-fix7 (sortformer дробит единственный голос владельца) закрывает
+    //    `relabel_owner_on_mic_full_file` — он собирает выбранный тег назад в
+    //    OWNER_TAG. Аварийный ограничитель остался в Labs: «сколько голосов».
+    let mic_diarized = diarize_mic_track(
+        pool,
+        &ctx.app_data_dir,
+        &ctx.mic_path,
+        mic_t,
+        num_speakers_override,
+        &ctx.call_id,
+    )
+    .await;
+    let mic_t = relabel_owner_on_mic_full_file(
+        pool,
+        &ctx.app_data_dir,
+        &ctx.mic_path,
+        &ctx.system_path,
+        mic_diarized,
+    )
+    .await;
     Ok((mic_t, sys_t, lang_detected))
 }
 
@@ -545,7 +534,6 @@ async fn run_recap(
                 pool,
                 &ctx.app_data_dir,
                 app,
-                s,
                 Some(&ctx.call_id),
             )
             .await?;

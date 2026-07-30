@@ -2,8 +2,12 @@
 //
 // Toggles:
 // - Summary v2 (T-14, default ON) — cloud v2 prompt path
-// - Speculative decoding (T-16 P2, default OFF) — 0.5B draft model для
-//   Quality preset speedup
+// - Force N speakers — аварийный ограничитель диаризации
+//
+// Тумблер ускорения генерации убран: черновая модель входит в обязательный
+// набор и применяется всегда, когда лежит на диске. Тумблер был неработающим —
+// он ничего не скачивал, а резидентный сервер аргумент draft-модели вообще не
+// получал.
 //
 // [B18.5b] Wotold v2 restyle: native checkboxes → `.setting-row` + `.switch`
 // (role=switch, mirrors SettingsPage call-detect), force-N `<select>` → `Select`.
@@ -46,9 +50,6 @@ function ToggleRow({ label, hint, checked, onToggle, last }: ToggleRowProps) {
 export function LabsSection() {
   const { t } = useI18n();
   const [v2Enabled, setV2Enabled] = useState<boolean>(SETTINGS_DEFAULTS.SUMMARY_V2_ENABLED);
-  const [speculativeEnabled, setSpeculativeEnabled] = useState<boolean>(
-    SETTINGS_DEFAULTS.SUMMARY_SPECULATIVE_DECODING,
-  );
   // [P1.2] Labs «Force N speakers» override.
   const [numSpeakers, setNumSpeakers] = useState<MicDiarizationNumSpeakers>(
     SETTINGS_DEFAULTS.MIC_DIARIZATION_NUM_SPEAKERS,
@@ -60,11 +61,6 @@ export function LabsSection() {
       // V2 — default ON: explicit '0'/'false' = OFF; иначе ON.
       const rawV2 = await getSetting(SETTINGS_KEYS.SUMMARY_V2_ENABLED).catch(() => null);
       setV2Enabled(rawV2 !== '0' && rawV2 !== 'false');
-      // Speculative — default OFF: explicit '1' enables.
-      const rawSpec = await getSetting(SETTINGS_KEYS.SUMMARY_SPECULATIVE_DECODING).catch(
-        () => null,
-      );
-      setSpeculativeEnabled(rawSpec === '1');
       // [P1.2] Force N speakers — whitelist enforce: '2'|'3' → keep;
       // всё прочее (включая legacy '4') → 'auto'. [P14.3] MAX=3 → '4' dropped.
       const rawNum = await getSetting(SETTINGS_KEYS.MIC_DIARIZATION_NUM_SPEAKERS).catch(
@@ -87,15 +83,6 @@ export function LabsSection() {
     }
   };
 
-  const persistSpeculative = async (next: boolean) => {
-    setSpeculativeEnabled(next);
-    try {
-      await setSetting(SETTINGS_KEYS.SUMMARY_SPECULATIVE_DECODING, next ? '1' : '0');
-    } catch (e) {
-      setError(humanError(e, t));
-    }
-  };
-
   // [P1.2] Force-N-speakers persist. 'auto' тоже пишется явно (а не удаляется),
   // чтобы UI consistently показывал актуальное значение после reset.
   const persistNumSpeakers = async (next: MicDiarizationNumSpeakers) => {
@@ -107,7 +94,7 @@ export function LabsSection() {
     }
   };
 
-  // [B21] Все три контрола — единообразные Row (канон SecLabs).
+  // [B21] Оба контрола — единообразные Row (канон SecLabs).
   return (
     <div>
       {error && (
@@ -121,14 +108,6 @@ export function LabsSection() {
         hint={t('settings.summaryV2Hint')}
         checked={v2Enabled}
         onToggle={(next) => void persistV2(next)}
-      />
-
-      {/* [M14 T-16 P2] Speculative decoding toggle. */}
-      <ToggleRow
-        label={t('settings.speculativeDecodingLabel')}
-        hint={t('settings.speculativeDecodingHint')}
-        checked={speculativeEnabled}
-        onToggle={(next) => void persistSpeculative(next)}
       />
 
       {/* [P1.2] Force-N-speakers Labs override. Whitelist 4 options → Select. */}

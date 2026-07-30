@@ -436,7 +436,6 @@ async fn process_final_chunk(
         lang: providers.lang.clone(),
         app_data_dir: Some(app_data_dir.to_path_buf()),
         app_handle: Some(app.clone()),
-        mic_diarization: providers.mic_diarization,
         mic_diarization_num_speakers: providers.mic_diarization_num_speakers,
     };
     let out = chunk_runner::run_chunk(db, providers.mic.as_ref(), providers.system.as_ref(), input)

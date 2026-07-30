@@ -167,18 +167,10 @@ fn spawn_assistant_backfill(handle: &AppHandle) {
             (state.db.clone(), state.store.clone())
         };
         crate::assistant::indexer::backfill(&pool, &store).await;
-        // [B25] Авто-скачивание эмбеддера (тумблер default on +
-        // выбран локальный пресет) — прогресс в UI через
-        // model:progress. Ошибка сети — warn, не фатал.
-        if let Err(e) = crate::assistant::embedder::ensure_model_downloaded(
-            &pool,
-            store.app_data_dir(),
-            Some(&app_for_backfill),
-        )
-        .await
-        {
-            log::warn!("assistant semantic auto-download: {e}");
-        }
+        // Модель эмбеддера на старте больше не качается сама: приложение
+        // локальное, и разовое скачивание моделей — единственный сетевой
+        // поток, поэтому он идёт только по явному нажатию в баннере
+        // (`provisioning::ensure_required`). Без файлов backfill ниже — no-op.
         // [M15.10] Следом — вектора: инвалидация по id модели +
         // добор пассажей без эмбеддинга. No-op без модели/feature.
         crate::assistant::indexer::embed_backfill(&pool, store.app_data_dir()).await;

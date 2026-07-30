@@ -350,7 +350,6 @@ fn settings_with_auto_bind(auto_bind: Option<AutoBindConfig>) -> PipelineSetting
         preferred_language: "auto".into(),
         auto_bind,
         summary_v2_enabled: true,
-        summary_speculative_decoding: false,
     }
 }
 

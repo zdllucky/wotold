@@ -1,5 +1,8 @@
-// [M14 T-14 + T-16 P2] LabsSection vitest — load defaults, toggle persist for
-// summary_v2 (default ON) и speculative decoding (default OFF).
+// [M14 T-14] LabsSection vitest — load defaults, toggle persist for
+// summary_v2 (default ON) и ограничитель «сколько голосов».
+//
+// Тумблер ускорения генерации удалён вместе с настройкой: черновая модель
+// обязательна и применяется всегда, когда лежит на диске.
 //
 // [B18.5b] Wotold v2: checkboxes → role=switch buttons (aria-checked),
 // native <select> → custom Select (combobox trigger + listbox options).
@@ -30,7 +33,7 @@ describe('LabsSection', () => {
   });
   afterEach(() => cleanup());
 
-  test('renders summary v2 ON by default + speculative OFF by default', async () => {
+  test('renders summary v2 ON by default; лишних тумблеров нет', async () => {
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'get_setting') return null; // missing → defaults apply
       return null;
@@ -38,11 +41,8 @@ describe('LabsSection', () => {
     render(<LabsSection />);
     await flush();
     const switches = screen.getAllByRole('switch');
-    expect(switches).toHaveLength(2);
-    const summaryV2 = switches[0]!;
-    const speculative = switches[1]!;
-    await waitFor(() => expect(summaryV2).toHaveAttribute('aria-checked', 'true'));
-    expect(speculative).toHaveAttribute('aria-checked', 'false');
+    expect(switches).toHaveLength(1);
+    await waitFor(() => expect(switches[0]!).toHaveAttribute('aria-checked', 'true'));
   });
 
   test('renders summary v2 OFF when setting is "0"', async () => {
@@ -141,28 +141,4 @@ describe('LabsSection', () => {
     });
   });
 
-  test('speculative decoding toggle persists "1" when enabled', async () => {
-    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
-      if (cmd === 'get_setting') return null;
-      if (cmd === 'set_setting') {
-        const a = args as { key: string; value: string };
-        if (a.key === 'summary_speculative_decoding') {
-          expect(a.value).toBe('1');
-        }
-        return null;
-      }
-      return null;
-    });
-    render(<LabsSection />);
-    await flush();
-    const speculative = screen.getAllByRole('switch')[1]!;
-    await waitFor(() => expect(speculative).toHaveAttribute('aria-checked', 'false'));
-    await act(async () => {
-      speculative.click();
-    });
-    expect(mockInvoke).toHaveBeenCalledWith('set_setting', {
-      key: 'summary_speculative_decoding',
-      value: '1',
-    });
-  });
 });

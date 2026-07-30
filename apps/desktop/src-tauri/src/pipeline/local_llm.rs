@@ -124,7 +124,7 @@ pub async fn regenerate_recap(
 }
 
 /// [DRY] Собрать `LocalLlamaProvider` для активного preset'а: гейт готовности
-/// движка (`readiness::assert_ready`) → speculative draft gate → build с
+/// движка (`readiness::assert_ready`) → черновая модель → build с
 /// per-preset timeout + AppHandle. Возвращает `(provider, preset)`
 /// (`LocalEnginePreset` — Copy). Используется `regenerate_recap_local` +
 /// `title_regen` (local path) и маршрутом записи через `run_recap`.
@@ -133,7 +133,6 @@ pub async fn build_local_llm_provider(
     pool: &SqlitePool,
     app_data_dir: &std::path::Path,
     app: &AppHandle,
-    s: &PipelineSettings,
     // [TD-36] Метка звонка для очереди ресурсов: QueueMonitor показывает, чей
     // звонок сейчас у LLM. Раньше её ставил только маршрут записи — потому
     // что он собирал провайдера сам, мимо этой функции.
@@ -148,7 +147,6 @@ pub async fn build_local_llm_provider(
     use crate::local_engine::{
         llm::LocalLlamaProvider,
         models::{self, ModelId},
-        preset::LocalEnginePreset,
         readiness,
     };
 
@@ -161,16 +159,14 @@ pub async fn build_local_llm_provider(
         .ok_or_else(|| AppError::Other("local_engine_preset_not_set".into()))?;
     let llm_id = preset.llm_model_id();
 
-    // Speculative decoding gate (mirror run_local_inner).
-    let draft_path: Option<std::path::PathBuf> =
-        if s.summary_speculative_decoding && preset == LocalEnginePreset::Quality {
-            Some(models::model_path(
-                app_data_dir,
-                ModelId::QWEN25_0_5B.as_str(),
-            ))
-        } else {
-            None
-        };
+    // Черновая модель обязательна и используется всегда, когда лежит на диске.
+    // Раньше здесь стояли два лишних условия — тумблер в Labs (default OFF,
+    // который вообще ничего не скачивал) и «только Quality», — поэтому
+    // ускорение не работало ни у кого.
+    let draft_path = Some(models::model_path(
+        app_data_dir,
+        ModelId::QWEN25_0_5B.as_str(),
+    ));
 
     // [P1.3] Per-preset timeout: Light 5min / Balanced 10min / Quality 15min.
     let mut provider = LocalLlamaProvider::for_preset(app_data_dir, llm_id)
@@ -213,21 +209,13 @@ pub async fn build_local_llm_provider(
 pub async fn warm_up_local_llm(pool: &SqlitePool, app_data_dir: &Path, app: &AppHandle) {
     use crate::providers::llm::{LlmProvider, LlmRequest};
 
-    let s = match PipelineSettings::load(pool).await {
-        Ok(s) => s,
-        Err(e) => {
-            log::warn!("warm-up: settings load failed (skip): {e}");
-            return;
-        }
-    };
     // [B2] Резидентный режим: вместо разового прогрева поднимаем llama-server —
     // модель остаётся в RAM всю сессию (сам старт сервера и есть прогрев).
     if keep_resident_enabled(pool).await {
         start_resident_server(app, pool, app_data_dir).await;
         return;
     }
-    let (provider, preset) = match build_local_llm_provider(pool, app_data_dir, app, &s, None).await
-    {
+    let (provider, preset) = match build_local_llm_provider(pool, app_data_dir, app, None).await {
         Ok(p) => p,
         Err(e) => {
             log::info!("warm-up: local LLM недоступен (skip): {e}");
@@ -349,7 +337,7 @@ pub(crate) async fn regenerate_recap_local(
     }
 
     let (provider, preset) =
-        build_local_llm_provider(pool, app_data_dir, app, s, Some(call_id)).await?;
+        build_local_llm_provider(pool, app_data_dir, app, Some(call_id)).await?;
     // [Q] call_id → LLM-очередь (QueueMonitor видит чей звонок у llama).
     let provider = provider.with_call(call_id);
     let llm_id = preset.llm_model_id();

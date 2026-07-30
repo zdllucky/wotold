@@ -50,12 +50,10 @@ impl LazyLocalProvider {
     ) -> Result<&crate::local_engine::llm::LocalLlamaProvider, crate::AppError> {
         self.inner
             .get_or_try_init(|| async {
-                let s = crate::pipeline::PipelineSettings::load(&self.pool).await?;
                 let (provider, _preset) = crate::pipeline::build_local_llm_provider(
                     &self.pool,
                     &self.app_data_dir,
                     &self.app,
-                    &s,
                     // Ассистент не привязан к одному звонку — метки нет.
                     None,
                 )

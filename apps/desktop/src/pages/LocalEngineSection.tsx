@@ -21,6 +21,7 @@ import type {
   HwReport,
   LocalEnginePreset,
   ModelStatus,
+  PresetSizeSpec,
   PresetSpec,
 } from '@wotold/contracts';
 
@@ -42,7 +43,9 @@ import {
   localEngineHwProbe,
   localEngineListCatalog,
   localEngineModelDelete,
+  localEngineEnsureRequired,
   localEngineModelDownload,
+  localEnginePresetSpecs,
   localEngineModelStatus,
   localEngineGetKeepResident,
   localEngineSetActivePreset,
@@ -51,31 +54,16 @@ import {
   type LocalEngineCatalogEntry,
   type LocalEngineStorageRow,
 } from '../api/local-engine';
-import { getAssistantSemanticSearch, setAssistantSemanticSearch } from '../api/assistant';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
 import { modelLabel } from '../utils/modelLabel';
 
 const PRESETS: LocalEnginePreset[] = ['light', 'balanced', 'quality'];
 
-// [PRD §11 O1 deviation] Gemma → Qwen 1.5B (Google TOS gating). Должен 1:1
-// совпадать с Rust `LocalEnginePreset::llm_model_id` в [local_engine/preset.rs](../../../src-tauri/src/local_engine/preset.rs)
-// и `PRESET_MODELS` в [OnboardingEngineStep.tsx](OnboardingEngineStep.tsx) —
-// расхождение приведёт к UI «модель не установлена» сразу после download'а
-// в onboarding'е. Регрессия покрыта Rust-тестом `light_preset_uses_qwen_not_gemma`.
-const PRESET_TO_MODELS: Record<LocalEnginePreset, { whisper: string; llm: string }> = {
-  light: { whisper: 'whisper-small', llm: 'qwen25-1_5b' },
-  balanced: { whisper: 'whisper-medium', llm: 'qwen25-3b' },
-  quality: { whisper: 'whisper-large-v3', llm: 'qwen25-7b' },
-};
-
-/** [M12-D5] Optional модель для multi-speaker diarization (degraded без неё). */
-const PYANNOTE_MODEL_ID = 'pyannote-segmentation';
-
-/** [B25] Пара файлов текст-эмбеддера ассистента (семантический поиск). */
-const E5_MODEL_ID = 'e5-small-qint8';
-const E5_TOKENIZER_ID = 'e5-small-tokenizer';
-const E5_IDS = [E5_MODEL_ID, E5_TOKENIZER_ID] as const;
+// Какие модели нужны для размера движка, знает бэкенд
+// (`local_engine::readiness::required_ids`). Здесь этой раскладки больше нет:
+// её копии в настройках и онбординге молча расходились с Rust, и расхождение
+// читалось как «скачал, а оно пишет что модели нет».
 
 interface ModelProgress {
   pct: number;
@@ -124,8 +112,8 @@ export function LocalEngineSection() {
   // [B2] Тумблер «держать модель активной» (resident llama-server).
   const [keepResident, setKeepResident] = useState(false);
   // [B25] Тумблер «Семантический поиск ассистента» (default on).
-  const [semanticSearch, setSemanticSearch] = useState(true);
   const [catalog, setCatalog] = useState<LocalEngineCatalogEntry[]>([]);
+  const [specs, setSpecs] = useState<PresetSizeSpec[]>([]);
   const [statuses, setStatuses] = useState<Record<string, ModelStatus>>({});
   const [progresses, setProgresses] = useState<Record<string, ModelProgress>>({});
   const [hw, setHw] = useState<HwReport | null>(null);
@@ -158,21 +146,20 @@ export function LocalEngineSection() {
   const refreshAll = useCallback(async () => {
     setHwLoading(true);
     try {
-      const [p, c, h, rows, resident, semantic] = await Promise.all([
+      const [p, c, h, rows, resident, sizeSpecs] = await Promise.all([
         localEngineGetActivePreset(),
         localEngineListCatalog(),
         localEngineHwProbe(false),
         localEngineStorageList().catch(() => [] as LocalEngineStorageRow[]),
         localEngineGetKeepResident().catch(() => false),
-        // [B25] Тумблер семантического поиска; ошибка → default on.
-        getAssistantSemanticSearch().catch(() => true),
+        localEnginePresetSpecs(),
       ]);
       setPreset(p);
       setCatalog(c);
+      setSpecs(sizeSpecs);
       setHw(h);
       setStorageRows(rows);
       setKeepResident(resident);
-      setSemanticSearch(semantic);
       await refreshStatuses(c.map((m) => m.id));
       setError(null);
     } catch (e) {
@@ -258,25 +245,14 @@ export function LocalEngineSection() {
       try {
         const saved = await localEngineSetActivePreset(next);
         setPreset(saved);
-        // Авто-старт download'ов на отсутствующие модели preset'а +
-        // pyannote (shared, optional но рекомендованная) + [B25] эмбеддер
-        // семантического поиска (если тумблер включён).
-        const needed = PRESET_TO_MODELS[next];
-        const shared = [PYANNOTE_MODEL_ID, ...(semanticSearch ? E5_IDS : [])];
-        for (const id of [needed.whisper, needed.llm, ...shared]) {
-          const status = statuses[id];
-          if (!status || status.state === 'absent' || status.state === 'corrupted') {
-            void localEngineModelDownload(id).catch((err) => setError(humanError(err, t)));
-          }
-        }
+        // Докачку недостающего запускает бэкенд по единому обязательному
+        // списку — фронт больше не перебирает модели сам.
+        await localEngineEnsureRequired();
       } catch (e) {
         setError(humanError(e, t));
       }
     },
-    // [TD-26] semanticSearch читается в теле — без него в deps коллбэк
-    // застывал со старым значением, и e5-модели не вставали в очередь
-    // сразу после включения тумблера.
-    [hw, statuses, t, semanticSearch],
+    [hw, t],
   );
 
   const onDownload = useCallback(
@@ -501,46 +477,6 @@ export function LocalEngineSection() {
         />
       )}
 
-      {/* [B25] Семантический поиск ассистента: тумблер + живой статус
-          модели (скачивается %/активен) из общих statuses/progresses. */}
-      {!hwLoading && (
-        <SettingRow
-          label={t('localEngine.semanticLabel')}
-          hint={t('localEngine.semanticHint')}
-          align="top"
-          last
-          control={
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-              {semanticSearch && (
-                <span className="u-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                  {(() => {
-                    const prog = progresses[E5_MODEL_ID] ?? progresses[E5_TOKENIZER_ID];
-                    if (prog) return t('localEngine.semanticDownloading', { pct: prog.pct });
-                    const ready = E5_IDS.every((id) => statuses[id]?.state === 'present');
-                    return ready
-                      ? t('localEngine.semanticActive')
-                      : t('localEngine.semanticWaiting');
-                  })()}
-                </span>
-              )}
-              <Switch
-                checked={semanticSearch}
-                label={t('localEngine.semanticLabel')}
-                onChange={async (next) => {
-                  setSemanticSearch(next); // optimistic
-                  try {
-                    await setAssistantSemanticSearch(next);
-                  } catch (err) {
-                    setSemanticSearch(!next); // revert on failure
-                    setError(humanError(err, t));
-                  }
-                }}
-              />
-            </span>
-          }
-        />
-      )}
-
       {!hwLoading && (
         <div>
           <GroupLabel>{t('localEngine.presetLabel')}</GroupLabel>
@@ -550,16 +486,17 @@ export function LocalEngineSection() {
             style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
           >
             {PRESETS.map((p, qi) => {
-              const models = PRESET_TO_MODELS[p];
-              const whisperStatus = statuses[models.whisper];
-              const llmStatus = statuses[models.llm];
-              const whisperProgress = progresses[models.whisper];
-              const llmProgress = progresses[models.llm];
+              // Раскладку моделей и полный размер (включая обязательные
+              // базовые модули) считает бэкенд по каталогу.
+              const spec = specs.find((s) => s.preset === p);
+              const whisperStatus = spec ? statuses[spec.whisper_model_id] : undefined;
+              const llmStatus = spec ? statuses[spec.llm_model_id] : undefined;
+              const anyDownloading = spec
+                ? !!progresses[spec.whisper_model_id] || !!progresses[spec.llm_model_id]
+                : false;
               const allPresent =
                 whisperStatus?.state === 'present' && llmStatus?.state === 'present';
-              const anyDownloading = !!whisperProgress || !!llmProgress;
-              const totalSize =
-                (whisperStatus?.bytes_total ?? 0) + (llmStatus?.bytes_total ?? 0);
+              const totalSize = spec?.total_bytes ?? 0;
               return (
                 <OptionCard
                   key={p}

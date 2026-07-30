@@ -550,13 +550,6 @@ export const en: TranslationStrings = {
     speakersAutoBindLabel: 'Auto-bind speakers to contacts',
     speakersAutoBindHint:
       'Only when confident — can be undone right in the call.',
-    speakersMicDiarizationLabel: 'Detect multiple voices on microphone',
-    speakersMicDiarizationHint:
-      'Useful for live meetings in one room when other participants also speak into your mic. Slows processing by ~10–20%. The device owner is auto-identified via voice samples (or by primary speaker time if none yet).',
-    micDiarizationModelMissing:
-      'Voice splitting needs an extra module (~6 MB). Without it Wotold cannot split voices even when the toggle is on.',
-    micDiarizationInstall: '↓ Install voice splitting module',
-    micDiarizationInstalling: 'Installing module…',
     fieldTheme: 'Theme',
     fieldLanguage: 'Interface language',
     themeLight: 'Light',
@@ -595,9 +588,6 @@ export const en: TranslationStrings = {
     summaryV2Label: 'New summary format',
     summaryV2Hint:
       'On by default. Turn off if you hit issues with call type, evidence quotes or decisions — recaps fall back to simple format.',
-    speculativeDecodingLabel: 'Speed up generation (draft model)',
-    speculativeDecodingHint:
-      'Uses a small 0.5B draft model in parallel with 7B Quality. 2-3× speedup. Requires Quality preset and ~380MB extra model download.',
     forceNumSpeakersLabel: 'Other participants (besides you)',
     forceNumSpeakersHint:
       'Your voice is always separate («Me»). This is how many OTHER people are on the remote side. Set the exact number if auto-splitting gets it wrong, then reprocess. Max 3.',
@@ -739,12 +729,6 @@ export const en: TranslationStrings = {
     keepResidentLabel: 'Keep model warm',
     keepResidentHint:
       'The local model stays in RAM for the whole session — generation is faster (no reload per call) but it holds ~2–5 GB of RAM. Off by default.',
-    semanticLabel: 'Assistant semantic search',
-    semanticHint:
-      'The assistant finds fragments by meaning, not just word overlap (synonyms, paraphrases, other languages). The ~130 MB search module downloads automatically.',
-    semanticActive: 'active',
-    semanticDownloading: 'downloading · {pct}%',
-    semanticWaiting: 'waiting for model',
     preset: {
       light: 'Light',
       balanced: 'Balanced',

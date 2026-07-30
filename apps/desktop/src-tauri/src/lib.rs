@@ -203,8 +203,6 @@ pub fn run() {
             commands::assistant_delete_chat,
             #[cfg(target_os = "macos")]
             commands::assistant_ask,
-            commands::assistant_get_semantic_search,
-            commands::assistant_set_semantic_search,
             commands::assistant_get_fragment_text,
             commands::share_text,
             commands::get_call_audio_path,

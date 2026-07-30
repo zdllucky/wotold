@@ -37,7 +37,6 @@ import { Button, Chip, Icon, IconBtn, Progress, Select, SettingRow, Skeleton, Sw
 type TFn = ReturnType<typeof useI18n>['t'];
 
 const EMBEDDER_ID = 'voice-embedder';
-const PYANNOTE_ID = 'pyannote-segmentation';
 
 /** Статус загрузки модели из `model:done` (union по `status`). */
 type ModelDoneEvent =
@@ -64,23 +63,6 @@ export function VoiceModelSection() {
   const [autoBindThreshold, setAutoBindThreshold] = useState<AutoBindThreshold>(
     SETTINGS_DEFAULTS.AUTO_BIND_THRESHOLD,
   );
-  const [micDiarizationEnabled, setMicDiarizationEnabled] = useState<boolean>(
-    SETTINGS_DEFAULTS.MIC_DIARIZATION_ENABLED,
-  );
-  // [Bug-fix #4] Pyannote-segmentation status — необходим для mic diarization.
-  const [pyannoteStatus, setPyannoteStatus] = useState<ModelStatus | null>(null);
-  const [pyannoteDownloading, setPyannoteDownloading] = useState(false);
-  const [pyannotePct, setPyannotePct] = useState<number | null>(null);
-
-  const refreshPyannote = useCallback(async () => {
-    try {
-      setPyannoteStatus(await localEngineModelStatus(PYANNOTE_ID));
-    } catch {
-      // local-engine catalog не доступен — не критично, скрываем UI блок.
-      setPyannoteStatus(null);
-    }
-  }, []);
-
   const refresh = useCallback(async () => {
     try {
       const [s, feature] = await Promise.all([
@@ -103,27 +85,17 @@ export function VoiceModelSection() {
       if (rawThreshold && (AUTO_BIND_THRESHOLDS as string[]).includes(rawThreshold)) {
         setAutoBindThreshold(rawThreshold as AutoBindThreshold);
       }
-      // [P-fix7, B21] Mic diarization — default OFF: backend включает только
-      // на явное '1'/'true' (matches! в recording.rs). Раньше loader считал
-      // missing=ON → тумблер показывал ВКЛ при фактически выключенной
-      // диаризации.
-      const micRaw = await getSetting(SETTINGS_KEYS.MIC_DIARIZATION_ENABLED).catch(
-        () => null,
-      );
-      setMicDiarizationEnabled(micRaw === '1' || micRaw === 'true');
-      await refreshPyannote();
     })();
-  }, [refreshPyannote]);
+  }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  // Один листенер на оба модуля. [B21] Вешается сразу на mount (не на флаг):
-  // listen() — async IPC, гейт на *Downloading проигрывал гонку быстрым
-  // загрузкам (~6МБ) и % не успевал отрисоваться. cancelled-guard (mirror
-  // LocalEngineSection [Review HIGH-2]): без него cleanup до резолва listen()
-  // оставлял listener-leak на всю сессию.
+  // [B21] Листенер вешается сразу на mount (не на флаг): listen() — async IPC,
+  // гейт на `downloading` проигрывал гонку быстрым загрузкам и % не успевал
+  // отрисоваться. cancelled-guard (mirror LocalEngineSection [Review HIGH-2]):
+  // без него cleanup до резолва listen() оставлял listener-leak на всю сессию.
   useEffect(() => {
     let cancelled = false;
     let unProgress: UnlistenFn | undefined;
@@ -131,7 +103,6 @@ export function VoiceModelSection() {
     (async () => {
       unProgress = await listen<ModelProgressEvent>('model:progress', (e) => {
         if (e.payload.id === EMBEDDER_ID) setProgress(e.payload);
-        if (e.payload.id === PYANNOTE_ID) setPyannotePct(e.payload.pct);
       });
       if (cancelled) {
         unProgress();
@@ -139,11 +110,6 @@ export function VoiceModelSection() {
       }
       unDone = await listen<ModelDoneEvent>('model:done', (e) => {
         const payload = e.payload;
-        if (payload.id === PYANNOTE_ID) {
-          setPyannotePct(null);
-          void refreshPyannote();
-          return;
-        }
         if (payload.id !== EMBEDDER_ID) return;
         setDownloading(false);
         setProgress(null);
@@ -161,24 +127,7 @@ export function VoiceModelSection() {
       unProgress?.();
       unDone?.();
     };
-  }, [refresh, refreshPyannote, t]);
-
-  const handleInstallPyannote = async () => {
-    if (pyannoteDownloading) return;
-    setPyannoteDownloading(true);
-    setPyannotePct(0);
-    try {
-      await localEngineModelDownload(PYANNOTE_ID);
-      await refreshPyannote();
-    } catch (e) {
-      setError(humanError(e, t));
-    } finally {
-      setPyannoteDownloading(false);
-      setPyannotePct(null);
-    }
-  };
-
-  const pyannoteReady = pyannoteStatus?.state === 'present';
+  }, [refresh, t]);
 
   const persistAutoBind = async (next: boolean) => {
     setAutoBindEnabled(next);
@@ -193,15 +142,6 @@ export function VoiceModelSection() {
     setAutoBindThreshold(next);
     try {
       await setSetting(SETTINGS_KEYS.AUTO_BIND_THRESHOLD, next);
-    } catch (e) {
-      setError(humanError(e, t));
-    }
-  };
-
-  const persistMicDiarization = async (next: boolean) => {
-    setMicDiarizationEnabled(next);
-    try {
-      await setSetting(SETTINGS_KEYS.MIC_DIARIZATION_ENABLED, next ? '1' : '0');
     } catch (e) {
       setError(humanError(e, t));
     }
@@ -353,6 +293,9 @@ export function VoiceModelSection() {
           hint={t('settings.speakersAutoBindHint')}
           align="top"
           disabled={!valid}
+          // Порог показывается только при включённой привязке — тогда
+          // последний он, иначе висячий разделитель под группой.
+          last={!(autoBindEnabled && valid)}
         >
           <Switch
             checked={autoBindEnabled}
@@ -366,6 +309,7 @@ export function VoiceModelSection() {
             label={t('settings.autoBindThresholdLabel')}
             hint={t('settings.autoBindThresholdHint')}
             align="top"
+            last
           >
             <Select<AutoBindThreshold>
               value={autoBindThreshold}
@@ -377,43 +321,6 @@ export function VoiceModelSection() {
             />
           </SettingRow>
         )}
-        <SettingRow
-          label={t('settings.speakersMicDiarizationLabel')}
-          hint={
-            pyannoteReady ? (
-              t('settings.speakersMicDiarizationHint')
-            ) : (
-              <>
-                {t('settings.speakersMicDiarizationHint')}{' '}
-                {t('settings.micDiarizationModelMissing')}
-              </>
-            )
-          }
-          align="top"
-          last
-        >
-          {pyannoteReady ? (
-            <Switch
-              checked={micDiarizationEnabled}
-              onChange={(v) => void persistMicDiarization(v)}
-              label={t('settings.speakersMicDiarizationLabel')}
-            />
-          ) : (
-            <Button
-              variant="default"
-              size="sm"
-              leading={<Icon name="download" size={14} />}
-              onClick={() => void handleInstallPyannote()}
-              disabled={pyannoteDownloading}
-            >
-              {pyannoteDownloading
-                ? pyannotePct != null
-                  ? `${Math.round(pyannotePct)}%`
-                  : t('settings.micDiarizationInstalling')
-                : t('settings.micDiarizationInstall')}
-            </Button>
-          )}
-        </SettingRow>
       </div>
     </div>
   );

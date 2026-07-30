@@ -124,7 +124,7 @@ pub async fn regenerate_title(
     })?;
     let (provider, _preset) =
         // [Q/TD-36] call_id → LLM-очередь; метка ставится внутри общего билдера.
-        crate::pipeline::build_local_llm_provider(pool, app_data_dir, app, &s, Some(call_id))
+        crate::pipeline::build_local_llm_provider(pool, app_data_dir, app, Some(call_id))
             .await?;
     let request = LlmRequest {
         model: None,
