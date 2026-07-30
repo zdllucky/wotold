@@ -66,6 +66,11 @@ pub const RECAP_STEP: &str = "recap:step";
 pub const RECAP_BULK_PROGRESS: &str = "recap:bulk_progress";
 /// [Bulk recap] Финал массового регена. Payload — `{ regenerated, failed, cancelled }`.
 pub const RECAP_BULK_DONE: &str = "recap:bulk_done";
+/// Снимок готовности локального движка — какие обязательные модули ещё не
+/// скачаны. Payload — `local_engine::readiness::LocalEngineReadiness`.
+/// Эмитится на старте, при смене размера движка и по завершении скачивания;
+/// баннер внизу окна живёт на этом событии.
+pub const READINESS_CHANGED: &str = "readiness:changed";
 /// [M15.7] Фазы ответа ассистента. Payload — `AssistantStatusEvent`.
 /// Фазы: `retrieving` → `generating`. Очередь LLM (queued) отдельно
 /// не эмитится — фронт выводит её из существующего `queue:state`.
@@ -306,6 +311,12 @@ impl<'a> EventBus<'a> {
     pub fn recording_state_changed(&self) {
         self.emit(RECORDING_STATE, &());
     }
+
+    /// Снимок готовности движка. Generic'ом — чтобы не заводить цикл
+    /// events ↔ local_engine.
+    pub fn readiness_changed<T: Serialize + Clone>(&self, payload: &T) {
+        self.emit(READINESS_CHANGED, payload);
+    }
 }
 
 #[cfg(test)]
@@ -378,5 +389,6 @@ mod tests {
         assert_eq!(QUEUE_STATE, "queue:state");
         assert_eq!(RECORDING_DURATION, "recording:duration");
         assert_eq!(ASSISTANT_STATUS, "assistant:status");
+        assert_eq!(READINESS_CHANGED, "readiness:changed");
     }
 }

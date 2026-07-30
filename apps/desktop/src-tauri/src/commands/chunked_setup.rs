@@ -16,10 +16,7 @@ use crate::{
     call_id::CallId,
     call_store::CallStore,
     db,
-    local_engine::{
-        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
-        stt::{LocalWhisperProvider, TrackKind},
-    },
+    local_engine::stt::{LocalWhisperProvider, TrackKind},
     pipeline::settings::{mic_diarization_enabled, read_num_speakers_override},
     pipeline::{
         chunk_orchestrator::{self, ChunkOrchestratorConfig},
@@ -74,15 +71,13 @@ pub(crate) async fn build_chunk_providers(
     // [Q] call_id → STT-очередь (QueueMonitor видит чей звонок у whisper'а).
     call_id: &CallId,
 ) -> Result<ChunkProviders, AppError> {
-    let preset = db::get_setting(db, SETTING_ACTIVE_PRESET)
+    // Тот же гейт, что и у пайплайна: маршруты retry/recovery должны отказывать
+    // с тем же маркером, что и обычный прогон, иначе на одну причину у
+    // пользователя два разных текста.
+    crate::local_engine::readiness::assert_ready(db, app_data_dir).await?;
+    let preset = crate::local_engine::readiness::active_preset(db)
         .await?
-        .as_deref()
-        .and_then(LocalEnginePreset::from_str)
-        .ok_or_else(|| {
-            AppError::Other(
-                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings".into(),
-            )
-        })?;
+        .ok_or_else(|| AppError::Other("local_engine_preset_not_set".into()))?;
     let whisper_id = preset.whisper_model_id();
     // TrackKind влияет на дефолтные speaker tags ("owner" для mic, "speaker:0"
     // для system) — их потом переcassign'ает cluster pipeline.
@@ -185,6 +180,22 @@ pub(crate) async fn prepare_chunked_setup(
     );
     let chunked_on = !chunked_off;
     if !chunked_on {
+        return Ok(None);
+    }
+
+    // Движок не готов — пишем полными файлами, а не чанками. Запись важнее
+    // конвейера: раньше каждый чанк отдельно падал на sidecar'е (падение
+    // mic-чанка фатально), и пользователь получал звонок, у которого сломана
+    // и запись, и обработка. Теперь звонок просто паркуется на стопе и сам
+    // поднимется после докачки.
+    if !crate::local_engine::readiness::compute(&state.db, &state.app_data_dir)
+        .await?
+        .ready
+    {
+        log::warn!(
+            "chunked pipeline отключён на этот звонок: движку не хватает модулей — \
+             пишем полными файлами, обработка стартует после докачки"
+        );
         return Ok(None);
     }
 

@@ -38,6 +38,19 @@ const PATTERNS: ErrorPattern[] = [
     human: 'errors.llmTimeout.human',
     hint: 'errors.llmTimeout.hint',
   },
+  // Звонок припаркован: не хватает обязательных модулей. Идёт ДО
+  // `local_engine_model_missing` — тот остался для звонков, упавших до
+  // появления парковки, и текст у него про ручную установку.
+  {
+    match: /local_engine_not_ready/i,
+    human: 'errors.notReady.human',
+    hint: 'errors.notReady.hint',
+  },
+  {
+    match: /local_engine_model_tampered/i,
+    human: 'errors.modelTampered.human',
+    hint: 'errors.modelTampered.hint',
+  },
   {
     match: /local_engine_model_missing/i,
     human: 'errors.modelMissing.human',

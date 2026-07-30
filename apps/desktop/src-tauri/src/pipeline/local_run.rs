@@ -72,50 +72,23 @@ async fn prepare_local_run(
     ctx: &PipelineCtx,
     app: &AppHandle,
 ) -> Result<LocalModels, AppError> {
-    use crate::local_engine::{
-        models::{self, ModelStatus},
-        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
-    };
+    use crate::local_engine::readiness;
 
-    // 1. Резолвим preset → model ids. Без preset (юзер прошёл onboarding но
-    //    выбрал Cloud, потом откатился) — fail с явным reason.
-    let preset_str = db::get_setting(pool, SETTING_ACTIVE_PRESET).await?;
-    let preset = preset_str
-        .as_deref()
-        .and_then(LocalEnginePreset::from_str)
-        .ok_or_else(|| {
-            AppError::Other(
-                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings → Движок"
-                    .into(),
-            )
-        })?;
+    // 1-2. Единый гейт: размер движка выбран и все обязательные модули на
+    //      диске и не помечены как подменённые. Звонок, попавший сюда до
+    //      докачки, паркуется с маркером `local_engine_not_ready` — UI
+    //      предложит скачать, и после докачки звонок поднимется сам.
+    //
+    //      [perf] Внутри — сверка размеров, не SHA: ежепрогонное хеширование
+    //      whisper+LLM (~1.5-6GB) держало UI на «Сохраняем аудио» десятки
+    //      секунд. Подмену файла того же размера ловит стартовая проверка
+    //      целостности, её вердикт гейт учитывает (W5).
+    readiness::assert_ready(pool, &ctx.app_data_dir).await?;
+    let preset = readiness::active_preset(pool)
+        .await?
+        .ok_or_else(|| AppError::Other("local_engine_preset_not_set".into()))?;
     let whisper_id = preset.whisper_model_id();
     let llm_id = preset.llm_model_id();
-
-    // 2. Проверяем что обе модели на диске (exact-size против каталога).
-    //    [perf] Полный SHA — только на download-пути (M12.4); ежепрогонное
-    //    хеширование whisper+LLM (~1.5-6GB) держало UI на «Сохраняем аудио»
-    //    десятки секунд при каждом звонке/reprocess.
-    for id in [whisper_id, llm_id] {
-        // [security-scan W5] Быстрый путь сверяет только размер. Если фоновая
-        // проверка на старте уже поймала несовпадение SHA — не отдаём такой
-        // файл нативному парсеру GGUF/ONNX: подменённая модель это исполнение
-        // чужих данных в C++, а не просто «плохое качество саммари».
-        if crate::local_engine::model_integrity::is_known_tampered(pool, id.as_str()).await? {
-            return Err(AppError::Other(format!(
-                "local_engine_model_tampered: файл модели {} не прошёл проверку SHA256 — \
-                 перекачайте её в Настройках → Движок",
-                id.as_str()
-            )));
-        }
-        let status = models::check_status_fast(&ctx.app_data_dir, id.as_str()).await?;
-        if !matches!(status, ModelStatus::Present { .. }) {
-            return Err(AppError::Other(format!(
-                "local_engine_model_missing: модель {} не установлена, скачайте в Settings → Движок",
-                id.as_str()
-            )));
-        }
-    }
 
     // 3. Stage Upload — pseudo-step (audio verify + sidecar model load занимают
     //    1-2 сек, UI не получает per-byte progress).
@@ -401,6 +374,7 @@ async fn diarize_tracks(
     // игнорировались в другом.
     let num_speakers_override = super::settings::read_num_speakers_override(pool).await?;
     let sys_t = diarize_system_track(
+        pool,
         &ctx.app_data_dir,
         &ctx.system_path,
         sys_t,
@@ -431,6 +405,7 @@ async fn diarize_tracks(
     let mic_diarization = mic_on;
     let mic_t = if mic_diarization {
         let mic_diarized = diarize_mic_track(
+            pool,
             &ctx.app_data_dir,
             &ctx.mic_path,
             mic_t,

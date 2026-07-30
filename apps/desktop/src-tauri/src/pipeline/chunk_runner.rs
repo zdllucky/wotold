@@ -203,6 +203,7 @@ pub async fn run_chunk<P: TranscriptionProvider + ?Sized>(
             match app_data_dir.as_deref() {
                 Some(dir) => {
                     crate::pipeline::diarize_mic_track(
+                        pool,
                         dir,
                         &mic_path,
                         mic_transcript,

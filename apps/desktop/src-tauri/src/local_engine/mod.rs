@@ -42,6 +42,7 @@ pub mod model_integrity;
 pub mod model_migrate;
 pub mod models;
 pub mod preset;
+pub mod readiness;
 pub mod sidecar;
 pub mod stt;
 pub mod whisper_json;

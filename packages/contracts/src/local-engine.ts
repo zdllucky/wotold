@@ -92,3 +92,33 @@ export interface ModelProgressEvent {
 
 /** Pipeline-step расширение для local-engine. См. PRD §M12.6.3. */
 export type LocalPipelineStep = 'upload' | 'stt' | 'speakers' | 'merge' | 'recap';
+
+/** Почему модуль не годен: файла нет / битый / не прошёл проверку SHA256. */
+export type MissingModelState = 'absent' | 'corrupted' | 'tampered';
+
+/**
+ * Недостающий обязательный модуль.
+ *
+ * Без человекочитаемого названия намеренно: подписи живут в
+ * `utils/modelLabel.ts`, чтобы бренды моделей не протекали в интерфейс.
+ */
+export interface MissingModel {
+  id: string;
+  bytes_total: number;
+  state: MissingModelState;
+}
+
+/**
+ * Снимок готовности локального движка — payload события `readiness:changed`
+ * и ответ команды `local_engine_readiness`.
+ *
+ * Список обязательных модулей один и строгий: не хватает любого — обработка
+ * стоит целиком, звонки паркуются и поднимаются сами после докачки.
+ * `preset: null` — размер движка ещё не выбран, качать нечего до выбора.
+ */
+export interface LocalEngineReadiness {
+  ready: boolean;
+  preset: LocalEnginePreset | null;
+  missing: MissingModel[];
+  missing_bytes_total: number;
+}

@@ -102,9 +102,17 @@ export const en: TranslationStrings = {
       human: 'The local model did not respond within 10 minutes.',
       hint: 'Try the “Light” preset — it is faster. Settings → Local engine.',
     },
+    notReady: {
+      human: 'Some software is missing for processing.',
+      hint: 'Hit “Download” — the call is processed on its own once the modules land.',
+    },
+    modelTampered: {
+      human: 'A module file failed its integrity check.',
+      hint: 'Hit “Download” — the damaged file gets replaced.',
+    },
     modelMissing: {
       human: 'The local model is not installed.',
-      hint: 'Download it in Settings → Local engine.',
+      hint: 'Download it in Settings → Processing.',
     },
     presetNotSet: {
       human: 'No local engine preset selected.',

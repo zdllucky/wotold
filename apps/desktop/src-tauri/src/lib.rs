@@ -222,6 +222,8 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             commands::local_engine_list_catalog,
             #[cfg(target_os = "macos")]
+            commands::local_engine_readiness,
+            #[cfg(target_os = "macos")]
             commands::local_engine_model_status,
             #[cfg(target_os = "macos")]
             commands::local_engine_model_download,

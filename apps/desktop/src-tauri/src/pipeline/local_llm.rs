@@ -123,12 +123,11 @@ pub async fn regenerate_recap(
     ))
 }
 
-/// [DRY] Собрать `LocalLlamaProvider` для активного preset'а: resolve preset
-/// (`SETTING_ACTIVE_PRESET`) → проверка LLM-модели на диске (`local_engine_model_missing`)
-/// → speculative draft gate → build с per-preset timeout + AppHandle. Возвращает
-/// `(provider, preset)` (`LocalEnginePreset` — Copy). Используется
-/// `regenerate_recap_local` + `title_regen` (local path). `run_local_inner` имеет
-/// свою копию (STT-путь) — отдельный backlog на унификацию.
+/// [DRY] Собрать `LocalLlamaProvider` для активного preset'а: гейт готовности
+/// движка (`readiness::assert_ready`) → speculative draft gate → build с
+/// per-preset timeout + AppHandle. Возвращает `(provider, preset)`
+/// (`LocalEnginePreset` — Copy). Используется `regenerate_recap_local` +
+/// `title_regen` (local path) и маршрутом записи через `run_recap`.
 #[cfg(target_os = "macos")]
 pub async fn build_local_llm_provider(
     pool: &SqlitePool,
@@ -148,32 +147,19 @@ pub async fn build_local_llm_provider(
 > {
     use crate::local_engine::{
         llm::LocalLlamaProvider,
-        models::{self, ModelId, ModelStatus},
-        preset::{LocalEnginePreset, SETTING_ACTIVE_PRESET},
+        models::{self, ModelId},
+        preset::LocalEnginePreset,
+        readiness,
     };
 
-    let preset_str = db::get_setting(pool, SETTING_ACTIVE_PRESET).await?;
-    let preset = preset_str
-        .as_deref()
-        .and_then(LocalEnginePreset::from_str)
-        .ok_or_else(|| {
-            AppError::Other(
-                "local_engine_preset_not_set: выберите Light/Balanced/Quality в Settings → Движок"
-                    .into(),
-            )
-        })?;
+    // Единый гейт готовности: пресет выбран и все обязательные модули на диске.
+    // До этого здесь жила своя копия проверки — та же, что в `prepare_local_run`,
+    // с теми же текстами и своим набором моделей.
+    readiness::assert_ready(pool, app_data_dir).await?;
+    let preset = readiness::active_preset(pool)
+        .await?
+        .ok_or_else(|| AppError::Other("local_engine_preset_not_set".into()))?;
     let llm_id = preset.llm_model_id();
-
-    // Проверяем что LLM модель на диске (exact-size). [perf] Полный SHA —
-    // только на download-пути (M12.4); ежепрогонный хеш 2-4GB давал десятки
-    // секунд задержки перед каждым регеном.
-    let status = models::check_status_fast(app_data_dir, llm_id.as_str()).await?;
-    if !matches!(status, ModelStatus::Present { .. }) {
-        return Err(AppError::Other(format!(
-            "local_engine_model_missing: модель {} не установлена, скачайте в Settings → Движок",
-            llm_id.as_str()
-        )));
-    }
 
     // Speculative decoding gate (mirror run_local_inner).
     let draft_path: Option<std::path::PathBuf> =

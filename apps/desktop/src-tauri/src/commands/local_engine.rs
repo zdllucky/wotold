@@ -24,6 +24,7 @@ use crate::{
         hw_probe::{self, HwReport},
         models::{self, ModelKind, ModelStatus, MODEL_CATALOG},
         preset::{LocalEnginePreset, PresetSpec, SETTING_ACTIVE_PRESET},
+        readiness::{self, LocalEngineReadiness},
     },
     state::AppState,
     AppError,
@@ -114,6 +115,16 @@ pub async fn local_engine_storage_list(
     Ok(rows)
 }
 
+/// Готовность движка: выбран ли размер и каких обязательных модулей не хватает.
+/// Баннер внизу окна тянет снимок при монтировании, дальше живёт на событии
+/// `readiness:changed`.
+#[tauri::command]
+pub async fn local_engine_readiness(
+    state: State<'_, AppState>,
+) -> Result<LocalEngineReadiness, AppError> {
+    readiness::compute(&state.db, &state.app_data_dir).await
+}
+
 #[tauri::command]
 pub async fn local_engine_model_download(
     state: State<'_, AppState>,
@@ -121,15 +132,19 @@ pub async fn local_engine_model_download(
     id: String,
 ) -> Result<(), AppError> {
     models::download(&state.app_data_dir, &id, Some(&app)).await?;
+    readiness::recompute_and_emit(&app);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn local_engine_model_delete(
     state: State<'_, AppState>,
+    app: AppHandle,
     id: String,
 ) -> Result<(), AppError> {
-    models::delete(&state.app_data_dir, &id).await
+    models::delete(&state.app_data_dir, &id).await?;
+    readiness::recompute_and_emit(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -146,11 +161,15 @@ pub async fn local_engine_get_active_preset(
 #[tauri::command]
 pub async fn local_engine_set_active_preset(
     state: State<'_, AppState>,
+    app: AppHandle,
     preset: String,
 ) -> Result<PresetSpec, AppError> {
     let parsed = LocalEnginePreset::from_str(&preset)
         .ok_or_else(|| AppError::Other(format!("unknown preset: {preset}")))?;
     crate::db::set_setting(&state.db, SETTING_ACTIVE_PRESET, parsed.as_str()).await?;
+    // Смена размера меняет обязательный список — пересчитываем сразу, иначе
+    // баннер узнает о нехватке только после следующего действия.
+    readiness::recompute_and_emit(&app);
     Ok(PresetSpec::from(parsed))
 }
 

@@ -36,6 +36,28 @@ pub async fn list_interrupted_failed_calls(pool: &SqlitePool) -> Result<Vec<Stri
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
+/// Звонки, припаркованные из-за нехватки модулей движка.
+///
+/// Такой звонок — не сбой обработки: аудио целое, не хватало софта. После
+/// докачки он обязан подняться сам, без действий пользователя. Легаси-маркеры
+/// (`local_engine_model_missing`, `local_engine_preset_not_set`) в списке
+/// намеренно: звонки, упавшие по этой причине до появления парковки, тоже
+/// поднимутся с первой докачкой.
+pub async fn list_parked_calls(pool: &SqlitePool) -> Result<Vec<String>, AppError> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT id FROM calls
+         WHERE status = 'failed'
+           AND (failed_reason LIKE 'local_engine_not_ready%'
+             OR failed_reason LIKE 'local_engine_model_missing%'
+             OR failed_reason LIKE 'local_engine_model_tampered%'
+             OR failed_reason LIKE 'local_engine_preset_not_set%')
+         ORDER BY started_at DESC",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 pub async fn sweep_stale_calls(pool: &SqlitePool) -> Result<u64, AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     // [B19.6] Только 'processing' (у них есть финализированное аудио → recoverable
@@ -206,6 +228,45 @@ mod tests {
 
         let ids = list_interrupted_failed_calls(&db.pool).await.unwrap();
         assert_eq!(ids, vec![a.id.clone()], "только прерванный без reason");
+    }
+
+    #[tokio::test]
+    async fn list_parked_calls_takes_every_engine_marker_and_nothing_else() {
+        let db = fresh_db().await;
+        let mut parked = Vec::new();
+        for reason in [
+            "local_engine_not_ready: не хватает модулей: silero-vad-v5",
+            "local_engine_model_missing: модель whisper-small не установлена",
+            "local_engine_preset_not_set: выберите размер",
+            "local_engine_model_tampered: файл не прошёл проверку",
+        ] {
+            let c = insert_recording(&db.pool, "managed").await.unwrap();
+            finish_recording(&db.pool, &c.id, 5.0).await.unwrap();
+            fail_recording_with_reason(&db.pool, &c.id, Some(reason))
+                .await
+                .unwrap();
+            parked.push(c.id);
+        }
+        // Настоящий сбой обработки парковке не подлежит.
+        let stt = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &stt.id, 5.0).await.unwrap();
+        fail_recording_with_reason(&db.pool, &stt.id, Some("local_engine_stt_failed (mic)"))
+            .await
+            .unwrap();
+        // Прерванный крашем (без причины) — забота авто-восстановления.
+        let interrupted = insert_recording(&db.pool, "managed").await.unwrap();
+        finish_recording(&db.pool, &interrupted.id, 5.0)
+            .await
+            .unwrap();
+        sweep_stale_calls(&db.pool).await.unwrap();
+
+        let ids = list_parked_calls(&db.pool).await.unwrap();
+        assert_eq!(ids.len(), 4, "получили {ids:?}");
+        for id in &parked {
+            assert!(ids.contains(id), "{id} должен быть в списке парковки");
+        }
+        assert!(!ids.contains(&stt.id));
+        assert!(!ids.contains(&interrupted.id));
     }
 
     #[tokio::test]

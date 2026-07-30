@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   HwReport,
   LocalEnginePreset,
+  LocalEngineReadiness,
   LocalModelKind,
   ModelStatus,
   PresetSpec,
@@ -26,6 +27,15 @@ export function localEngineListCatalog(): Promise<LocalEngineCatalogEntry[]> {
 
 export function localEngineModelStatus(id: string): Promise<ModelStatus> {
   return invoke<ModelStatus>('local_engine_model_status', { id });
+}
+
+/**
+ * Готовность движка: выбран ли размер и каких обязательных модулей не хватает.
+ * Дальше состояние живёт на событии `readiness:changed` — см.
+ * `components/readiness/ReadinessProvider.tsx`.
+ */
+export function localEngineReadiness(): Promise<LocalEngineReadiness> {
+  return invoke<LocalEngineReadiness>('local_engine_readiness');
 }
 
 export function localEngineModelDownload(id: string): Promise<void> {

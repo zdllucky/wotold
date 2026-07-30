@@ -9,7 +9,25 @@ use std::path::Path;
 
 use sqlx::SqlitePool;
 
+use crate::db::DegradedFlag;
 use crate::providers::transcription::DiarizedTranscript;
+
+/// Дорожка осталась неразделённой — поставить видимый флаг звонку.
+///
+/// Флаги `system_track_not_diarized` / `mic_track_not_diarized` были объявлены
+/// в контракте с самого начала, но не выставлялись ни разу: деградация уходила
+/// только в лог, и пользователь видел «один спикер» без объяснения.
+#[cfg(target_os = "macos")]
+async fn mark_not_diarized(pool: &SqlitePool, call_id: &str, track_kind: &str) {
+    let flag = if track_kind == "mic" {
+        DegradedFlag::MicTrackNotDiarized
+    } else {
+        DegradedFlag::SystemTrackNotDiarized
+    };
+    if let Err(e) = crate::db::add_degraded_flag(pool, call_id, flag).await {
+        log::warn!("diarize_track[{track_kind}]: флаг деградации не записан: {e}");
+    }
+}
 
 /// [M12-D5] Прогнать system-track через sherpa-onnx OfflineSpeakerDiarization
 /// и смерджить speaker tags в `sys_t.segments`.
@@ -17,6 +35,8 @@ use crate::providers::transcription::DiarizedTranscript;
 /// Non-fatal: при отсутствии pyannote / WeSpeaker модели или ошибке inference
 /// возвращаем оригинальный `sys_t` без изменений — system track останется
 /// single-bucket (`speaker:0`), pipeline продолжит работать в degraded режиме.
+/// Такая деградация теперь ещё и **видима**: выставляется флаг звонка, иначе
+/// пользователь гадает, один там голос или дорожка не разделилась (правило 3).
 ///
 /// Шаги:
 ///
@@ -27,6 +47,7 @@ use crate::providers::transcription::DiarizedTranscript;
 /// - Вернуть обновлённый sys_t.
 #[cfg(target_os = "macos")]
 pub(crate) async fn diarize_system_track(
+    pool: &SqlitePool,
     app_data_dir: &Path,
     system_path: &Path,
     sys_t: DiarizedTranscript,
@@ -34,6 +55,7 @@ pub(crate) async fn diarize_system_track(
     call_id: &str,
 ) -> DiarizedTranscript {
     diarize_track(
+        pool,
         app_data_dir,
         system_path,
         sys_t,
@@ -53,13 +75,23 @@ pub(crate) async fn diarize_system_track(
 /// auto-detect (sortformer default). Применяется идентично к mic и system.
 #[cfg(target_os = "macos")]
 pub(crate) async fn diarize_mic_track(
+    pool: &SqlitePool,
     app_data_dir: &Path,
     mic_path: &Path,
     mic_t: DiarizedTranscript,
     num_speakers: Option<i32>,
     call_id: &str,
 ) -> DiarizedTranscript {
-    diarize_track(app_data_dir, mic_path, mic_t, "mic", num_speakers, call_id).await
+    diarize_track(
+        pool,
+        app_data_dir,
+        mic_path,
+        mic_t,
+        "mic",
+        num_speakers,
+        call_id,
+    )
+    .await
 }
 
 /// [M13 follow-up] Non-chunked path post-processing: после `diarize_mic_track`
@@ -135,6 +167,7 @@ pub(crate) async fn relabel_owner_on_mic_full_file(
 /// без изменений.
 #[cfg(target_os = "macos")]
 async fn diarize_track(
+    pool: &SqlitePool,
     app_data_dir: &Path,
     audio_path: &Path,
     transcript: DiarizedTranscript,
@@ -165,6 +198,7 @@ async fn diarize_track(
              диаризация {track_kind}-дорожки не выполнена. Установите модуль в \
              Настройки → Спикеры."
         );
+        mark_not_diarized(pool, call_id, track_kind).await;
         return transcript;
     }
 
@@ -179,6 +213,7 @@ async fn diarize_track(
             "diarize_track[{track_kind}]: WeSpeaker embedder ({}) отсутствует — fall back",
             emb_path.display()
         );
+        mark_not_diarized(pool, call_id, track_kind).await;
         return transcript;
     }
 
@@ -195,6 +230,7 @@ async fn diarize_track(
         Ok(segs) => segs,
         Err(e) => {
             log::warn!("diarize_track[{track_kind}]: sortformer err: {e} — fall back");
+            mark_not_diarized(pool, call_id, track_kind).await;
             return transcript;
         }
     };
@@ -237,5 +273,108 @@ async fn diarize_track(
     DiarizedTranscript {
         segments: merged_segments,
         ..transcript
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+    use crate::db::test_support::fresh_db;
+
+    fn one_segment_transcript() -> DiarizedTranscript {
+        DiarizedTranscript {
+            version: 1,
+            lang_detected: Some("ru".into()),
+            duration_sec: 3.0,
+            provider: "test".into(),
+            segments: vec![crate::providers::transcription::TranscriptSegment {
+                start: 0.0,
+                end: 3.0,
+                text: "привет".into(),
+                speaker_tag: "speaker:0".into(),
+                confidence: None,
+            }],
+        }
+    }
+
+    /// Правило 3: «warn-and-continue», влияющий на результат звонка, обязан
+    /// оставлять видимый след. Флаги были объявлены с самого начала, но не
+    /// выставлялись — дорожка молча оставалась в один голос.
+    #[tokio::test]
+    async fn missing_models_flag_the_system_track_as_not_diarized() {
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let call = crate::db::insert_recording(&db.pool, "managed")
+            .await
+            .unwrap();
+
+        let out = diarize_system_track(
+            &db.pool,
+            tmp.path(),
+            &tmp.path().join("system.wav"),
+            one_segment_transcript(),
+            None,
+            &call.id,
+        )
+        .await;
+
+        assert_eq!(out.segments.len(), 1, "транскрипт возвращается как был");
+        let flags = crate::db::list_degraded_flags(&db.pool, &call.id)
+            .await
+            .unwrap();
+        assert_eq!(flags, vec!["system_track_not_diarized"]);
+    }
+
+    #[tokio::test]
+    async fn missing_models_flag_the_mic_track_separately() {
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let call = crate::db::insert_recording(&db.pool, "managed")
+            .await
+            .unwrap();
+
+        diarize_mic_track(
+            &db.pool,
+            tmp.path(),
+            &tmp.path().join("mic.wav"),
+            one_segment_transcript(),
+            None,
+            &call.id,
+        )
+        .await;
+
+        let flags = crate::db::list_degraded_flags(&db.pool, &call.id)
+            .await
+            .unwrap();
+        assert_eq!(flags, vec!["mic_track_not_diarized"]);
+    }
+
+    /// Идемпотентность важна на chunked-пути: диаризация зовётся на каждый
+    /// чанк, и десять чанков без модели не должны дать десять одинаковых
+    /// оговорок в шапке звонка.
+    #[tokio::test]
+    async fn repeated_degradation_does_not_duplicate_the_flag() {
+        let db = fresh_db().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let call = crate::db::insert_recording(&db.pool, "managed")
+            .await
+            .unwrap();
+
+        for _ in 0..3 {
+            diarize_mic_track(
+                &db.pool,
+                tmp.path(),
+                &tmp.path().join("mic.wav"),
+                one_segment_transcript(),
+                None,
+                &call.id,
+            )
+            .await;
+        }
+
+        let flags = crate::db::list_degraded_flags(&db.pool, &call.id)
+            .await
+            .unwrap();
+        assert_eq!(flags, vec!["mic_track_not_diarized"]);
     }
 }
