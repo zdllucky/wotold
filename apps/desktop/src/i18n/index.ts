@@ -197,20 +197,42 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return createElement(Ctx.Provider, { value }, children);
 }
 
-export function useI18n(): I18nCtx {
-  const v = useContext(Ctx);
-  if (v) return v;
-  // Fallback for unit tests / Storybook rendering outside a Provider:
-  // detect locale from navigator and use a no-op setLocale. Keeps tests
-  // working without forcing every test to wrap with <I18nProvider>.
-  const locale = detectSystemLocale();
-  return {
+/**
+ * Кэш фолбэк-контекстов по локали.
+ *
+ * Идентичность обязана быть стабильной между рендерами: `t` попадает в
+ * зависимости эффектов, и новая функция на каждый рендер означает
+ * переподписку на события — а в худшем случае бесконечный цикл
+ * «эффект → setState → рендер → новый t → эффект». Внутри провайдера `t`
+ * стабилен (useCallback по локали), и фолбэк не имеет права быть слабее.
+ *
+ * Не useMemo: фолбэк отдаётся после раннего `return v`, то есть условно, а
+ * условный хук — нарушение правил хуков. Модульная карта решает то же самое
+ * без хуков.
+ */
+const FALLBACK_CTX = new Map<Locale, I18nCtx>();
+
+function fallbackCtx(locale: Locale): I18nCtx {
+  const cached = FALLBACK_CTX.get(locale);
+  if (cached) return cached;
+  const ctx: I18nCtx = {
     locale,
     setLocale: () => {
       /* noop outside Provider */
     },
     t: makeFallbackT(locale),
   };
+  FALLBACK_CTX.set(locale, ctx);
+  return ctx;
+}
+
+export function useI18n(): I18nCtx {
+  const v = useContext(Ctx);
+  if (v) return v;
+  // Fallback for unit tests / Storybook rendering outside a Provider:
+  // detect locale from navigator and use a no-op setLocale. Keeps tests
+  // working without forcing every test to wrap with <I18nProvider>.
+  return fallbackCtx(detectSystemLocale());
 }
 
 /**

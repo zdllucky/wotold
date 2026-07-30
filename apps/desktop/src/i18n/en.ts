@@ -811,9 +811,8 @@ export const en: TranslationStrings = {
       downloadCta: 'Download and continue (~{size} GB)',
       chooseAnotherCta: 'Pick a different preset',
       collapsePickerCta: 'Hide presets',
-      downloadingLabel: 'Downloading {id}',
-      cancelDownloadCta: 'Cancel and continue with cloud',
-      verifyFailed: 'Checksum mismatch for {id}. Try again.',
+      downloadingLabel: 'Downloading modules',
+      continueInBackgroundCta: 'Collapse — it keeps downloading',
       recommendedTag: 'REC',
       feat: {
         light: {

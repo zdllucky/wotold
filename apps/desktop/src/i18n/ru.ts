@@ -867,9 +867,8 @@ const ruInternal = {
       downloadCta: 'Скачать и продолжить (~{size} GB)',
       chooseAnotherCta: 'Выбрать другой пресет',
       collapsePickerCta: 'Скрыть пресеты',
-      downloadingLabel: 'Качаем {id}',
-      cancelDownloadCta: 'Отменить и продолжить с облаком',
-      verifyFailed: 'Контрольная сумма не совпала для {id}. Попробуйте ещё раз.',
+      downloadingLabel: 'Качаем модули',
+      continueInBackgroundCta: 'Свернуть — докачается в фоне',
       recommendedTag: 'РЕКОМ.',
       feat: {
         light: {

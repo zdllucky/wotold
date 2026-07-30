@@ -1,208 +1,106 @@
-// [M12.7.3] Onboarding step «Engine setup» — обязательный шаг для новых
-// macOS-юзеров между Owner (step 2) и Permissions+Consent (step 4).
+// [M12.7.3] Шаг онбординга «настройка движка» — между владельцем (шаг 2) и
+// разрешениями с согласием (шаг 4), только для macOS.
 //
-// Design Gate alignment block — см. PR описание. Wotold v2 (uikit) классы:
-// .panel (probe result card — content внутри родительского onboarding dialog,
-// не сам dialog), .dot--{success,accent,muted}, .btn--{primary,ghost,quiet},
-// .activity-strip pattern для progress.
+// [design-gate] Surface: pages/OnboardingEngineStep
+// Reference: docs/design/wotold-v2/_reference/wk-onboarding.jsx
+// Tokens: --sunken, --text, --text-2, --text-faint, --danger, --r-md, --t-20
+// Classes: .panel, .small-caps, .set-eyebrow, .mono, .activity-strip,
+//   .optioncard (через OptionCard), .progress (через Progress), .btn (Button)
+// New tokens: нет
+// Logic preserved: probe на mount, авто-переход на не-macOS через useEffect
+//   (не в рендере — иначе setState родителя во время рендера ребёнка), хук до
+//   любого early-return (Rules of Hooks).
+// A11y: role="radiogroup" + aria-label, role="status" на полосе прогресса.
 //
-// Flow (PRD §M12.7.3, LOCAL-ONLY):
-//   1. Probe выдаёт recommendation
-//   2. User видит карточку «recommended preset · size · что входит»
-//   3. Кнопки:
-//      - «Скачать и продолжить» → запуск download → progress → onAdvance
-//      - «Выбрать другой» → раскрывает radio group Light/Balanced/Quality
-//   4. Cancel во время download → cleanup partial + advance (модели докачаются позже)
+// Что изменилось: размеры берутся из каталога (`local_engine_preset_specs`), а
+// не из захардкоженных «1.2 / 2.4 / 5.5 ГБ» — те занижали все три, потому что
+// базовые модули в них не входили. Скачиванием распоряжается общий баннер
+// готовности: своя очередь здесь дублировала его логику и слушала те же
+// события. «Свернуть» больше не удаляет полускачанный файл (удалялся всё равно
+// не тот путь) — докачка продолжается в фоне под баннером.
 
 import { useCallback, useEffect, useState } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { HwReport, LocalEnginePreset } from '@wotold/contracts';
+import type { HwReport, LocalEnginePreset, PresetSizeSpec } from '@wotold/contracts';
 
 import {
   localEngineHwProbe,
-  localEngineModelDelete,
-  localEngineModelDownload,
-  localEngineModelStatus,
+  localEnginePresetSpecs,
   localEngineSetActivePreset,
 } from '../api/local-engine';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
 import { Button, OptionCard, Progress } from '../ui';
+import { useReadiness } from '../components/readiness/ReadinessProvider';
 
 const PRESETS: LocalEnginePreset[] = ['light', 'balanced', 'quality'];
 
-const PRESET_MODELS: Record<LocalEnginePreset, { whisper: string; llm: string; sizeGb: number }> = {
-  light: { whisper: 'whisper-small', llm: 'qwen25-1_5b', sizeGb: 1.2 },
-  balanced: { whisper: 'whisper-medium', llm: 'qwen25-3b', sizeGb: 2.4 },
-  quality: { whisper: 'whisper-large-v3', llm: 'qwen25-7b', sizeGb: 5.5 },
-};
-
-/** [M12-D5] Pyannote ~6 MB — добавляем в download queue для multi-speaker. */
-const PYANNOTE_MODEL_ID = 'pyannote-segmentation';
-
-interface ProgressState {
-  modelId: string;
-  pct: number;
-  bytesDone: number;
-  bytesTotal: number;
+/** Гигабайты с одним знаком — для подписей кнопок и карточек. */
+function gb(bytes: number): string {
+  return (bytes / 1024 ** 3).toFixed(1);
 }
 
 interface Props {
-  /** Вызвать когда юзер завершил step — продвинуть onboarding дальше. */
+  /** Вызвать когда юзер завершил шаг — продвинуть онбординг дальше. */
   onAdvance: () => void;
 }
 
 export function OnboardingEngineStep({ onAdvance }: Props) {
   const { t } = useI18n();
+  const { readiness, aggregate, ensure } = useReadiness();
   const [hw, setHw] = useState<HwReport | null>(null);
+  const [specs, setSpecs] = useState<PresetSizeSpec[]>([]);
   const [chosenPreset, setChosenPreset] = useState<LocalEnginePreset | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [progress, setProgress] = useState<ProgressState | null>(null);
-  const [downloadQueue, setDownloadQueue] = useState<string[]>([]);
+  const [started, setStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        const report = await localEngineHwProbe(false);
+        const [report, sizeSpecs] = await Promise.all([
+          localEngineHwProbe(false),
+          localEnginePresetSpecs(),
+        ]);
         setHw(report);
+        setSpecs(sizeSpecs);
         setChosenPreset(report.recommendation ?? 'light');
       } catch (e) {
         setError(humanError(e, t));
       }
     })();
-  }, []);
-
-  useEffect(() => {
-    // Тот же cancelled-flag приём против
-    // listen() unlisten leak при fast unmount.
-    let cancelled = false;
-    let unProgress: UnlistenFn | undefined;
-    let unDone: UnlistenFn | undefined;
-    (async () => {
-      unProgress = await listen<{ id: string; pct: number; bytes_done: number; bytes_total: number }>(
-        'model:progress',
-        (e) => {
-          setProgress({
-            modelId: e.payload.id,
-            pct: e.payload.pct,
-            bytesDone: e.payload.bytes_done,
-            bytesTotal: e.payload.bytes_total,
-          });
-        },
-      );
-      unDone = await listen<{ id: string; status: string; expected?: string; got?: string; message?: string }>(
-        'model:done',
-        (e) => {
-          if (e.payload.status === 'verify_failed') {
-            setError(t('onboarding.engine.verifyFailed', { id: e.payload.id }));
-            setDownloading(false);
-            return;
-          }
-          if (e.payload.status === 'io_error') {
-            setError(e.payload.message ?? 'io error');
-            setDownloading(false);
-            return;
-          }
-          // success or already_present — drain queue
-          setDownloadQueue((q) => q.slice(1));
-        },
-      );
-      if (cancelled) {
-        unProgress?.();
-        unDone?.();
-      }
-    })();
-    return () => {
-      cancelled = true;
-      unProgress?.();
-      unDone?.();
-    };
   }, [t]);
 
-  // Drain queue: if downloading and queue non-empty, kick next download.
+  // [Review HIGH-3] Авто-переход на не-macOS нельзя дёргать в рендере — это
+  // setState родителя во время рендера ребёнка. [B21] И хук обязан стоять до
+  // любого early-return: раньше он объявлялся после `if (downloading) return`,
+  // и первый же старт загрузки менял число вызванных хуков.
   useEffect(() => {
-    if (!downloading) return;
-    if (downloadQueue.length === 0) {
-      // queue empty → done
-      setDownloading(false);
-      setProgress(null);
-      onAdvance();
-      return;
-    }
-    const next = downloadQueue[0];
-    if (!next) return;
-    void localEngineModelDownload(next).catch((e) => {
-      setError(humanError(e, t));
-      setDownloading(false);
-    });
-  }, [downloadQueue, downloading, onAdvance]);
+    if (hw && hw.os !== 'macos') onAdvance();
+  }, [hw, onAdvance]);
+
+  // Модули докачались — шаг сделан.
+  useEffect(() => {
+    if (started && readiness?.ready) onAdvance();
+  }, [started, readiness, onAdvance]);
 
   const startDownload = useCallback(async () => {
     if (!chosenPreset) return;
     setError(null);
     try {
-      // Preset фиксируем в settings ДО download — если cancel, preset уже
-      // выбран (модели докачаются позже, on-demand).
+      // Размер фиксируем до скачивания: если пользователь свернёт шаг, выбор
+      // уже сохранён и докачка продолжится в фоне.
       await localEngineSetActivePreset(chosenPreset);
-
-      // Соберём список моделей которые нужно скачать (skip present).
-      // Включаем pyannote для multi-speaker diarization (PRD §M12-D5).
-      const models = PRESET_MODELS[chosenPreset];
-      const ids = [models.whisper, models.llm, PYANNOTE_MODEL_ID];
-      const queue: string[] = [];
-      for (const id of ids) {
-        const status = await localEngineModelStatus(id);
-        if (status.state !== 'present') queue.push(id);
-      }
-      if (queue.length === 0) {
-        // Всё уже скачано — сразу advance.
-        onAdvance();
-        return;
-      }
-      setDownloadQueue(queue);
-      setDownloading(true);
+      setStarted(true);
+      ensure();
     } catch (e) {
       setError(humanError(e, t));
     }
-  }, [chosenPreset, onAdvance]);
+  }, [chosenPreset, ensure, t]);
 
-  const cancelDownload = useCallback(async () => {
-    setError(null);
-    setDownloading(false);
-    setDownloadQueue([]);
-    setProgress(null);
-    // Cleanup partial files: delete the model that was mid-download.
-    if (progress?.modelId) {
-      try {
-        await localEngineModelDelete(progress.modelId);
-      } catch {
-        // Best-effort; UI continues.
-      }
-    }
-    // Preset уже зафиксирован в startDownload — advance, модели докачаются
-    // позже on-demand.
-    onAdvance();
-  }, [onAdvance, progress]);
+  const spec = specs.find((s) => s.preset === (chosenPreset ?? 'light'));
 
-  // [Review HIGH-3] Non-macOS auto-skip нельзя дёргать в render — это вызовет
-  // `setStep` в родителе во время рендера ребёнка (React warning + риск
-  // infinite re-render). Переносим в useEffect.
-  // [B21] Хук обязан стоять ДО любого early-return (Rules of Hooks): раньше
-  // он объявлялся после `if (downloading) return …` — первый же старт
-  // загрузки менял число вызванных хуков → React crash.
-  useEffect(() => {
-    if (hw && hw.os !== 'macos') {
-      onAdvance();
-    }
-  }, [hw, onAdvance]);
-
-  if (downloading) {
-    const pct = progress?.pct ?? 0;
-    const mb = progress ? (progress.bytesDone / 1024 / 1024).toFixed(0) : '0';
-    const totalMb = progress ? (progress.bytesTotal / 1024 / 1024).toFixed(0) : '?';
+  if (started && !readiness?.ready) {
     return (
       <div
         className="activity-strip"
@@ -211,24 +109,27 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
       >
         <div style={{ flex: 1 }}>
           <div className="small-caps" style={{ marginBottom: 4 }}>
-            {t('onboarding.engine.downloadingLabel', {
-              id: progress?.modelId ?? '…',
-            })}
+            {t('onboarding.engine.downloadingLabel')}
           </div>
           <div className="mono" style={{ fontSize: 13, color: 'var(--text-2)' }}>
-            {mb} / {totalMb} MB · {pct.toFixed(0)}%
+            {aggregate
+              ? `${gb(aggregate.doneBytes)} / ${gb(aggregate.totalBytes)} GB · ${aggregate.pct}%`
+              : '…'}
           </div>
-          {/* [B21] Канонный .progress вместо самописного бара. */}
-          <Progress value={pct} style={{ marginTop: 8 }} />
+          <Progress
+            value={aggregate?.pct ?? 0}
+            style={{ marginTop: 8 }}
+            ariaLabel={t('onboarding.engine.downloadingLabel')}
+          />
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void cancelDownload()}>
-          {t('onboarding.engine.cancelDownloadCta')}
+        <Button variant="ghost" size="sm" onClick={onAdvance}>
+          {t('onboarding.engine.continueInBackgroundCta')}
         </Button>
       </div>
     );
   }
 
-  if (!hw || hw.os !== 'macos') {
+  if (!hw || hw.os !== 'macos' || !spec) {
     return (
       <p className="subtle" style={{ marginBottom: 32 }}>
         {t('common.loadingShort')}
@@ -237,7 +138,6 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
   }
 
   const preset = chosenPreset ?? 'light';
-  const models = PRESET_MODELS[preset];
   const presetLabel = t(`localEngine.preset.${preset}`);
 
   if (previewMode) {
@@ -269,18 +169,13 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         >
           {[1, 2, 3, 4].map((n) => (
             <div key={n} style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-2)' }}>
-              {t(`onboarding.engine.previewTranscript${n}` as 'onboarding.engine.previewTranscript1')}
+              {t(
+                `onboarding.engine.previewTranscript${n}` as 'onboarding.engine.previewTranscript1',
+              )}
             </div>
           ))}
         </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 24,
-          }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
           <span className="muted" style={{ fontSize: 12 }}>
             {t('onboarding.engine.previewProcessed', { ms: '420' })}
           </span>
@@ -293,7 +188,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
               void startDownload();
             }}
           >
-            {t('onboarding.engine.previewInstall', { size: models.sizeGb })}
+            {t('onboarding.engine.previewInstall', { size: gb(spec.total_bytes) })}
           </Button>
           <Button variant="ghost" onClick={() => setPreviewMode(false)}>
             {t('onboarding.engine.previewBack')}
@@ -308,17 +203,13 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
       {error && (
         <p
           role="alert"
-          style={{
-            color: 'var(--danger)',
-            fontFamily: 'var(--font)',
-            marginBottom: 14,
-          }}
+          style={{ color: 'var(--danger)', fontFamily: 'var(--font)', marginBottom: 14 }}
         >
           {error}
         </p>
       )}
 
-      {/* Probe result card */}
+      {/* Что за машина и что на ней будет работать. */}
       <div
         className="panel"
         style={{
@@ -356,7 +247,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
             marginTop: 8,
           }}
         >
-          <strong>{presetLabel}</strong> · ~{models.sizeGb} GB
+          <strong>{presetLabel}</strong> · ~{gb(spec.total_bytes)} GB
         </div>
         <ul
           style={{
@@ -377,7 +268,7 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
         </ul>
       </div>
 
-      {/* Picker (collapsible) — [B21] OptionCard radio, как в Настройках. */}
+      {/* Выбор размера — раскрывается по кнопке ниже. */}
       {pickerOpen && (
         <div style={{ marginBottom: 20 }}>
           <div
@@ -385,34 +276,33 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
             aria-label={t('localEngine.presetLabel')}
             style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
           >
-            {PRESETS.map((p, qi) => (
-              <OptionCard
-                key={p}
-                radio
-                active={p === preset}
-                title={t(`localEngine.preset.${p}`)}
-                badge={
-                  hw.recommendation === p ? t('onboarding.engine.recommendedTag') : undefined
-                }
-                quality={qi + 1}
-                meta={<span className="mono">~{PRESET_MODELS[p].sizeGb} GB</span>}
-                onClick={() => setChosenPreset(p)}
-              />
-            ))}
+            {PRESETS.map((p, qi) => {
+              const s = specs.find((x) => x.preset === p);
+              return (
+                <OptionCard
+                  key={p}
+                  radio
+                  active={p === preset}
+                  tabStop={p === preset}
+                  title={t(`localEngine.preset.${p}`)}
+                  badge={
+                    hw.recommendation === p ? t('onboarding.engine.recommendedTag') : undefined
+                  }
+                  quality={qi + 1}
+                  meta={<span className="mono">~{s ? gb(s.total_bytes) : '—'} GB</span>}
+                  onClick={() => setChosenPreset(p)}
+                />
+              );
+            })}
           </div>
         </div>
       )}
 
       <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          marginBottom: 32,
-        }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 32 }}
       >
         <Button variant="primary" onClick={() => void startDownload()}>
-          {t('onboarding.engine.downloadCta', { size: models.sizeGb })}
+          {t('onboarding.engine.downloadCta', { size: gb(spec.total_bytes) })}
         </Button>
         <Button variant="ghost" onClick={() => setPreviewMode(true)}>
           {t('onboarding.engine.previewCta')}

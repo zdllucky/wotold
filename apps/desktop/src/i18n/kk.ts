@@ -808,9 +808,8 @@ export const kk: TranslationStrings = {
       downloadCta: 'Жүктеп жалғастыру (~{size} ГБ)',
       chooseAnotherCta: 'Басқа пресет таңдау',
       collapsePickerCta: 'Пресеттерді жасыру',
-      downloadingLabel: '{id} жүктелуде',
-      cancelDownloadCta: 'Болдырмау және бұлтпен жалғастыру',
-      verifyFailed: '{id} үшін бақылау сомасы сәйкес келмеді. Қайта көріңіз.',
+      downloadingLabel: 'Модульдер жүктелуде',
+      continueInBackgroundCta: 'Жию — фонда жүктеле береді',
       recommendedTag: 'ҰСЫН.',
       feat: {
         light: {
