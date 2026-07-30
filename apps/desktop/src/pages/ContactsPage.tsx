@@ -1,7 +1,7 @@
 // [B18.4] ContactsPage — Wotold v2 two-pane reskin (port of wk-extra.jsx
 // ContactsView). Left flat .lrow search-list + right .doc detail (avatar / name
 // / voice-confirm / identifier chips / recent calls / voice samples). CRUD +
-// stats logic preserved 1-to-1 from the Atelier version; alphabet grouping
+// stats logic preserved 1-to-1 from the previous generation; alphabet grouping
 // dropped for the v2 flat list.
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';

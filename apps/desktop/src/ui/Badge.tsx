@@ -1,4 +1,4 @@
-// [B17] Atelier v2 thin badge — pill с акцентным или семантическим тоном.
+// [B17] Тонкий badge — pill с акцентным или семантическим тоном.
 // Стиль inline через token vars, чтобы не плодить кастомные классы.
 
 import type { CSSProperties, HTMLAttributes, ReactNode } from 'react';

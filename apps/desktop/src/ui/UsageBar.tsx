@@ -3,7 +3,7 @@
 // Lightweight DS-компонент: один track + filled portion + лейбл "used/limit".
 // Цвет filled зависит от percent: ok | warning >=75% | danger >=95%.
 //
-// [B17] Atelier v2 — token vars + inline styling, без отдельных DS-классов.
+// [B17] Token vars + inline styling, без отдельных DS-классов.
 
 import { useSyncExternalStore, type CSSProperties } from 'react';
 

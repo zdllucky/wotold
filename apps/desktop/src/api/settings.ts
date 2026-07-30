@@ -18,10 +18,8 @@ export const SETTINGS_KEYS = {
   STT_LANG: 'stt_lang',
   /** [B16] Coachmarks показаны хотя бы раз — '1' = не показывать снова. */
   COACHMARKS_SEEN: 'coachmarks_seen',
-  /** [B17] Atelier theme — 'light' | 'dark' | 'system'. */
+  /** Тема интерфейса — 'light' | 'dark' | 'system'. */
   UI_THEME: 'ui.theme',
-  /** [B17] Atelier accent — 'bordeaux' | 'persian' | 'ink'. */
-  UI_ACCENT: 'ui.accent',
   /** UI locale — 'ru' | 'kk' | 'en'. Пусто = auto-detect from system. */
   UI_LOCALE: 'ui_locale',
   /** [V7] Auto-bind speaker когда suggestion_score >= AUTO_BIND_THRESHOLD/100.

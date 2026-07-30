@@ -7,7 +7,8 @@ interface EmptyProps {
   action?: ReactNode;
 }
 
-// [B17] Atelier v2 empty state — serif italic per wotold.css `.empty`.
+// [B17] Пустое состояние — класс `.empty`. Serif из описания ушёл вместе
+// с прошлым поколением: шрифт теперь один, Onest.
 // Без эмодзи-плейсхолдеров (handoff: «Drop emoji icons; text carries enough»).
 // Caller может явно передать `icon` если нужен (modal/page-level empty).
 export function Empty({ icon, title, description, action }: EmptyProps) {

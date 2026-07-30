@@ -1,4 +1,4 @@
-// [B17] Atelier v2 — .dot из wotold.css + tone via CSS-var binding.
+// [B17] .dot + tone через привязку CSS-переменной.
 
 import type { CSSProperties, HTMLAttributes } from 'react';
 

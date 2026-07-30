@@ -5,7 +5,7 @@ import { Pill } from './Pill';
 import { StatusDot } from './StatusDot';
 import { Empty } from './Empty';
 
-// [B17] Atelier v2 — Badge/Pill теперь рендерят inline-styled span с
+// [B17] Badge/Pill рендерят inline-styled span с
 // token-vars; tone проявляется через background/color CSS-vars (--accent,
 // --signal etc), а не через class-suffix. Тестируем поведение, не markup.
 

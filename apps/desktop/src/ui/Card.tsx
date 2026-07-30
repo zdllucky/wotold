@@ -1,4 +1,4 @@
-// [B17] Atelier v2 thin wrapper — .card / .card--raised / .card--inset.
+// [B17] Тонкая обёртка — .card / .card--raised / .card--inset.
 
 import type { HTMLAttributes, ReactNode } from 'react';
 

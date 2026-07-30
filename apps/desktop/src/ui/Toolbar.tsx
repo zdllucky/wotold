@@ -1,4 +1,4 @@
-// [B17] Atelier v2 — простая шапка страницы с .title + опц. .small-caps
+// [B17] Простая шапка страницы с .title + опц. .small-caps
 // subtitle + actions slot. Старый sticky+backdrop-blur вариант сохранён
 // inline для legacy-callers.
 

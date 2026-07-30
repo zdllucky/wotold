@@ -7,7 +7,7 @@ import './styles/fonts.css';
 import './styles/tokens.css';
 import './styles/global.css';
 // Wotold v2 (uikit) component layer: wk.css = primitives, components.css =
-// app-specific component classes (ported from the now-deleted Atelier shim).
+// app-specific component classes (ported from the now-deleted shim).
 import './styles/wk.css';
 import './styles/components.css';
 // Вынесен из components.css — тот упёрся в лимит 800 строк, а тосты

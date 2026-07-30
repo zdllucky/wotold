@@ -8,10 +8,9 @@ origin: wotold
 
 **Mandatory validation step** before any UI work. Skipping it is a workflow violation per `CLAUDE.md`.
 
-> Canon is **Wotold v2 (uikit)**. The Atelier v2 generation was superseded in B18 and its
-> shim removed in B18.6 — `docs/design/atelier-v2/` is kept for history only. If you find
-> guidance naming Bordeaux accents, Source Serif, `--signal` or `--ink`, it is Atelier-era
-> and wrong.
+> Canon is **Wotold v2 (uikit)**. The previous generation was superseded in B18, its shim
+> removed in B18.6, and its files deleted from the repo. If you find guidance naming
+> Bordeaux accents, Source Serif, `--signal` or `--ink`, it predates the canon and is wrong.
 
 ## When to invoke
 
@@ -73,7 +72,7 @@ If any answer is "I don't know" — STOP. Read the reference first.
 ## Anti-patterns (auto-fail this gate)
 
 - Raw hex (`#RRGGBB`) or `oklch()` in `.tsx` or any `.css` other than `tokens.css` / vendored reference.
-- Reintroducing deleted Atelier tokens (`--ink`, `--line`, `--signal`, `--space-*`, `--font-serif`) or legacy `--color-*` names.
+- Reintroducing deleted tokens (`--ink`, `--line`, `--signal`, `--space-*`, `--font-serif`) or legacy `--color-*` names.
 - Using `var(--danger)` for hover, active, links, or accent.
 - Adding new font stacks.
 - Inline magic spacing (`marginTop: 23`) — use `var(--s1..9)`; inline `fontSize` — use `var(--t-11..28)`.
