@@ -58,7 +58,11 @@ docs/                 Паспорт и сопутствующие докуме�
 
 ### Сайт (`apps/site`)
 
+- **Дизайн-источник — хендофф владельца** `design_handoff_wotold_site` (2026-07-30): лендинг, стили доков и правовой шаблон сделаны по нему (B31). Копирайт лендинга (`src/data/landing.ts`) перенесён из копи-дека **дословно** и писался под нетехническую аудиторию — «диаризация», «локально», «Apple Silicon» отсутствуют намеренно, обратно в технические формулировки не «улучшать».
 - **Токены и примитивы не копируются** — `site.css` импортирует `apps/desktop/src/styles/{tokens,wk}.css` напрямую, шрифты синхронизируются `scripts/sync-fonts.mjs` на prebuild (`apps/site/public/fonts/` в `.gitignore`). `components.css` намеренно не подключается.
+- **Стили разложены по адресатам**: `site.css` (site-локальные токены + `--sl-*` и селекторы доков, в `customCss` Starlight) · `landing.css` + `landing-demos.css` (только лендинг, импортирует `Landing.astro`) · `legal.css` (правовой шаблон, в `customCss`). Разбивка не косметическая — гейт 800 строк считает итоговый файл.
+- **Правовой раздел оформляется на билд-слое**: тексты `content/docs/legal/*.md` не редактируются, mono-нумерацию пунктов размечает `src/lib/rehype-legal.mjs`, kicker и хаб документов дают override'ы `src/components/starlight/{PageTitle,MarkdownContent}.astro` (не-legal роуты уходят в дефолт нетронутыми).
+- **Демо лендинга деградируют без JS**: четыре фазы карточки и столбики волны рендерятся серверно, переключение — CSS по `[data-phase]`; первый вопрос-ответ поиска виден статично. Клиентский JS — только два `is:inline` скрипта, и `prefers-reduced-motion` гасит в них таймеры, а не только CSS-анимации.
 - **Импорты канона лежат в `@layer wotold.canon`.** Starlight держит свои стили в `@layer starlight.*`, а неслоистые правила выигрывают у слоистых независимо от специфичности — без слоя базовое `a { color: inherit }` из `wk.css` перебивало стили Starlight.
 - **Ноль сторонних хостов** — enforced `scripts/check-site-assets.mjs` в CI и в `pages.yml`, а не ревью.
 - `base` и `site` берутся из env (`SITE_BASE`, `SITE_URL`), дефолт — `/wotold` на `zdllucky.github.io`.

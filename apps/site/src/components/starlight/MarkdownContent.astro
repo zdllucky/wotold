@@ -1,0 +1,50 @@
+---
+/**
+ * Override Starlight MarkdownContent: правовые страницы получают обёртку
+ * .legal-doc (узкая колонка, mono-номера пунктов — см. legal.css и
+ * rehype-legal.mjs) и хаб из четырёх карточек документов с примечанием о
+ * приоритете русской версии (SPEC §7). Текущий документ в хабе подсвечен.
+ * На индексе раздела хаб не дублируется — страница сама и есть оглавление.
+ * Остальные роуты рендерятся дефолтом без изменений.
+ */
+import Default from '@astrojs/starlight/components/MarkdownContent.astro';
+import { LEGAL_DOCS, LEGAL_CHROME, isLegalEntry } from '../../data/legal';
+import type { Lang } from '../../data/landing';
+
+const route = Astro.locals.starlightRoute;
+const entryId = route.entry.id;
+const legal = isLegalEntry(entryId);
+const isIndex = entryId === 'legal';
+const lang = (route.locale ?? 'ru') as Lang;
+const chrome = LEGAL_CHROME[lang];
+const base = import.meta.env.BASE_URL;
+const doc = (slug: string) => `${base}${lang === 'ru' ? '' : lang + '/'}${slug}/`;
+---
+
+{
+  legal ? (
+    <div class="legal-doc">
+      <Default>
+        <slot />
+      </Default>
+      {!isIndex && (
+        <section class="legal-hub" aria-labelledby="legal-hub-h">
+          <h2 id="legal-hub-h">{chrome.hubHeading}</h2>
+          <div class="legal-hubgrid">
+            {LEGAL_DOCS.map((d) => (
+              <a class:list={['legal-hc', { cur: d.slug === entryId }]} href={doc(d.slug)}>
+                <b>{d.title}</b>
+                <span>{d.blurb}</span>
+              </a>
+            ))}
+          </div>
+          <p class="legal-prio">{chrome.prio}</p>
+        </section>
+      )}
+    </div>
+  ) : (
+    <Default>
+      <slot />
+    </Default>
+  )
+}

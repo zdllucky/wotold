@@ -1,0 +1,178 @@
+/* ─────────────────────────────────────────────────────────────
+   Wotold · legal.css — правовой шаблон (SPEC §7 handoff 2026-07-30).
+
+   Жанр отличается от доков: одна колонка ≤760px без сайдбара и оглавления
+   (страницы и так template: splash), kicker над h1, mono-номера пунктов в
+   отдельной колонке (размечает rehype-legal.mjs), хаб документов внизу.
+
+   Скоупинг — через main:has(.legal-doc): обёртку ставит override
+   MarkdownContent, kicker — override PageTitle. Подключается через
+   customCss Starlight (astro.config.mjs).
+   ───────────────────────────────────────────────────────────── */
+
+/* Узкая колонка документа. Splash-шаблон сам прячет сайдбар/оглавление. */
+main:has(.legal-doc) .content-panel > .sl-container {
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+/* Kicker над h1 (рендерит override PageTitle). */
+.legal-kick {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 0 0 2px;
+}
+
+main:has(.legal-doc) h1 {
+  font-size: 2.25rem;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin-top: 0.5rem;
+}
+
+/* Строка меты — первый абзац контента («Редакция от … · Все документы»). */
+.legal-doc .sl-markdown-content > p:first-child {
+  font-size: 13.5px;
+  color: var(--text-3);
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.legal-doc .sl-markdown-content > p:first-child strong {
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+/* Заголовки разделов: «1» — mono-номер рядом с текстом. */
+.legal-doc .sl-markdown-content h2 {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 21px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.legal-doc .sl-markdown-content h2 .no {
+  font-family: var(--mono);
+  font-size: var(--t-14);
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+/* Пункты «1.1» — грид с mono-номером в своей колонке. minmax, а не фикс
+   44px: в terms.md есть «6.1-бис». */
+.legal-doc .cl {
+  display: grid;
+  grid-template-columns: minmax(44px, auto) 1fr;
+  gap: 0 8px;
+  margin: 14px 0;
+}
+
+.legal-doc .cl .n {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  font-weight: 500;
+  color: var(--text-faint);
+  padding-top: 4px;
+}
+
+.legal-doc .cl p {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.7;
+}
+
+.legal-doc .sl-markdown-content p b,
+.legal-doc .sl-markdown-content p strong {
+  color: var(--text);
+}
+
+/* Хаб документов внизу (рендерит override MarkdownContent). */
+.legal-hub {
+  margin-top: 60px;
+  border-top: 1px solid var(--border);
+  padding-top: 36px;
+}
+
+.legal-hub h2 {
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0 0 18px;
+  color: var(--text);
+}
+
+.legal-hubgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.legal-hc {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  text-decoration: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.legal-hc:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+}
+
+.legal-hc b {
+  display: block;
+  font-size: var(--t-15);
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 5px;
+}
+
+.legal-hc span {
+  display: block;
+  font-size: var(--t-13);
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.legal-hc.cur {
+  background: var(--sunken);
+}
+
+.legal-prio {
+  font-size: var(--t-12);
+  line-height: 1.6;
+  color: var(--text-faint);
+  margin-top: 26px;
+}
+
+/* Дата Starlight внизу дублировала бы «Редакция от…» из текста — прячем. */
+main:has(.legal-doc) footer .meta {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .legal-hubgrid {
+    grid-template-columns: 1fr;
+  }
+
+  main:has(.legal-doc) h1 {
+    font-size: 1.8125rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .legal-hc {
+    transition: none !important;
+  }
+}

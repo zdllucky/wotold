@@ -1,0 +1,20 @@
+---
+/**
+ * Override Starlight PageTitle: на правовых страницах над h1 появляется
+ * kicker «Правовая информация» (mono uppercase, SPEC §7). Остальные роуты
+ * рендерятся дефолтом без изменений.
+ *
+ * Роут берётся из Astro.locals.starlightRoute (API Starlight 0.36);
+ * entry.id одинаков для основной страницы и en/kk-фолбэков.
+ */
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+import { LEGAL_CHROME, isLegalEntry } from '../../data/legal';
+import type { Lang } from '../../data/landing';
+
+const route = Astro.locals.starlightRoute;
+const legal = isLegalEntry(route.entry.id);
+const lang = (route.locale ?? 'ru') as Lang;
+---
+
+{legal && <p class="legal-kick">{LEGAL_CHROME[lang].kicker}</p>}
+<Default />
