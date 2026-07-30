@@ -224,6 +224,14 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             commands::local_engine_readiness,
             #[cfg(target_os = "macos")]
+            commands::local_engine_ensure_required,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_reclaimable_bytes,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_free_space,
+            #[cfg(target_os = "macos")]
+            commands::local_engine_preset_specs,
+            #[cfg(target_os = "macos")]
             commands::local_engine_model_status,
             #[cfg(target_os = "macos")]
             commands::local_engine_model_download,

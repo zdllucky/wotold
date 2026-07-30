@@ -122,3 +122,18 @@ export interface LocalEngineReadiness {
   missing: MissingModel[];
   missing_bytes_total: number;
 }
+
+/**
+ * Размеры одного варианта движка — источник подписей «Скачать (~N ГБ)».
+ *
+ * Считается по каталогу моделей на бэкенде. UI своих констант не держит: в
+ * онбординге жили захардкоженные 1.2 / 2.4 / 5.5 ГБ, занижавшие все три
+ * размера (базовые модули в них не входили вовсе).
+ */
+export interface PresetSizeSpec extends PresetSpec {
+  /** Модели самого размера (whisper + LLM). */
+  preset_bytes: number;
+  /** Обязательные базовые модули — одни и те же для всех размеров. */
+  base_bytes: number;
+  total_bytes: number;
+}

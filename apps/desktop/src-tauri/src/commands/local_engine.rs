@@ -24,6 +24,7 @@ use crate::{
         hw_probe::{self, HwReport},
         models::{self, ModelKind, ModelStatus, MODEL_CATALOG},
         preset::{LocalEnginePreset, PresetSpec, SETTING_ACTIVE_PRESET},
+        provisioning::{self, PresetSizeSpec},
         readiness::{self, LocalEngineReadiness},
     },
     state::AppState,
@@ -123,6 +124,46 @@ pub async fn local_engine_readiness(
     state: State<'_, AppState>,
 ) -> Result<LocalEngineReadiness, AppError> {
     readiness::compute(&state.db, &state.app_data_dir).await
+}
+
+/// Докачать всё, чего не хватает движку. Один вход вместо перебора моделей на
+/// фронте: список обязательного знает бэкенд. Single-flight внутри — второй
+/// клик по «Скачать» не поднимает вторую очередь.
+///
+/// Сеть только по явному действию пользователя: приложение локальное, и
+/// разовое скачивание моделей — единственный сетевой поток.
+#[tauri::command]
+pub async fn local_engine_ensure_required(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), AppError> {
+    provisioning::ensure_required(&state.db, &state.app_data_dir, &app).await
+}
+
+/// Сколько байт освободит удаление моделей неактивных размеров. Для подписи
+/// кнопки — сама кнопка зовёт `local_engine_free_space`.
+#[tauri::command]
+pub async fn local_engine_reclaimable_bytes(state: State<'_, AppState>) -> Result<u64, AppError> {
+    provisioning::reclaimable_bytes(&state.db, &state.app_data_dir).await
+}
+
+/// Удалить модели неактивных размеров, вернуть освобождённые байты.
+/// Авто-удаления при смене размера нет намеренно (R12-bis) — только явное
+/// действие пользователя.
+#[tauri::command]
+pub async fn local_engine_free_space(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<u64, AppError> {
+    provisioning::free_space(&state.db, &state.app_data_dir, &app).await
+}
+
+/// Размеры всех трёх вариантов движка — считаются по каталогу. UI больше не
+/// держит своих констант: захардкоженные 1.2 / 2.4 / 5.5 ГБ в онбординге не
+/// совпадали с реальностью даже без базовых модулей.
+#[tauri::command]
+pub fn local_engine_preset_specs() -> Vec<PresetSizeSpec> {
+    provisioning::preset_specs()
 }
 
 #[tauri::command]

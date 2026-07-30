@@ -9,6 +9,7 @@ import type {
   LocalEngineReadiness,
   LocalModelKind,
   ModelStatus,
+  PresetSizeSpec,
   PresetSpec,
 } from '@wotold/contracts';
 
@@ -36,6 +37,33 @@ export function localEngineModelStatus(id: string): Promise<ModelStatus> {
  */
 export function localEngineReadiness(): Promise<LocalEngineReadiness> {
   return invoke<LocalEngineReadiness>('local_engine_readiness');
+}
+
+/**
+ * Докачать всё, чего не хватает движку. Список обязательного знает бэкенд —
+ * фронт больше не перебирает модели сам. Прогресс приходит существующими
+ * событиями `model:progress` / `model:done`, финал — `readiness:changed`.
+ *
+ * Идемпотентна и single-flight: повторный клик по «Скачать» не поднимает
+ * вторую очередь.
+ */
+export function localEngineEnsureRequired(): Promise<void> {
+  return invoke<void>('local_engine_ensure_required');
+}
+
+/** Сколько байт освободит удаление моделей неактивных размеров. */
+export function localEngineReclaimableBytes(): Promise<number> {
+  return invoke<number>('local_engine_reclaimable_bytes');
+}
+
+/** Удалить модели неактивных размеров; возвращает освобождённые байты. */
+export function localEngineFreeSpace(): Promise<number> {
+  return invoke<number>('local_engine_free_space');
+}
+
+/** Размеры всех трёх вариантов движка — считаются по каталогу на бэкенде. */
+export function localEnginePresetSpecs(): Promise<PresetSizeSpec[]> {
+  return invoke<PresetSizeSpec[]>('local_engine_preset_specs');
 }
 
 export function localEngineModelDownload(id: string): Promise<void> {
