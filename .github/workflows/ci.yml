@@ -135,6 +135,17 @@ jobs:
         run: pnpm --filter @wotold/desktop test:coverage
       - name: Vitest @wotold/mcp (with coverage)
         run: pnpm --filter @wotold/mcp test:coverage
+      # Отчёт, а не гейт: сборку не роняем. Уязвимость в чужом пакете
+      # чинится его релизом, а не нашим PR — красный CI по этому поводу
+      # блокирует работу и быстро начинает игнорироваться.
+      #
+      # Область строго --prod. Сборочный тулинг (vitest, vite, esbuild) в
+      # .dmg не попадает ни байтом, и включать его в отчёт — гарантированно
+      # вечно-красный вывод, который перестанут читать. Разбор достижимости
+      # — в SECURITY.md.
+      - name: Audit production dependencies
+        continue-on-error: true
+        run: pnpm audit --prod
       - name: Upload coverage artefacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

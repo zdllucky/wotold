@@ -83,6 +83,42 @@ signed release has actually shipped.
 - Vulnerabilities in the GitHub Pages website that do not affect the application.
   It is static, ships no third-party JavaScript, and stores nothing.
 
+## What counts as reachable
+
+Dependency scanners report against the lockfile, which records far more than
+this project ships. Three facts settle most of what they surface, and they are
+recorded here so that neither a researcher nor a future maintainer has to derive
+them again during the next wave of alerts.
+
+**No `node_modules` reaches a user.** The desktop app's frontend is bundled by
+Vite into the Rust binary (`tauri.conf.json` → `frontendDist`); its sidecars are
+native executables. The website is pre-rendered static output. The MCP server is
+plain `tsc` output and is not part of any release asset — it exists only for
+people who clone the repository. So build and test tooling — vitest, vite,
+esbuild, Babel, jsdom and everything under them — contributes nothing to a
+distributed artifact, whatever its advisory says.
+
+**The MCP server speaks stdio and nothing else.** `services/mcp/src/server.ts`
+constructs exactly one transport, `StdioServerTransport`. The SDK also ships
+HTTP transports, and those drag in `hono`, `express` and `body-parser` — every
+advisory against them concerns HTTP surface: CORS reflection, body-limit bypass,
+static-file path traversal, serverless adapters. That code sits on disk and is
+never loaded into the process. The server likewise parses no URIs and opens no
+sockets; it reads a local SQLite file. Alerts of this class are dismissed with
+that reasoning rather than left open, and they return automatically if a fixed
+version is published.
+
+**The Linux graph never compiles.** `Cargo.lock` is target-agnostic and records
+the union of all platforms, so GTK, `glib`, `webkit2gtk` and friends appear in
+it. They arrive through `tray-icon` and are gated behind
+`cfg(target_os = "linux")`; releases build `aarch64-apple-darwin` only.
+`cargo tree -i glib --target aarch64-apple-darwin` prints nothing.
+
+What this does **not** excuse: anything whose output reaches the published
+website, anything in the Rust dependency graph that does compile on macOS, and
+anything reachable from the app at runtime. CI reports `pnpm audit --prod` on
+every run for exactly that reason.
+
 ## Threat model in one paragraph
 
 Wotold is local-only. There is no server, no account, and no cloud storage — the
