@@ -28,8 +28,15 @@ Privacy documentation: [`docs/PRIVACY.md`](docs/PRIVACY.md).
 
 ```bash
 brew tap zdllucky/wotold
+brew trust zdllucky/wotold
 brew install --cask wotold
 ```
+
+`brew trust` is required by Homebrew 6 for any third-party tap: a cask is executable Ruby,
+not a manifest, and trusting one is your explicit consent to run code from a repository
+Homebrew's maintainers never reviewed. The author cannot pre-authorise it — that is the
+point. [The cask](https://github.com/zdllucky/homebrew-wotold/blob/main/Casks/wotold.rb) is
+fifty lines and worth reading first.
 
 Or download the latest `.dmg` from [Releases](https://github.com/zdllucky/wotold/releases). Requires **macOS 14.4+ on Apple Silicon** — system-audio capture is gated on that version, and the bundled sidecars are arm64-only.
 

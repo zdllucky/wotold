@@ -28,8 +28,15 @@ Privacy-документация: [`docs/PRIVACY.md`](docs/PRIVACY.md).
 
 ```bash
 brew tap zdllucky/wotold
+brew trust zdllucky/wotold
 brew install --cask wotold
 ```
+
+`brew trust` требует Homebrew 6 для любого стороннего тапа: каск — это исполняемый Ruby,
+а не декларация, и доверие к нему есть твоё явное согласие выполнить код из репозитория,
+который мейнтейнеры Homebrew не смотрели. Предзаверить его со стороны автора нельзя —
+в этом и смысл. [Сам каск](https://github.com/zdllucky/homebrew-wotold/blob/main/Casks/wotold.rb)
+это полсотни строк, их стоит прочитать до подтверждения.
 
 Либо `.dmg` из [Releases](https://github.com/zdllucky/wotold/releases). Нужен macOS 14.4+ на Apple Silicon — на 14.0–14.3 не заработает захват системного звука, а сайдкары собраны только под arm64.
 

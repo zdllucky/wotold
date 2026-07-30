@@ -17,10 +17,17 @@ cask "wotold" do
   desc "Local call recorder with transcription, speaker diarization and summaries"
   homepage "https://zdllucky.github.io/wotold/"
 
-  # Захват системного звука упирается в Core Audio process tap, доступный
-  # с 14.4. Установщик на 14.0-14.3 отработает, а запись системной дорожки
-  # там не заведётся.
-  depends_on macos: ">= :sonoma"
+  # Символ, а не строка ">= :sonoma": строковая форма снята с поддержки и
+  # печатает предупреждение при каждом тапе. Семантика та же — Homebrew
+  # разбирает значение с компаратором >= по умолчанию
+  # (Cask::DSL::DependsOn#macos=), то есть это «Sonoma и новее», а не «ровно
+  # Sonoma».
+  #
+  # Гранулярности минорной версии здесь нет: захват системного звука требует
+  # 14.4 (Core Audio process tap), а отсечь Homebrew умеет только по мажорной.
+  # На 14.0-14.3 установка пройдёт, запись системной дорожки — нет; об этом
+  # сказано в caveats ниже.
+  depends_on macos: :sonoma
   # Сайдкары (llama.cpp, whisper.cpp) собраны только под Apple Silicon.
   depends_on arch: :arm64
 
@@ -39,6 +46,10 @@ cask "wotold" do
 
       Wotold needs Microphone and Screen Recording permissions. Screen Recording
       is required only to capture system audio — no frames are ever stored.
+
+      System audio capture needs macOS 14.4 or newer. Homebrew can only gate on
+      the major version, so this cask installs on 14.0-14.3 as well — there the
+      microphone track works and the system track stays silent.
     EOS
   end
 
