@@ -686,18 +686,7 @@ export const en: TranslationStrings = {
 
   voiceModel: {
     featureOff:
-      '⚠ The voice-onnx feature is not enabled in this build. You can download the model, but the pipeline will not use it — biometric matching stays off. In a production build (`--features voice-onnx`) downloading enables matching automatically.',
-    modelName: 'Voice recognition module',
-    statusValid: 'installed',
-    statusMissing: 'none',
-    statusCorrupted: 'corrupted',
-    statusDownloading: 'downloading',
-    descValid:
-      'Model ready. Wotold will suggest who is speaking based on voice match against confirmed contacts (threshold 50%). Final confirmation is always yours (passport R2).',
-    descCorrupted: 'File corrupted or version changed. Delete and download again.',
-    descMissing:
-      'Biometric matching is off. Download the model so Wotold can suggest who is speaking. Size ~25 MB, downloads once in the background.',
-    mb: '{n} MB',
+      '⚠ This build was made without voice-onnx: voices are not compared, so binding speakers to contacts will not work. Regular builds have the feature on.',
   },
 
   localEngine: {
