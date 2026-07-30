@@ -48,7 +48,7 @@ tauri-plugin-deep-link = "^2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 hound = "3.5.1"
 # [B3.7c] SHA256 для verify скачанной voice-embedder модели.
-sha2 = "0.10"
+sha2 = "0.11"
 # Streaming HTTP body для download прогресса (reqwest::Response::bytes_stream).
 futures-util = "0.3"
 
