@@ -21,3 +21,55 @@ updates:
         update-types:
           - minor
           - patch
+
+  # npm/pnpm. До этого экосистема не была описана вовсе, и зависимости
+  # дрейфовали без единого PR, пока не накопились тридцатью алертами —
+  # security-обновления приходят сами, обычные не приходили никогда.
+  #
+  # Одна запись на весь монорепо: Dependabot понимает pnpm-workspaces и
+  # обходит все пять пакетов из корня.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      # Без группировки пять пакетов дают поток PR'ов, который перестают
+      # читать — а непрочитанный PR ничем не лучше необновлённой зависимости.
+      npm-minor:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Мажоры сборочного тулинга — отдельное решение, не поток.
+      # astro тянет за собой @astrojs/starlight (peer ^7), vitest — 622 теста,
+      # vite — конфигурацию двух приложений. Такие переезды делаются осознанно,
+      # а не мержем зелёного PR.
+      - dependency-name: astro
+        update-types: [version-update:semver-major]
+      - dependency-name: '@astrojs/starlight'
+        update-types: [version-update:semver-major]
+      - dependency-name: vitest
+        update-types: [version-update:semver-major]
+      - dependency-name: vite
+        update-types: [version-update:semver-major]
+
+  # Rust. Cargo.lock здесь общий на весь воркспейс.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore
+    groups:
+      cargo-minor:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # ort запинен точной версией (=2.0.0-rc.12) намеренно: rc-релизы ломают
+      # API между собой, а от него зависит эмбеддер ассистента.
+      - dependency-name: ort

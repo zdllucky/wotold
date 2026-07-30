@@ -16,6 +16,9 @@
       "better-sqlite3",
       "esbuild",
       "sharp"
-    ]
+    ],
+    "overrides": {
+      "sharp": "^0.35.0"
+    }
   }
 }

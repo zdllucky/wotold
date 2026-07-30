@@ -87,4 +87,24 @@ for (const rel of [TAURI_CONF, ...PKG_FILES]) {
   writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
 }
 
+// Cargo.lock хранит версию самого пакета и после бампа расходится с
+// Cargo.toml. Ломается от этого ничего — сборка идёт без `--locked`, — но
+// каждый релиз оставлял грязное дерево, и правка приезжала хвостом в
+// следующий, посторонний коммит. Правим ту единственную запись, что
+// относится к нашему пакету: запускать cargo ради этого не нужно, а в
+// релизной джобе его и нет.
+{
+  const path = join(root, 'Cargo.lock');
+  const text = readFileSync(path, 'utf8');
+  const patched = text.replace(
+    /(\[\[package\]\]\nname = "wotold-desktop"\nversion = )"[^"]+"/,
+    `$1"${next}"`,
+  );
+  if (patched === text) {
+    console.error('Cargo.lock: не нашёл запись wotold-desktop — проверь формат лок-файла.');
+    process.exit(1);
+  }
+  writeFileSync(path, patched);
+}
+
 console.log(next);
