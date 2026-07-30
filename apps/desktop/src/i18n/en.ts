@@ -919,6 +919,20 @@ export const en: TranslationStrings = {
   },
 
   // [Q] Heavy-resource queue monitor (QueueMonitor + queued line).
+  readiness: {
+    eyebrow: 'Local processing',
+    missing: 'Some software is missing to process calls — {size}.',
+    download: 'Download',
+    downloading: 'Downloading modules… {pct}%',
+    downloadingAria: 'Module download progress',
+    retry: 'Retry',
+    verifyFailed: 'A module file failed its integrity check — try again.',
+    choosePreset: 'Pick an engine size first — it decides what gets downloaded.',
+    openSettings: 'Open settings',
+    callParked: 'This call is waiting: software is missing. It processes on its own once the modules land.',
+    callParkedDownload: 'Download',
+    queueWaiting: 'The queue is waiting for modules to download',
+  },
   queue: {
     monitor: 'Processing queues',
     res: {

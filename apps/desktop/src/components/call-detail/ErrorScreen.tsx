@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n';
 import { humanError } from '../../api/errors';
 import { ErrorDiagnostics } from './ErrorDiagnostics';
 import { mapFailureToUxKind } from '../../utils/failureKind';
+import { useReadiness } from '../readiness/ReadinessProvider';
 
 interface ErrorScreenProps {
   call: Call;
@@ -22,7 +23,44 @@ export function ErrorScreen({
   hasFailedChunks = false,
 }: ErrorScreenProps) {
   const { t } = useI18n();
+  const readiness = useReadiness();
   const kind = mapFailureToUxKind(call.failed_reason ?? null);
+
+  // Звонок не сломан — ждёт софта. Кнопка «Переобработать» здесь была бы
+  // ловушкой: она упала бы на том же гейте. Предлагаем то, что реально
+  // помогает, и обещаем автоматику — после докачки звонок поднимется сам.
+  if (kind === 'parked') {
+    const busy = readiness.downloading || !!readiness.aggregate?.doneBytes;
+    return (
+      <div className="card" style={{ marginBottom: 18 }}>
+        <CallStateTag state="queued" />
+        <h2
+          style={{
+            fontFamily: 'var(--font)',
+            fontSize: 22,
+            margin: '12px 0 4px',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {t('readiness.eyebrow')}
+        </h2>
+        <p style={{ fontFamily: 'var(--font)', fontSize: 15, margin: '0 0 16px' }}>
+          {t('readiness.callParked')}
+        </p>
+        <button
+          type="button"
+          className="btn btn--primary btn--sm"
+          onClick={readiness.ensure}
+          disabled={busy}
+        >
+          {busy
+            ? t('readiness.downloading', { pct: readiness.aggregate?.pct ?? 0 })
+            : t('readiness.callParkedDownload')}
+        </button>
+        <ErrorDiagnostics call={call} />
+      </div>
+    );
+  }
 
   if (kind === 'broken_recording') {
     return (

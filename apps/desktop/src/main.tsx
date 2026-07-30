@@ -13,6 +13,8 @@ import './styles/components.css';
 // Вынесен из components.css — тот упёрся в лимит 800 строк, а тосты
 // когезивны и ни от чего в нём не зависят.
 import './styles/toast.css';
+// Тем же поводом вынесен баннер готовности движка — один компонент.
+import './styles/readiness.css';
 import './styles/update.css';
 import './ui/ui.css';
 

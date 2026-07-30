@@ -982,6 +982,20 @@ const ruInternal = {
 
   // ── [V6.1] Async pipeline states (CallStateTag, PipelineStrip etc) ──────
   // [Q] Монитор очередей тяжёлых ресурсов (QueueMonitor + queued-строка).
+  readiness: {
+    eyebrow: 'Локальная обработка',
+    missing: 'Не хватает части софта для обработки звонков — {size}.',
+    download: 'Скачать',
+    downloading: 'Скачиваем модули… {pct}%',
+    downloadingAria: 'Прогресс скачивания модулей',
+    retry: 'Повторить',
+    verifyFailed: 'Файл модуля не прошёл проверку целостности — попробуйте ещё раз.',
+    choosePreset: 'Сначала выберите размер движка — от него зависит, что качать.',
+    openSettings: 'Открыть настройки',
+    callParked: 'Звонок ждёт: не хватает софта. Обработается сам, как только модули встанут.',
+    callParkedDownload: 'Скачать',
+    queueWaiting: 'Очередь ждёт скачивания модулей',
+  },
   queue: {
     monitor: 'Очереди обработки',
     res: {

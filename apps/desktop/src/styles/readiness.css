@@ -1,0 +1,80 @@
+/* ─────────────────────────────────────────────────────────────
+   Wotold · Баннер готовности движка — «не хватает софта, скачать?».
+
+   Отдельным файлом по тому же поводу, что и toast.css: components.css давно
+   за лимитом 800 строк (правило 8 CLAUDE.md), а это один компонент —
+   components/readiness/ReadinessBanner.tsx, а не «раздел стилей».
+
+   Форма производна от .suggest-banner (grid 1fr auto, левый акцентный
+   бордер), позиция — левый-нижний угол: правый занят тостами (.toaster),
+   и наезжать на них баннер не должен. Канон — docs/design/wotold-v2/.
+   Сырых цветов нет: всё через var(--*) из tokens.css.
+   ───────────────────────────────────────────────────────────── */
+
+.readiness-banner {
+  position: fixed;
+  left: var(--s5);
+  bottom: var(--s5);
+  /* Ниже тостов (z-90) и модалок: баннер живёт долго и не должен перекрывать
+   * то, что требует ответа сейчас. */
+  z-index: 80;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--s4);
+  align-items: center;
+  width: min(420px, calc(100vw - 2 * var(--s5)));
+  padding: var(--s3) var(--s4);
+  background: var(--raised);
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font);
+  animation: readiness-in var(--base) var(--ease);
+}
+
+.readiness-banner-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.readiness-banner-title {
+  font-size: var(--t-11);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.readiness-banner-text {
+  font-size: var(--t-13);
+  color: var(--text);
+}
+
+.readiness-banner-meta {
+  font-size: var(--t-11);
+  color: var(--text-3);
+}
+
+.readiness-banner-error {
+  font-size: var(--t-12);
+  color: var(--danger);
+}
+
+@keyframes readiness-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .readiness-banner {
+    animation: none;
+  }
+}
