@@ -1,0 +1,162 @@
+---
+/**
+ * Демо поиска по записям — секция #ask (SPEC §3.4).
+ *
+ * Прогрессивное улучшение: первый вопрос-ответ отрисован серверно и виден без
+ * JS (каретка спрятана, пока на <html> нет data-js). Скрипт запускает печать
+ * (40 мс/символ) только когда секция видна (IntersectionObserver, threshold
+ * .15), меняет вопрос каждые 7000 мс; клик по чипу-вопросу останавливает
+ * автосмену. Reduced motion: ни печати, ни автосмены — чипы переключают
+ * содержимое мгновенно.
+ *
+ * Клиенту передаётся только ask.qa[] текущей локали (define:vars) — больше
+ * ничего из словаря браузеру не нужно.
+ */
+import type { LandingCopy } from '../../data/landing';
+
+interface Props {
+  copy: LandingCopy;
+}
+
+const { copy: c } = Astro.props;
+const qa = c.ask.qa;
+const first = qa[0];
+---
+
+<div class="ask-sec">
+  <div class="lp-sec-h">
+    <h2>{c.ask.title}</h2>
+    <p>{c.ask.lead}</p>
+  </div>
+
+  <div class="ask-box">
+    <div class="ask-qtext"><span class="ask-qt">{first.q}</span><i class="ask-caret" aria-hidden="true">▍</i></div>
+    <span class="ask-go">{c.ask.button}</span>
+  </div>
+
+  {/* aria-live ставится скриптом только после клика по чипу: самоиграющая
+      демка с автосменой каждые 7 с иначе бесконечно диктует скринридеру
+      новые «ответы», которых пользователь не запрашивал. */}
+  <div class="ask-ans show">
+    <div class="ask-a">{first.a}</div>
+    <div class="ask-qq">
+      <span class="ask-av" style={`background: ${first.col}`}>{first.ini}</span>
+      <div>
+        <div class="ask-w" style={`color: ${first.col}`}>{first.w}</div>
+        <p class="ask-q">{first.c}</p>
+      </div>
+    </div>
+    <div class="ask-rf">{first.r}</div>
+  </div>
+
+  <div class="ask-chips" role="group">
+    {
+      qa.map((item, i) => (
+        <button class="ask-chip" class:list={[{ on: i === 0 }]} type="button" data-q={i} aria-pressed={i === 0 ? 'true' : 'false'}>
+          {item.q}
+        </button>
+      ))
+    }
+  </div>
+
+  <div class="ask-disc">{c.ask.disc}</div>
+</div>
+
+<script is:inline define:vars={{ qa }}>
+  (() => {
+    const sec = document.querySelector('.ask-sec');
+    if (!sec) return;
+    const qt = sec.querySelector('.ask-qt');
+    const ans = sec.querySelector('.ask-ans');
+    const chips = Array.from(sec.querySelectorAll('.ask-chip'));
+    const el = {
+      a: sec.querySelector('.ask-a'),
+      av: sec.querySelector('.ask-av'),
+      w: sec.querySelector('.ask-w'),
+      q: sec.querySelector('.ask-q'),
+      rf: sec.querySelector('.ask-rf'),
+    };
+
+    const TYPE_MS = 40;
+    const ANSWER_DELAY_MS = 250;
+    const AUTO_ADVANCE_MS = 7000;
+
+    let typeTimer = 0;
+    let autoTimer = 0;
+
+    const mark = (j) =>
+      chips.forEach((chip, i) => {
+        chip.classList.toggle('on', i === j);
+        chip.setAttribute('aria-pressed', i === j ? 'true' : 'false');
+      });
+
+    const fill = (d) => {
+      el.a.textContent = d.a;
+      el.av.textContent = d.ini;
+      el.av.style.background = d.col;
+      el.w.textContent = d.w;
+      el.w.style.color = d.col;
+      el.q.textContent = d.c;
+      el.rf.textContent = d.r;
+    };
+
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      /* Без печати и автосмены: чипы мгновенно подставляют вопрос-ответ. */
+      chips.forEach((chip, j) =>
+        chip.addEventListener('click', () => {
+          ans.setAttribute('aria-live', 'polite');
+          mark(j);
+          qt.textContent = qa[j].q;
+          fill(qa[j]);
+        })
+      );
+      return;
+    }
+
+    const show = (j, auto) => {
+      mark(j);
+      clearInterval(typeTimer);
+      clearTimeout(autoTimer);
+      ans.classList.remove('show');
+      qt.textContent = '';
+      const d = qa[j];
+      let k = 0;
+      typeTimer = setInterval(() => {
+        k += 1;
+        qt.textContent = d.q.slice(0, k);
+        if (k >= d.q.length) {
+          clearInterval(typeTimer);
+          fill(d);
+          setTimeout(() => ans.classList.add('show'), ANSWER_DELAY_MS);
+        }
+      }, TYPE_MS);
+      if (auto) autoTimer = setTimeout(() => show((j + 1) % qa.length, true), AUTO_ADVANCE_MS);
+    };
+
+    chips.forEach((chip, j) =>
+      chip.addEventListener('click', () => {
+        clearTimeout(autoTimer);
+        /* Ответ запрошен человеком — с этого момента его можно озвучивать:
+           клик глушит автосмену, так что диктовки без спроса не будет. */
+        ans.setAttribute('aria-live', 'polite');
+        show(j, false);
+      })
+    );
+
+    let started = false;
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !started) {
+            started = true;
+            show(0, true);
+            io.disconnect();
+          }
+        });
+      },
+      { threshold: 0.15 }
+    );
+    io.observe(sec);
+  })();
+</script>

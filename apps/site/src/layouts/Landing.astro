@@ -7,25 +7,25 @@
  * роут Starlight, а общее у них — токены (site.css), шрифты и одно и то же
  * хранилище темы, чтобы переключатель не «забывал» выбор при переходе
  * лендинг ↔ доки.
+ *
+ * Шапка — по эталону handoff 2026-07-30: марка + якорная навигация
+ * (#ask/#download/#faq) + доки + GitHub + языки + тема + CTA.
  */
 import '../styles/site.css';
+import '../styles/landing.css';
+import '../styles/landing-demos.css';
 import Icon from '../components/Icon.astro';
+import Mark from '../components/Mark.astro';
+import type { Lang, LandingCopy } from '../data/landing';
 
 interface Props {
-  lang: 'ru' | 'en' | 'kk';
-  title: string;
-  description: string;
+  lang: Lang;
+  copy: LandingCopy;
 }
 
-const { lang, title, description } = Astro.props;
+const { lang, copy: c } = Astro.props;
 const base = import.meta.env.BASE_URL;
 const docs = (slug: string) => `${base}${lang === 'ru' ? '' : lang + '/'}${slug}/`;
-
-const NAV = {
-  ru: { features: 'Возможности', download: 'Установка', legal: 'Правовая информация', docs: 'Документация' },
-  en: { features: 'Features', download: 'Install', legal: 'Legal', docs: 'Docs' },
-  kk: { features: 'Мүмкіндіктер', download: 'Орнату', legal: 'Құқықтық ақпарат', docs: 'Құжаттама' },
-}[lang];
 
 const LOCALES = [
   { code: 'ru', label: 'RU', href: base },
@@ -42,19 +42,21 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://zdllucky.gi
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title}</title>
-    <meta name="description" content={description} />
+    <title>{c.meta.title}</title>
+    <meta name="description" content={c.meta.description} />
     <link rel="canonical" href={canonical.href} />
 
     <meta property="og:type" content="website" />
-    <meta property="og:title" content={title} />
-    <meta property="og:description" content={description} />
+    <meta property="og:title" content={c.meta.title} />
+    <meta property="og:description" content={c.meta.description} />
     <meta property="og:url" content={canonical.href} />
+    <meta property="og:image" content={new URL(`${base}og.png`, canonical).href} />
     <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
 
     <link
       rel="preload"
-      href={`${base}fonts/onest-cyrillic-400-700.woff2`}
+      href={`${base}fonts/onest-cyrillic-400-800.woff2`}
       as="font"
       type="font/woff2"
       crossorigin="anonymous"
@@ -63,9 +65,11 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://zdllucky.gi
 
     {/* Тема ставится до первой отрисовки — иначе тёмная тема моргает белым.
         Ключ localStorage тот же, что у Starlight, чтобы выбор переживал
-        переход между лендингом и доками. */}
+        переход между лендингом и доками. Здесь же ставится data-js — гейт
+        прогрессивного улучшения (без JS демо стоят в статичном состоянии). */}
     <script is:inline>
       (() => {
+        document.documentElement.dataset.js = '';
         const stored = (() => {
           try {
             return localStorage.getItem('starlight-theme');
@@ -86,13 +90,15 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://zdllucky.gi
 
   <body class="lp">
     <header class="lp-topbar">
-      <div class="lp-wrap lp-topbar-inner">
-        <a class="lp-brand" href={base}>Wotold</a>
+      <div class="lp-hd">
+        <a class="lp-wm lp-brand" href={base}><Mark />Wotold</a>
 
-        <nav class="lp-topnav" aria-label={NAV.docs}>
-          <a href={docs('features')}>{NAV.features}</a>
-          <a href={docs('download')}>{NAV.download}</a>
-          <a href={docs('legal')}>{NAV.legal}</a>
+        <nav class="lp-topnav" aria-label={c.nav.docs}>
+          <a href="#ask">{c.nav.features}</a>
+          <a href="#download">{c.nav.download}</a>
+          <a href="#faq">{c.nav.faq}</a>
+          <a href={docs('features')}>{c.nav.docs}</a>
+          <a href="https://github.com/zdllucky/wotold">GitHub</a>
         </nav>
 
         <div class="lp-topactions">
@@ -112,19 +118,18 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://zdllucky.gi
           </div>
 
           <button class="iconbtn" type="button" data-theme-toggle aria-label={THEME_LABEL}>
-            <Icon name="sun" size={16} class="lp-ico-light" />
-            <Icon name="moon" size={16} class="lp-ico-dark" />
+            <Icon name="sun" size={16} stroke={1.7} class="lp-ico-light" />
+            <Icon name="moon" size={16} stroke={1.7} class="lp-ico-dark" />
           </button>
 
-          <a class="btn btn--default" href="https://github.com/zdllucky/wotold" aria-label="GitHub">
-            <Icon name="code" size={15} />
-            <span>GitHub</span>
-          </a>
+          <a class="btn btn--primary lp-hd-cta" href="#download">{c.hero.primary}</a>
         </div>
       </div>
     </header>
 
     <main><slot /></main>
+
+    <slot name="footer" />
 
     <script is:inline>
       document.querySelector('[data-theme-toggle]')?.addEventListener('click', () => {
@@ -139,128 +144,3 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://zdllucky.gi
     </script>
   </body>
 </html>
-
-<style>
-  .lp-topbar {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
-    backdrop-filter: blur(var(--blur));
-    border-bottom: 1px solid var(--border);
-  }
-
-  .lp-topbar-inner {
-    display: flex;
-    align-items: center;
-    gap: var(--s5);
-    height: 56px;
-  }
-
-  .lp-brand {
-    font-weight: 700;
-    font-size: var(--t-16);
-    letter-spacing: -0.01em;
-    color: var(--text);
-    text-decoration: none;
-  }
-
-  .lp-topnav {
-    display: none;
-    gap: var(--s5);
-    margin-inline-end: auto;
-  }
-
-  @media (min-width: 860px) {
-    .lp-topnav {
-      display: flex;
-    }
-  }
-
-  .lp-topnav a {
-    font-size: var(--t-13);
-    color: var(--text-2);
-    text-decoration: none;
-  }
-
-  .lp-topnav a:hover {
-    color: var(--text);
-  }
-
-  .lp-topactions {
-    display: flex;
-    align-items: center;
-    gap: var(--s2);
-    margin-inline-start: auto;
-  }
-
-  @media (min-width: 860px) {
-    .lp-topactions {
-      margin-inline-start: 0;
-    }
-  }
-
-  /* Переключатель языка виден всегда. Прятать его на узком экране значило бы
-     оставить читателя с телефона без единственного способа сменить язык —
-     на трёхъязычном сайте это не косметика. Ужимается вместо этого подпись
-     кнопки GitHub: иконка сама по себе понятна, aria-label остаётся. */
-  @media (max-width: 559px) {
-    .lp-topactions .btn span {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-
-    .lp-topactions .seg a {
-      padding-inline: 7px;
-    }
-  }
-
-  /* .seg в wk.css стилизует потомков-button. Переключатель языка — навигация,
-     то есть ссылки; повторяем ровно то же правило, а не заводим второй вид. */
-  .lp-topactions .seg a {
-    display: inline-flex;
-    align-items: center;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--r-xs);
-    font-size: var(--t-12);
-    font-weight: 550;
-    color: var(--text-3);
-    text-decoration: none;
-    transition:
-      background var(--fast),
-      color var(--fast);
-  }
-
-  .lp-topactions .seg a:hover {
-    color: var(--text);
-  }
-
-  .lp-topactions .seg a[data-active='true'] {
-    background: var(--panel);
-    color: var(--text);
-    box-shadow: var(--shadow-sm);
-  }
-
-  /* Иконка показывает, куда переключишься, а не текущее состояние. */
-  :global([data-theme='dark']) .lp-ico-dark,
-  .lp-ico-light {
-    display: none;
-  }
-
-  :global([data-theme='dark']) .lp-ico-light {
-    display: block;
-  }
-
-  .lp-ico-dark {
-    display: block;
-  }
-
-  .lp-topactions .btn {
-    gap: 6px;
-  }
-</style>

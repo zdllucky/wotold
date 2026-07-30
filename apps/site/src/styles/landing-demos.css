@@ -1,0 +1,626 @@
+/* ─────────────────────────────────────────────────────────────
+   Wotold · landing-demos.css — два демо лендинга (handoff 2026-07-30):
+   живая карточка звонка (lc-*) и поиск по записям (ask-*).
+
+   Продолжение landing.css — вынесено из-за гейта 800 строк. Подключается
+   только Landing.astro. Токены и маппинг имён — см. шапку landing.css.
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Живая карточка звонка ───────────────────────────────────── */
+
+.lc-stage {
+  position: relative;
+  padding-top: 34px;
+}
+
+.lc-float {
+  position: absolute;
+  z-index: 2;
+  background: var(--panel);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 15px;
+  font-size: var(--t-13);
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.45s ease,
+    transform 0.45s ease;
+}
+
+.lc-fl0 { top: 0; right: 24px; }
+.lc-fl1 { top: 0; left: 18px; }
+.lc-fl2 { top: 0; right: 60px; }
+.lc-fl3 { top: 0; left: 40px; }
+.lc-fixed { bottom: -16px; right: 26px; }
+
+.lc-stage[data-phase='0'] .lc-fl0,
+.lc-stage[data-phase='1'] .lc-fl1,
+.lc-stage[data-phase='2'] .lc-fl2,
+.lc-stage[data-phase='3'] .lc-fl3,
+.lc-float.lc-fixed {
+  opacity: 1;
+  transform: none;
+}
+
+.lc-fixed svg {
+  color: var(--text-3);
+  flex: none;
+}
+
+.lc-avs {
+  display: inline-flex;
+}
+
+/* var(--panel) на цветном фоне: белый в light, тёмный на пастельных
+   sp-цветах dark-темы — контраст верный в обеих. */
+.lc-av {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--panel);
+  flex: none;
+}
+
+.lc-avs .lc-av {
+  border: 2px solid var(--panel);
+  margin-left: -7px;
+}
+
+.lc-avs .lc-av:first-child {
+  margin-left: 0;
+}
+
+.lc-live {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+}
+
+.lc-wbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  background: var(--sunken);
+}
+
+/* Точки титлбара монохромные намеренно: не цвета macOS — продукт
+   планируется и на другие ОС (SPEC §3.3). */
+.lc-wbar i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-pill);
+  background: var(--border-2);
+}
+
+.lc-wt {
+  flex: 1;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: var(--t-11);
+  font-weight: 500;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+  margin-left: -45px;
+}
+
+.lc-lh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px 10px;
+}
+
+.lc-lh b {
+  font-size: var(--t-15);
+  font-weight: 600;
+}
+
+.lc-meta {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--text-3);
+  margin-right: auto;
+}
+
+.lc-recchip,
+.lc-okchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--r-pill);
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.lc-recchip {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.lc-okchip {
+  display: none;
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.lc-live[data-phase='1'] .lc-okchip,
+.lc-live[data-phase='2'] .lc-okchip,
+.lc-live[data-phase='3'] .lc-okchip {
+  display: inline-flex;
+}
+
+.lc-live[data-phase='1'] .lc-recchip,
+.lc-live[data-phase='2'] .lc-recchip,
+.lc-live[data-phase='3'] .lc-recchip {
+  display: none;
+}
+
+.lc-recdot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--danger);
+  animation: lc-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes lc-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.lc-body {
+  position: relative;
+  height: 238px;
+  overflow: hidden;
+}
+
+/* Слои фаз лежат в DOM все сразу; показывает один из них чистый CSS по
+   data-phase. pointer-events, чтобы скрытый верхний слой не ловил клики. */
+.lc-ph {
+  position: absolute;
+  inset: 0;
+  padding: 4px 24px 18px;
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.45s ease,
+    transform 0.45s ease;
+  pointer-events: none;
+}
+
+.lc-live[data-phase='0'] .lc-p0,
+.lc-live[data-phase='1'] .lc-p1,
+.lc-live[data-phase='2'] .lc-p2,
+.lc-live[data-phase='3'] .lc-p3 {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* Фаза 0 — волны */
+
+.lc-trk {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.lc-tl {
+  font-family: var(--mono);
+  font-size: var(--t-11);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.lc-wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 32px;
+  color: var(--wavec);
+}
+
+.lc-wave span {
+  flex: 1;
+  border-radius: 2px;
+  background: currentColor;
+  animation: lc-wave 1.15s ease-in-out infinite;
+}
+
+@keyframes lc-wave {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.lc-cap {
+  margin-top: 14px;
+  font-size: var(--t-13);
+  color: var(--text-3);
+}
+
+/* Фаза 1 — расшифровка */
+
+.lc-msg {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 9px 0;
+}
+
+.lc-who {
+  font-size: var(--t-12);
+  font-weight: 600;
+}
+
+.lc-who i {
+  font-family: var(--mono);
+  font-size: var(--t-11);
+  font-style: normal;
+  font-weight: 400;
+  color: var(--text-faint);
+  margin-left: 5px;
+}
+
+.lc-msg p {
+  margin: 3px 0 0;
+  font-size: var(--t-14);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+/* Фаза 2 — итоги */
+
+.lc-sumln {
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 14.5px;
+  color: var(--text-2);
+}
+
+.lc-sumln b {
+  color: var(--text);
+}
+
+/* Фаза 3 — ответ */
+
+.lc-askq {
+  font-size: var(--t-15);
+  font-weight: 600;
+  padding: 8px 0 12px;
+}
+
+.lc-aska {
+  background: var(--sunken);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.lc-a {
+  font-size: 14.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.lc-aska q {
+  display: block;
+  quotes: none;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.lc-rf {
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--text-3);
+}
+
+.lc-rf u {
+  text-underline-offset: 2px;
+}
+
+/* Чипы фаз */
+
+.lc-phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.lc-phc {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border-2);
+  background: var(--panel);
+  border-radius: var(--r-pill);
+  padding: 7px 14px;
+  font-family: var(--font);
+  font-size: var(--t-13);
+  font-weight: 500;
+  color: var(--text-3);
+  cursor: pointer;
+  transition:
+    background 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.lc-phc:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.lc-phc .lc-n {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.lc-phc.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.lc-phc.on .lc-n {
+  color: var(--on-accent);
+  opacity: 0.6;
+}
+
+.lc-phc:focus-visible,
+.ask-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Секция поиска #ask ──────────────────────────────────────── */
+
+.ask-sec {
+  background: var(--sunken);
+  border-radius: 32px;
+  margin: 0 32px;
+  padding: 72px 40px;
+}
+
+.ask-sec .lp-sec-h {
+  margin-bottom: 36px;
+}
+
+.ask-box {
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--panel);
+  border-radius: 20px;
+  box-shadow: var(--shadow-lg);
+  padding: 8px 8px 8px 26px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ask-qtext {
+  flex: 1;
+  font-size: 19px;
+  font-weight: 500;
+  min-height: 28px;
+}
+
+.ask-caret {
+  font-style: normal;
+  color: var(--text-3);
+  animation: ask-caret 1s step-end infinite;
+}
+
+/* Без JS печати нет — каретка была бы враньём. */
+html:not([data-js]) .ask-caret {
+  display: none;
+}
+
+@keyframes ask-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+.ask-go {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 14px;
+  padding: 15px 24px;
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.ask-ans {
+  max-width: 720px;
+  margin: 12px auto 0;
+  background: var(--panel);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  padding: 22px 26px;
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
+}
+
+.ask-ans.show {
+  opacity: 1;
+  transform: none;
+}
+
+.ask-a {
+  font-size: var(--t-16);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.ask-qq {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: var(--sunken);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.ask-av {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--t-11);
+  font-weight: 600;
+  color: var(--panel);
+  flex: none;
+}
+
+.ask-w {
+  font-size: var(--t-13);
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.ask-q {
+  margin: 0;
+  font-size: var(--t-14);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.ask-rf {
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--text-3);
+}
+
+.ask-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.ask-chip {
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  padding: 9px 17px;
+  font-family: var(--font);
+  font-size: var(--t-14);
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.ask-chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.ask-chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.ask-disc {
+  text-align: center;
+  margin: 20px auto 0;
+  font-size: var(--t-12);
+  color: var(--text-3);
+  max-width: 52em;
+}
+
+/* ── Брейкпоинты демо ────────────────────────────────────────── */
+
+@media (max-width: 1080px) {
+  .lc-stage {
+    max-width: 640px;
+    width: 100%;
+    margin-inline: auto;
+  }
+
+  .lc-phases {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 760px) {
+  .ask-sec {
+    margin: 0 12px;
+    padding: 52px 18px;
+    border-radius: 24px;
+  }
+
+  .lc-float {
+    display: none;
+  }
+
+  .lc-float.lc-fixed {
+    display: flex;
+  }
+
+  .lc-body {
+    height: 262px;
+  }
+}
+
+/* ── Reduced motion (демо) ───────────────────────────────────── */
+
+/* JS-таймеры глушатся в самих скриптах; здесь — всё, что анимирует CSS. */
+@media (prefers-reduced-motion: reduce) {
+  .lc-wave span,
+  .lc-recdot,
+  .lc-float,
+  .lc-ph,
+  .ask-caret,
+  .ask-ans,
+  .lc-phc,
+  .ask-chip {
+    animation: none !important;
+    transition: none !important;
+  }
+}

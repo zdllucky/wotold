@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import sitemap from '@astrojs/sitemap';
+import rehypeLegal from './src/lib/rehype-legal.mjs';
 
 // Домен и base вынесены в env, чтобы переезд с github.io на собственный домен
 // был одной правкой окружения, а не переписыванием ссылок по всему контенту.
@@ -36,15 +37,31 @@ export default defineConfig({
       editLink: {
         baseUrl: 'https://github.com/zdllucky/wotold/edit/main/apps/site/',
       },
-      customCss: ['./src/styles/site.css'],
+      customCss: ['./src/styles/site.css', './src/styles/legal.css'],
+      // Правовой шаблон (SPEC §7): kicker над h1 + хаб документов.
+      // Оба override пропускают не-legal роуты в дефолт без изменений.
+      components: {
+        PageTitle: './src/components/starlight/PageTitle.astro',
+        MarkdownContent: './src/components/starlight/MarkdownContent.astro',
+      },
       // Ноль сторонних хостов — то же обещание, что даёт само приложение.
       // Шрифты синхронизируются из десктопа скриптом sync-fonts.mjs.
       head: [
         {
+          // Статичная OG-карточка из марки (SPEC §8). Генерируется разово
+          // scripts/gen-og.mjs, артефакт закоммичен в public/.
+          tag: 'meta',
+          attrs: { property: 'og:image', content: `${SITE}${BASE}/og.png` },
+        },
+        {
+          tag: 'meta',
+          attrs: { name: 'twitter:card', content: 'summary_large_image' },
+        },
+        {
           tag: 'link',
           attrs: {
             rel: 'preload',
-            href: `${BASE}/fonts/onest-cyrillic-400-700.woff2`,
+            href: `${BASE}/fonts/onest-cyrillic-400-800.woff2`,
             as: 'font',
             type: 'font/woff2',
             crossorigin: 'anonymous',
@@ -89,4 +106,8 @@ export default defineConfig({
     }),
     sitemap(),
   ],
+  markdown: {
+    // Mono-нумерация правовых пунктов на билд-слое — контент не трогается.
+    rehypePlugins: [rehypeLegal],
+  },
 });

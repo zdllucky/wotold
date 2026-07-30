@@ -1,0 +1,192 @@
+---
+/**
+ * Живая карточка звонка — ключевой интерактив hero (SPEC §3.3).
+ *
+ * Все четыре фазы отрисованы серверно и лежат в DOM одновременно; переключает
+ * их чистый CSS по [data-phase] на .stage/.live. Волны тоже серверные: высоты
+ * посчитаны здесь по синус-формуле эталона, так что без JS карточка стоит на
+ * фазе «Запись» полностью нарисованной. Клиентскому скрипту остаётся только
+ * цикл фаз: 3800 мс автосмена, клик по чипу выбирает фазу и замедляет цикл
+ * до 5200 мс. Словарь фаз клиенту не нужен.
+ *
+ * Титлбар нейтральный: три монохромные точки, не цвета macOS — продукт
+ * планируется и на другие ОС (SPEC §3.3).
+ */
+import Icon from '../Icon.astro';
+import type { LandingCopy } from '../../data/landing';
+
+interface Props {
+  copy: LandingCopy;
+}
+
+const { copy: c } = Astro.props;
+
+/** Инициалы аватаров вычисляются из имён — в эталоне «В» был захардкожен. */
+const m1ini = c.card.m1w.slice(0, 1);
+const m2ini = c.card.m2w.slice(0, 1);
+
+/** Столбики волны — формула эталона: h ∈ [0.25, 0.97], свои delay/duration. */
+const WAVE_BARS = 44;
+const wave = (offset: number) =>
+  Array.from({ length: WAVE_BARS }, (_, i) => {
+    const k = i + offset;
+    const h = 0.25 + (0.72 * Math.abs(Math.sin(k * 1.7) + Math.sin(k * 0.53))) / 2;
+    return {
+      height: `${Math.round(h * 100)}%`,
+      delay: `${-((i % 9) * 0.13).toFixed(2)}s`,
+      duration: `${(1 + (k % 5) * 0.12).toFixed(2)}s`,
+    };
+  });
+
+const waves = [wave(0), wave(3)];
+const trackLabels = [c.card.you, c.card.them];
+---
+
+<div class="lc-stage" data-phase="0">
+  <div class="lc-float lc-fl0"><span class="lc-recdot"></span><span>{c.floats.f0}</span></div>
+  <div class="lc-float lc-fl1">
+    <span class="lc-avs">
+      <span class="lc-av" style="background: var(--sp3)">{m1ini}</span>
+      <span class="lc-av" style="background: var(--sp1)">{m2ini}</span>
+    </span>
+    <span>{c.floats.f1}</span>
+  </div>
+  <div class="lc-float lc-fl2"><span>{c.floats.f2}</span></div>
+  <div class="lc-float lc-fl3"><span>{c.floats.f3}</span></div>
+
+  <div class="lc-live" data-phase="0">
+    <div class="lc-wbar" aria-hidden="true"><i></i><i></i><i></i><span class="lc-wt">Wotold</span></div>
+
+    <div class="lc-float lc-fixed">
+      <Icon name="lock" size={15} stroke={1.7} />
+      <span>{c.floats.fixed}</span>
+    </div>
+
+    <div class="lc-lh">
+      <b>{c.card.title}</b>
+      <span class="lc-meta">{c.card.meta}</span>
+      <span class="lc-recchip"><span class="lc-recdot"></span><span>{c.card.rec}</span></span>
+      <span class="lc-okchip"><Icon name="check" size={12} stroke={2} /><span>{c.card.done}</span></span>
+    </div>
+
+    <div class="lc-body">
+      <div class="lc-ph lc-p0">
+        {
+          waves.map((bars, t) => (
+            <div class="lc-trk">
+              <span class="lc-tl">{trackLabels[t]}</span>
+              <div class="lc-wave" aria-hidden="true">
+                {bars.map((b) => (
+                  <span
+                    style={`height:${b.height};animation-delay:${b.delay};animation-duration:${b.duration}`}
+                  />
+                ))}
+              </div>
+            </div>
+          ))
+        }
+        <div class="lc-cap">{c.card.cap0}</div>
+      </div>
+
+      <div class="lc-ph lc-p1">
+        <div class="lc-msg">
+          <span class="lc-av" style="background: var(--sp3)">{m1ini}</span>
+          <div>
+            <div class="lc-who" style="color: var(--sp3)"><span>{c.card.m1w}</span> <i>{c.card.m1t}</i></div>
+            <p>{c.card.m1}</p>
+          </div>
+        </div>
+        <div class="lc-msg">
+          <span class="lc-av" style="background: var(--sp1)">{m2ini}</span>
+          <div>
+            <div class="lc-who" style="color: var(--sp1)"><span>{c.card.m2w}</span> <i>{c.card.m2t}</i></div>
+            <p>{c.card.m2}</p>
+          </div>
+        </div>
+        <div class="lc-cap">{c.card.cap1}</div>
+      </div>
+
+      <div class="lc-ph lc-p2">
+        <div class="lc-sumln"><span set:html={c.card.s1} /></div>
+        <div class="lc-sumln"><span set:html={c.card.s2} /></div>
+        <div class="lc-sumln"><span set:html={c.card.s3} /></div>
+        <div class="lc-cap">{c.card.cap2}</div>
+      </div>
+
+      <div class="lc-ph lc-p3">
+        <div class="lc-askq">{c.card.q}</div>
+        <div class="lc-aska">
+          <div class="lc-a">{c.card.a}</div>
+          <q>{c.card.quote}</q>
+          <div class="lc-rf" set:html={c.card.ref} />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lc-phases" role="group">
+    {
+      c.phases.map((label, i) => (
+        <button
+          class="lc-phc"
+          class:list={[{ on: i === 0 }]}
+          type="button"
+          data-p={i}
+          aria-pressed={i === 0 ? 'true' : 'false'}
+        >
+          <span class="lc-n">{`0${i + 1}`}</span>
+          <span>{label}</span>
+        </button>
+      ))
+    }
+  </div>
+</div>
+
+<script is:inline>
+  (() => {
+    const stage = document.querySelector('.lc-stage');
+    const live = stage?.querySelector('.lc-live');
+    if (!stage || !live) return;
+    const chips = Array.from(stage.querySelectorAll('.lc-phc'));
+
+    let phase = 0;
+    const set = (next) => {
+      phase = next;
+      stage.dataset.phase = String(next);
+      live.dataset.phase = String(next);
+      chips.forEach((chip, i) => {
+        chip.classList.toggle('on', i === next);
+        chip.setAttribute('aria-pressed', i === next ? 'true' : 'false');
+      });
+    };
+    const step = () => set((phase + 1) % 4);
+
+    /* Reduced motion: автоцикл не стартует вовсе, чипы переключают мгновенно. */
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      chips.forEach((chip, i) => chip.addEventListener('click', () => set(i)));
+      return;
+    }
+
+    const AUTO_MS = 3800;
+    const AFTER_CLICK_MS = 5200;
+    /* Темп запоминается: после клика цикл замедлен навсегда, и возврат из
+       фоновой вкладки не должен втихую вернуть его к исходным 3800. */
+    let periodMs = AUTO_MS;
+    let timer = setInterval(step, periodMs);
+
+    chips.forEach((chip, i) =>
+      chip.addEventListener('click', () => {
+        clearInterval(timer);
+        set(i);
+        periodMs = AFTER_CLICK_MS;
+        timer = setInterval(step, periodMs);
+      })
+    );
+
+    /* Вкладка в фоне — цикл не крутится впустую. */
+    document.addEventListener('visibilitychange', () => {
+      clearInterval(timer);
+      if (!document.hidden) timer = setInterval(step, periodMs);
+    });
+  })();
+</script>

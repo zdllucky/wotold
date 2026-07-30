@@ -12,10 +12,16 @@
 
 | файл | семейство | вес | subset | размер |
 |---|---|---|---|---|
-| `onest-cyrillic-ext-400-700.woff2` | Onest | 400 700 | cyrillic-ext | 2.2 КБ |
-| `onest-cyrillic-400-700.woff2` | Onest | 400 700 | cyrillic | 13.9 КБ |
-| `onest-latin-ext-400-700.woff2` | Onest | 400 700 | latin-ext | 15.6 КБ |
-| `onest-latin-400-700.woff2` | Onest | 400 700 | latin | 31.5 КБ |
+| `onest-cyrillic-ext-400-800.woff2` | Onest | 400 800 | cyrillic-ext | 2.2 КБ |
+| `onest-cyrillic-400-800.woff2` | Onest | 400 800 | cyrillic | 13.9 КБ |
+| `onest-latin-ext-400-800.woff2` | Onest | 400 800 | latin-ext | 15.6 КБ |
+| `onest-latin-400-800.woff2` | Onest | 400 800 | latin | 31.5 КБ |
+
+Диапазон Onest расширен 400 700 → 400 800 для сайта (hero/h1 весом 800 по
+handoff 2026-07-30). Файлы при этом **побайтно те же**: Google отдаёт полную
+variable-ось независимо от запрошенного `wght`-диапазона, вес 800 в них был
+всегда — его ограничивала только декларация `font-weight` в `fonts.css`.
+Переименованы для честности имени.
 | `ibm-plex-mono-cyrillic-ext-400.woff2` | IBM Plex Mono | 400 | cyrillic-ext | 4.2 КБ |
 | `ibm-plex-mono-cyrillic-400.woff2` | IBM Plex Mono | 400 | cyrillic | 5.3 КБ |
 | `ibm-plex-mono-latin-ext-400.woff2` | IBM Plex Mono | 400 | latin-ext | 8.7 КБ |
@@ -57,7 +63,7 @@ IBM Plex Mono оставлен как есть: кириллицу покрыв�
 
 ```bash
 curl -sSL -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36" \
-  "https://fonts.googleapis.com/css2?family=Onest:wght@400..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+  "https://fonts.googleapis.com/css2?family=Onest:wght@400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
 ```
 
 Из ответа взять блоки нужных subset'ов, скачать `url(...)` и перегенерировать
