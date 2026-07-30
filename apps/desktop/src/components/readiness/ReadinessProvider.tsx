@@ -102,10 +102,14 @@ export function ReadinessProvider({ children }: { children: ReactNode }) {
       sizes.current = Object.fromEntries(r.missing.map((m) => [m.id, m.bytes_total]));
       setReadiness(r);
       return r;
-    } catch {
-      // Команды движка есть только под macOS (R9). На остальных платформах
-      // считаем готовым: баннер про недостающие модули там бессмысленен.
-      setReadiness({ ready: true, preset: null, missing: [], missing_bytes_total: 0 });
+    } catch (e) {
+      // Снимок не получен — оставляем состояние неизвестным (`null`), а не
+      // объявляем движок готовым. Команды движка есть только под macOS (R9),
+      // и там неизвестность равна «баннера нет»; но та же ветка ловит и
+      // обычные сбои вроде занятой базы, а «готов» на такой ошибке скрывал бы
+      // единственную точку входа в докачку до перезапуска приложения.
+      console.warn('readiness snapshot failed', e);
+      setReadiness(null);
       return null;
     }
   }, []);

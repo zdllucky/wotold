@@ -704,13 +704,7 @@ export const kk: TranslationStrings = {
     descCorrupted: 'Файл зақымдалған немесе нұсқа өзгерген. Жойып қайта жүктеңіз.',
     descMissing:
       'Биометриялық сәйкестендіру қазір өшулі. Модельді жүктеп, Wotold кім сөйлеп жатқанын ұсынсын. Көлемі ~25 МБ, фонда бір рет жүктеледі.',
-    btnDownload: '↓ Жүктеу {size}',
-    btnRedownload: '↻ Қайта жүктеу',
-    btnDownloading: 'Жүктеудеміз…',
-    btnDelete: 'Жою',
     mb: '{n} МБ',
-    verifyFailed:
-      'SHA256 сәйкес келмеді — файл зақымдалған немесе модель нұсқасы ауысқан. Қайта көріңіз.',
   },
 
   localEngine: {
@@ -729,6 +723,7 @@ export const kk: TranslationStrings = {
       quality: 'дәлдік ~97% · баяу',
     },
     presetRecommend: 'Ұсынылады',
+    presetLockedWhileDownloading: 'Жүктеу жүріп жатқанда өлшем өзгермейді — аяқталуын күтіңіз.',
     modelLabel: {
       whisperSmall: 'Сөйлеу модулі · S',
       whisperMedium: 'Сөйлеу модулі · M',

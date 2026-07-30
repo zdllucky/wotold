@@ -6,22 +6,18 @@
 // backend'ом, UI не было), несколько голосов на микрофоне (при отсутствии
 // pyannote — кнопка установки модуля с реальным прогрессом model:progress).
 //
-// Голосовой эмбеддер стал каталожной моделью (`voice-embedder`): и он, и
-// pyannote качаются одной командой и рапортуют одними событиями
-// `model:progress`/`model:done`. До этого у эмбеддера была своя качалка со
-// своими `voice-model:*`, и таблица моделей в «Обработке» слушала не тот
-// канал — кнопка скачивания выглядела мёртвой, хотя файл качался.
+// Голосовой эмбеддер — обязательный базовый модуль (`voice-embedder`), и
+// качает его общий баннер готовности вместе с остальными. Здесь только статус:
+// своя кнопка скачивания означала бы вторую очередь на те же файлы и второй
+// прогресс-бар рядом с баннером, показывающий то же самое. Раньше у эмбеддера
+// была вообще отдельная качалка со своими событиями `voice-model:*`, из-за
+// чего таблица моделей слушала не тот канал и кнопка выглядела мёртвой.
 
 import { useCallback, useEffect, useState } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
-import {
-  localEngineModelDelete,
-  localEngineModelDownload,
-  localEngineModelStatus,
-} from '../api/local-engine';
+import { localEngineModelStatus } from '../api/local-engine';
 import { voiceEmbedderFeatureEnabled } from '../api/speakers';
-import type { ModelProgressEvent, ModelStatus } from '@wotold/contracts';
+import type { ModelStatus } from '@wotold/contracts';
 import {
   AUTO_BIND_THRESHOLDS,
   getSetting,
@@ -32,17 +28,12 @@ import {
 } from '../api/settings';
 import { humanError } from '../api/errors';
 import { useI18n } from '../i18n';
-import { Button, Chip, Icon, IconBtn, Progress, Select, SettingRow, Skeleton, Switch } from '../ui';
+import { Chip, Icon, Select, SettingRow, Skeleton, Switch } from '../ui';
+import { useReadiness } from '../components/readiness/ReadinessProvider';
 
 type TFn = ReturnType<typeof useI18n>['t'];
 
 const EMBEDDER_ID = 'voice-embedder';
-
-/** Статус загрузки модели из `model:done` (union по `status`). */
-type ModelDoneEvent =
-  | { id: string; status: 'ok' | 'already_present' }
-  | { id: string; status: 'verify_failed'; expected: string; got: string }
-  | { id: string; status: 'io_error'; message: string };
 
 function formatMB(bytes: number, t: TFn): string {
   return t('voiceModel.mb', { n: (bytes / (1024 * 1024)).toFixed(1) });
@@ -50,12 +41,11 @@ function formatMB(bytes: number, t: TFn): string {
 
 export function VoiceModelSection() {
   const { t } = useI18n();
+  // Снимок готовности — единственный источник правды по докачке модулей.
+  const { readiness, downloadingIds } = useReadiness();
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [featureEnabled, setFeatureEnabled] = useState<boolean | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  const [progress, setProgress] = useState<ModelProgressEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [autoBindEnabled, setAutoBindEnabled] = useState<boolean>(
     SETTINGS_DEFAULTS.AUTO_BIND_ENABLED,
   );
@@ -92,42 +82,11 @@ export function VoiceModelSection() {
     void refresh();
   }, [refresh]);
 
-  // [B21] Листенер вешается сразу на mount (не на флаг): listen() — async IPC,
-  // гейт на `downloading` проигрывал гонку быстрым загрузкам и % не успевал
-  // отрисоваться. cancelled-guard (тот же приём, что в pages/engine [Review HIGH-2]):
-  // без него cleanup до резолва listen() оставлял listener-leak на всю сессию.
+  // Статус перечитывается на каждый снимок готовности: докачку ведёт баннер,
+  // и свои подписки на `model:*` здесь были бы вторым источником правды.
   useEffect(() => {
-    let cancelled = false;
-    let unProgress: UnlistenFn | undefined;
-    let unDone: UnlistenFn | undefined;
-    (async () => {
-      unProgress = await listen<ModelProgressEvent>('model:progress', (e) => {
-        if (e.payload.id === EMBEDDER_ID) setProgress(e.payload);
-      });
-      if (cancelled) {
-        unProgress();
-        return;
-      }
-      unDone = await listen<ModelDoneEvent>('model:done', (e) => {
-        const payload = e.payload;
-        if (payload.id !== EMBEDDER_ID) return;
-        setDownloading(false);
-        setProgress(null);
-        if (payload.status === 'verify_failed') {
-          setError(t('voiceModel.verifyFailed'));
-        } else if (payload.status === 'io_error') {
-          setError(payload.message);
-        }
-        void refresh();
-      });
-      if (cancelled) unDone();
-    })();
-    return () => {
-      cancelled = true;
-      unProgress?.();
-      unDone?.();
-    };
-  }, [refresh, t]);
+    if (readiness) void refresh();
+  }, [readiness, refresh]);
 
   const persistAutoBind = async (next: boolean) => {
     setAutoBindEnabled(next);
@@ -148,36 +107,7 @@ export function VoiceModelSection() {
   };
 
   const sizeBytes = status?.bytes_total ?? 0;
-
-  const handleDownload = async () => {
-    setDownloading(true);
-    setError(null);
-    setProgress({ id: EMBEDDER_ID, pct: 0, bytes_done: 0, bytes_total: sizeBytes });
-    try {
-      await localEngineModelDownload(EMBEDDER_ID);
-    } catch (e) {
-      setError(humanError(e, t));
-    } finally {
-      // `model:done` тоже гасит флаг, но команда может отказать до старта
-      // закачки — тогда события не будет вовсе.
-      setDownloading(false);
-      setProgress(null);
-      await refresh();
-    }
-  };
-
-  const handleDelete = async () => {
-    setDeleting(true);
-    setError(null);
-    try {
-      await localEngineModelDelete(EMBEDDER_ID);
-      await refresh();
-    } catch (e) {
-      setError(humanError(e, t));
-    } finally {
-      setDeleting(false);
-    }
-  };
+  const downloading = downloadingIds.has(EMBEDDER_ID);
 
   if (!status || featureEnabled === null) {
     return (
@@ -241,49 +171,7 @@ export function VoiceModelSection() {
           </div>
         </div>
         <StatusChip status={status} downloading={downloading} />
-        {!valid && !downloading && (
-          <Button
-            variant="primary"
-            size="sm"
-            leading={<Icon name="download" size={14} />}
-            onClick={() => void handleDownload()}
-          >
-            {status.state === 'corrupted'
-              ? t('voiceModel.btnRedownload')
-              : t('voiceModel.btnDownload', { size: formatMB(sizeBytes, t) })}
-          </Button>
-        )}
-        {valid && !downloading && (
-          <IconBtn
-            icon="trash"
-            size="sm"
-            label={t('voiceModel.btnDelete')}
-            onClick={() => void handleDelete()}
-            disabled={deleting}
-          />
-        )}
       </div>
-
-      {downloading && progress && (
-        <div style={{ marginTop: 10 }}>
-          <Progress value={progress.pct} ariaLabel={t('voiceModel.btnDownloading')} />
-          <div
-            className="mono"
-            style={{
-              fontSize: 11,
-              color: 'var(--text-3)',
-              marginTop: 6,
-              display: 'flex',
-              justifyContent: 'space-between',
-            }}
-          >
-            <span>
-              {formatMB(progress.bytes_done, t)} / {formatMB(progress.bytes_total, t)}
-            </span>
-            <span>{progress.pct.toFixed(0)}%</span>
-          </div>
-        </div>
-      )}
 
       {/* Плотные Row-настройки (канон :304-313). Авто-привязка гасится пока
           модель не скачана: без эмбеддингов матчинга нет. */}

@@ -51,20 +51,18 @@ pub async fn ensure_required(
     app_data_dir: &Path,
     app: &AppHandle,
 ) -> Result<(), AppError> {
-    // Уже качаем — второй вызов не плодит очередь.
-    let Ok(_guard) = ensure_lock().try_lock() else {
-        log::info!("ensure_required: скачивание уже идёт — второй запуск не нужен");
-        return Ok(());
-    };
+    // Ждём предыдущую докачку, а не отказываем сразу. Отказ означал бы «вызов
+    // ничего не сделал», и вызывающий не мог отличить это от «качать было
+    // нечего»; хуже — пока шла прошлая очередь, пользователь мог сменить
+    // размер движка, и его моделей в ней не было вовсе. Дождавшись, мы
+    // пересчитываем снимок и качаем то, что нужно сейчас.
+    let _guard = ensure_lock().lock().await;
 
     let snapshot = readiness::compute(pool, app_data_dir).await?;
     if snapshot.preset.is_none() {
         return Err(AppError::Other(
             "local_engine_preset_not_set: сначала выберите размер движка".into(),
         ));
-    }
-    if snapshot.ready {
-        return Ok(());
     }
 
     let mut first_error: Option<AppError> = None;
@@ -91,14 +89,15 @@ pub async fn ensure_required(
         }
     }
 
-    readiness::recompute_and_emit(app);
+    // Пересчитываем и поднимаем припаркованные, даже если качать было нечего:
+    // движок мог стать готовым мимо этой команды (перекачали модуль поштучно,
+    // вернули прежний размер), и тогда звонки так и висели бы до перезапуска.
+    // Ошибку отдаём после подъёма — часть модулей могла лечь успешно.
+    readiness::recompute_and_resume(app).await;
 
     if let Some(e) = first_error {
         return Err(e);
     }
-
-    // Всё на месте — поднимаем звонки, припаркованные из-за нехватки модулей.
-    crate::commands::resume_parked_calls(app.clone()).await;
     Ok(())
 }
 
@@ -304,6 +303,35 @@ mod tests {
         assert_eq!(json["whisper_model_id"], "whisper-small");
         assert_eq!(json["llm_model_id"], "qwen25-1_5b");
         assert!(json["total_bytes"].as_u64().unwrap() > 0);
+    }
+
+    /// Регрессия: ранний выход «уже готов» пропускал подъём припаркованных
+    /// звонков. Кнопка на странице такого звонка ведёт именно сюда, и если
+    /// движок стал готов другим путём (поштучная перекачка, возврат прежнего
+    /// размера), нажатие возвращало Ok, ничего не делая, — звонок висел
+    /// сломанным до перезапуска приложения.
+    #[test]
+    fn ready_snapshot_must_not_short_circuit_before_resume() {
+        let src = include_str!("provisioning.rs");
+        let body = src
+            .split_once("pub async fn ensure_required(")
+            .expect("функция на месте")
+            .1;
+        let body = body.split_once("\n}\n").expect("конец функции").0;
+        assert!(
+            body.contains("recompute_and_resume"),
+            "докачка обязана заканчиваться подъёмом припаркованных звонков"
+        );
+        assert!(
+            !body.contains("snapshot.ready"),
+            "ранний выход по готовому снимку обходил подъём припаркованных: \
+             пустой список к докачке — не повод оставлять звонок сломанным"
+        );
+        assert!(
+            !body.contains("try_lock"),
+            "второй вызов обязан дождаться первого, а не возвращать Ok молча: \
+             за время прошлой очереди мог смениться размер движка"
+        );
     }
 
     #[tokio::test]

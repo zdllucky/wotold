@@ -173,7 +173,9 @@ pub async fn local_engine_model_download(
     id: String,
 ) -> Result<(), AppError> {
     models::download(&state.app_data_dir, &id, Some(&app)).await?;
-    readiness::recompute_and_emit(&app);
+    // Поштучная перекачка тоже может сделать движок готовым — тогда
+    // припаркованные звонки обязаны подняться, а не ждать перезапуска.
+    readiness::recompute_and_resume(&app).await;
     Ok(())
 }
 
@@ -209,8 +211,10 @@ pub async fn local_engine_set_active_preset(
         .ok_or_else(|| AppError::Other(format!("unknown preset: {preset}")))?;
     crate::db::set_setting(&state.db, SETTING_ACTIVE_PRESET, parsed.as_str()).await?;
     // Смена размера меняет обязательный список — пересчитываем сразу, иначе
-    // баннер узнает о нехватке только после следующего действия.
-    readiness::recompute_and_emit(&app);
+    // баннер узнает о нехватке только после следующего действия. Возврат к
+    // прежнему размеру, модели которого уже на диске, делает движок готовым:
+    // это тоже повод поднять припаркованные звонки.
+    readiness::recompute_and_resume(&app).await;
     Ok(PresetSpec::from(parsed))
 }
 

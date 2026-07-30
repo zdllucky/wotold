@@ -140,6 +140,17 @@ describe('OnboardingEngineStep', () => {
     );
   });
 
+  test('движок уже готов — шаг проматывается без лишнего клика', async () => {
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'local_engine_hw_probe') return HW;
+      if (cmd === 'local_engine_preset_specs') return SPECS;
+      return { ready: true, preset: 'balanced', missing: [], missing_bytes_total: 0 };
+    });
+    const onAdvance = renderStep();
+    await flush();
+    expect(onAdvance).toHaveBeenCalled();
+  });
+
   test('не-macOS: шаг проматывается сам', async () => {
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'local_engine_hw_probe') return { ...HW, os: 'linux', recommendation: null };

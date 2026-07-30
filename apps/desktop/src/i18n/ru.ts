@@ -751,13 +751,7 @@ const ruInternal = {
     descCorrupted: 'Файл повреждён или сменилась версия. Удали и скачай заново.',
     descMissing:
       'Биометрический матчинг сейчас выключен. Скачай модель чтобы Wotold предлагал кто говорит. Размер ~25 МБ, скачивается один раз в фоне.',
-    btnDownload: '↓ Скачать {size}',
-    btnRedownload: '↻ Перекачать',
-    btnDownloading: 'Скачиваем…',
-    btnDelete: 'Удалить',
     mb: '{n} МБ',
-    verifyFailed:
-      'SHA256 не совпал — файл повреждён или сменилась версия модели. Попробуй снова.',
   },
 
   // ── Local engine (M12) ──────────────────────────────────────────────────
@@ -777,6 +771,7 @@ const ruInternal = {
       quality: 'точность ~97% · медленно',
     },
     presetRecommend: 'Рекомендуем',
+    presetLockedWhileDownloading: 'Пока идут загрузки, размер не меняем — дождитесь конца.',
     // Абстрактные имена моделей для UI (storage table, delete confirm и т.д.).
     // Конкретные бренды (Whisper/Qwen/Pyannote) — только в Rust-логах и контракте.
     modelLabel: {

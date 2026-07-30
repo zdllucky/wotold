@@ -141,7 +141,13 @@ pub async fn resume_parked_calls(app: AppHandle) {
             log::warn!("parked_resume[{call_id}]: маркер попыток не записан: {e}");
         }
 
+        // Матч исчерпывающий, без `_`: близнец `auto_recover_interrupted_calls`
+        // перечисляет варианты явно, и новый вариант плана обязан ломать
+        // компиляцию здесь, а не молча уезжать в восстановление.
         let launched = match plan {
+            ParkedPlan::StopCapReached
+            | ParkedPlan::SkipNoAudio
+            | ParkedPlan::SkipTriesExhausted => continue,
             ParkedPlan::Reprocess => PipelineRunner::spawn_reprocess(
                 pool.clone(),
                 store.clone(),
@@ -151,7 +157,7 @@ pub async fn resume_parked_calls(app: AppHandle) {
             )
             .await
             .map_err(|e| e.to_string()),
-            _ => super::recovery::spawn_recover_chunked(
+            ParkedPlan::Recover => super::recovery::spawn_recover_chunked(
                 pool.clone(),
                 store.clone(),
                 tasks.clone(),

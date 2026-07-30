@@ -42,7 +42,7 @@ const QUALITY_MIN_RAM_GB = 16;
 
 export function EngineSection() {
   const { t } = useI18n();
-  const { readiness, downloadingIds, ensure } = useReadiness();
+  const { readiness, downloading, downloadingIds, ensure } = useReadiness();
   const [preset, setPreset] = useState<PresetSpec | null>(null);
   const [specs, setSpecs] = useState<PresetSizeSpec[]>([]);
   const [statuses, setStatuses] = useState<Record<string, ModelStatus>>({});
@@ -189,6 +189,7 @@ export function EngineSection() {
           specs={specs}
           statuses={statuses}
           downloadingIds={downloadingIds}
+          busy={downloading}
           recommendation={hw?.recommendation ?? null}
           onPick={(p) => void onPick(p)}
         />

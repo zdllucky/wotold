@@ -79,10 +79,12 @@ export function OnboardingEngineStep({ onAdvance }: Props) {
     if (hw && hw.os !== 'macos') onAdvance();
   }, [hw, onAdvance]);
 
-  // Модули докачались — шаг сделан.
+  // Движок готов — шаг сделан. Без `started` в условии намеренно: при повторном
+  // прохождении онбординга всё уже скачано, и требовать нажатие «Скачать»
+  // ради мгновенного no-op незачем.
   useEffect(() => {
-    if (started && readiness?.ready) onAdvance();
-  }, [started, readiness, onAdvance]);
+    if (readiness?.ready) onAdvance();
+  }, [readiness, onAdvance]);
 
   const startDownload = useCallback(async () => {
     if (!chosenPreset) return;

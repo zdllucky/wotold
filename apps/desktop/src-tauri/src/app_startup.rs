@@ -213,16 +213,9 @@ fn spawn_model_integrity_check(handle: &AppHandle) {
         }
         // Готовность считается после проверки целостности: подменённый файл
         // тоже повод показать баннер «не хватает софта», а до вердикта
-        // проверки снимок был бы оптимистичнее правды.
-        crate::local_engine::readiness::recompute_and_emit(&app);
-
-        // Модули могли докачаться в прошлой сессии (или доехать после
-        // краша) — поднимаем припаркованные звонки. Гейт по готовности здесь
-        // обязателен: иначе каждый старт впустую жёг бы попытки.
-        match crate::local_engine::readiness::compute(&pool, &app_data_dir).await {
-            Ok(r) if r.ready => crate::commands::resume_parked_calls(app.clone()).await,
-            Ok(_) => {}
-            Err(e) => log::warn!("parked_resume: снимок готовности не собран: {e}"),
-        }
+        // проверки снимок был бы оптимистичнее правды. Заодно поднимаем
+        // припаркованные звонки — модули могли докачаться в прошлой сессии
+        // или доехать после краша.
+        crate::local_engine::readiness::recompute_and_resume(&app).await;
     });
 }

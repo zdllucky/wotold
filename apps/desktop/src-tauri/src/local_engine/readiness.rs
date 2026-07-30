@@ -214,15 +214,39 @@ pub async fn assert_ready(pool: &SqlitePool, app_data_dir: &Path) -> Result<(), 
 pub fn recompute_and_emit(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let (pool, app_data_dir) = {
-            let state = tauri::Manager::state::<crate::state::AppState>(&app);
-            (state.db.clone(), state.app_data_dir.clone())
-        };
-        match compute(&pool, &app_data_dir).await {
-            Ok(r) => crate::events::EventBus::new(Some(&app)).readiness_changed(&r),
-            Err(e) => log::warn!("readiness: пересчёт не удался: {e}"),
-        }
+        let _ = recompute_inner(&app, /* resume_parked */ false).await;
     });
+}
+
+/// То же плюс подъём припаркованных звонков, если движок стал готов.
+///
+/// Отдельная функция, а не флаг внутри `recompute_and_emit`: подъём — это
+/// действие, а не уведомление, и звать его надо ровно там, где готовность
+/// могла смениться на «готов» (докачка, возврат прежнего размера, старт).
+/// Раньше подъём висел на одном-единственном пути — успешном `ensure_required`,
+/// — и звонок, дождавшийся моделей другим путём, оставался failed до
+/// перезапуска приложения.
+pub async fn recompute_and_resume(app: &AppHandle) {
+    let _ = recompute_inner(app, /* resume_parked */ true).await;
+}
+
+async fn recompute_inner(app: &AppHandle, resume_parked: bool) -> Option<LocalEngineReadiness> {
+    let (pool, app_data_dir) = {
+        let state = tauri::Manager::state::<crate::state::AppState>(app);
+        (state.db.clone(), state.app_data_dir.clone())
+    };
+    let snapshot = match compute(&pool, &app_data_dir).await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("readiness: пересчёт не удался: {e}");
+            return None;
+        }
+    };
+    crate::events::EventBus::new(Some(app)).readiness_changed(&snapshot);
+    if resume_parked && snapshot.ready {
+        crate::commands::resume_parked_calls(app.clone()).await;
+    }
+    Some(snapshot)
 }
 
 /// Суммарный размер модулей, которые ещё не скачаны. Для подписи кнопки.

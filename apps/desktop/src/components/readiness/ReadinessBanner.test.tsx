@@ -128,11 +128,18 @@ describe('ReadinessBanner', () => {
     expect(onOpenSettings).toHaveBeenCalled();
   });
 
-  test('не-macOS: команды движка недоступны — баннера нет', async () => {
-    mockInvoke.mockRejectedValue(new Error('command local_engine_readiness not found'));
+  test('снимок не получен — баннера нет, но и «готов» мы не объявляем', async () => {
+    // Та же ветка ловит и «команды нет» (не-macOS, R9), и обычный сбой вроде
+    // занятой базы. Объявлять движок готовым на ошибке нельзя: это скрыло бы
+    // единственную точку входа в докачку до перезапуска приложения.
+    mockInvoke.mockRejectedValue(new Error('database is locked'));
     const { container } = renderBanner();
     await flush();
     expect(container.querySelector('.readiness-banner')).toBeNull();
+
+    // Состояние осталось неизвестным — следующий снимок его исправит.
+    emit('readiness:changed', MISSING);
+    expect(container.querySelector('.readiness-banner')).not.toBeNull();
   });
 
   test('ошибка скачивания — сообщение и «Повторить»', async () => {

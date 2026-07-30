@@ -27,6 +27,8 @@ interface PresetPickerProps {
   statuses: Record<string, ModelStatus>;
   /** id моделей, которые качаются прямо сейчас. */
   downloadingIds: Set<string>;
+  /** Идёт докачка — размер менять нельзя. */
+  busy: boolean;
   recommendation: LocalEnginePreset | null;
   onPick: (preset: LocalEnginePreset) => void;
 }
@@ -36,6 +38,7 @@ export function PresetPicker({
   specs,
   statuses,
   downloadingIds,
+  busy,
   recommendation,
   onPick,
 }: PresetPickerProps) {
@@ -77,11 +80,16 @@ export function PresetPicker({
                       : t('localEngine.statusAbsent')}
                 </span>
               }
+              // Пока идёт докачка, сменить размер нельзя: очередь на бэкенде
+              // одна, и второй запрос дожидался бы первого — со стороны это
+              // выглядело бы как «нажал, ничего не произошло».
+              disabled={busy}
               onClick={() => onPick(p)}
             />
           );
         })}
       </div>
+      {busy && <p className="set-hint">{t('localEngine.presetLockedWhileDownloading')}</p>}
     </div>
   );
 }

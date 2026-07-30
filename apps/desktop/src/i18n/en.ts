@@ -707,13 +707,7 @@ export const en: TranslationStrings = {
     descCorrupted: 'File corrupted or version changed. Delete and download again.',
     descMissing:
       'Biometric matching is off. Download the model so Wotold can suggest who is speaking. Size ~25 MB, downloads once in the background.',
-    btnDownload: '↓ Download {size}',
-    btnRedownload: '↻ Re-download',
-    btnDownloading: 'Downloading…',
-    btnDelete: 'Delete',
     mb: '{n} MB',
-    verifyFailed:
-      'SHA256 mismatch — file corrupted or model version changed. Try again.',
   },
 
   localEngine: {
@@ -732,6 +726,7 @@ export const en: TranslationStrings = {
       quality: 'accuracy ~97% · slow',
     },
     presetRecommend: 'Recommended',
+    presetLockedWhileDownloading: 'The size stays put while downloads run — wait them out.',
     modelLabel: {
       whisperSmall: 'Speech module · S',
       whisperMedium: 'Speech module · M',
