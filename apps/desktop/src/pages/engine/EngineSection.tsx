@@ -161,6 +161,7 @@ export function EngineSection() {
 
       {!loading && (
         <SettingRow
+          settingId="keep-resident"
           label={t('localEngine.keepResidentLabel')}
           hint={t('localEngine.keepResidentHint')}
           align="top"

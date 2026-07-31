@@ -5,8 +5,13 @@
 
 import type { ReactNode } from 'react';
 
+import { settingDomId } from '../pages/settingsIndex';
+
 interface SettingRowProps {
   label: ReactNode;
+  /** [B34.4] Якорь из `SETTINGS_ENTRIES` — по нему палитра ⌘K прокручивает к
+   *  строке и подсвечивает её. Без него строка просто не ищется по имени. */
+  settingId?: string;
   hint?: ReactNode;
   control?: ReactNode;
   /** Chip/бейдж рядом с label (нужно Permissions). */
@@ -20,6 +25,7 @@ interface SettingRowProps {
 
 export function SettingRow({
   label,
+  settingId,
   hint,
   control,
   labelAdornment,
@@ -31,6 +37,7 @@ export function SettingRow({
   return (
     <div
       className="setting-row"
+      id={settingId ? settingDomId(settingId) : undefined}
       data-align={align === 'top' ? 'top' : undefined}
       data-last={last ? 'true' : undefined}
       data-disabled={disabled ? 'true' : undefined}

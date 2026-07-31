@@ -347,24 +347,23 @@ export function InboxView({
     // viewport so the .view-head navbar spans flush (rail→right edge) and the
     // table scrolls in its own region below — same pattern as Contacts/Settings.
     <div
-      className="main"
-      style={{
-        margin: '-34px -44px',
-        height: '100vh',
-        display: active ? undefined : 'none',
-      }}
+      className="main page-bleed"
+      style={{ display: active ? undefined : 'none' }}
     >
       <ViewHead icon="inbox" title={t('nav.calls')} count={calls?.length} countTone="line">
+        {/* [B34.2] Обёртка по содержимому: раньше поле и фильтр делили общий
+            бюджет 480px, и на окне 980px поиск выходил заметно уже, чем на
+            контактах с ассистентом. Теперь ширина поля одна на все страницы
+            (--search-w), а фильтр к ней не приплюсовывается. */}
         <div
           style={{
             display: 'flex',
             gap: 6,
-            flex: '1 1 auto',
-            maxWidth: 480,
+            flex: '0 0 auto',
             marginLeft: 10,
           }}
         >
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: '0 0 var(--search-w)', minWidth: 0 }}>
             <OmniBar
               facets={facets}
               setFacets={setFacets}

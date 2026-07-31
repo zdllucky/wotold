@@ -48,6 +48,7 @@ export function LabsSection() {
       )}
 
       <SettingRow
+        settingId="summary-v2"
         label={t('settings.summaryV2Label')}
         hint={t('settings.summaryV2Hint')}
         align="top"

@@ -10,6 +10,7 @@ use tauri::{AppHandle, State};
 use crate::{
     audio::macos::{self as audio_macos},
     audio::permissions::{self, PermissionsStatus},
+    audio::silence_watch::SilenceControl,
     call_store::CallStore,
     db::{self, Call},
     events::EventBus,
@@ -38,7 +39,7 @@ pub struct RecordingState {
 
 /// [W2] Снимок DB-полей паузы для построения RecordingState.
 async fn pause_snapshot(
-    state: &State<'_, AppState>,
+    state: &AppState,
     call_id: &CallId,
 ) -> Result<(Option<String>, i64), AppError> {
     let call = crate::db::get_call(&state.db, call_id.as_str())
@@ -112,7 +113,20 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
             None
         }
     };
-    let orchestrator_channels = chunked_setup.as_ref().map(|s| s.channels.clone());
+    // [T2] Наблюдатель тишины поднимается независимо от chunked-режима: без
+    // preset'а `prepare_chunked_setup` вернёт None, а тишину ловить всё равно
+    // надо. `Ok(None)` — обе настройки выключены, канала не будет вовсе.
+    let silence_tx = match super::silence::spawn_silence_watch(&app, &state).await {
+        Ok(tx) => tx,
+        Err(e) => {
+            log::warn!("silence_watch disabled (settings read failed): {e}");
+            None
+        }
+    };
+    let fanout = audio_macos::DispatcherFanout {
+        orchestrator: chunked_setup.as_ref().map(|s| s.channels.clone()),
+        silence_tx,
+    };
 
     // [M13 fix] Chunk-0 layout: при chunked-режиме sidecar пишет первый chunk
     // прямо в `chunks/0/` (не в root), чтобы `run_chunk(0)` находил его по
@@ -135,7 +149,7 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
         sidecar_system,
         mic_path,
         system_path,
-        orchestrator_channels,
+        fanout,
     )
     .await
     {
@@ -155,6 +169,10 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
         Err(e) => {
             // Откат: помечаем call как failed чтобы он не висел в "recording" навсегда.
             let _ = crate::db::fail_recording(&state.db, &call.id).await;
+            // [T2] И гасим наблюдателя: он уже поднят, но записи не будет —
+            // иначе задача осталась бы висеть с живым control-каналом до
+            // следующего старта, который затёр бы ручки.
+            super::silence::stop_silence_watch(&state).await;
             Err(e)
         }
     }
@@ -164,10 +182,38 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
 /// не обрабатываем). Держать в синхроне с i18n `recording.tooShort {sec:30}`.
 pub const MIN_RECORDING_SEC: f64 = 30.0;
 
+/// [T5 review] «Случайное нажатие» — запись, которую нужно снести целиком
+/// вместе с каталогом, а не отдавать в пайплайн.
+///
+/// Смотрит на **wall-clock** за вычетом пауз, а НЕ на подрезанную длительность.
+/// Разница появилась с авто-стопом: у получасовой записи с замьюченным
+/// микрофоном подрезанная длительность — секунды, и гейт по ней удалил бы
+/// строку звонка вместе со всем `calls/<id>/` молча. Признак случайного
+/// нажатия — что запись вообще шла недолго, а не что в ней мало звука.
+fn is_accidental_tap(elapsed_ms: i64, paused_ms: i64) -> bool {
+    let sec = (elapsed_ms - paused_ms).max(0) as f64 / 1000.0;
+    sec < MIN_RECORDING_SEC
+}
+
 #[tauri::command]
 pub async fn stop_recording(
     app: AppHandle,
     state: State<'_, AppState>,
+) -> Result<Option<Call>, AppError> {
+    stop_recording_inner(&app, &state, None).await
+}
+
+/// [T5/R15] Общее тело стопа для ручной команды и авто-стопа по тишине.
+///
+/// `trim_at_ms = None` — ручной стоп: поведение прежнее, аудио не трогаем
+/// (решение владельца — резать только авто-остановленное).
+/// `Some(ms)` — авто-стоп: всё после точки реза заведомо тишина, поэтому
+/// длительность считается от неё, а не по wall-clock, и точка кладётся в
+/// `calls.silence_trim_ms` — по ней пайплайн подрежет WAV и транскрипт.
+pub(crate) async fn stop_recording_inner(
+    app: &AppHandle,
+    state: &AppState,
+    trim_at_ms: Option<u64>,
 ) -> Result<Option<Call>, AppError> {
     let session = {
         let mut guard = state.recording.lock().await;
@@ -202,6 +248,10 @@ pub async fn stop_recording(
     // [M13.2.1] Drop pause_tx — recv() arm orchestrator'а получит None →
     // wildcard match → no-op. Stop сигнал выше уже триггерит break.
     state.orchestrator_pause_tx.lock().await.take();
+    // [T2] Погасить наблюдателя тишины. Ручки живут ровно столько, сколько
+    // сессия; следующий start поднимет новые. Задача и сама вышла бы на
+    // закрытии `rms_tx`, но ждать терминального события сайдкара незачем.
+    super::silence::stop_silence_watch(state).await;
 
     let result = audio_macos::stop(session).await;
 
@@ -234,10 +284,26 @@ pub async fn stop_recording(
                 })
                 .unwrap_or(0);
             let paused_ms = paused_total_ms.saturating_add(lingering_paused_ms);
-            let total_sec = (elapsed_ms - paused_ms).max(0) as f64 / 1000.0;
+            // [T5] Авто-стоп: длительность считается до точки реза. Всё после
+            // неё — тишина, которую пайплайн отрежет; оставить здесь wall-clock
+            // значило бы показать «звонок 3 часа» для 25-минутного разговора и
+            // разойтись с длиной WAV в плеере.
+            let effective_ms = match trim_at_ms {
+                Some(trim) => (trim as i64).min(elapsed_ms),
+                None => elapsed_ms,
+            };
+            let total_sec = (effective_ms - paused_ms).max(0) as f64 / 1000.0;
             // [min-duration] <30с — отбрасываем: удаляем строку звонка + temp
             // WAV, пайплайн НЕ пускаем. Фронт покажет тост «слишком коротко».
-            if total_sec < MIN_RECORDING_SEC {
+            //
+            // [T5 review] Гейт смотрит на wall-clock, а НЕ на подрезанную
+            // длительность. Его смысл — «случайное нажатие», и признак этого
+            // именно wall-clock. На авто-стопе подрезанная длительность может
+            // быть секундами при получасовой записи (микрофон замьючен, захват
+            // системы запрещён — RMS ноль с самого начала), и гейт по ней снёс
+            // бы строку звонка вместе со всем каталогом `calls/<id>/` молча.
+            // Пользователь вернулся бы к пустому списку без единого следа.
+            if is_accidental_tap(elapsed_ms, paused_ms) {
                 // Сначала DB-удаление; файлы трём ТОЛЬКО при успехе — иначе
                 // получим ghost-строку 'recording' с удалёнными WAV (на старте
                 // reconcile зациклится). remove_call_dir сносит весь calls/<id>/
@@ -254,20 +320,31 @@ pub async fn stop_recording(
                         log::warn!("min-duration discard: delete call {call_id} failed: {e}");
                     }
                 }
-                EventBus::new(Some(&app)).recording_state_changed();
+                EventBus::new(Some(app)).recording_state_changed();
                 return Ok(None);
+            }
+            // [T5] Точка реза запоминается ДО finish_recording: пайплайн
+            // стартует из `spawn_finalize_and_pipeline` ниже и обязан увидеть
+            // её в БД, иначе подрежет не тот звонок или не подрежет вовсе.
+            if let Some(trim) = trim_at_ms {
+                if let Err(e) = crate::db::set_silence_trim_ms(&state.db, &call_id, trim).await {
+                    // Рез не критичен для самой записи: аудио и транскрипт
+                    // останутся полными, просто с тихим хвостом. Ронять из-за
+                    // этого готовый звонок было бы хуже.
+                    log::warn!("silence trim point not persisted for {call_id}: {e}");
+                }
             }
             let call = crate::db::finish_recording(&state.db, &call_id, total_sec).await?;
             (call, (total_sec * 1000.0) as u64)
         }
         Err(e) => {
             let _ = crate::db::fail_recording(&state.db, &call_id).await;
-            EventBus::new(Some(&app)).recording_state_changed();
+            EventBus::new(Some(app)).recording_state_changed();
             return Err(e);
         }
     };
 
-    EventBus::new(Some(&app)).recording_state_changed();
+    EventBus::new(Some(app)).recording_state_changed();
 
     // [M13 fix] Background finalize: (1) await orchestrator (drain rotated
     // chunks + получить final-chunk координаты) → (2) обработать открытый
@@ -276,8 +353,8 @@ pub async fn stop_recording(
     // блокировать Stop — команда возвращает calls row (status=processing)
     // сразу, как раньше (M2.4-2.5).
     spawn_finalize_and_pipeline(
-        &state,
-        &app,
+        state,
+        app,
         CallId::from_db(&call_id),
         mic_path,
         system_path,
@@ -315,7 +392,7 @@ fn plan_final_chunk(rows: &[db::chunks::ChunkRow], k: u32) -> FinalChunkAction {
 /// открытый финальный chunk, затем запускает pipeline. Не блокирует Stop.
 #[allow(clippy::too_many_arguments)]
 fn spawn_finalize_and_pipeline(
-    state: &State<'_, AppState>,
+    state: &AppState,
     app: &AppHandle,
     call_id: CallId,
     mic_path: std::path::PathBuf,
@@ -446,6 +523,25 @@ async fn process_final_chunk(
     Ok(())
 }
 
+/// [T2] Один сигнал паузы/возобновления на всех наблюдателей активной записи.
+/// Отдельным хелпером, потому что их двое — `chunk_orchestrator` и
+/// `silence_watch` — и они обязаны видеть одно и то же: «одинаковый контракт,
+/// разная зрелость» — главный источник будущих багов в этом репо (правило 2).
+///
+/// [M13.2.1] Fire-and-forget: буфер каналов 8 покрывает burst pause/resume от
+/// рук на UI, при переполнении дроп безопасен — следующий цикл починит.
+async fn signal_capture_paused(state: &AppState, paused: bool) {
+    if let Some(tx) = state.orchestrator_pause_tx.lock().await.as_ref() {
+        let _ = tx.try_send(paused);
+    }
+    let control = if paused {
+        SilenceControl::Pause
+    } else {
+        SilenceControl::Resume
+    };
+    super::silence::signal_silence_watch(state, control).await;
+}
+
 /// [TD-07] Pause активную запись — включая сам ЗАХВАТ.
 ///
 /// Порядок принципиален: сначала команда сайдкару, только потом БД. Если
@@ -476,12 +572,7 @@ pub async fn pause_recording(
         }
     }
     crate::db::pause_call(&state.db, &call_id).await?;
-    // [M13.2.1] Fire-and-forget pause сигнал в orchestrator (если активен).
-    // Channel buffer=8 покрывает burst pause/resume; на full — drop OK
-    // (next pause/resume цикл починит state).
-    if let Some(tx) = state.orchestrator_pause_tx.lock().await.as_ref() {
-        let _ = tx.try_send(true);
-    }
+    signal_capture_paused(&state, true).await;
     let (paused_at, paused_total_ms) = pause_snapshot(&state, &CallId::from_db(&call_id)).await?;
     EventBus::new(Some(&app)).recording_state_changed();
     Ok(RecordingState {
@@ -515,10 +606,7 @@ pub async fn resume_recording(
         }
     }
     crate::db::resume_call(&state.db, &call_id).await?;
-    // [M13.2.1] Fire-and-forget resume сигнал в orchestrator.
-    if let Some(tx) = state.orchestrator_pause_tx.lock().await.as_ref() {
-        let _ = tx.try_send(false);
-    }
+    signal_capture_paused(&state, false).await;
     let (paused_at, paused_total_ms) = pause_snapshot(&state, &CallId::from_db(&call_id)).await?;
     EventBus::new(Some(&app)).recording_state_changed();
     Ok(RecordingState {
@@ -576,6 +664,43 @@ pub fn open_system_privacy_pane(pane: String) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use db::chunks::ChunkRow;
+
+    // ── [T5 review] Гейт «случайное нажатие». Регрессия: пока он смотрел на
+    //    подрезанную длительность, авто-стоп сносил получасовую запись с
+    //    замьюченным микрофоном вместе с каталогом и без единого следа в UI.
+
+    #[test]
+    fn short_tap_is_discarded() {
+        assert!(is_accidental_tap(5_000, 0));
+        assert!(is_accidental_tap(29_999, 0));
+    }
+
+    #[test]
+    fn long_recording_is_kept() {
+        assert!(!is_accidental_tap(30_000, 0));
+        assert!(!is_accidental_tap(30 * 60 * 1_000, 0));
+    }
+
+    #[test]
+    fn pause_time_does_not_count_towards_the_gate() {
+        // Минута записи, из них 50 секунд на паузе — реального звука 10с.
+        assert!(is_accidental_tap(60_000, 50_000));
+    }
+
+    #[test]
+    fn auto_stopped_silent_recording_survives_the_gate() {
+        // Полчаса записи, из которых звук был только первые пять секунд
+        // (микрофон замьючен, захват системы запрещён). Подрезанная
+        // длительность — 5с, но удалять получасовую запись нельзя: это не
+        // случайное нажатие, а сломанный захват, и юзер должен это увидеть.
+        let elapsed_ms = 30 * 60 * 1_000;
+        let trimmed_ms = 5_000;
+        assert!(!is_accidental_tap(elapsed_ms, 0));
+        assert!(
+            is_accidental_tap(trimmed_ms, 0),
+            "по подрезанной длительности гейт сработал бы — именно это и чинили"
+        );
+    }
 
     fn row(idx: u32, status: &str) -> ChunkRow {
         ChunkRow {

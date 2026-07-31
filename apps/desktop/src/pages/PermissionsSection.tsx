@@ -17,6 +17,8 @@ type Target = 'microphone' | 'screen_recording' | 'accessibility';
 interface Row {
   target: Target;
   pane: SystemPane;
+  /** [B34.4] Якорь из `SETTINGS_ENTRIES` — по нему палитра подсвечивает строку. */
+  settingId: string;
   labelKey: 'permissions.rowMic' | 'permissions.rowScreen' | 'permissions.rowAccessibility';
   descKey:
     | 'permissions.rowMicDesc'
@@ -28,18 +30,21 @@ const ROWS: Row[] = [
   {
     target: 'microphone',
     pane: 'microphone',
+    settingId: 'perm-mic',
     labelKey: 'permissions.rowMic',
     descKey: 'permissions.rowMicDesc',
   },
   {
     target: 'screen_recording',
     pane: 'screen_recording',
+    settingId: 'perm-screen',
     labelKey: 'permissions.rowScreen',
     descKey: 'permissions.rowScreenDesc',
   },
   {
     target: 'accessibility',
     pane: 'accessibility',
+    settingId: 'perm-accessibility',
     labelKey: 'permissions.rowAccessibility',
     descKey: 'permissions.rowAccessibilityDesc',
   },
@@ -97,6 +102,7 @@ export function PermissionsSection() {
         return (
           <SettingRow
             key={row.target}
+            settingId={row.settingId}
             label={t(row.labelKey)}
             labelAdornment={<PermChip status={current} />}
             hint={t(row.descKey)}

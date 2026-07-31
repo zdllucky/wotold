@@ -50,6 +50,13 @@ pub const RECORDING_DURATION: &str = "recording:duration";
 /// `RecordingProvider` мирror гарантированно in sync. Payload пустой —
 /// слушатели делают `getRecordingState()` для свежего snapshot'а.
 pub const RECORDING_STATE: &str = "recording:state";
+/// [T2/R15] В идущей записи столько-то минут тишины — предложить остановить.
+/// Payload — `RecordingSilencePromptEvent`. Фронт поднимает in-app баннер и
+/// нативное уведомление (строки из i18n, не из Rust).
+pub const RECORDING_SILENCE_PROMPT: &str = "recording:silence_prompt";
+/// [T5/R15] Запись остановлена самим приложением по тишине, тихий хвост
+/// подрезан. Payload — `RecordingAutoStoppedEvent`.
+pub const RECORDING_AUTO_STOPPED: &str = "recording:auto_stopped";
 /// [Q] Снапшот состояния очередей тяжёлых ресурсов (stt/diarization/llm) —
 /// эмитится на каждый transition (enqueue/acquire/release). Payload —
 /// `resource_queue::QueueStateEvent` (generic emit — без цикла events↔pipeline).
@@ -153,6 +160,25 @@ pub struct RecapProgressEvent {
 pub struct RecordingDurationEvent {
     pub call_id: String,
     pub duration_sec: i64,
+}
+
+/// [T2/R15] Тишина в идущей записи перешагнула порог подсказки.
+/// `auto_stop_in_ms` — сколько осталось до авто-стопа, если юзер промолчит;
+/// `None` = настройка `never`, стопа не будет.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordingSilencePromptEvent {
+    pub call_id: String,
+    pub silent_for_ms: u64,
+    pub auto_stop_in_ms: Option<u64>,
+}
+
+/// [T5/R15] Запись остановлена по тишине. `trimmed_ms` — сколько тихого хвоста
+/// отрезано (0 если резать было нечего).
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordingAutoStoppedEvent {
+    pub call_id: String,
+    pub silent_for_ms: u64,
+    pub trimmed_ms: u64,
 }
 
 /// [F3] Усечённое превью промежуточного результата refine-шага —
@@ -312,6 +338,16 @@ impl<'a> EventBus<'a> {
         self.emit(RECORDING_STATE, &());
     }
 
+    /// [T2/R15] Тишина перешагнула порог подсказки.
+    pub fn recording_silence_prompt(&self, e: &RecordingSilencePromptEvent) {
+        self.emit(RECORDING_SILENCE_PROMPT, e);
+    }
+
+    /// [T5/R15] Запись остановлена по тишине, хвост подрезан.
+    pub fn recording_auto_stopped(&self, e: &RecordingAutoStoppedEvent) {
+        self.emit(RECORDING_AUTO_STOPPED, e);
+    }
+
     /// Снимок готовности движка. Generic'ом — чтобы не заводить цикл
     /// events ↔ local_engine.
     pub fn readiness_changed<T: Serialize + Clone>(&self, payload: &T) {
@@ -368,6 +404,16 @@ mod tests {
             call_id: "c1".into(),
             duration_sec: 600,
         });
+        bus.recording_silence_prompt(&RecordingSilencePromptEvent {
+            call_id: "c1".into(),
+            silent_for_ms: 900_000,
+            auto_stop_in_ms: Some(900_000),
+        });
+        bus.recording_auto_stopped(&RecordingAutoStoppedEvent {
+            call_id: "c1".into(),
+            silent_for_ms: 1_800_000,
+            trimmed_ms: 1_795_000,
+        });
     }
 
     #[test]
@@ -387,6 +433,8 @@ mod tests {
         assert_eq!(STT_PROGRESS, "stt:progress");
         assert_eq!(RECAP_STEP, "recap:step");
         assert_eq!(QUEUE_STATE, "queue:state");
+        assert_eq!(RECORDING_SILENCE_PROMPT, "recording:silence_prompt");
+        assert_eq!(RECORDING_AUTO_STOPPED, "recording:auto_stopped");
         assert_eq!(RECORDING_DURATION, "recording:duration");
         assert_eq!(ASSISTANT_STATUS, "assistant:status");
         assert_eq!(READINESS_CHANGED, "readiness:changed");

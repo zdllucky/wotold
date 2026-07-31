@@ -695,10 +695,11 @@ mod tests {
         }
 
         // Assembly: 3 chunk'а с offset'ами.
-        let (mic_t, _sys_t) = chunk_assembly::load_chunked_transcripts(&db_t.pool, TEST_CALL_A)
-            .await
-            .unwrap()
-            .unwrap();
+        let (mic_t, _sys_t) =
+            chunk_assembly::load_chunked_transcripts(&db_t.pool, TEST_CALL_A, None)
+                .await
+                .unwrap()
+                .unwrap();
         assert_eq!(
             mic_t.segments.len(),
             3,

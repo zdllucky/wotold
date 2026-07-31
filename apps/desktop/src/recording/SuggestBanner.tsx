@@ -10,10 +10,11 @@
 //   - role="status" + aria-live="polite" — анонс без воровства фокуса.
 //   - Buttons имеют явные aria-label'ы.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { useI18n } from '../i18n';
+import { notifyNative } from '../notify';
 
 import { useRecording } from './RecordingContext';
 
@@ -25,10 +26,21 @@ interface SuggestPayload {
 
 const AUTO_DISMISS_MS = 30_000;
 
-export function SuggestBanner() {
+interface SuggestBannerProps {
+  /** [T7] Старт через consent-гейт владельца (`App.onStart`). До T7 баннер
+   *  звал `rec.start()` напрямую и обходил модал согласия — единственный путь
+   *  старта, который это делал. */
+  onStart: () => Promise<void>;
+}
+
+export function SuggestBanner({ onStart }: SuggestBannerProps) {
   const { t } = useI18n();
   const rec = useRecording();
   const [pending, setPending] = useState<SuggestPayload | null>(null);
+  // Слушатель живёт всё время — без ref уведомление осталось бы на локали
+  // первого рендера после смены языка в настройках.
+  const tRef = useRef(t);
+  tRef.current = t;
 
   // ── Subscribe to backend event. Drop пока recording активен (probe и так
   //    подавит emit на backend, но это double-defence на случай гонок).
@@ -40,6 +52,12 @@ export function SuggestBanner() {
         (event) => {
           if (rec.status.kind !== 'idle') return;
           setPending(event.payload);
+          // [T7] Нативный баннер поднимает фронт, а не Rust: до T7 текст был
+          // русским литералом в `call_detect.rs` (нарушение правила 4).
+          void notifyNative(
+            tRef.current('recording.suggestTitle', { app: event.payload.app_name }),
+            tRef.current('recording.suggestBody'),
+          );
         },
       );
     })();
@@ -68,11 +86,11 @@ export function SuggestBanner() {
 
   if (!pending) return null;
 
-  const onStart = async () => {
+  const onStartClick = async () => {
     setPending(null);
     if (rec.busy || rec.status.kind !== 'idle') return;
     try {
-      await rec.start();
+      await onStart();
     } catch {
       /* Ошибка surface'ит через rec.error; banner свою работу сделал. */
     }
@@ -99,7 +117,7 @@ export function SuggestBanner() {
         <button
           type="button"
           className="btn btn--primary btn--sm"
-          onClick={() => void onStart()}
+          onClick={() => void onStartClick()}
           disabled={rec.busy}
         >
           {t('recording.suggestStart')}

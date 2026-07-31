@@ -110,16 +110,8 @@
 }
 .muted  { color: var(--text-3); }
 .subtle { color: var(--text-faint); }
-.app-main {
-  flex: 1;
-  min-width: 0;
-  height: 100vh;
-  padding: 34px 44px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: none;
-  background: var(--bg);
-}
+/* [B34.3] `.app-main` переехал в wk.css — это layout-примитив, и там же
+   лежат его медиазапросы, которые из этого файла перебивались. */
 .btn--quiet { color: var(--text-3); padding: 6px 10px; }
 .btn--quiet:hover { color: var(--text); }
 .btn--sm { padding: 6px 12px; font-size: 12.5px; }

@@ -24,4 +24,6 @@ export type DegradedFlag =
    *  чтобы дорожка не уехала относительно системной. */
   | 'mic_track_gap_padded'
   /** [TD-45] То же на системной дорожке. */
-  | 'system_track_gap_padded';
+  | 'system_track_gap_padded'
+  /** [T5/R15] Запись остановлена приложением после тишины, тихий хвост отрезан. */
+  | 'auto_stopped_on_silence';

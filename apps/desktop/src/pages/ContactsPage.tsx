@@ -241,9 +241,9 @@ export function ContactsPage({ onOpenCall }: ContactsPageProps = {}) {
   const activeId = activeContact?.id ?? null;
 
   return (
-    <div className="main" style={{ margin: '-34px -44px', height: '100vh' }}>
+    <div className="main page-bleed">
       <ViewHead icon="users" title={t('contacts.title')} count={contacts.length} countTone="line">
-        <div style={{ flex: '1 1 auto', maxWidth: 300, marginLeft: 'var(--s2)' }}>
+        <div style={{ flex: '0 0 var(--search-w)', marginLeft: 'var(--s2)' }}>
           <div className="input" style={{ height: 32 }}>
             <Icon name="search" size={15} className="iico" />
             <input

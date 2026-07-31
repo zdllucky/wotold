@@ -14,6 +14,7 @@ pub mod chunked_setup;
 pub mod contacts;
 #[cfg(target_os = "macos")]
 pub mod local_engine;
+pub mod notify;
 pub mod orphan_reconcile;
 pub mod parked_resume;
 pub mod pipeline;
@@ -21,6 +22,8 @@ pub mod recording;
 pub mod recovery;
 pub mod settings;
 pub mod share;
+#[cfg(target_os = "macos")]
+pub mod silence;
 pub mod speakers;
 pub mod widget;
 
@@ -35,11 +38,14 @@ pub use chunk_retry::*;
 pub use contacts::*;
 #[cfg(target_os = "macos")]
 pub use local_engine::*;
+pub use notify::*;
 pub use parked_resume::*;
 pub use pipeline::*;
 pub use recording::*;
 pub use recovery::*;
 pub use settings::*;
 pub use share::*;
+#[cfg(target_os = "macos")]
+pub use silence::*;
 pub use speakers::*;
 pub use widget::*;

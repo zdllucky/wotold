@@ -23,6 +23,7 @@ use crate::pipeline::owner_identify::identify_owner_speaker;
 use crate::pipeline::speaker_reclustering::{
     agglomerative_cluster, EmbeddingPoint, DEFAULT_COSINE_THRESHOLD,
 };
+use crate::pipeline::transcript_cutoff::{self, clip_segment};
 use crate::providers::transcription::{DiarizedTranscript, TranscriptSegment};
 use crate::{db, AppError};
 
@@ -45,11 +46,18 @@ const ASSEMBLED_PROVIDER: &str = "local-chunked";
 pub async fn load_chunked_transcripts(
     pool: &SqlitePool,
     call_id: &str,
+    cutoff_ms: Option<u64>,
 ) -> Result<Option<(DiarizedTranscript, DiarizedTranscript)>, AppError> {
+    let cutoff_sec = transcript_cutoff::cutoff_sec(cutoff_ms);
     let rows = db::chunks::list_chunks_by_call(pool, call_id).await?;
     let done: Vec<_> = rows
         .into_iter()
         .filter(|r| r.status == "done" && r.transcript_json.is_some())
+        // [T6/R15] Чанк целиком за точкой реза — тишина, которую whisper уже
+        // прогнал во время записи. Без этого рез корневого WAV ничего не
+        // решает: галлюцинации с тихого хвоста собрались бы в транскрипт и
+        // уехали в рекап.
+        .filter(|r| transcript_cutoff::chunk_is_before_cutoff(r.start_ms, cutoff_ms))
         .collect();
     if done.is_empty() {
         return Ok(None);
@@ -98,6 +106,9 @@ pub async fn load_chunked_transcripts(
         for mut seg in mic.segments {
             seg.start += offset_sec;
             seg.end += offset_sec;
+            let Some(seg) = clip_segment(seg, cutoff_sec) else {
+                continue;
+            };
             mic_segments.push(seg);
             mic_segment_chunk_idx.push(row.chunk_idx);
         }
@@ -115,6 +126,9 @@ pub async fn load_chunked_transcripts(
             for mut seg in sys.segments {
                 seg.start += offset_sec;
                 seg.end += offset_sec;
+                let Some(seg) = clip_segment(seg, cutoff_sec) else {
+                    continue;
+                };
                 sys_segments.push(seg);
                 sys_segment_chunk_idx.push(row.chunk_idx);
             }
@@ -194,6 +208,8 @@ pub async fn load_chunked_transcripts(
         .map(|s| s.end)
         .fold(0.0_f64, f64::max);
     let duration_sec = duration_from_chunks.max(duration_from_segments);
+    // [T6] `end_ms` пограничного чанка считался до реза.
+    let duration_sec = transcript_cutoff::clamp_duration_sec(duration_sec, cutoff_sec);
 
     let mic_t = DiarizedTranscript {
         version: 1,
@@ -383,7 +399,9 @@ mod tests {
     async fn returns_none_when_no_chunks() {
         let db_t = fresh_db().await;
         insert_call(&db_t.pool, "c1").await;
-        let res = load_chunked_transcripts(&db_t.pool, "c1").await.unwrap();
+        let res = load_chunked_transcripts(&db_t.pool, "c1", None)
+            .await
+            .unwrap();
         assert!(res.is_none());
     }
 
@@ -402,8 +420,107 @@ mod tests {
         )
         .await
         .unwrap();
-        let res = load_chunked_transcripts(&db_t.pool, "c1").await.unwrap();
+        let res = load_chunked_transcripts(&db_t.pool, "c1", None)
+            .await
+            .unwrap();
         assert!(res.is_none());
+    }
+
+    // ── [T6/R15] Отсечка по точке реза. Пограничные случаи покрыты в
+    //    `transcript_cutoff`; здесь — что она реально доезжает до сборки, на
+    //    обеих дорожках и по АБСОЛЮТНЫМ временам (правило 2: mic и system
+    //    собираются двумя почти одинаковыми ветками).
+
+    #[tokio::test]
+    async fn cutoff_drops_chunks_past_the_trim_point_on_both_tracks() {
+        let db_t = fresh_db().await;
+        insert_call(&db_t.pool, "c1").await;
+        let mic_early = fake_transcript(1.0, 2.0, "по делу", "owner");
+        let sys_early = fake_transcript(1.0, 2.0, "и в ответ", "speaker:0");
+        // Локальные времена (6..9) сами по себе левее реза — отбор обязан
+        // идти по АБСОЛЮТНЫМ (606..609 > 605), иначе галлюцинации с тихого
+        // хвоста переживут любую отсечку.
+        let mic_late = fake_transcript(6.0, 9.0, "Субтитры сделал DimaTorzok", "owner");
+        let sys_late = fake_transcript(6.0, 9.0, "Продолжение следует...", "speaker:0");
+        add_done_chunk(
+            &db_t.pool,
+            "c1",
+            0,
+            0,
+            600_000,
+            &mic_early,
+            Some(&sys_early),
+        )
+        .await;
+        add_done_chunk(
+            &db_t.pool,
+            "c1",
+            1,
+            600_000,
+            1_200_000,
+            &mic_late,
+            Some(&sys_late),
+        )
+        .await;
+
+        let (mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1", Some(605_000))
+            .await
+            .unwrap()
+            .unwrap();
+        let mic_texts: Vec<&str> = mic_t.segments.iter().map(|s| s.text.as_str()).collect();
+        let sys_texts: Vec<&str> = sys_t.segments.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(mic_texts, vec!["по делу"]);
+        assert_eq!(sys_texts, vec!["и в ответ"]);
+        // Длительность прижата к резу, а не к `end_ms` выброшенного чанка.
+        assert!(
+            (mic_t.duration_sec - 605.0).abs() < 1e-9,
+            "{}",
+            mic_t.duration_sec
+        );
+    }
+
+    #[tokio::test]
+    async fn cutoff_clips_the_segment_that_crosses_it() {
+        let db_t = fresh_db().await;
+        insert_call(&db_t.pool, "c1").await;
+        let mut mic = fake_transcript(1.0, 2.0, "до реза", "owner");
+        mic.segments.push(TranscriptSegment {
+            start: 3.0,
+            end: 8.0,
+            text: "через рез".into(),
+            speaker_tag: "owner".into(),
+            confidence: None,
+        });
+        add_done_chunk(&db_t.pool, "c1", 0, 0, 600_000, &mic, None).await;
+
+        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1", Some(5_000))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(mic_t.segments.len(), 2);
+        assert!(
+            (mic_t.segments[1].end - 5.0).abs() < 1e-9,
+            "{}",
+            mic_t.segments[1].end
+        );
+    }
+
+    #[tokio::test]
+    async fn no_cutoff_keeps_everything() {
+        // Ручной стоп: результат обязан остаться прежним до сегмента.
+        let db_t = fresh_db().await;
+        insert_call(&db_t.pool, "c1").await;
+        let mic0 = fake_transcript(1.0, 2.0, "первый", "owner");
+        let mic1 = fake_transcript(1.0, 2.0, "второй", "owner");
+        add_done_chunk(&db_t.pool, "c1", 0, 0, 600_000, &mic0, None).await;
+        add_done_chunk(&db_t.pool, "c1", 1, 600_000, 1_200_000, &mic1, None).await;
+
+        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1", None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(mic_t.segments.len(), 2);
+        assert!((mic_t.duration_sec - 1_200.0).abs() < 1e-9);
     }
 
     #[tokio::test]
@@ -414,7 +531,7 @@ mod tests {
         let sys = fake_transcript(2.0, 4.0, "Hi", "speaker:0");
         add_done_chunk(&db_t.pool, "c1", 0, 0, 600_000, &mic, Some(&sys)).await;
 
-        let (mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1")
+        let (mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1", None)
             .await
             .unwrap()
             .unwrap();
@@ -435,7 +552,7 @@ mod tests {
         add_done_chunk(&db_t.pool, "c1", 0, 0, 600_000, &mic0, None).await;
         add_done_chunk(&db_t.pool, "c1", 1, 600_000, 1_200_000, &mic1, None).await;
 
-        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1")
+        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1", None)
             .await
             .unwrap()
             .unwrap();
@@ -461,7 +578,7 @@ mod tests {
         add_done_chunk(&db_t.pool, "c1", 0, 0, 600_000, &mic0, Some(&sys0)).await;
         add_done_chunk(&db_t.pool, "c1", 1, 600_000, 1_200_000, &mic1, None).await;
 
-        let (mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1")
+        let (mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1", None)
             .await
             .unwrap()
             .unwrap();
@@ -484,7 +601,7 @@ mod tests {
         // Финальный chunk короче 10 мин: end_ms=898_000.
         add_done_chunk(&db_t.pool, "c1", 1, 600_000, 898_000, &mic1, None).await;
 
-        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1")
+        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1", None)
             .await
             .unwrap()
             .unwrap();
@@ -518,7 +635,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1")
+        let (mic_t, _) = load_chunked_transcripts(&db_t.pool, "c1", None)
             .await
             .unwrap()
             .unwrap();
@@ -576,7 +693,7 @@ mod tests {
         )
         .await;
 
-        let (mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1")
+        let (mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1", None)
             .await
             .unwrap()
             .unwrap();
@@ -627,7 +744,7 @@ mod tests {
         )
         .await;
 
-        let (_mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1")
+        let (_mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1", None)
             .await
             .unwrap()
             .unwrap();
@@ -670,7 +787,7 @@ mod tests {
         )
         .await;
 
-        let (_mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1")
+        let (_mic_t, sys_t) = load_chunked_transcripts(&db_t.pool, "c1", None)
             .await
             .unwrap()
             .unwrap();

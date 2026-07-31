@@ -37,6 +37,11 @@ pub enum DegradedFlag {
     MicTrackGapPadded,
     /// [TD-45] То же на системной дорожке.
     SystemTrackGapPadded,
+    /// [T5/R15] Запись остановлена приложением после тишины, тихий хвост
+    /// отрезан. Тот же принцип, что у `*_gap_padded`: файл, который
+    /// пользователь считает записью разговора, изменён не им — значит это
+    /// обязано быть видимым, а не только в логе.
+    AutoStoppedOnSilence,
 }
 
 impl DegradedFlag {
@@ -50,6 +55,7 @@ impl DegradedFlag {
             Self::LanguageRepinFailed => "language_repin_failed",
             Self::MicTrackGapPadded => "mic_track_gap_padded",
             Self::SystemTrackGapPadded => "system_track_gap_padded",
+            Self::AutoStoppedOnSilence => "auto_stopped_on_silence",
         }
     }
 }

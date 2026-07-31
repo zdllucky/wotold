@@ -54,7 +54,7 @@ a { color: inherit; text-decoration: none; }
 /* [B27.5] tooltip перенесён в портальный ui/Tooltip (.tooltip в components.css) */
 /* inbox omni-bar + toolbar bits */
 .vh-sep { width: 1px; height: 20px; background: var(--border); flex: 0 0 auto; margin: 0 2px; }
-.omni { position: relative; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px;
+.omni { position: relative; display: flex; align-items: center; gap: 6px; width: 100%; height: 34px; padding: 0 8px;
   background: var(--panel); border: 1px solid var(--border-strong); border-radius: var(--r-sm); transition: border-color var(--fast), box-shadow var(--fast); }
 .omni[data-focus="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .omni-row { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 5px; overflow-x: auto; scrollbar-width: none; }
@@ -82,6 +82,52 @@ a { color: inherit; text-decoration: none; }
 .rw-grip { cursor: grab; color: var(--text-faint); display: inline-flex; padding: 2px; }
 .rw-grip:active { cursor: grabbing; }
 .main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; position: relative; }
+
+/* [B34.3] Колонка контента справа от рейла. Жила в components.css — там она
+   перебивала собственные медиазапросы из global.css (равная специфичность,
+   более поздний импорт), поэтому переехала сюда, к остальной раскладке. */
+.app-main {
+  flex: 1;
+  min-width: 0;
+  height: 100vh;
+  /* Паддинг в переменных: страницы гасят его `.page-bleed`, и раньше обе
+     величины были продублированы константами в шести файлах — на узком окне
+     медиазапрос менял паддинг, а вылет оставался прежним. */
+  --app-pad-y: 34px;
+  --app-pad-x: 44px;
+  padding: var(--app-pad-y) var(--app-pad-x);
+  /* `clip`, а не `auto`/`hidden`. Страница — это `.main` ростом ровно в
+     вьюпорт со своими внутренними скроллерами, снаружи прокручивать нечего.
+     При этом вёрстка сведена в ноль: отрицательные поля гасят паддинг тютелька
+     в тютельку, и любой лишний пиксель в поддереве давал полосу справа и сдвиг
+     всего экрана на пару пикселей. `hidden` не подходит — узел остаётся
+     прокручиваемым программно, и `scrollIntoView` из транскрипта продолжал бы
+     дёргать экран, просто уже без видимой полосы. `clip` контейнер прокрутки
+     не создаёт вовсе. */
+  overflow: clip;
+  overscroll-behavior: none;
+  background: var(--bg);
+}
+
+/* [B34.3] Вылет страницы за паддинг `.app-main`: шапка идёт от края до края,
+   тело занимает вьюпорт целиком. Заменяет шесть инлайновых копий
+   `margin: -34px -44px; height: 100vh`, которые расходились с паддингом на
+   узком окне. */
+.page-bleed {
+  margin: calc(-1 * var(--app-pad-y)) calc(-1 * var(--app-pad-x));
+  height: 100vh;
+}
+
+@media (max-width: 880px) {
+  .app-main { --app-pad-y: 24px; --app-pad-x: 22px; }
+}
+@media (max-width: 640px) {
+  /* [B17] Колоночный режим — снимаем 100vh, чтобы шапка не фиксировалась и
+     страница скроллилась естественно. Ниже min-width окна (960), поэтому в
+     десктопной сборке недостижимо; правило держим ради честности каскада. */
+  .app-main { height: auto; overflow: visible; overscroll-behavior: auto; }
+  .page-bleed { height: auto; }
+}
 
 .view-head {
   display: flex; align-items: center; gap: var(--s2); height: 48px; flex: 0 0 48px;
@@ -414,6 +460,19 @@ textarea.input { padding: 8px 10px; resize: none; line-height: 1.5; }
 .setting-row[data-align="top"] { align-items: flex-start; }
 .setting-row[data-last="true"] { border-bottom: none; }
 .setting-row[data-disabled="true"] { opacity: 0.55; }
+/* [B34.4] Подсветка строки после перехода из палитры ⌘K: пришли по поиску —
+   надо понять, куда именно попали. Отрицательные поля возвращают строке ту же
+   геометрию, чтобы соседи не дёргались, а подсветка снимается через ~1.6с. */
+.setting-row[data-flash="true"] {
+  background: var(--accent-soft);
+  border-radius: var(--r-sm);
+  margin: 0 calc(-1 * var(--s3));
+  padding-left: var(--s3);
+  padding-right: var(--s3);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .setting-row[data-flash="true"] { transition: background var(--slow) var(--ease); }
+}
 .setting-row-text { flex: 1 1 auto; min-width: 0; }
 .setting-row-label { font-size: 13.5px; font-weight: 550; display: flex; align-items: center; gap: 8px; }
 .setting-row-control { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }

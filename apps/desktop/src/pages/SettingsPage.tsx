@@ -10,6 +10,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { humanError } from '../api/errors';
 import {
   CALL_DETECT_COOLDOWNS,
+  SILENCE_AUTO_STOPS,
   getSetting,
   setSetting,
   PREFERRED_LANGUAGES,
@@ -18,6 +19,7 @@ import {
   SETTINGS_KEYS,
   type CallDetectCooldown,
   type PreferredLanguage,
+  type SilenceAutoStop,
 } from '../api/settings';
 import { useI18n } from '../i18n';
 import {
@@ -33,7 +35,6 @@ import {
   Switch,
 } from '../ui';
 import { useResizablePanel } from '../hooks/useResizablePanel';
-import { type IconName } from '../ui/Icon';
 import { HotkeyCapture } from '../components/HotkeyCapture';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { DEFAULT_PAUSE_HOTKEY, DEFAULT_TOGGLE_HOTKEY } from '../utils/hotkey';
@@ -43,42 +44,37 @@ import { EngineSection } from './engine/EngineSection';
 import { PermissionsSection } from './PermissionsSection';
 import { AboutSection } from './AboutSection';
 import { VoiceModelSection } from './VoiceModelSection';
+import {
+  SECTION_ICONS,
+  SECTION_LABEL_KEYS,
+  settingDomId,
+  type SectionId,
+  type SettingsTarget,
+} from './settingsIndex';
 
 // [B22] «Обслуживание» (bulk recap) удалено по фидбеку юзера — Rust-команды
 // regenerate_empty_recaps/cancel_bulk_recap остаются без UI-потребителя.
-type SectionId =
-  | 'appearance'
-  | 'permissions'
-  | 'processing'
-  | 'recording'
-  | 'speakers'
-  | 'labs'
-  | 'privacy'
-  | 'about';
-
+//
+// [B34.4] `SectionId` и `SECTION_ICONS` переехали в `settingsIndex` — их видит
+// палитра ⌘K, чтобы предлагать разделы и отдельные настройки.
 interface SectionMeta {
   id: SectionId;
   label: string;
   hidden?: boolean;
 }
 
-// [B18.5a] v2 rail icon per section (канон wk-settings.jsx SET_SECS:
-// permissions=shield, privacy=lock).
-const SECTION_ICONS: Record<SectionId, IconName> = {
-  appearance: 'sun',
-  processing: 'cpu',
-  permissions: 'shield',
-  recording: 'mic',
-  speakers: 'users',
-  labs: 'bolt',
-  privacy: 'lock',
-  about: 'info',
-};
+/** Сколько держится подсветка строки после перехода из палитры. */
+const HIGHLIGHT_MS = 1600;
 
-export function SettingsPage() {
+interface SettingsPageProps {
+  /** [B34.4] Куда вести из палитры: раздел и (опционально) строка. */
+  target?: SettingsTarget | null;
+}
+
+export function SettingsPage({ target }: SettingsPageProps = {}) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState<SectionId>('appearance');
+  const [section, setSection] = useState<SectionId>(target?.section ?? 'appearance');
   // [B29.5b] Панель разделов: drag-resize + collapse до полосы иконок.
   const panel = useResizablePanel({
     min: 180,
@@ -100,6 +96,12 @@ export function SettingsPage() {
   const [callDetectCooldown, setCallDetectCooldown] = useState<CallDetectCooldown>(
     SETTINGS_DEFAULTS.CALL_DETECT_COOLDOWN_MIN,
   );
+  const [silencePrompt, setSilencePrompt] = useState<boolean>(
+    SETTINGS_DEFAULTS.SILENCE_PROMPT,
+  );
+  const [silenceAutoStop, setSilenceAutoStop] = useState<SilenceAutoStop>(
+    SETTINGS_DEFAULTS.SILENCE_AUTO_STOP,
+  );
   // [W1] Hotkey settings — canonical string format ('Cmd+Shift+KeyR'). Пустая
   // = default из hotkey.ts. UI label/preview через HotkeyCapture.
   const [toggleHotkey, setToggleHotkey] = useState<string>('');
@@ -109,15 +111,25 @@ export function SettingsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [lang, sttLangVal, toggleHk, pauseHk, cdEnabled, cdCooldown] =
-          await Promise.all([
-            getSetting(SETTINGS_KEYS.PREFERRED_LANGUAGE),
-            getSetting(SETTINGS_KEYS.STT_LANG),
-            getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE),
-            getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE),
-            getSetting(SETTINGS_KEYS.CALL_DETECT_ENABLED),
-            getSetting(SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN),
-          ]);
+        const [
+          lang,
+          sttLangVal,
+          toggleHk,
+          pauseHk,
+          cdEnabled,
+          cdCooldown,
+          silPrompt,
+          silAutoStop,
+        ] = await Promise.all([
+          getSetting(SETTINGS_KEYS.PREFERRED_LANGUAGE),
+          getSetting(SETTINGS_KEYS.STT_LANG),
+          getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_TOGGLE),
+          getSetting(SETTINGS_KEYS.RECORDING_HOTKEY_PAUSE),
+          getSetting(SETTINGS_KEYS.CALL_DETECT_ENABLED),
+          getSetting(SETTINGS_KEYS.CALL_DETECT_COOLDOWN_MIN),
+          getSetting(SETTINGS_KEYS.SILENCE_PROMPT),
+          getSetting(SETTINGS_KEYS.SILENCE_AUTO_STOP),
+        ]);
         if (lang) setPreferredLanguage(lang as PreferredLanguage);
         if (sttLangVal) setSttLang(sttLangVal as PreferredLanguage);
         if (toggleHk) setToggleHotkey(toggleHk);
@@ -125,6 +137,12 @@ export function SettingsPage() {
         setCallDetectEnabled(cdEnabled === '1');
         if (cdCooldown && (['3', '5', '10', '15'] as const).includes(cdCooldown as CallDetectCooldown)) {
           setCallDetectCooldown(cdCooldown as CallDetectCooldown);
+        }
+        // [T3] Отсутствие ключа = ON — та же истина, что в Rust
+        // (`load_silence_config` выключает только явные '0'/'false').
+        setSilencePrompt(silPrompt !== '0' && silPrompt !== 'false');
+        if (silAutoStop && SILENCE_AUTO_STOPS.includes(silAutoStop as SilenceAutoStop)) {
+          setSilenceAutoStop(silAutoStop as SilenceAutoStop);
         }
       } catch (e) {
         setError(humanError(e, t));
@@ -149,6 +167,31 @@ export function SettingsPage() {
     const t = setTimeout(() => setSavedTick(0), 1500);
     return () => clearTimeout(t);
   }, [savedTick]);
+
+  // [B34.4] Переход из палитры: открыть раздел и подсветить строку.
+  useEffect(() => {
+    if (!target) return;
+    setSection(target.section);
+  }, [target]);
+
+  useEffect(() => {
+    const anchor = target?.highlight;
+    if (!anchor || loading) return;
+    // Раздел отрисуется в этом же коммите, но узел появится после него —
+    // ищем на следующем кадре, иначе getElementById вернёт null.
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(settingDomId(anchor));
+      if (!el) return;
+      // `nearest`, а не `center`: scrollIntoView листает ВСЕ прокручиваемые
+      // предки, и `center` дёргал бы внешнюю раскладку заодно с колонкой.
+      el.scrollIntoView({ block: 'nearest' });
+      el.setAttribute('data-flash', 'true');
+      // Фокус не забираем: подсветка — это ориентир, а не приглашение
+      // редактировать; кража фокуса сбила бы навигацию с клавиатуры.
+      window.setTimeout(() => el.removeAttribute('data-flash'), HIGHLIGHT_MS);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [target, section, loading]);
 
   if (loading) {
     // [V8.1] Rail (300px, 8 строк) + content shimmer mimics Settings layout.
@@ -190,7 +233,7 @@ export function SettingsPage() {
     // [M14 T-14] «Лаборатория» — experimental feature flags.
     { id: 'labs', label: t('settings.sectionLabs') },
     { id: 'privacy', label: t('settings.sectionPrivacy') },
-    { id: 'about', label: t('update.sectionAbout') },
+    { id: 'about', label: t(SECTION_LABEL_KEYS.about) },
   ];
 
   const activeMeta = NAV.find((s) => s.id === section) ?? NAV[0]!;
@@ -199,12 +242,14 @@ export function SettingsPage() {
     // [B18.9] Shared shell: full-width .view-head (48px) over a flex .view-body.
     // Bleed past .app-main 34/44 padding and fill the viewport so the header bar
     // spans edge-to-edge and the 2-pane body fills below.
-    <div
-      className="main"
-      style={{ margin: '-34px -44px', height: '100vh' }}
-    >
+    <div className="main page-bleed">
       {/* [B18.9] Breadcrumb view-head per prototype: Настройки › {section} + saved. */}
-      <div className="view-head">
+      {/* [B34.1] data-tauri-drag-region="deep" — как в ViewHead. Здесь шапка
+          собрана вручную (breadcrumb вместо иконки с заголовком), и атрибут
+          забыли: окно за верх Настроек не таскалось, а со свёрнутым рейлом эта
+          шапка ещё и `position: fixed` во всю ширину — мёртвой становилась вся
+          верхняя кромка. Дети некликабельны, drag-скрипт их пропустит. */}
+      <div className="view-head" data-tauri-drag-region="deep">
         <Icon name="settings" size={17} style={{ color: 'var(--text-3)' }} />
         <span className="u-faint" style={{ fontSize: 'var(--t-13)' }}>{t('settings.title')}</span>
         <Icon name="chevronRight" size={13} style={{ color: 'var(--text-faint)' }} />
@@ -311,6 +356,10 @@ export function SettingsPage() {
                 setCallDetectEnabled={setCallDetectEnabled}
                 callDetectCooldown={callDetectCooldown}
                 setCallDetectCooldown={setCallDetectCooldown}
+                silencePrompt={silencePrompt}
+                setSilencePrompt={setSilencePrompt}
+                silenceAutoStop={silenceAutoStop}
+                setSilenceAutoStop={setSilenceAutoStop}
                 persist={persist}
               />
             )}
@@ -356,6 +405,10 @@ interface RecordingSectionProps {
   setCallDetectEnabled: (v: boolean) => void;
   callDetectCooldown: CallDetectCooldown;
   setCallDetectCooldown: (v: CallDetectCooldown) => void;
+  silencePrompt: boolean;
+  setSilencePrompt: (v: boolean) => void;
+  silenceAutoStop: SilenceAutoStop;
+  setSilenceAutoStop: (v: SilenceAutoStop) => void;
   persist: (key: string, value: string) => Promise<void>;
 }
 
@@ -372,13 +425,17 @@ function RecordingSection({
   setCallDetectEnabled,
   callDetectCooldown,
   setCallDetectCooldown,
+  silencePrompt,
+  setSilencePrompt,
+  silenceAutoStop,
+  setSilenceAutoStop,
   persist,
 }: RecordingSectionProps) {
   const { t } = useI18n();
   return (
     <div>
       <GroupLabel top={2}>{t('settings.groupLanguages')}</GroupLabel>
-      <SettingRow label={t('settings.sttLangLabel')} hint={t('settings.sttLangHint')} align="top">
+      <SettingRow settingId="stt-lang" label={t('settings.sttLangLabel')} hint={t('settings.sttLangHint')} align="top">
         <Select<PreferredLanguage>
           value={sttLang}
           options={STT_LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
@@ -389,6 +446,7 @@ function RecordingSection({
         />
       </SettingRow>
       <SettingRow
+        settingId="recap-lang"
         label={t('settings.sttRecapLangLabel')}
         hint={t('settings.sttRecapLangHint')}
         align="top"
@@ -406,7 +464,7 @@ function RecordingSection({
 
       {/* [W1] Configurable recording hotkeys. */}
       <GroupLabel>{t('settings.groupHotkeys')}</GroupLabel>
-      <SettingRow label={t('settings.hotkeyToggleLabel')} hint={t('settings.hotkeyToggleHint')}>
+      <SettingRow settingId="hotkey-toggle" label={t('settings.hotkeyToggleLabel')} hint={t('settings.hotkeyToggleHint')}>
         <HotkeyCapture
           value={toggleHotkey}
           defaultHotkey={DEFAULT_TOGGLE_HOTKEY}
@@ -417,6 +475,7 @@ function RecordingSection({
         />
       </SettingRow>
       <SettingRow
+        settingId="hotkey-pause"
         label={t('settings.hotkeyPauseLabel')}
         hint={t('settings.hotkeyPauseHint')}
         last
@@ -434,6 +493,7 @@ function RecordingSection({
       {/* [S1] Auto-detect call popup — opt-in R3 deviation. */}
       <GroupLabel>{t('settings.groupAutoDetect')}</GroupLabel>
       <SettingRow
+        settingId="call-detect"
         label={t('settings.callDetectRowLabel')}
         hint={t('settings.callDetectHint')}
         align="top"
@@ -461,7 +521,7 @@ function RecordingSection({
         />
       </SettingRow>
       {callDetectEnabled && (
-        <SettingRow label={t('settings.callDetectCooldownRowLabel')} last>
+        <SettingRow settingId="call-detect-cooldown" label={t('settings.callDetectCooldownRowLabel')} last>
           <Select<CallDetectCooldown>
             value={callDetectCooldown}
             options={CALL_DETECT_COOLDOWNS.map((n) => ({
@@ -483,6 +543,46 @@ function RecordingSection({
           />
         </SettingRow>
       )}
+
+      {/* [T3/R15] Тишина в идущей записи: подсказка и авто-стоп с подрезкой. */}
+      <GroupLabel>{t('settings.groupSilence')}</GroupLabel>
+      <SettingRow
+        settingId="silence-prompt"
+        label={t('settings.silencePromptRowLabel')}
+        hint={t('settings.silencePromptHint')}
+        align="top"
+      >
+        <Switch
+          checked={silencePrompt}
+          label={t('settings.silencePromptRowLabel')}
+          onChange={(v) => {
+            setSilencePrompt(v);
+            void persist(SETTINGS_KEYS.SILENCE_PROMPT, v ? '1' : '0');
+          }}
+        />
+      </SettingRow>
+      <SettingRow
+        settingId="silence-auto-stop"
+        label={t('settings.silenceAutoStopRowLabel')}
+        hint={t('settings.silenceAutoStopHint')}
+        align="top"
+        last
+      >
+        <Select<SilenceAutoStop>
+          value={silenceAutoStop}
+          options={SILENCE_AUTO_STOPS.map((v) => ({
+            value: v,
+            label:
+              v === 'never'
+                ? t('settings.silenceAutoStopNever')
+                : t('settings.silenceAutoStopOption', { n: v }),
+          }))}
+          onChange={(v) => {
+            setSilenceAutoStop(v);
+            void persist(SETTINGS_KEYS.SILENCE_AUTO_STOP, v);
+          }}
+        />
+      </SettingRow>
     </div>
   );
 }
@@ -504,6 +604,7 @@ function DeleteAllDataSection() {
         </p>
       )}
       <SettingRow
+        settingId="wipe-all-data"
         label={t('settings.wipeBtn')}
         hint={done ? t('settings.wipeDone') : t('settings.wipeRowHint')}
         align="top"

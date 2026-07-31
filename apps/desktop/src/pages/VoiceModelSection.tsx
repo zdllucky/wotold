@@ -95,6 +95,7 @@ export function VoiceModelSection() {
       )}
 
       <SettingRow
+        settingId="auto-bind"
         label={t('settings.speakersAutoBindLabel')}
         hint={t('settings.speakersAutoBindHint')}
         align="top"
@@ -111,6 +112,7 @@ export function VoiceModelSection() {
 
       {autoBindEnabled && (
         <SettingRow
+          settingId="auto-bind-threshold"
           label={t('settings.autoBindThresholdLabel')}
           hint={t('settings.autoBindThresholdHint')}
           align="top"

@@ -216,6 +216,11 @@ pub fn run() {
             commands::disable_call_detect,
             #[cfg(target_os = "macos")]
             commands::is_call_detect_enabled,
+            // [T7] Нативное уведомление со строками из i18n фронтенда.
+            commands::show_notification,
+            // [T7/R15] «Продолжить» из подсказки о тишине.
+            #[cfg(target_os = "macos")]
+            commands::snooze_silence_watch,
             // [M12.4] Local engine model catalog + preset (macOS only — R9).
             #[cfg(target_os = "macos")]
             commands::local_engine_list_catalog,
