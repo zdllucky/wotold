@@ -42,8 +42,13 @@ Requirements:
 git clone https://github.com/zdllucky/wotold.git
 cd wotold
 pnpm install
-pnpm tauri dev
+pnpm --filter @wotold/desktop tauri:dev
 ```
+
+`tauri:dev` — not `tauri dev`. The `tauri.dev.conf.json` overlay gives the dev
+build its own bundle identifier, so it never shares a data directory, keychain
+service, or log file with an installed release. Without the overlay the app
+refuses to start rather than migrating the release database out from under it.
 
 `scripts/dev.sh` clears stale processes and port 5173 before starting, and can
 auto-restart on Rust changes if `watchexec` or `entr` is installed.
@@ -136,11 +141,12 @@ pnpm -r typecheck
 pnpm -r test
 
 # UI: run the real app and check both themes on the screens you touched
-pnpm tauri dev
+pnpm --filter @wotold/desktop tauri:dev
 ```
 
-"Demo" and "show me" mean a real run of the target environment — `pnpm tauri dev`
-for the desktop app. A Vite-only browser preview does not count.
+"Demo" and "show me" mean a real run of the target environment —
+`pnpm --filter @wotold/desktop tauri:dev` for the desktop app. A Vite-only
+browser preview does not count.
 
 ### 4. Coverage
 

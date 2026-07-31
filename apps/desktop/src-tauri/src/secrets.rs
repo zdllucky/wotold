@@ -14,10 +14,11 @@ use keyring::Entry;
 
 use crate::AppError;
 
-const SERVICE: &str = "app.wotold.desktop";
-
 fn entry(account: &str) -> Result<Entry, AppError> {
-    Entry::new(SERVICE, account).map_err(|e| AppError::Other(format!("keychain entry init: {e}")))
+    // [env-split] Service — по identifier сборки: иначе dev перезаписывает
+    // боевые токены пользователя своими тестовыми под тем же именем.
+    Entry::new(crate::app_env::identifier(), account)
+        .map_err(|e| AppError::Other(format!("keychain entry init: {e}")))
 }
 
 /// Записать секрет под generic account-именем. Пустое значение отвергается.

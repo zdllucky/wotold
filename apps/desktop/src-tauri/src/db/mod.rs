@@ -105,9 +105,30 @@ pub async fn init(app_data_dir: &Path) -> Result<SqlitePool, AppError> {
         .connect_with(options)
         .await?;
 
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    if let Err(e) = sqlx::migrate!("./migrations").run(&pool).await {
+        return Err(explain_migrate_error(e, &path));
+    }
 
     Ok(pool)
+}
+
+/// [env-split] Отличает «БД новее приложения» от прочих сбоев миграции.
+///
+/// `VersionMissing` означает ровно одно: в `_sqlx_migrations` есть версия,
+/// которой нет в `migrations/` этой сборки — значит базу трогал более новый
+/// бинарь. Сырой текст sqlx («previously applied but is missing in the
+/// resolved migrations») для пользователя бесполезен, а происходит это при
+/// каждом даунгрейде сборки, поэтому объясняем причину и выход.
+fn explain_migrate_error(err: sqlx::migrate::MigrateError, path: &Path) -> AppError {
+    if let sqlx::migrate::MigrateError::VersionMissing(version) = err {
+        return AppError::Init(format!(
+            "база данных {} создана более новой версией Wotold: в ней применена \
+             миграция {version}, которой нет в этой сборке. Обновите приложение \
+             или запустите ту сборку, что создала базу.",
+            path.display()
+        ));
+    }
+    AppError::Migrate(err)
 }
 
 /// Открывает БД на одиночный pragma integrity_check; если не вернёт 'ok' —
@@ -235,7 +256,7 @@ pub mod test_support {
 #[cfg(test)]
 mod tests {
     use super::test_support::fresh_db;
-    use super::{quarantine_corrupt_db, sidecar_path};
+    use super::{init, quarantine_corrupt_db, sidecar_path};
 
     // ============================================================
     // [TD-15] quarantine_corrupt_db — WAL-сайдкары
@@ -313,5 +334,37 @@ mod tests {
             .unwrap();
         let on: i64 = row.try_get(0).unwrap();
         assert_eq!(on, 1);
+    }
+
+    /// [env-split] БД, размеченная более новой сборкой, обязана объяснить себя.
+    ///
+    /// Ровно этот случай ронял релиз, пока dev и прод делили каталог данных:
+    /// dev накатывал 0025–0027, релизный бинарь знал миграции по 0024, sqlx
+    /// возвращал `VersionMissing`, и `state::init` отдавал Err из `setup()` —
+    /// окно не открывалось, а в логе лежало «migrate: ...» без намёка на то,
+    /// что делать. Каталоги теперь разные, но даунгрейд сборки воспроизводит
+    /// то же самое, поэтому сообщение проверяем тестом.
+    #[tokio::test]
+    async fn init_explains_db_newer_than_binary() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let pool = init(dir.path()).await.expect("первый init");
+
+        // Версия из будущего: миграции с таким номером в бинаре нет и не будет.
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations
+                 (version, description, installed_on, success, checksum, execution_time)
+             VALUES (9999, 'from the future', datetime('now'), 1, X'00', 0)",
+        )
+        .execute(&pool)
+        .await
+        .expect("вставить миграцию из будущего");
+        pool.close().await;
+
+        let err = init(dir.path()).await.expect_err("init обязан отказать");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("более новой версией") && msg.contains("9999"),
+            "ожидали объяснение про новую версию БД, получили: {msg}"
+        );
     }
 }

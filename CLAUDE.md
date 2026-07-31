@@ -89,6 +89,25 @@ docs/                 Паспорт и сопутствующие докуме�
 - **[local-only 0.3]** партнёрские ключи (Soniox/Gladia/Anthropic) и джоба деплоя прокси удалены вместе с облачным сегментом
 - Секреты будущих внешних интеграций (planned, keychain-seam `secrets.rs`) — только в системном keychain пользователя, не в БД, не в логах, не в CI
 
+## Разделение сред (dev ≠ релиз)
+
+Dev-сборка и установленный релиз не делят состояние. До разделения делили всё: один `identifier` в `tauri.conf.json` давал один `app_data_dir()`, dev накатывал в общую `app.db` новые миграции, и релизный бинарь переставал стартовать — sqlx видел применённые версии, которых нет в его `migrations/`, а `state::init(...)?` внутри `setup()` обрывал запуск без окна.
+
+**Dev запускается только через `tauri:dev`** — `pnpm --filter @wotold/desktop tauri:dev` (или `scripts/dev.sh`). Скрипт подкладывает оверлей `apps/desktop/src-tauri/tauri.dev.conf.json` с `identifier: app.wotold.desktop.dev`. Голый `pnpm tauri dev` собирает debug с продовым identifier — `state::init` такой запуск отвергает с инструкцией, а не молча пишет в боевой каталог.
+
+| Что | dev | релиз |
+|---|---|---|
+| Каталог данных | `~/Library/Application Support/app.wotold.desktop.dev` | `.../app.wotold.desktop` |
+| Логи и `panic.log` | `~/Library/Logs/app.wotold.desktop.dev` | `.../app.wotold.desktop` |
+| Keychain service | `app.wotold.desktop.dev` | `app.wotold.desktop` |
+| `single_instance`, `llama-server.pid` | свои | свои |
+| Проверка обновлений | выключена (`WOTOLD_FORCE_UPDATER=1` включает) | включена |
+| Модели (~4GB) | общий `~/Library/Application Support/app.wotold.shared/models`, симлинк `local_engine/models` из обеих сред | там же |
+
+Источник истины — профиль сборки: [`src-tauri/src/app_env.rs`](apps/desktop/src-tauri/src/app_env.rs) отдаёт identifier по `debug_assertions`, а тесты в нём же сверяют оба `tauri.conf`-файла, чтобы они не разъехались молча.
+
+`WOTOLD_APP_DATA_DIR` перекрывает каталог данных и у приложения, и у MCP-сервера (`services/mcp/src/server.ts`) — для support-сценариев и прогонов на копии базы. Для MCP поверх dev-данных переменную задавать обязательно: по умолчанию он читает продовый каталог.
+
 ## Принципы
 
 - **Локальное-первое (и единственное)**: запись, транскрипция, диаризация, саммари, поиск, ассистент, MCP, контакты — всё на устройстве, без сети (единственный сетевой поток — разовое скачивание моделей с HuggingFace)
@@ -156,7 +175,7 @@ docs/                 Паспорт и сопутствующие докуме�
 4. **Verify.** Локально перед коммитом:
    - Rust: `cargo fmt --check`, `cargo check`, `cargo clippy -- -D warnings`, `cargo test`
    - TS: `pnpm -r typecheck`, `pnpm --filter <pkg> test`
-   - UI: live запуск (`pnpm tauri dev`) + проверка **light и dark** для затронутых экранов ([TD-39] раньше здесь стояло «6 theme×accent» — пикер акцентов убран в B18.5, акцент один (графит `ink`), реальных комбинаций две).
+   - UI: live запуск (`pnpm --filter @wotold/desktop tauri:dev`, см. «Разделение сред») + проверка **light и dark** для затронутых экранов ([TD-39] раньше здесь стояло «6 theme×accent» — пикер акцентов убран в B18.5, акцент один (графит `ink`), реальных комбинаций две).
    - Хуки (PostToolUse) делают первые шаги автоматически — но финальная сверка ручная.
 5. **Code review.** Запустить `/code-review` (общий) или язык-специфичный (`/rust-review` для Rust, `code-reviewer` агент для TS) **до** коммита фичи в main. Замечания CRITICAL/HIGH — фиксить. UI-PR должен содержать design-gate alignment block.
 6. **Mark done.** Снять чек-бокс в `docs/ROADMAP.md` и TaskList харнесса одновременно.
@@ -195,7 +214,7 @@ ECC-агенты для теста:
 
 ## Терминология взаимодействия
 
-- **«Демо» / «показать»** = полноценный запуск целевой среды (`pnpm tauri dev` для desktop). НЕ vite-only browser preview, НЕ dev-mock в Safari. Если environment не поднимается — диагностируем причину и чиним, не падаем на упрощённую версию без явного согласования.
+- **«Демо» / «показать»** = полноценный запуск целевой среды (`pnpm --filter @wotold/desktop tauri:dev` для desktop). НЕ vite-only browser preview, НЕ dev-mock в Safari. Если environment не поднимается — диагностируем причину и чиним, не падаем на упрощённую версию без явного согласования.
 - **«Промежуточный итог»** = живой запуск + summary + git log, не только текст.
 
 ## ECC харнесс (W1, W6, W7)
