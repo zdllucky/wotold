@@ -21,8 +21,14 @@ pub(crate) fn install_panic_hook() {
         // Используем DATA_DIR из ENV или fallback на home/.wotold-panic.log:
         // на момент panic AppState может быть не инициализирован.
         let bt = std::backtrace::Backtrace::force_capture();
+        // [env-split] Каталог логов — по identifier сборки, иначе dev и релиз
+        // пишут panic'и в один файл и разбор падения начинается с вопроса «чей».
         let log_dir = std::env::var("HOME")
-            .map(|h| std::path::PathBuf::from(h).join("Library/Logs/app.wotold.desktop"))
+            .map(|h| {
+                std::path::PathBuf::from(h)
+                    .join("Library/Logs")
+                    .join(crate::app_env::identifier())
+            })
             .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"));
         let _ = std::fs::create_dir_all(&log_dir);
         let entry = format!(
@@ -78,6 +84,15 @@ const UPDATE_IDLE_RETRY: Duration = Duration::from_secs(30);
 /// Обязательное обновление ставится само, но никогда не прерывает запись или
 /// обработку: `install_when_idle` ждёт простоя сколько потребуется.
 fn spawn_updater_poll(handle: &AppHandle) {
+    // [env-split] Dev-сборка не обновляется: endpoint отдаёт релизный артефакт,
+    // и обязательное обновление поставило бы его поверх запущенного
+    // `target/debug/wotold-desktop`. Для отладки самого апдейтера — ENV.
+    if cfg!(debug_assertions) && std::env::var("WOTOLD_FORCE_UPDATER").as_deref() != Ok("1") {
+        log::info!(
+            "updater: dev-сборка, проверка обновлений выключена (WOTOLD_FORCE_UPDATER=1 включает)"
+        );
+        return;
+    }
     let app = handle.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(UPDATE_FIRST_CHECK_DELAY).await;

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Wotold Dev",
+  "identifier": "app.wotold.desktop.dev",
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["wotold-dev"]
+      }
+    }
+  }
+}

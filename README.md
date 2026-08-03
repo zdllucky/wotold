@@ -80,8 +80,8 @@ git clone https://github.com/zdllucky/wotold.git
 cd wotold
 pnpm install
 
-# Desktop app
-pnpm tauri dev
+# Desktop app (dev overlay: separate data dir from an installed release)
+pnpm --filter @wotold/desktop tauri:dev
 
 # Local MCP server
 pnpm --filter @wotold/mcp dev

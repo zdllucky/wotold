@@ -97,8 +97,8 @@ git clone https://github.com/zdllucky/wotold.git
 cd wotold
 pnpm install
 
-# Desktop-приложение (Tauri dev)
-pnpm tauri dev
+# Desktop-приложение (dev-оверлей: свой каталог данных, не общий с релизом)
+pnpm --filter @wotold/desktop tauri:dev
 
 # Локальный MCP-сервер
 pnpm --filter @wotold/mcp dev

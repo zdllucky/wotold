@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Dev-запуск с авто-перезапуском на изменения Rust-кода.
 #
-# `pnpm tauri dev` сам перезапускает приложение при правках `src-tauri/`, но
+# Запускается через `tauri:dev`, а не `tauri dev`: dev-сборке нужен оверлей
+# `tauri.dev.conf.json`, который уводит её в отдельный каталог данных. Без него
+# `state::init` откажет на старте — см. `src-tauri/src/app_env.rs`.
+#
+# `pnpm tauri:dev` сам перезапускает приложение при правках `src-tauri/`, но
 # на этом проекте цикл длинный: пересборка тянет sherpa-onnx, и на каждое
 # сохранение уходит больше минуты. Этот скрипт даёт то же самое, но с двумя
 # отличиями, которые экономят время:
@@ -38,8 +42,8 @@ cleanup_stale() {
 
 run_app() {
   cleanup_stale
-  echo "▶ pnpm tauri dev"
-  pnpm --dir "$APP" tauri dev
+  echo "▶ pnpm tauri:dev"
+  pnpm --dir "$APP" tauri:dev
 }
 
 if [ "${1:-}" = "--once" ]; then
@@ -50,13 +54,13 @@ fi
 if command -v watchexec >/dev/null 2>&1; then
   echo "▶ watchexec: слежу за $WATCH_DIR (только .rs)"
   exec watchexec --restart --exts rs --watch "$WATCH_DIR" -- \
-    bash -c "pkill -f 'target/debug/wotold-desktop' 2>/dev/null; pnpm --dir '$APP' tauri dev"
+    bash -c "pkill -f 'target/debug/wotold-desktop' 2>/dev/null; pnpm --dir '$APP' tauri:dev"
 fi
 
 if command -v entr >/dev/null 2>&1; then
   echo "▶ entr: слежу за $WATCH_DIR (только .rs)"
   while true; do
-    find "$WATCH_DIR" -name '*.rs' | entr -d -r bash -c "pnpm --dir '$APP' tauri dev" || true
+    find "$WATCH_DIR" -name '*.rs' | entr -d -r bash -c "pnpm --dir '$APP' tauri:dev" || true
   done
 fi
 
