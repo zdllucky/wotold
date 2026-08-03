@@ -1,6 +1,6 @@
 [package]
 name = "wotold-desktop"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 rust-version = "1.77"
 description = "Wotold — call recorder with diarization (Tauri 2)"
