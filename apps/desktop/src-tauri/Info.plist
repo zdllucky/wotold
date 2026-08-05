@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  [perm-usage] Ключи, которые Tauri домешивает в Info.plist релизного бандла.
+  Бандлер сам подхватывает Info.plist, лежащий рядом с tauri.conf.json.
+
+  Без NSMicrophoneUsageDescription macOS убивает процесс, который дотянулся до
+  микрофона, — SIGABRT с namespace TCC. Записывает микрофон сайдкар
+  (`wotold-audio`, AVAudioEngine), но TCC атрибутирует запрос ответственному
+  процессу, то есть `wotold-desktop`: своего plist'а сайдкара не хватает.
+  До этой правки сайдкар умирал на первом же `AVCaptureDevice.requestAccess`,
+  и наружу шло глухое «sidecar exited without permissions event».
+
+  Идентификатор и версию сюда не кладём — их генерит бандлер из tauri.conf.json,
+  а совпадающие ключи здесь бы их перебили. Screen Capture usage-ключа не имеет:
+  там TCC ведёт только диалог.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Wotold нужен доступ к микрофону для записи разговоров.</string>
+</dict>
+</plist>

@@ -99,16 +99,38 @@ impl CallDetectController {
 
         // Ждём `call_detect_started` ack — гарантирует что probe внутри
         // sidecar'а реально подцепил Core Audio + NSWorkspace observer'ы.
+        //
+        // [perm-usage] Правило 2 (twin parity): близнец этого хендшейка —
+        // `audio::permissions::one_shot`. Там «сайдкар умер, не ответив»
+        // возвращало глухую строку без причины, за которой на деле стоял
+        // SIGABRT от TCC. Здесь копилась ровно та же глухота: stderr и
+        // `Terminated` уходили в никуда, наружу шло «exited before ack».
+        let mut stderr = String::new();
         let ack = tokio::time::timeout(Duration::from_secs(START_TIMEOUT_SECS), async {
             while let Some(event) = rx.recv().await {
-                if let CommandEvent::Stdout(bytes) = event {
-                    let line = String::from_utf8_lossy(&bytes);
-                    if let Ok(json) = serde_json::from_str::<Value>(line.trim()) {
-                        if json.get("event").and_then(Value::as_str) == Some("call_detect_started")
-                        {
-                            return Some(json);
+                match event {
+                    CommandEvent::Stdout(bytes) => {
+                        let line = String::from_utf8_lossy(&bytes);
+                        if let Ok(json) = serde_json::from_str::<Value>(line.trim()) {
+                            if json.get("event").and_then(Value::as_str)
+                                == Some("call_detect_started")
+                            {
+                                return Some(json);
+                            }
                         }
                     }
+                    CommandEvent::Stderr(bytes) => {
+                        stderr.push_str(&String::from_utf8_lossy(&bytes));
+                    }
+                    CommandEvent::Error(message) => stderr.push_str(&message),
+                    CommandEvent::Terminated(payload) => {
+                        stderr.push_str(&format!(
+                            " [exit {:?} signal {:?}]",
+                            payload.code, payload.signal
+                        ));
+                        return None;
+                    }
+                    _ => {}
                 }
             }
             None
@@ -122,9 +144,12 @@ impl CallDetectController {
 
         if ack.is_none() {
             let _ = child.kill();
-            return Err(AppError::Other(
-                "call-detect sidecar exited before ack".into(),
-            ));
+            let tail = stderr.trim();
+            return Err(AppError::Other(if tail.is_empty() {
+                "call-detect sidecar exited before ack".to_string()
+            } else {
+                format!("call-detect sidecar exited before ack: {tail}")
+            }));
         }
 
         // Spawn dispatcher для дальнейших `call_suggested` событий.

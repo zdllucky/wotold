@@ -33,7 +33,6 @@ let package = Package(
             path: "Sources/WotoldAudio",
             exclude: ["Info.plist"],
             linkerSettings: [
-                .linkedFramework("ApplicationServices"),
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",

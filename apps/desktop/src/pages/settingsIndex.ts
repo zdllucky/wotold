@@ -83,7 +83,6 @@ export const SETTINGS_ENTRIES: SettingsEntry[] = [
 
   { id: 'perm-mic', section: 'permissions', labelKey: 'permissions.rowMic' },
   { id: 'perm-screen', section: 'permissions', labelKey: 'permissions.rowScreen' },
-  { id: 'perm-accessibility', section: 'permissions', labelKey: 'permissions.rowAccessibility' },
 
   { id: 'stt-lang', section: 'recording', labelKey: 'settings.sttLangLabel' },
   { id: 'recap-lang', section: 'recording', labelKey: 'settings.sttRecapLangLabel' },

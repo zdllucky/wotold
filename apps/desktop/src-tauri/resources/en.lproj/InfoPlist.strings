@@ -1,0 +1,5 @@
+/* [perm-usage] Текст системного диалога TCC. Базовая строка в Info.plist
+   остаётся русской (локаль продукта по умолчанию), здесь — переводы: если
+   эти файлы почему-то не доедут до бандла, все увидят русский, то есть
+   поведение до правки, а не пустой диалог. */
+"NSMicrophoneUsageDescription" = "Wotold needs microphone access to record your conversations.";

@@ -105,9 +105,6 @@ final class SystemPermissions: PermissionsProviding {
         if target == "screen_recording" || target == "all" {
             _ = requestScreenRecordingAccess()
         }
-        if target == "accessibility" || target == "all" {
-            _ = requestAccessibilityAccess()
-        }
     }
 }
 

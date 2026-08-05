@@ -172,6 +172,7 @@ pub fn run() {
             commands::get_audio_permissions,
             commands::request_audio_permissions,
             commands::open_system_privacy_pane,
+            commands::reset_permission,
             commands::check_for_update,
             commands::apply_update,
             commands::list_call_speakers,
