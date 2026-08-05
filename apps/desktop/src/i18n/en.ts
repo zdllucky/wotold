@@ -161,6 +161,18 @@ export const en: TranslationStrings = {
       human: 'No system permission.',
       hint: 'Open “macOS Settings → Privacy & Security” and grant Wotold access.',
     },
+    permissionsProbe: {
+      human: 'Could not check permissions — the audio capture component did not respond.',
+      hint: 'Restart Wotold. If it happens again, reinstall the app and let us know.',
+    },
+    permissionsProbeTimeout: {
+      human: 'The permission request went unanswered.',
+      hint: 'The system dialog may have stayed hidden behind another window. Hit “Request” again.',
+    },
+    permissionReset: {
+      human: 'Could not reset access.',
+      hint: 'Open System Settings → Privacy & Security, untick Wotold by hand, then request access again.',
+    },
     micPermission: {
       human: 'No microphone access.',
       hint: 'Open Settings → Microphone, enable Wotold, then restart the app.',
@@ -613,9 +625,13 @@ export const en: TranslationStrings = {
     rowScreen: 'System audio capture',
     rowScreenDesc:
       'Captures the other party\'s voice in FaceTime, Zoom, Telegram and other call apps. macOS labels this permission as «Screen & System Audio Recording». After granting — restart Wotold.',
-    rowAccessibility: 'Accessibility (Universal Access)',
-    rowAccessibilityDesc:
-      'Required for global hotkeys when other apps are in focus. Grant in System Settings → Privacy → Accessibility.',
+    staleHint:
+      'If you granted this before, macOS may have lost it: access is tied to the app signature and does not survive a Wotold update. The checkbox in System Settings stays on regardless.',
+    reset: 'Reset access',
+    resetTitle: 'Reset access and request again',
+    resetBody:
+      'macOS will forget its previous answer to this request and show the system dialog again. Nothing beyond this one permission is touched.',
+    resetConfirm: 'Reset and request',
     request: 'Request',
     requestAgain: 'Re-request',
     requestTitle: 'Show macOS request dialog',

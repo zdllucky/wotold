@@ -106,7 +106,6 @@ function AppShell() {
   // first «Записать звонок».
   const [consentAt, setConsentAt] = useState<string | null>(null);
   const [showConsent, setShowConsent] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
   const consentRef = useRef<HTMLDivElement>(null);
   useFocusTrap(consentRef, showConsent, { onClose: () => setShowConsent(false) });
 
@@ -324,15 +323,29 @@ function AppShell() {
     };
   }, []);
 
+  // [perm-usage] Ошибки записи уходят тостом, а не абзацем над страницей.
+  // Абзац жил в потоке `.app-main`, а страницы — `.page-bleed` с `height:100vh`
+  // внутри `overflow:clip`: любая ошибка сдвигала страницу ровно на свою высоту
+  // и срезала ей низ, а шапка Настроек уезжала под текст. Тост вне потока, и
+  // заодно уходит сам — прежний `localError` не чистился при навигации и висел
+  // над всеми экранами до следующего старта записи.
+  // `duration: 0` — sticky. Дефолтные 4.5 с достаточны для «готово», но не для
+  // единственного объяснения того, почему запись не стартовала: инструкция про
+  // разрешения занимает две строки и самоуничтожалась раньше, чем прочитывалась.
+  // Прежний абзац не исчезал вовсе, так что тост без этого был бы регрессом.
+  const showError = useCallback(
+    (e: unknown) => toast.show({ tone: 'danger', duration: 0, message: humanError(e, t) }),
+    [toast, t],
+  );
+
   // ── Recording actions (lifted from HomePage, consent-gated). ──
   const startFlow = useCallback(async () => {
-    setLocalError(null);
     try {
       await rec.start();
     } catch (e) {
-      setLocalError(humanError(e, t));
+      showError(e);
     }
-  }, [rec]);
+  }, [rec, showError]);
 
   const onStart = useCallback(async () => {
     if (!consentAt) {
@@ -350,12 +363,11 @@ function AppShell() {
       setShowConsent(false);
       await startFlow();
     } catch (e) {
-      setLocalError(humanError(e, t));
+      showError(e);
     }
-  }, [startFlow]);
+  }, [startFlow, showError]);
 
   const onStop = useCallback(async () => {
-    setLocalError(null);
     try {
       const result = await rec.stop();
       if (!result.callId) {
@@ -369,9 +381,9 @@ function AppShell() {
       setDetailCallId(result.callId);
       setView('call');
     } catch (e) {
-      setLocalError(humanError(e, t));
+      showError(e);
     }
-  }, [rec, toast, t]);
+  }, [rec, toast, t, showError]);
 
   // Rail record button + ⌘⇧R toggle: idle→start, recording→stop, paused→resume.
   const onRecordToggle = useCallback(() => {
@@ -560,14 +572,6 @@ function AppShell() {
         <SuggestBanner onStart={onStart} />
         <SilencePrompt onStop={onStop} />
         <UpdateBanner />
-        {localError && (
-          <p
-            role="alert"
-            style={{ color: 'var(--danger)', margin: '0 0 14px', fontFamily: 'var(--font)' }}
-          >
-            {localError}
-          </p>
-        )}
 
         {/* [B20.4] Keep-alive: InboxView всегда mounted (default-экран), при
             уходе скрывается display:none — вид/поиск/фасеты/offset'ы/скролл

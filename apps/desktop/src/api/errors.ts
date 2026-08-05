@@ -118,6 +118,29 @@ const PATTERNS: ErrorPattern[] = [
     human: 'errors.chunksRetry.human',
     hint: 'errors.chunksRetry.hint',
   },
+  // [perm-usage] Разрешения — до generic `timed out` (иначе «permissions probe
+  // timed out» уедет в «проверь интернет») и до permission-группы: и хвост
+  // stderr, и имя TCC-сервиса содержат слово microphone, а совет «открой
+  // Настройки → Микрофон» к этим отказам отношения не имеет.
+  //
+  // Три разных отказа — три разных текста. Смерть сайдкара это дефект сборки,
+  // таймаут — чаще всего незамеченный за окном системный диалог, а неудавшийся
+  // сброс не мешает разрешению работать вовсе.
+  {
+    match: /permission reset failed/i,
+    human: 'errors.permissionReset.human',
+    hint: 'errors.permissionReset.hint',
+  },
+  {
+    match: /permissions probe timed out/i,
+    human: 'errors.permissionsProbeTimeout.human',
+    hint: 'errors.permissionsProbeTimeout.hint',
+  },
+  {
+    match: /permissions sidecar terminated/i,
+    human: 'errors.permissionsProbe.human',
+    hint: 'errors.permissionsProbe.hint',
+  },
   {
     match: /(timeout|timed out)/i,
     human: 'errors.timeout.human',
@@ -125,11 +148,10 @@ const PATTERNS: ErrorPattern[] = [
   },
 
   // Permissions
-  {
-    match: /(permission denied|not authorized|tccd|tcc)/i,
-    human: 'errors.permission.human',
-    hint: 'errors.permission.hint',
-  },
+  // [perm-usage] Порядок значим: первый матч побеждает, поэтому конкретное
+  // идёт раньше общего. Раньше `permission denied: microphone` съедал общий
+  // паттерн `permission denied`, и вместо «нет доступа к микрофону» юзер
+  // получал «нет разрешения системы» без указания, какого именно.
   {
     match: /(microphone|nsmicrophone)/i,
     human: 'errors.micPermission.human',
@@ -139,6 +161,11 @@ const PATTERNS: ErrorPattern[] = [
     match: /(screen[\s-]?cap|screencapture|screenrecording|nsscreen)/i,
     human: 'errors.screenPermission.human',
     hint: 'errors.screenPermission.hint',
+  },
+  {
+    match: /(permission denied|not authorized|tccd|tcc)/i,
+    human: 'errors.permission.human',
+    hint: 'errors.permission.hint',
   },
 
   // Recording

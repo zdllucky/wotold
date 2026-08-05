@@ -1,4 +1,3 @@
-import ApplicationServices
 import AVFoundation
 import CoreGraphics
 
@@ -47,24 +46,17 @@ func requestScreenRecordingAccess() -> Bool {
     return CGRequestScreenCaptureAccess()
 }
 
-func currentAccessibilityStatus() -> PermissionStatus {
-    if AXIsProcessTrustedWithOptions(nil) {
-        return .granted
-    }
-    return .denied
-}
-
-func requestAccessibilityAccess() -> Bool {
-    let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-    let options = [key: true] as CFDictionary
-    return AXIsProcessTrustedWithOptions(options)
-}
+// [perm-usage] Accessibility отсюда убран. Он мерился в процессе сайдкара
+// (`app.wotold.macos-audio`), а пользователь добавляет в системный список
+// `Wotold.app` — статус поэтому всегда возвращался `denied`. И мерить было
+// нечего: глобального хоткея нет (⌘⇧R висит на `keydown` окна),
+// `tauri-plugin-global-shortcut` не подключён, а CallActivityProbe обходится
+// `NSWorkspace.frontmostApplication`, которому AX не нужен.
 
 func permissionsEvent() -> [String: Any] {
     return [
         "event": "permissions",
         "microphone": currentMicrophoneStatus().rawValue,
         "screen_recording": currentScreenRecordingStatus().rawValue,
-        "accessibility": currentAccessibilityStatus().rawValue,
     ]
 }

@@ -9,7 +9,7 @@ use tauri::{AppHandle, State};
 
 use crate::{
     audio::macos::{self as audio_macos},
-    audio::permissions::{self, PermissionsStatus},
+    audio::permissions,
     audio::silence_watch::SilenceControl,
     call_store::CallStore,
     db::{self, Call},
@@ -81,16 +81,16 @@ pub async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Resu
     // sidecar просто молча fail-stop'ал — юзер видел загадочный «calls failed»
     // через 1-2 секунды. Теперь возвращаем clear AppError → frontend
     // покажет 'Нет разрешения на ...' и направит в Настройки.
-    let perms = permissions::check(&app).await?;
+    //
+    // [perm-usage] Коды ASCII и стабильны: их матчит `api/errors.ts` и
+    // переводит через `t()`. Раньше здесь лежал русский литерал, который
+    // проходил мимо i18n и приезжал к казахской локали по-русски.
+    let perms = permissions::check(&app, &state.db).await?;
     if perms.microphone != "granted" {
-        return Err(AppError::Other(
-            "Нет разрешения на микрофон. Открой Настройки → Разрешения.".into(),
-        ));
+        return Err(AppError::Other("permission denied: microphone".into()));
     }
     if perms.screen_recording != "granted" {
-        return Err(AppError::Other(
-            "Нет разрешения на захват системного звука (для записи голоса собеседника в FaceTime, Zoom и т.д.). Открой Настройки → Разрешения.".into(),
-        ));
+        return Err(AppError::Other("permission denied: screen capture".into()));
     }
 
     // M2.3: path_label фиксирует путь доставки на момент создания звонка.
@@ -617,40 +617,9 @@ pub async fn resume_recording(
     })
 }
 
-#[tauri::command]
-pub async fn get_audio_permissions(app: AppHandle) -> Result<PermissionsStatus, AppError> {
-    permissions::check(&app).await
-}
-
-#[tauri::command]
-pub async fn request_audio_permissions(
-    app: AppHandle,
-    target: String,
-) -> Result<PermissionsStatus, AppError> {
-    permissions::request(&app, &target).await
-}
-
-#[tauri::command]
-pub fn open_system_privacy_pane(pane: String) -> Result<(), AppError> {
-    let url = match pane.as_str() {
-        "microphone" => {
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-        }
-        "screen_recording" => {
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-        }
-        "accessibility" => {
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        }
-        _ => return Err(AppError::Other(format!("unknown pane: {pane}"))),
-    };
-
-    std::process::Command::new("open")
-        .arg(url)
-        .spawn()
-        .map_err(|e| AppError::Other(format!("open failed: {e}")))?;
-    Ok(())
-}
+// [perm-usage] Команды разрешений уехали в `commands/permissions.rs` —
+// у записи и у настроек доступа своя когезия, а общий счётчик строк здесь
+// упёрся в лимит модуля (правило 8).
 
 // ============================================================================
 // [M13.1.5c] Chunked pipeline wiring helpers

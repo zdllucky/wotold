@@ -64,6 +64,52 @@ describe('humanError', () => {
       /микрофон/i,
     );
   });
+  // [perm-usage] Коды pre-check'а из `start_recording`. Общий паттерн
+  // `permission denied` стоял выше конкретных и съедал оба — вместо «нет
+  // доступа к микрофону» приезжало безадресное «нет разрешения системы»,
+  // и пользователь не знал, какое из двух разрешений чинить.
+  test('permission denied: microphone → адресное сообщение про микрофон', () => {
+    expect(humanError('permission denied: microphone', t)).toMatch(/микрофон/i);
+  });
+  test('permission denied: screen capture → про системный звук', () => {
+    expect(humanError('permission denied: screen capture', t)).toMatch(/системного звука/i);
+  });
+  // Сайдкар умер, не прислав события — так выглядел TCC-SIGABRT из-за
+  // отсутствующего NSMicrophoneUsageDescription. Раньше сырая английская
+  // строка ехала в UI как есть.
+  test('permissions sidecar terminated → переведённое сообщение', () => {
+    const out = humanError('permissions sidecar terminated: signal 6', t);
+    expect(out).toMatch(/не удалось проверить разрешения/i);
+    expect(out).not.toMatch(/terminated/i);
+  });
+  // Таймаут и смерть сайдкара — разные отказы: первый обычно значит, что
+  // системный диалог остался за окном, второй — что сборка сломана.
+  test('permissions probe timed out → про незамеченный диалог, а не про поломку', () => {
+    const out = humanError('permissions probe timed out (120s)', t);
+    expect(out).toMatch(/без ответа/i);
+    expect(out).not.toMatch(/переустанови/i);
+  });
+  test('permissions probe timed out не уезжает в generic timeout', () => {
+    expect(humanError('permissions probe timed out (5s)', t)).not.toMatch(/интернет/i);
+  });
+  // Неудавшийся сброс TCC не должен превращаться в «нет доступа к микрофону»:
+  // имя сервиса в тексте — Microphone, и мик-паттерн его подхватывал.
+  test('permission reset failed → про сброс, а не про доступ к микрофону', () => {
+    const out = humanError('permission reset failed: Microphone (exit status: 1)', t);
+    expect(out).toMatch(/сбросить доступ/i);
+    expect(out).not.toMatch(/перезапусти приложение/i);
+  });
+  test('permission reset failed: ScreenCapture → тот же текст', () => {
+    expect(humanError('permission reset failed: ScreenCapture (exit status: 1)', t)).toMatch(
+      /сбросить доступ/i,
+    );
+  });
+  // Хвост stderr не должен уводить сообщение в чужую ветку словаря.
+  test('stderr про микрофон не перебивает сообщение о смерти сайдкара', () => {
+    expect(
+      humanError('permissions sidecar terminated: signal 6; microphone init failed', t),
+    ).toMatch(/не удалось проверить разрешения/i);
+  });
   test('disk full', () => {
     expect(humanError(new Error('ENOSPC: no space left'), t)).toMatch(/места на диске/i);
   });

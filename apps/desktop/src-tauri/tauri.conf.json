@@ -82,7 +82,11 @@
     "macOS": {
       "minimumSystemVersion": "14.0",
       "signingIdentity": "-",
-      "hardenedRuntime": false
+      "hardenedRuntime": false,
+      "files": {
+        "Resources/en.lproj/InfoPlist.strings": "resources/en.lproj/InfoPlist.strings",
+        "Resources/kk.lproj/InfoPlist.strings": "resources/kk.lproj/InfoPlist.strings"
+      }
     },
     "category": "Productivity"
   },
