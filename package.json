@@ -1,6 +1,6 @@
 {
   "name": "wotold",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "private": true,
   "description": "Desktop call recorder with transcription, diarization, and MCP for Claude",
   "packageManager": "pnpm@10.33.2",
