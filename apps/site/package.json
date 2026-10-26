@@ -13,13 +13,13 @@
     "sync:fonts": "node scripts/sync-fonts.mjs"
   },
   "dependencies": {
-    "@astrojs/sitemap": "^3.7.0",
-    "@astrojs/starlight": "^0.36.0",
+    "@astrojs/sitemap": "^3.7.4",
+    "@astrojs/starlight": "^0.42.7",
     "astro": "^5.16.0",
-    "sharp": "^0.35.0"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.4",
+    "@astrojs/check": "^0.9.12",
     "typescript": "^5.9.3"
   }
 }
